@@ -1,0 +1,135 @@
+import type { CourseDetail, CourseImage, StoryPlan, StudentProfile } from "@/lib/api-contract";
+import type { StructuredLesson } from "@/lib/lesson/types";
+
+export const mockStudents: StudentProfile[] = [
+  { id: "summer", name: "Summer", age: 8 },
+  { id: "tom", name: "Tom", age: 8 },
+  { id: "lucy", name: "Lucy", age: 8 },
+];
+
+export const mockStoryPlans: StoryPlan[] = [
+  {
+    id: "plant-kingdom",
+    title: "迷你Summer的植物王国",
+    summary: "Summer变小后进入植物世界，经历一段勇敢的冒险。",
+    chapters: ["变成迷你人", "植物中的旅行", "朋友们的帮助"],
+    imageUrl: "/mock-assets/plant-kingdom.png",
+    accent: "green",
+  },
+  {
+    id: "rabbit",
+    title: "The Brave Little Rabbit",
+    summary: "一只勇敢的小兔子克服恐惧，帮助朋友们解决问题。",
+    chapters: ["The Problem", "The Decision", "The Success"],
+    imageUrl: "/mock-assets/rabbit-forest.png",
+    accent: "blue",
+  },
+  {
+    id: "flower",
+    title: "彩虹花园的秘密",
+    summary: "在花园和昆虫朋友的帮助下，Summer发现了隐藏的秘密。",
+    chapters: ["发现彩虹花园", "神奇的花朵", "守护彩虹花园"],
+    imageUrl: "/mock-assets/plant-kingdom.png",
+    accent: "violet",
+  },
+];
+
+export const mockLessonText = `Hello again, class! Welcome back to our English world!
+
+第一阶段：变成迷你人
+Yesterday, Summer (1) ______ (water) the plants.
+
+第二阶段：植物中的旅行
+Suddenly, she became as small as an ant!
+
+第三阶段：朋友们的帮助
+Her friends helped her find the way home.
+
+Homework Reading
+Read the story and circle the past tense verbs.
+
+Answer Key
+watered
+happened`;
+
+export const mockStructuredLesson: StructuredLesson = {
+  title: "The Brave Little Rabbit",
+  intro: "Once upon a time, in a beautiful forest, there lived a little rabbit named Rosie. Rosie was kind and helpful, but she was also very scared of many things.",
+  answerKey: [
+    { id: "answer-1", text: "watered" },
+    { id: "answer-2", text: "happened" },
+  ],
+  homework: "Read the story again and retell the ending to your partner.",
+  sections: [
+    {
+      id: "intro",
+      title: "Introduction",
+      sourceHash: "intro-mock",
+      imageSlots: [
+        { id: "intro-image-1", slotIndex: 1 },
+        { id: "intro-image-2", slotIndex: 2 },
+      ],
+      blocks: [
+        {
+          type: "paragraph",
+          segments: [
+            {
+              type: "text",
+              text: "Once upon a time, in a beautiful forest, there lived a little rabbit named Rosie. Rosie was kind and helpful, but she was also very scared of many things.",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "section-1",
+      title: "Section 1: The Problem",
+      sourceHash: "section-1-mock",
+      imageSlots: [],
+      blocks: [
+        {
+          type: "paragraph",
+          segments: [
+            {
+              type: "text",
+              text: "One day, Rosie's friend, a little bird, came to her. “Rosie, my nest is in the big tree, but I can't get there. I'm too scared to fly!” Rosie wanted to help, but she was scared of heights.",
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+export const mockImages: CourseImage[] = [
+  { id: "image-1", sectionId: "intro", slotIndex: 1, status: "succeeded", url: "/mock-assets/rabbit-forest.png" },
+  { id: "image-2", sectionId: "intro", slotIndex: 2, status: "succeeded", url: "/mock-assets/plant-kingdom.png" },
+  { id: "image-3", sectionId: "section-1", slotIndex: 1, status: "generating", url: "/mock-assets/rabbit-forest.png" },
+];
+
+export const mockCourse: CourseDetail = {
+  id: "123",
+  title: "The Brave Little Rabbit",
+  students: mockStudents,
+  brief: {
+    studentIds: mockStudents.map((student) => student.id),
+    age: 8,
+    englishLevel: "A1",
+    grammar: ["Past Simple", "Future Simple"],
+    durationMinutes: 45,
+    theme: "Plants / Nature",
+    storyIdea: "Summer becomes tiny and enters a magical plant kingdom...",
+  },
+  storyPlans: mockStoryPlans,
+  selectedStoryPlanId: "plant-kingdom",
+  lessonText: mockLessonText,
+  structuredLesson: mockStructuredLesson,
+  images: mockImages,
+  progress: {
+    structureDone: true,
+    generatedImages: 6,
+    totalImages: 12,
+    htmlDone: false,
+    pdfDone: false,
+  },
+};
