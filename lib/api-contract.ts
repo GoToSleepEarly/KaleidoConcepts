@@ -2,8 +2,17 @@ import type { StructuredLesson } from "@/lib/lesson/types";
 
 export type StudentProfile = {
   id: string;
+  chineseName: string;
+  englishName: string;
+  gender: "male" | "female";
   name: string;
   age: number;
+  interests: string[];
+  learningGoal?: string;
+  notes?: string;
+  avatarUrl: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type CourseBrief = {

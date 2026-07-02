@@ -1,10 +1,54 @@
 import type { CourseDetail, CourseImage, StoryPlan, StudentProfile } from "@/lib/api-contract";
 import type { StructuredLesson } from "@/lib/lesson/types";
 
+export const defaultStudentAvatars = {
+  male: "/mock-assets/student-boy.png",
+  female: "/mock-assets/student-girl.png",
+} as const;
+
 export const mockStudents: StudentProfile[] = [
-  { id: "summer", name: "Summer", age: 8 },
-  { id: "tom", name: "Tom", age: 8 },
-  { id: "lucy", name: "Lucy", age: 8 },
+  {
+    id: "summer",
+    chineseName: "夏天",
+    englishName: "Summer",
+    name: "Summer",
+    age: 8,
+    gender: "female",
+    interests: ["植物", "冒险", "绘画", "小动物"],
+    learningGoal: "希望在故事阅读中练习完整句表达，并愿意主动复述关键情节。",
+    notes: "喜欢明亮、温暖、有探索感的故事场景。",
+    avatarUrl: defaultStudentAvatars.female,
+    createdAt: "2026-07-01T09:00:00.000Z",
+    updatedAt: "2026-07-01T09:00:00.000Z",
+  },
+  {
+    id: "tom",
+    chineseName: "汤姆",
+    englishName: "Tom",
+    name: "Tom",
+    age: 8,
+    gender: "male",
+    interests: ["恐龙", "机器人", "森林"],
+    learningGoal: "通过互动绘本增加开口次数，练习描述角色动作。",
+    notes: "更容易被任务型挑战吸引。",
+    avatarUrl: defaultStudentAvatars.male,
+    createdAt: "2026-07-01T09:05:00.000Z",
+    updatedAt: "2026-07-01T09:05:00.000Z",
+  },
+  {
+    id: "lucy",
+    chineseName: "露西",
+    englishName: "Lucy",
+    name: "Lucy",
+    age: 7,
+    gender: "female",
+    interests: ["花园", "音乐", "朋友"],
+    learningGoal: "积累故事主题词汇，练习用英语表达感受。",
+    notes: "偏好柔和、富有想象力的绘本主题。",
+    avatarUrl: defaultStudentAvatars.female,
+    createdAt: "2026-07-01T09:10:00.000Z",
+    updatedAt: "2026-07-01T09:10:00.000Z",
+  },
 ];
 
 export const mockStoryPlans: StoryPlan[] = [

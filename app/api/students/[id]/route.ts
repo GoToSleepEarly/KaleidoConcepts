@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import type { StudentProfile } from "@/lib/api-contract";
 import { defaultStudentAvatars, mockStudents } from "@/lib/mock-course-data";
 
 const studentInputSchema = z.object({
@@ -14,30 +13,31 @@ const studentInputSchema = z.object({
   notes: z.string().optional(),
 });
 
-const mutableStudents: StudentProfile[] = [...mockStudents];
+const mutableStudents = [...mockStudents];
 
-export async function GET() {
-  return NextResponse.json({ students: mutableStudents });
-}
-
-export async function POST(request: Request) {
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const payload = studentInputSchema.safeParse(await request.json());
 
   if (!payload.success) {
     return NextResponse.json({ message: "学生信息不完整" }, { status: 400 });
   }
 
-  const now = new Date().toISOString();
-  const student: StudentProfile = {
-    id: `student-${Date.now()}`,
+  const index = mutableStudents.findIndex((student) => student.id === id);
+
+  const student = {
+    ...(index >= 0 ? mutableStudents[index] : { id, createdAt: new Date().toISOString() }),
     ...payload.data,
     name: payload.data.englishName,
     avatarUrl: defaultStudentAvatars[payload.data.gender],
-    createdAt: now,
-    updatedAt: now,
+    updatedAt: new Date().toISOString(),
   };
 
-  mutableStudents.unshift(student);
+  if (index >= 0) {
+    mutableStudents[index] = student;
+  } else {
+    mutableStudents.unshift(student);
+  }
 
-  return NextResponse.json({ student }, { status: 201 });
+  return NextResponse.json({ student });
 }
