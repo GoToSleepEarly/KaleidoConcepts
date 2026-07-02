@@ -1,10 +1,10 @@
-import { AppShell } from "@/components/app-shell";
 import { CourseCreationFlow } from "@/components/course-creation-flow";
+import { ProtectedLayout } from "@/components/protected-layout";
 
 export default function NewCoursePage() {
   return (
-    <AppShell>
+    <ProtectedLayout>
       <CourseCreationFlow />
-    </AppShell>
+    </ProtectedLayout>
   );
 }
