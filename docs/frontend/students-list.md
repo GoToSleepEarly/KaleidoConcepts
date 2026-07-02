@@ -250,3 +250,29 @@ type Student = {
 - 学生数据刷新后仍保留
 - 代码中有 localStorage 测试逻辑删除提示注释
 - 本期不出现删除、归档、搜索、筛选、头像上传入口
+
+## 实现记录
+
+- 实现提交：`33b5019 Implement students list module`
+- 学生卡片列表：已实现
+- 新增学生抽屉：已实现
+- 编辑学生抽屉：已实现
+- 男 / 女默认头像：已生成并放入本地 assets
+- Mock API：已实现 `GET /api/students`、`POST /api/students`、`PUT /api/students/:id`
+- localStorage 测试数据同步：已实现，并保留联调删除 TODO 注释
+
+验证命令：
+
+- `pnpm lint`
+- `pnpm test`
+- `pnpm build`
+
+验证结果：
+
+- lint 通过
+- test 通过
+- build 通过
+- `/students` HTTP 检查通过
+- `/api/students` HTTP 检查通过
+- 浏览器截图检查学生卡片布局通过
+- 浏览器脚本验证新增学生、卡片出现、localStorage 保留通过
