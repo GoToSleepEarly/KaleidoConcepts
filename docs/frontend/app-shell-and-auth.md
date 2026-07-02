@@ -284,3 +284,27 @@ sidebar 顶部显示：
 - Web 端布局不出现横向滚动
 - 登录页不出现忘记密码、注册账号
 - 登录页左侧图片符合学生进入绘本世界的视觉方向
+
+## 实现记录
+
+- 实现提交：`6a6340b Implement app shell and mock authentication`
+- 登录页：已实现
+- Mock 登录 API：已实现 `/api/auth/login`
+- 受保护路由：已实现
+- Web AppShell：已实现
+- 学生列表入口：已提供最小 mock 列表，具体业务细节待学生列表模块讨论
+- 课程列表入口：已提供最小 mock 列表，具体业务细节待课程列表模块讨论
+
+验证命令：
+
+- `pnpm lint`
+- `pnpm test`
+- `pnpm build`
+
+验证结果：
+
+- lint 通过
+- test 通过
+- build 通过
+- `/login`、`/courses`、`/students`、`/courses/new`、`/api/auth/login` HTTP 检查通过
+- 登录页 Edge headless 截图检查通过
