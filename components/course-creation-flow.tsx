@@ -22,6 +22,13 @@ import { cn } from "@/lib/utils";
 
 const steps = ["填写学生信息", "选择故事方案", "课文内容编辑", "生成资源中"];
 
+const stepCopy: Record<number, string> = {
+  1: "完善学生信息，帮助 AI 生成更适合的故事和课件内容。",
+  2: "我们为学生生成了 3 个绘本故事方案，请选择一个最合适的方向。",
+  3: "AI 已为学生生成课文内容，请编辑确认后生成资源。",
+  4: "正在生成结构化内容和插图，请稍候。",
+};
+
 export function CourseCreationFlow() {
   const [step, setStep] = useState(1);
   const selectedPlan = mockStoryPlans[0];
@@ -41,11 +48,13 @@ export function CourseCreationFlow() {
           {step === 3 ? <StepThree onBack={() => setStep(2)} onNext={() => setStep(4)} /> : null}
           {step === 4 ? <StepFour /> : null}
         </section>
-        {step === 1 ? <aside className="hidden border-l border-slate-200 bg-white xl:block">
-          <div className="sticky top-0 h-dvh overflow-hidden">
-            <div className="h-full bg-[url('/mock-assets/plant-kingdom.png')] bg-cover bg-center opacity-90" />
-          </div>
-        </aside> : null}
+        {step === 1 ? (
+          <aside className="hidden border-l border-slate-200 bg-white xl:block">
+            <div className="sticky top-0 h-dvh overflow-hidden">
+              <div className="h-full bg-[url('/mock-assets/plant-kingdom.png')] bg-cover bg-center opacity-90" />
+            </div>
+          </aside>
+        ) : null}
       </div>
     </div>
   );
@@ -53,7 +62,7 @@ export function CourseCreationFlow() {
 
 function StepHeader({ step, title }: { step: number; title: string }) {
   return (
-    <header className="mb-8 flex items-start justify-between">
+    <header className="mb-8 flex items-start justify-between gap-4">
       <div>
         <h1 className="text-balance text-2xl font-bold text-slate-950">
           Step {step} / 5 <span className="ml-4">{title}</span>
@@ -69,13 +78,6 @@ function StepHeader({ step, title }: { step: number; title: string }) {
     </header>
   );
 }
-
-const stepCopy: Record<number, string> = {
-  1: "完善学生信息，帮助 AI 生成更合适的故事和课件内容",
-  2: "我们为学生生成了 3 个绘本故事方案，请选择一个您喜欢的方向",
-  3: "AI 已为学生生成课文内容，请编辑确认和调整",
-  4: "正在为您生成结构化内容和精美插图，请稍候...",
-};
 
 function StepOne({ onNext }: { onNext: () => void }) {
   return (
@@ -101,7 +103,7 @@ function StepOne({ onNext }: { onNext: () => void }) {
       <FormRow label="英语等级">
         <SelectLike value="A1" />
       </FormRow>
-      <FormRow label="Grammar（最多3个）">
+      <FormRow label="Grammar（最多 2 个）">
         <div className="flex flex-wrap gap-2">
           {["Past Simple", "Future Simple"].map((item) => (
             <span className="rounded-md border border-violet-200 bg-violet-50 px-3 py-1 text-sm text-violet-700" key={item}>
@@ -209,7 +211,7 @@ function StepThree({ onBack, onNext }: { onBack: () => void; onNext: () => void 
         <h3 className="mb-4 font-bold">课程信息（只读）</h3>
         <InfoList />
       </aside>
-      <div className="xl:col-span-2 flex items-center justify-between">
+      <div className="flex items-center justify-between xl:col-span-2">
         <button className="text-sm text-emerald-600" type="button">自动保存成功 14:30:25</button>
         <div className="flex gap-4">
           <Button onClick={onBack} type="button" variant="outline">返回上一步</Button>
@@ -247,8 +249,8 @@ function StepFour() {
         </Button>
       </section>
       <aside className="rounded-xl border border-violet-100 bg-violet-50/60 p-6">
-        <div className="mb-3 text-violet-700">💡 小贴士</div>
-        <p className="text-sm leading-7 text-slate-600">生成约需 30-60 秒，生成完成后您可以预览并导出学生版 PDF。</p>
+        <div className="mb-3 text-violet-700">小贴士</div>
+        <p className="text-sm leading-7 text-slate-600">生成约需 30-60 秒，生成完成后可以预览并导出学生版 PDF。</p>
         <div className="mt-6 size-28 rounded-full bg-[url('/mock-assets/rabbit-forest.png')] bg-cover bg-center" />
       </aside>
     </div>
@@ -277,7 +279,7 @@ function ProgressItem({ label, done, active }: { label: string; done?: boolean; 
 
 function FormRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="mb-5 grid gap-3 text-sm md:grid-cols-[132px_1fr]">
+    <label className="mb-5 grid gap-3 text-sm md:grid-cols-[148px_1fr]">
       <span className="pt-2 font-medium text-slate-700">{label}</span>
       <span>{children}</span>
     </label>

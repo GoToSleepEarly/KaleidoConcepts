@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 
 const outline = [
   { label: "Cover" },
-  { label: "引导页" },
+  { label: "导入页" },
   { label: "Chapter 1", active: true, children: ["Page 1", "Page 2"] },
   { label: "Chapter 2", children: ["Page 3", "Page 4"] },
   { label: "Homework" },
