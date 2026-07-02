@@ -7,12 +7,12 @@ import { mockCourse } from "@/lib/mock-course-data";
 
 export default function CoursesPage() {
   return (
-    <AppShell>
+    <AppShell activeKey="courses">
       <div className="min-h-dvh bg-white px-8 py-8">
         <header className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">课程列表</h1>
-            <p className="mt-3 text-sm text-slate-500">当前为前端 mock 数据，接口协议保持真实形状。</p>
+            <p className="mt-3 text-sm text-slate-500">当前为前端 mock 数据，接口协议保持真实形态。</p>
           </div>
           <Button asChild className="bg-violet-600 hover:bg-violet-700">
             <Link href="/courses/new">

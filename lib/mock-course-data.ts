@@ -10,8 +10,8 @@ export const mockStudents: StudentProfile[] = [
 export const mockStoryPlans: StoryPlan[] = [
   {
     id: "plant-kingdom",
-    title: "迷你Summer的植物王国",
-    summary: "Summer变小后进入植物世界，经历一段勇敢的冒险。",
+    title: "迷你 Summer 的植物王国",
+    summary: "Summer 变小后进入植物世界，在花朵和小昆虫的帮助下完成一段勇敢冒险。",
     chapters: ["变成迷你人", "植物中的旅行", "朋友们的帮助"],
     imageUrl: "/mock-assets/plant-kingdom.png",
     accent: "green",
@@ -19,7 +19,7 @@ export const mockStoryPlans: StoryPlan[] = [
   {
     id: "rabbit",
     title: "The Brave Little Rabbit",
-    summary: "一只勇敢的小兔子克服恐惧，帮助朋友们解决问题。",
+    summary: "一只胆小的小兔子学会面对恐惧，帮助朋友解决问题。",
     chapters: ["The Problem", "The Decision", "The Success"],
     imageUrl: "/mock-assets/rabbit-forest.png",
     accent: "blue",
@@ -27,7 +27,7 @@ export const mockStoryPlans: StoryPlan[] = [
   {
     id: "flower",
     title: "彩虹花园的秘密",
-    summary: "在花园和昆虫朋友的帮助下，Summer发现了隐藏的秘密。",
+    summary: "在花园和昆虫朋友的帮助下，Summer 发现了隐藏的秘密，并学会保护自然。",
     chapters: ["发现彩虹花园", "神奇的花朵", "守护彩虹花园"],
     imageUrl: "/mock-assets/plant-kingdom.png",
     accent: "violet",
