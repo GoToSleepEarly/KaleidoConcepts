@@ -1,0 +1,11 @@
+ALTER TYPE "EnglishLevel" ADD VALUE IF NOT EXISTS 'B2';
+ALTER TYPE "EnglishLevel" ADD VALUE IF NOT EXISTS 'C1';
+ALTER TYPE "EnglishLevel" ADD VALUE IF NOT EXISTS 'C2';
+
+CREATE TYPE "StoryIdeaMode" AS ENUM ('manual', 'ai');
+
+ALTER TABLE "Course"
+  ADD COLUMN "durationMinutes" INTEGER NOT NULL DEFAULT 45,
+  ADD COLUMN "grammar" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  ADD COLUMN "storyIdeaMode" "StoryIdeaMode" NOT NULL DEFAULT 'ai',
+  ADD COLUMN "storyIdea" TEXT;
