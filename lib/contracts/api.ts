@@ -3,6 +3,7 @@ import type { StructuredLesson } from "@/lib/lesson/types";
 export type Gender = "male" | "female";
 export type EnglishLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
 export type CourseStatus = "draft" | "building_resources" | "ready" | "build_failed";
+export type CourseCreateStep = "basic" | "story_options" | "lesson_draft" | "resources" | "preview";
 export type PersonRole = "teacher" | "student";
 export type StoryIdeaMode = "manual" | "ai";
 
@@ -129,6 +130,10 @@ export type CourseListItem = {
   theme: string;
   status: CourseStatus;
   storyOptionsCount: number;
+  selectedStoryOptionId: string | null;
+  lessonDraftExists: boolean;
+  currentStep: CourseCreateStep;
+  nextEditPath: string;
   updatedAt: string;
 };
 
@@ -191,6 +196,13 @@ export type LessonDraft = {
   visualStyle: LessonVisualStyle;
   characters: LessonVisualCharacter[];
   chapters: LessonChapter[];
+  closingReading: LessonClosingReading;
+};
+
+export type LessonClosingReading = {
+  title: string;
+  text: string;
+  vocabularyTerms: string[];
 };
 
 export type LessonVisualStyle = {
@@ -214,8 +226,8 @@ export type LessonChapter = {
   sourceOutlineChapterIndex: number;
   title: string;
   wordTarget: {
-    min: 120;
-    max: 180;
+    min: number;
+    max: number;
   };
   exerciseTarget: {
     verbBlankCount: 7;

@@ -20,6 +20,11 @@ describe("listCourses", () => {
                   storyOptions: true,
                 },
               },
+              lessonDraft: {
+                select: {
+                  courseId: true,
+                },
+              },
             },
           });
 
@@ -30,8 +35,12 @@ describe("listCourses", () => {
               englishLevel: "A1",
               theme: "Plants / Nature",
               status: "ready",
+              selectedStoryOptionId: "option-1",
               createdAt: new Date("2026-07-01T09:00:00.000Z"),
               updatedAt: new Date("2026-07-03T09:00:00.000Z"),
+              lessonDraft: {
+                courseId: "course-1",
+              },
               people: [
                 { person: { role: "student", englishName: "Summer", chineseName: "夏天", name: "Summer" } },
                 { person: { role: "student", englishName: "Tom", chineseName: "汤姆", name: "Tom" } },
@@ -56,6 +65,10 @@ describe("listCourses", () => {
         theme: "Plants / Nature",
         status: "ready",
         storyOptionsCount: 3,
+        selectedStoryOptionId: "option-1",
+        lessonDraftExists: true,
+        currentStep: "lesson_draft",
+        nextEditPath: "/courses/course-1/create/lesson-draft",
         updatedAt: "2026-07-03T09:00:00.000Z",
       },
     ]);

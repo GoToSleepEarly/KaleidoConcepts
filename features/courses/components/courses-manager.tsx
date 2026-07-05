@@ -165,7 +165,7 @@ export function CoursesManager() {
                     <td className="px-5 py-4">
                       <div className="flex justify-end gap-2">
                         <Button asChild className="h-8 px-3 text-xs" variant="outline">
-                          <Link href={course.storyOptionsCount > 0 ? `/courses/${course.id}/create/story-options` : `/courses/${course.id}/create/basic`}>
+                          <Link href={course.nextEditPath}>
                             编辑
                           </Link>
                         </Button>

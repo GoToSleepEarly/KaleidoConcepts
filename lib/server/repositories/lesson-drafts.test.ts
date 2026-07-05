@@ -55,12 +55,17 @@ const draft: LessonDraft = {
       consistencyPrompt: "Always show Summer with a ponytail and yellow hoodie.",
     },
   ],
+  closingReading: {
+    title: "After the Forest Gate",
+    text: "After the forest gate adventure, Summer, Ethan, and Ms. Lin remembered how they worked together. They followed clues, looked carefully, and used English to describe each strange moment. The forest was not only magical; it helped them notice actions, places, and feelings in a clear way. Summer felt braver because she shared her ideas. Ethan felt proud because he solved clues with his friends. Ms. Lin reminded them that every story becomes easier when they ask questions, listen well, and keep moving step by step.",
+    vocabularyTerms: ["gate", "map", "path"],
+  },
   chapters: [
     {
       id: "chapter-1",
       sourceOutlineChapterIndex: 1,
       title: "The Gate Opens",
-      wordTarget: { min: 120, max: 180 },
+      wordTarget: { min: 110, max: 130 },
       exerciseTarget: { verbBlankCount: 7, vocabularyHintCount: 3 },
       blocks: [
         { id: "c1-b1", order: 1, type: "text", text },

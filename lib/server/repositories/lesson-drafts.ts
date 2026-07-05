@@ -62,6 +62,13 @@ function countWords(blocks: LessonBlock[]) {
     .filter(Boolean).length;
 }
 
+function countTextWords(text: string) {
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
 function validateExerciseDisplay(block: Extract<LessonBlock, { type: "exercise" }>, exercise: LessonExercise) {
   if (block.display.placeholder !== "________" || block.display.kind !== exercise.type) {
     throw new LessonDraftValidationError();
@@ -129,6 +136,10 @@ function validateShots(shots: LessonShot[], blockIds: Set<string>, characterIds:
   }
 }
 
+function hasValidWordTarget(draft: LessonDraft["chapters"][number]) {
+  return draft.wordTarget.min >= 100 && draft.wordTarget.min <= 120 && draft.wordTarget.max >= 120 && draft.wordTarget.max <= 150;
+}
+
 export function validateLessonDraft(draft: LessonDraft, sourceStoryOption: StoryOption) {
   if (
     draft.schemaVersion !== "lesson_draft_v1" ||
@@ -137,6 +148,14 @@ export function validateLessonDraft(draft: LessonDraft, sourceStoryOption: Story
     draft.visualStyle.aspectRatio !== "4:3" ||
     draft.sourceStoryOptionId !== sourceStoryOption.id ||
     !isNonEmptyText(draft.title) ||
+    !draft.closingReading ||
+    !isNonEmptyText(draft.closingReading.title) ||
+    !isNonEmptyText(draft.closingReading.text) ||
+    !Array.isArray(draft.closingReading.vocabularyTerms) ||
+    draft.closingReading.vocabularyTerms.length < 1 ||
+    !draft.closingReading.vocabularyTerms.every(isNonEmptyText) ||
+    countTextWords(draft.closingReading.text) < 60 ||
+    countTextWords(draft.closingReading.text) > 150 ||
     draft.chapters.length !== sourceStoryOption.chapters.length
   ) {
     throw new LessonDraftValidationError();
@@ -164,8 +183,7 @@ export function validateLessonDraft(draft: LessonDraft, sourceStoryOption: Story
       !isNonEmptyText(chapter.id) ||
       !isNonEmptyText(chapter.title) ||
       chapter.sourceOutlineChapterIndex !== index + 1 ||
-      chapter.wordTarget.min !== 120 ||
-      chapter.wordTarget.max !== 180 ||
+      !hasValidWordTarget(chapter) ||
       chapter.exerciseTarget.verbBlankCount !== 7 ||
       chapter.exerciseTarget.vocabularyHintCount !== 3 ||
       chapter.exercises.length !== 10
@@ -185,10 +203,12 @@ export function validateLessonDraft(draft: LessonDraft, sourceStoryOption: Story
       exerciseBlocks.length !== 10 ||
       verbCount !== 7 ||
       vocabCount !== 3 ||
-      countWords(chapter.blocks) < 100 ||
-      countWords(chapter.blocks) > 220
+      countWords(chapter.blocks) < 90 ||
+      countWords(chapter.blocks) > 150
     ) {
-      throw new LessonDraftValidationError();
+      throw new LessonDraftValidationError(
+        `课文草稿章节结构不完整: chapter=${chapter.id}, blocks=${chapter.blocks.length}, exerciseBlocks=${exerciseBlocks.length}, exercises=${chapter.exercises.length}, verb=${verbCount}, vocab=${vocabCount}, words=${countWords(chapter.blocks)}`,
+      );
     }
 
     const sortedOrders = chapter.blocks.map((block) => block.order).sort((a, b) => a - b);
