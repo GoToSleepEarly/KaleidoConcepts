@@ -1,4 +1,4 @@
-# 应用框架与登录模块前端实现说明
+﻿# 应用框架与登录模块前端实现说明
 
 ## 模块范围
 
@@ -17,7 +17,7 @@
 - 移动端 / App 端适配
 - 真实后端认证
 - 未实现页面占位
-- 课程创建、学生列表、课程列表的业务细节
+- 课程创建、人物档案、课程列表的业务细节
 
 ## 产品与品牌
 
@@ -112,7 +112,7 @@
 ### 受保护页面
 
 受保护页面包括：
-- `/students`
+- `/people`
 - `/courses`
 - `/courses/new`
 - `/courses/[id]`
@@ -158,7 +158,7 @@ MVP 只考虑 Web 端。
 
 内容宽度策略：
 - AppShell 不设置统一 max-width
-- 学生列表、课程列表默认全宽
+- 人物档案、课程列表默认全宽
 - 表单页、编辑器页、预览页由页面自行控制宽度和布局
 
 ### Sidebar
@@ -168,7 +168,7 @@ sidebar 顶部显示：
 `Kaleido Concepts`
 
 导航项仅保留：
-- 学生列表
+- 人物档案
 - 课程列表
 
 不保留：
@@ -189,7 +189,7 @@ sidebar 顶部显示：
 - 右侧显示用户菜单
 
 顶部标题规则：
-- `/students`：学生列表
+- `/people`：人物档案
 - `/courses`：课程列表
 - `/courses/new`：新建课程
 - `/courses/[id]`：课程预览
@@ -204,7 +204,7 @@ sidebar 顶部显示：
 
 ### 导航高亮规则
 
-- `/students`：高亮学生列表
+- `/people`：高亮人物档案
 - `/courses`：高亮课程列表
 - `/courses/new`：高亮课程列表
 - `/courses/[id]`：高亮课程列表
@@ -277,7 +277,7 @@ sidebar 顶部显示：
 - 刷新后登录状态按存储规则保持
 - 退出登录后清除两类存储并回到 `/login`
 - 登录后默认进入 `/courses`
-- sidebar 只显示学生列表、课程列表
+- sidebar 只显示人物档案、课程列表
 - `/courses/new`、`/courses/[id]`、`/courses/[id]/pdf` 均高亮课程列表
 - header 标题随路由正确变化
 - 页面不出现未实现入口
@@ -292,7 +292,7 @@ sidebar 顶部显示：
 - Mock 登录 API：已实现 `/api/auth/login`
 - 受保护路由：已实现
 - Web AppShell：已实现
-- 学生列表入口：已提供最小 mock 列表，具体业务细节待学生列表模块讨论
+- 人物档案入口：已升级为教师 / 学生统一人物档案，具体见 `docs/frontend/people-profiles.md`
 - 课程列表入口：已提供最小 mock 列表，具体业务细节待课程列表模块讨论
 
 验证命令：
@@ -306,5 +306,11 @@ sidebar 顶部显示：
 - lint 通过
 - test 通过
 - build 通过
-- `/login`、`/courses`、`/students`、`/courses/new`、`/api/auth/login` HTTP 检查通过
+- `/login`、`/courses`、`/people`、`/courses/new`、`/api/auth/login` HTTP 检查通过
 - 登录页 Edge headless 截图检查通过
+
+## 后端推进记录
+
+- `2026-07-03`：登录 API 已改为调用服务端仓库 `verifyTeacherLogin`，目标数据源为 Prisma `User` 表。
+- 当前前端 session 存储规则保持不变。
+- 当前环境 Prisma npm 依赖安装被 registry 请求阻塞，真实数据库运行前需补齐依赖、迁移和 seed。

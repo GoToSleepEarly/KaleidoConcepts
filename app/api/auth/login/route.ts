@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { mockAuth } from "@/lib/auth-session";
+import { getDb } from "@/lib/server/db";
+import { verifyTeacherLogin } from "@/lib/server/repositories/auth";
 
 const loginSchema = z.object({
   username: z.string(),
@@ -15,16 +16,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "账号或密码错误" }, { status: 401 });
   }
 
-  const { username, password } = payload.data;
+  try {
+    const user = await verifyTeacherLogin(getDb(), payload.data);
 
-  if (username !== mockAuth.username || password !== mockAuth.password) {
-    return NextResponse.json({ message: "账号或密码错误" }, { status: 401 });
+    if (!user) {
+      return NextResponse.json({ message: "账号或密码错误" }, { status: 401 });
+    }
+
+    return NextResponse.json({
+      user,
+      createdAt: new Date().toISOString(),
+    });
+  } catch {
+    return NextResponse.json({ message: "登录服务暂不可用" }, { status: 500 });
   }
-
-  return NextResponse.json({
-    user: {
-      displayName: mockAuth.displayName,
-    },
-    createdAt: new Date().toISOString(),
-  });
 }
