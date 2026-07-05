@@ -64,6 +64,7 @@ export function buildPrompt(context: StoryGenerationContext) {
     "- Do not introduce unrelated story characters. You may use unnamed environmental obstacles, objects, clues, places, or background groups only when needed, but the active decision-makers must be the teacher and students.",
     "- The story must integrate the grammar targets into the plot mechanics, character choices, and dialogue opportunities.",
     "- Keep story and grammar separated in the JSON fields: chapter.summary must describe only the story events, with no grammar labels, no teaching instructions, and no phrases like \"Use There be\". chapter.knowledgeHook must explain how the grammar target can be practiced in that chapter.",
+    "- Keep the outline concise. This step is for choosing the story architecture, not reading a full plan.",
     "- Keep the outline age-appropriate for the English level and feasible for the course duration.",
     "- Do not generate full lesson text, full scripts, exercises, answers, illustration suggestions, image prompts, HTML, or PDF content.",
     "- If the theme refers to copyrighted worlds or characters, use only a generic inspired setting and do not mention protected character names.",
@@ -77,6 +78,10 @@ export function buildPrompt(context: StoryGenerationContext) {
     "- Option ids must be exactly \"option-1\", \"option-2\", and \"option-3\".",
     `- Each option must contain exactly ${expectedChapterCount} chapters.`,
     "- All fields must be non-empty strings.",
+    "- logline: 1-2 short sentences.",
+    "- chapter.summary: 1-3 short sentences focused only on story events.",
+    "- chapter.knowledgeHook: 1 short sentence explaining how grammar enters the action or dialogue.",
+    "- Each teachingDesign field: 1 short sentence. Do not write detailed teaching plans.",
     "",
     `Required JSON schema: {"options":[{"id":"option-1","title":"...","logline":"...","chapters":[{"title":"pure story events only, no grammar explanation","summary":"pure story events only, no grammar explanation","knowledgeHook":"grammar practice design for this chapter"}],"teachingDesign":{"grammarIntegration":"overall grammar integration strategy","studentFit":"...","teacherGuidance":"...","difficultyFit":"..."}}]}`,
   ].join("\n");

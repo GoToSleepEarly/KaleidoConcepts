@@ -264,3 +264,5 @@ type StoryTeachingDesign = {
 - 验证命令：`pnpm prisma:generate`、`pnpm prisma:deploy`、`pnpm test lib/server/repositories/story-options.test.ts`、`pnpm test`、`pnpm lint`、`pnpm build`
 - 验证结果：通过。端到端 API 验证已创建测试课程 `cmr6exsj90000rcvol5jfmd6l`，生成 3 个方案，30 分钟课程生成 3 章，并选择 `option-1`。
 - 最新调整：故事和语法分区展示；已有方案时使用 3 个 Tab 切换；课程列表编辑入口根据方案进度跳转。
+- 2026-07-05 优化记录：Step 2 定位调整为“故事架构选择”，AI 输出限制为短摘要：`logline` 1-2 句，`summary` 1-3 句，`knowledgeHook` 1 句，`teachingDesign` 每项 1 句；前端保留 `teachingDesign` 可见和可编辑，但降低输入区域高度；课程列表编辑入口统一使用后端返回的 `nextEditPath`。
+- 2026-07-05 修复记录：已选故事方案从 Step3 返回 Step2 后，增加继续进入课文草稿入口；已选方案按钮点击时直接进入 `/courses/:id/create/lesson-draft`。

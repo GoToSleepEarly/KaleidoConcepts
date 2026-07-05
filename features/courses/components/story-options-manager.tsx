@@ -289,7 +289,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
 
           <section
             className={cn(
-              "grid gap-0 overflow-hidden rounded-lg border border-[#E5E7EB] bg-white shadow-sm xl:grid-cols-[320px_1fr]",
+              "grid gap-0 overflow-hidden rounded-lg border border-[#E5E7EB] bg-white shadow-sm xl:grid-cols-[280px_1fr]",
               selectedOptionId === activeOption.id && "border-violet-500 ring-2 ring-violet-100",
             )}
           >
@@ -297,19 +297,31 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
               <p className="text-xs font-semibold uppercase tracking-[0.08em] text-violet-700">方案 {activeOptionIndex + 1}</p>
               <h3 className="mt-2 text-lg font-semibold leading-7 text-slate-950">{activeOption.title || "未命名方案"}</h3>
               <p className="mt-3 text-sm leading-6 text-slate-600">{activeOption.logline}</p>
-              <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+              <div className="mt-5 grid gap-3 text-sm">
                 <Metric label="章节" value={`${activeOption.chapters.length} 章`} />
                 <Metric label="状态" value={selectedOptionId === activeOption.id ? "已选择" : "待选择"} />
               </div>
               <Button
                 className="mt-5 w-full bg-violet-600 text-white hover:bg-violet-700"
-                disabled={isLocked || selectingId === activeOption.id}
-                onClick={() => selectOption(activeOption.id)}
+                disabled={(isLocked && selectedOptionId !== activeOption.id) || selectingId === activeOption.id}
+                onClick={() => {
+                  if (selectedOptionId === activeOption.id) {
+                    router.push(`/courses/${courseId}/create/lesson-draft`);
+                    return;
+                  }
+
+                  void selectOption(activeOption.id);
+                }}
                 type="button"
               >
                 {selectingId === activeOption.id ? <Loader2 className="size-4 animate-spin" /> : selectedOptionId === activeOption.id ? <Check className="size-4" /> : null}
                 {selectedOptionId === activeOption.id ? "已选择" : "选择此方案"}
               </Button>
+              {selectedOptionId === activeOption.id ? (
+                <Button asChild className="mt-3 w-full" variant="outline">
+                  <Link href={`/courses/${courseId}/create/lesson-draft`}>继续进入课文草稿</Link>
+                </Button>
+              ) : null}
             </aside>
 
             <div className="space-y-6 p-5">
@@ -331,8 +343,8 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
                 <SectionTitle icon={<Route className="size-4" />} title="故事结构" />
                 <div className="mt-3 space-y-3">
                   {activeOption.chapters.map((chapter, chapterIndex) => (
-                    <div className="rounded-lg border border-slate-200 bg-white p-4" key={`${activeOption.id}-${chapterIndex}`}>
-                      <div className="mb-4 flex items-center gap-3">
+                    <div className="rounded-lg border border-slate-200 bg-white p-3" key={`${activeOption.id}-${chapterIndex}`}>
+                      <div className="mb-3 flex items-center gap-3">
                         <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-violet-50 text-xs font-semibold text-violet-700">
                           {chapterIndex + 1}
                         </span>
@@ -346,7 +358,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
                       <TextareaInput
                         disabled={isLocked}
                         label="剧情摘要"
-                        minRows="min-h-28"
+                        minRows="min-h-16"
                         value={chapter.summary}
                         onChange={(value) => updateChapter(activeOption.id, chapterIndex, { summary: value })}
                       />
@@ -357,14 +369,14 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
 
               <section>
                 <SectionTitle icon={<Sparkles className="size-4" />} title="语法与教学设计" />
-                <div className="mt-3 space-y-3">
+                <div className="mt-3 grid gap-3 xl:grid-cols-2">
                   {activeOption.chapters.map((chapter, chapterIndex) => (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4" key={`${activeOption.id}-grammar-${chapterIndex}`}>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3" key={`${activeOption.id}-grammar-${chapterIndex}`}>
                       <div className="mb-3 text-sm font-semibold text-slate-700">章节 {chapterIndex + 1} 语法承载</div>
                       <TextareaInput
                         disabled={isLocked}
                         label="语法点设计"
-                        minRows="min-h-24"
+                        minRows="min-h-16"
                         value={chapter.knowledgeHook}
                         onChange={(value) => updateChapter(activeOption.id, chapterIndex, { knowledgeHook: value })}
                       />
@@ -377,7 +389,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
                       disabled={isLocked}
                       key={field.key}
                       label={field.label}
-                      minRows="min-h-28"
+                      minRows="min-h-16"
                       value={activeOption.teachingDesign[field.key]}
                       onChange={(value) => updateTeaching(activeOption.id, field.key, value)}
                     />

@@ -1,4 +1,14 @@
-import type { CourseBasicDetail, CourseBasicInput, CourseListItem, CourseStatus, EnglishLevel, PersonProfile, PersonRole, StoryIdeaMode } from "@/lib/contracts/api";
+import type {
+  CourseBasicDetail,
+  CourseBasicInput,
+  CourseCreateStep,
+  CourseListItem,
+  CourseStatus,
+  EnglishLevel,
+  PersonProfile,
+  PersonRole,
+  StoryIdeaMode,
+} from "@/lib/contracts/api";
 
 type DbCourse = {
   id: string;
@@ -6,8 +16,12 @@ type DbCourse = {
   englishLevel: EnglishLevel;
   theme: string;
   status: CourseStatus;
+  selectedStoryOptionId: string | null;
   createdAt: Date;
   updatedAt: Date;
+  lessonDraft?: {
+    courseId: string;
+  } | null;
   people: Array<{
     person: {
       role: "student" | "teacher";
@@ -82,6 +96,11 @@ export type CoursesDb = {
         _count: {
           select: {
             storyOptions: true;
+          };
+        };
+        lessonDraft: {
+          select: {
+            courseId: true;
           };
         };
       };
@@ -263,6 +282,41 @@ function toCourseBasicDetail(course: DbCourseBasic): CourseBasicDetail {
   };
 }
 
+function getCourseProgress(course: DbCourse): {
+  currentStep: CourseCreateStep;
+  nextEditPath: string;
+  lessonDraftExists: boolean;
+  storyOptionsCount: number;
+} {
+  const storyOptionsCount = course._count?.storyOptions ?? 0;
+  const lessonDraftExists = Boolean(course.lessonDraft);
+
+  if (lessonDraftExists || course.selectedStoryOptionId) {
+    return {
+      currentStep: "lesson_draft",
+      nextEditPath: `/courses/${course.id}/create/lesson-draft`,
+      lessonDraftExists,
+      storyOptionsCount,
+    };
+  }
+
+  if (storyOptionsCount > 0) {
+    return {
+      currentStep: "story_options",
+      nextEditPath: `/courses/${course.id}/create/story-options`,
+      lessonDraftExists,
+      storyOptionsCount,
+    };
+  }
+
+  return {
+    currentStep: "basic",
+    nextEditPath: `/courses/${course.id}/create/basic`,
+    lessonDraftExists,
+    storyOptionsCount,
+  };
+}
+
 export async function listCourses(db: CoursesDb): Promise<CourseListItem[]> {
   if (!db.course.findMany) {
     return [];
@@ -281,11 +335,17 @@ export async function listCourses(db: CoursesDb): Promise<CourseListItem[]> {
           storyOptions: true,
         },
       },
+      lessonDraft: {
+        select: {
+          courseId: true,
+        },
+      },
     },
   });
 
   return courses.map((course) => {
     const teacher = course.people.find(({ person }) => person.role === "teacher")?.person;
+    const progress = getCourseProgress(course);
 
     return {
       id: course.id,
@@ -297,7 +357,11 @@ export async function listCourses(db: CoursesDb): Promise<CourseListItem[]> {
       englishLevel: course.englishLevel,
       theme: course.theme,
       status: course.status,
-      storyOptionsCount: course._count?.storyOptions ?? 0,
+      storyOptionsCount: progress.storyOptionsCount,
+      selectedStoryOptionId: course.selectedStoryOptionId,
+      lessonDraftExists: progress.lessonDraftExists,
+      currentStep: progress.currentStep,
+      nextEditPath: progress.nextEditPath,
       updatedAt: course.updatedAt.toISOString(),
     };
   });

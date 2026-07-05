@@ -61,8 +61,8 @@ type LessonChapter = {
   sourceOutlineChapterIndex: number;
   title: string;
   wordTarget: {
-    min: 120;
-    max: 180;
+    min: 110;
+    max: 130;
   };
   exerciseTarget: {
     verbBlankCount: 7;
@@ -238,3 +238,7 @@ type LessonShot = {
 - 实现提交：待记录
 - 验证命令：`pnpm prisma:generate`、`pnpm prisma:deploy`、`pnpm test`、`pnpm lint`、`pnpm build`
 - 验证结果：通过。真实 DeepSeek 验证已为测试课程 `cmr6h7zqm0000tcvove7d1720` 生成草稿，结果为 3 章、首章 10 个练习、首章 2 个图片分镜。
+- 2026-07-05 优化记录：Step 3 增加 `closingReading`，约 100 英文词，可编辑，不包含练习和额外图片；页面改为章节 Tab + 分镜 Tab + Closing Tab。章节内左侧展示当前分镜覆盖的最终学生文案，空格已按最终形态渲染；右侧根据点击对象编辑正文、练习答案/提示或分镜图片 prompt，并显示当前分镜答案。MVP 不支持新增/删除空格、block 或分镜。
+- 2026-07-05 修复记录：AI 生成约束加强为正文片段与练习 block 交错输出，避免完整正文后追加空格；Step3 预览兼容旧草稿，将单段正文和后置练习按当前分镜组合成可阅读的填空文本；prompt 强化语法点必须进入故事句子、对话和练习选择。
+- 2026-07-05 修复记录：每章目标词数调整为约 120 词，生成目标 110-130 词，后端校验范围 90-150 词；分镜切分改为句子边界，避免半句进入不同分镜；Closing Reading 增加 `vocabularyTerms`，用于罗列本课学习到的英文单词和词组；学生文本中的 vocabulary hint 只展示字母提示，不再展示 `letters` 文案；DeepSeek 调用降低输出长度和温度以减少生成耗时。
+- 2026-07-05 修复记录：课文草稿生成失败根因是 DeepSeek V4 thinking 模式返回 `reasoning_content` 但 `content` 为空，以及输出 JSON 偶发尾逗号 / 截断。已在请求体显式关闭 `thinking`，提高最终 JSON 输出上限，增加尾逗号修复，并在第一次解析或校验失败时携带具体原因要求模型重生成。
