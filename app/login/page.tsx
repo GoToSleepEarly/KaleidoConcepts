@@ -1,6 +1,6 @@
 import { Sparkles } from "lucide-react";
 
-import { LoginForm } from "@/components/login-form";
+import { LoginForm } from "@/features/auth/components/login-form";
 
 export default function LoginPage() {
   return (

@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id          String   @id @default(cuid())
+  username    String   @unique
+  password    String
+  displayName String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Person {
+  id           String          @id @default(cuid())
+  role         PersonRole
+  name         String
+  chineseName  String?
+  englishName  String?
+  age          Int?
+  gender       Gender?
+  appearance   String?
+  interests    String[]
+  learningGoal String?
+  notes        String?
+  avatarUrl    String?
+  archivedAt   DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  courses      CoursePerson[]
+}
+
+model Course {
+  id              String          @id @default(cuid())
+  title           String
+  englishLevel    EnglishLevel
+  durationMinutes Int             @default(45)
+  theme           String
+  grammar         String[]
+  storyIdeaMode   StoryIdeaMode   @default(ai)
+  storyIdea       String?
+  selectedStoryOptionId String?
+  status          CourseStatus    @default(draft)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  people          CoursePerson[]
+  storyOptions    CourseStoryOption[]
+  lessonDraft     CourseLessonDraft?
+}
+
+model CoursePerson {
+  courseId String
+  personId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  person   Person @relation(fields: [personId], references: [id], onDelete: Restrict)
+
+  @@id([courseId, personId])
+}
+
+model CourseStoryOption {
+  id             String
+  courseId       String
+  title          String
+  logline        String
+  chapters       Json
+  teachingDesign Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  course         Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@id([courseId, id])
+  @@index([courseId])
+}
+
+model CourseLessonDraft {
+  courseId            String   @id
+  sourceStoryOptionId String
+  content             Json
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  course              Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+enum PersonRole {
+  student
+  teacher
+}
+
+enum Gender {
+  male
+  female
+}
+
+enum EnglishLevel {
+  A1
+  A2
+  B1
+  B2
+  C1
+  C2
+}
+
+enum StoryIdeaMode {
+  manual
+  ai
+}
+
+enum CourseStatus {
+  draft
+  building_resources
+  ready
+  build_failed
+}

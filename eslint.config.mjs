@@ -5,7 +5,7 @@ import tseslint from "typescript-eslint";
 
 export default [
   {
-    ignores: [".next/**", "node_modules/**", "coverage/**"],
+    ignores: [".next/**", "node_modules/**", "coverage/**", "KaleidoConcepts/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

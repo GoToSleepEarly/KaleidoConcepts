@@ -34,12 +34,12 @@
 
 | 模块 | 文档 | 状态 | 提交 |
 | --- | --- | --- | --- |
-| 应用框架与登录 | `docs/frontend/app-shell-and-auth.md` | 已实现，待用户验收 | `6a6340b` |
-| 学生列表 | `docs/frontend/students-list.md` | 已实现，待用户验收 | `33b5019` |
-| 课程列表 | 待创建 | 待讨论 | - |
-| 新建课程 Step 1 | 待创建 | 待讨论 | - |
-| 故事方案 Step 2 | 待创建 | 待讨论 | - |
-| 课文编辑 Step 3 | 待创建 | 待讨论 | - |
+| 应用框架与登录 | `docs/frontend/app-shell-and-auth.md` / `docs/frontend/real-backend-auth-and-students.md` | 已接后端仓库，Prisma 依赖待安装 | `6a6340b` |
+| 人物档案 | `docs/frontend/people-profiles.md` | 已实现，待用户验收 | - |
+| 课程列表 | `docs/frontend/courses-list-management.md` | 已实现课程列表管理，Prisma 依赖待安装 | - |
+| 新建课程 Step 1 | `docs/frontend/course-create-basic.md` | 已实现，待用户验收 | - |
+| 故事方案 Step 2 | `docs/frontend/course-create-story-options.md` | 已实现，待用户验收 | - |
+| 绘本内容草稿 Step 3 | `docs/frontend/course-create-lesson-draft.md` | 已确认，开发中 | - |
 | 资源生成 Step 4 | 待创建 | 待讨论 | - |
 | 课程预览 Step 5 | 待创建 | 待讨论 | - |
 | PDF 预览 / 导出 | 待创建 | 待讨论 | - |

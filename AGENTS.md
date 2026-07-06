@@ -12,6 +12,10 @@
 ## 工程规范
 
 - MVP 是 Next.js 全栈单体，不引入 Go、Redis、MQ、Worker、WebSocket 或服务端 PDF 渲染。
+- MVP 生产部署默认采用国内轻量云单机：Next.js 单体 + PostgreSQL + 本地图片目录，除非重新确认云服务方案。
+- 生产数据和图片必须放在部署代码目录之外的持久化路径，代码重新部署不得清空数据库或图片。
+- 生产数据库字段变更必须走 Prisma migration；服务器只执行 `pnpm prisma:deploy`，不得在生产使用 `prisma migrate dev`。
+- 每次生产发版前必须先备份数据库和图片目录；没有备份不做破坏性迁移。
 - 课程状态是产品主线，任何 API 修改状态都必须能回答“失败后如何恢复”。
 - 图片是核心资产，`structured_lesson` 不保存图片 URL、prompt 或状态，统一由 `course_images` 管理。
 - 能复用已成功图片时不重复消耗 AI 成本。
