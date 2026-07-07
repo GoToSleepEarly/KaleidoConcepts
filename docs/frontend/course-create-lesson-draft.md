@@ -27,7 +27,7 @@ Step 3 是内容填充，不重新构思故事。
 - 英文绘本标题
 - 每章英文标题
 - 每章 120-180 词英文学生正文
-- 每章目标 8-10 个练习点，硬性保存底线为 7-10 个
+- 每章目标 8-10 个练习点，硬性保存底线为 5-10 个
   - 以 `verb_blank` 为主
   - 搭配 `vocabulary_hint`
   - 不硬性要求固定 7/3 比例
@@ -231,7 +231,7 @@ type LessonShot = {
 - `language` 必须是 `en`
 - `sourceStoryOptionId` 必须匹配课程选中的故事方案
 - 章节数必须匹配 Step 2
-- 每章必须有 7-10 个 exercises
+- 每章必须有 5-10 个 exercises
 - 每章必须有相同数量的 exercise blocks
 - 不硬性校验 `verb_blank` / `vocabulary_hint` 的固定比例
 - 每个 exercise block 必须引用本章存在的 exercise
@@ -253,11 +253,11 @@ type LessonShot = {
   - 词汇提示：`[vocab:pattern|answer]`
 - 标记解析示例：`Ms. Lin [verb:walk|walked] toward the quiet forest [vocab:g _ _ e|gate].`
 - 后端代码负责：
-  - 每章目标 8-10 个练习 marker，硬性保存底线为 7-10 个
+  - 每章目标 8-10 个练习 marker，硬性保存底线为 5-10 个
   - 创建稳定 id 与顺序
   - 将 AI 内联标记解析为 text block、exercise block 和 exercises
   - 不再硬性校验每段练习数量或 `verb_blank` / `vocabulary_hint` 精确比例
-  - 校验每章至少 7 个、最多 10 个可解析练习 marker
+  - 校验每章至少 5 个、最多 10 个可解析练习 marker
   - 校验同章 answer 不重复
   - 将第 1 段 blocks 绑定到 shot 1，第 2 段 blocks 绑定到 shot 2
   - 从 vocabulary exercises 自动生成 `closingReading.vocabularyTerms`，按首次出现去重，最多 12 个
@@ -282,4 +282,4 @@ type LessonShot = {
 - 2026-07-07 重构记录：按产品边界调整为“正文和习题均由 AI 生成，代码只解析为最终 JSON”。AI 现在输出 `markedText`，用 `[verb:baseVerb|answer]` / `[vocab:pattern|answer]` 内联标记表达习题；后端删除 `targetText` 搜索和代码补题逻辑，直接解析标记生成 block / exercise / shot 覆盖关系，并校验每章 7/3、每段 5 个、每段至少 1 个词汇题、同章答案不重复。
 - 2026-07-07 修复记录：针对 AI 常见的每段 `4 verb + 1 vocab` 导致全章 `8/2` 的错误，prompt 和后端校验改为精确段落配比：第 1 段 `4 verb + 1 vocab`，第 2 段 `3 verb + 2 vocab`。校验错误会返回 `p1Verb/p1Vocab/p2Verb/p2Vocab`，用于第二次重生成时直接纠偏。
 - 2026-07-07 修复记录：Step 3 DeepSeek 调用默认开启 thinking 模式，`reasoning_effort=max`，并移除 thinking 模式下不生效的 `temperature`。如需兼容旧行为，可用 `DEEPSEEK_THINKING=disabled` 回退到非 thinking 低温 JSON 生成。
-- 2026-07-07 稳定性重设计记录：Step 3 不再把每章 10 题、7/3 比例、每段 5 题作为硬校验；每章固定 2 个分镜，练习目标为 8-10 个、硬性底线放宽为 7-10 个，练习仍必须由 AI 在正文中以内联 marker 生成，代码不补题。DeepSeek 默认关闭 thinking 以降低常规生成耗时，可通过 `DEEPSEEK_THINKING=enabled` 开启深度模式。
+- 2026-07-07 稳定性重设计记录：Step 3 不再把每章 10 题、7/3 比例、每段 5 题作为硬校验；每章固定 2 个分镜，练习目标为 8-10 个、硬性底线放宽为 5-10 个，练习仍必须由 AI 在正文中以内联 marker 生成，代码不补题。DeepSeek 默认关闭 thinking 以降低常规生成耗时，可通过 `DEEPSEEK_THINKING=enabled` 开启深度模式。

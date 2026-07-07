@@ -273,6 +273,61 @@ describe("lesson draft AI plan assembly", () => {
     expect(draft.chapters[0].exercises).toHaveLength(7);
   });
 
+  test("accepts 5 AI markers as the hard minimum", () => {
+    const draft = assembleLessonDraftFromPlan(
+      {
+        title: "The Forest Gate",
+        visualStyle: {
+          artStyle: "warm watercolor picture book",
+          colorPalette: "soft greens and gold light",
+          consistencyPrompt: "Use a consistent watercolor picture-book style.",
+        },
+        characters: [],
+        chapters: [
+          {
+            title: "The Gate Opens",
+            paragraphs: [
+              {
+                markedText:
+                  "Yesterday morning, Ms. Lin and Summer [verb:walk|walked] toward the quiet forest [vocab:g _ _ e|gate]. Summer carried her sketchbook and looked at the silver leaves. Ms. Lin [verb:ask|asked] one calm question, and Summer noticed a small arrow on the stone path. They opened the gate together and stepped into warm green light.",
+                shot: {
+                  characterIds: ["teacher-1", "student-1"],
+                  location: "quiet forest gate",
+                  action: "Ms. Lin and Summer discover the first arrow beside the gate.",
+                  mood: "curious and safe",
+                  scenePrompt: "Ms. Lin and Summer stand at a silver forest gate while a small arrow glows on the stone path.",
+                  composition: "Wide 4:3 picture-book scene with the gate on one side and both characters clearly visible.",
+                  continuityNotes: "Keep character consistency.",
+                },
+              },
+              {
+                markedText:
+                  "Inside the forest, the [vocab:m _ p|map] shone under a blue flower. Summer touched the page and found a hidden trail. Ms. Lin [verb:help|helped] her read the marks, and they followed the trail across a tiny bridge. The clue pointed to a bright tree, so Summer smiled and shared her idea.",
+                shot: {
+                  characterIds: ["teacher-1", "student-1"],
+                  location: "tiny forest bridge",
+                  action: "Summer studies the glowing map while Ms. Lin helps her choose the trail.",
+                  mood: "hopeful and focused",
+                  scenePrompt: "Summer studies a glowing map beside a tiny bridge as Ms. Lin points toward a bright tree.",
+                  composition: "Medium 4:3 picture-book scene centered on the glowing map and the bridge.",
+                  continuityNotes: "Use the same forest light.",
+                },
+              },
+            ],
+          },
+        ],
+        closingReading: {
+          title: "After the Forest Gate",
+          text: "After the forest gate adventure, Summer remembered how each clue helped her speak in English. She described what she saw, what she did, and what changed in the forest. Ms. Lin helped her slow down and notice the important actions. The map and gate became useful story words. Summer felt proud because she solved the mystery step by step and could retell the journey with clear past tense verbs.",
+        },
+      },
+      context,
+    );
+
+    expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
+    expect(draft.chapters[0].exercises).toHaveLength(5);
+  });
+
   test("generates vocabulary pattern from answer when AI leaves pattern empty", () => {
     const draft = assembleLessonDraftFromPlan(
       {
@@ -433,7 +488,7 @@ describe("lesson draft AI plan assembly", () => {
         },
         context,
       ),
-    ).toThrow("第 1 章练习数量不足：需要 7-10 个，当前 3 个");
+    ).toThrow("第 1 章练习数量不足：需要 5-10 个，当前 3 个");
   });
 
   test("accepts the formerly brittle 8 verb and 2 vocabulary split", () => {
