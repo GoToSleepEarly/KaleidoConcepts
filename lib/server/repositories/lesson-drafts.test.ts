@@ -184,6 +184,12 @@ describe("lesson draft validation", () => {
     expect(validateLessonDraft(sevenExerciseDraft, storyOption)).toEqual(sevenExerciseDraft);
   });
 
+  test("accepts a draft with 5 exercises in one chapter", () => {
+    const fiveExerciseDraft = removeExercises(draft, ["c1-e6", "c1-e7", "c1-e8", "c1-e9", "c1-e10"]);
+
+    expect(validateLessonDraft(fiveExerciseDraft, storyOption)).toEqual(fiveExerciseDraft);
+  });
+
   test("rejects a draft with extremely short chapter text", () => {
     const shortDraft = structuredClone(draft);
     shortDraft.chapters[0].blocks[0] = { id: "c1-b1", order: 1, type: "text", text: "Short text." };
