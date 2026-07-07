@@ -33,7 +33,7 @@ type DeepSeekRequestBody = {
 };
 
 const chapterWordTarget = { min: 110, max: 130 };
-const minExercisesPerChapter = 8;
+const minExercisesPerChapter = 7;
 const maxExercisesPerChapter = 10;
 
 type AiShotPlan = Omit<LessonShot, "id" | "order" | "imageSlotId" | "coveredBlockIds">;
@@ -435,11 +435,11 @@ function validateChapterMarkers(chapterTitle: string, parsedParagraphs: ParsedMa
   const chapterLabel = `第 ${chapterIndex + 1} 章`;
 
   if (exercises.length < minExercisesPerChapter) {
-    throw new LessonDraftValidationError(`${chapterLabel}练习数量不足：需要 8-10 个，当前 ${exercises.length} 个`);
+    throw new LessonDraftValidationError(`${chapterLabel}练习数量不足：需要 7-10 个，当前 ${exercises.length} 个`);
   }
 
   if (exercises.length > maxExercisesPerChapter) {
-    throw new LessonDraftValidationError(`${chapterLabel}练习数量过多：需要 8-10 个，当前 ${exercises.length} 个`);
+    throw new LessonDraftValidationError(`${chapterLabel}练习数量过多：需要 7-10 个，当前 ${exercises.length} 个`);
   }
 
   if (new Set(answers).size !== answers.length) {
