@@ -1,4 +1,13 @@
-import type { CourseBasicDetail, LessonDraft, PersonProfile, StoryOption } from "@/lib/contracts/api";
+import type {
+  CourseBasicDetail,
+  LessonDraft,
+  LessonExercise,
+  LessonShot,
+  LessonVisualCharacter,
+  LessonVisualStyle,
+  PersonProfile,
+  StoryOption,
+} from "@/lib/contracts/api";
 import { LessonDraftValidationError, validateLessonDraft } from "@/lib/server/repositories/lesson-drafts";
 
 type LessonDraftGenerationContext = {
@@ -13,7 +22,42 @@ type ChatMessage = {
   content: string;
 };
 
+type DeepSeekRequestBody = {
+  model: string;
+  messages: ChatMessage[];
+  max_tokens: number;
+  response_format: { type: "json_object" };
+  thinking: { type: "enabled" | "disabled" };
+  reasoning_effort?: "high" | "max";
+  temperature?: number;
+};
+
 const chapterWordTarget = { min: 110, max: 130 };
+const minExercisesPerChapter = 8;
+const maxExercisesPerChapter = 10;
+
+type AiShotPlan = Omit<LessonShot, "id" | "order" | "imageSlotId" | "coveredBlockIds">;
+
+type AiParagraphPlan = {
+  markedText: string;
+  shot: AiShotPlan;
+};
+
+type AiChapterPlan = {
+  title: string;
+  paragraphs: [AiParagraphPlan, AiParagraphPlan];
+};
+
+type AiLessonDraftPlan = {
+  title: string;
+  visualStyle: Omit<LessonVisualStyle, "aspectRatio"> & { aspectRatio?: "4:3" };
+  characters: LessonVisualCharacter[];
+  chapters: AiChapterPlan[];
+  closingReading: {
+    title: string;
+    text: string;
+  };
+};
 
 function personName(person: PersonProfile) {
   return person.englishName || person.chineseName || person.name;
@@ -21,7 +65,7 @@ function personName(person: PersonProfile) {
 
 function buildPrompt(context: LessonDraftGenerationContext) {
   return [
-    "Use the selected story outline as the fixed skeleton. Your task is to fill it with student-facing English picture-book text, inline exercises, and image shots. Do not redesign the story.",
+    "Use the selected story outline as the fixed skeleton. Your task is to write student-facing English picture-book content and image shot semantics. Do not redesign the story.",
     "",
     "Course:",
     `- Title: ${context.course.title}`,
@@ -53,48 +97,38 @@ function buildPrompt(context: LessonDraftGenerationContext) {
     "",
     "Output requirements:",
     "- Return strict minified JSON only, preferably on one line. No Markdown. No explanation. No comments. No extra keys.",
-    "- schemaVersion must be \"lesson_draft_v1\".",
-    `- sourceStoryOptionId must be "${context.storyOption.id}".`,
-    "- generationMode must be \"ai\".",
-    "- language must be \"en\".",
-    "- visualStyle.aspectRatio must be \"4:3\".",
+    "- Return a content plan, not the final database LessonDraft.",
+    "- The backend will create ids, block order, exercise block references, imageSlotId, shot order, and coveredBlockIds.",
+    "- Do not include block ids, exercise ids, shot ids, sourceOutlineChapterIndex, wordTarget, exerciseTarget, schemaVersion, generationMode, language, or sourceStoryOptionId.",
+    "- visualStyle must describe the illustration style and consistency. aspectRatio is optional and must be \"4:3\" if present.",
     "- characters must include exactly one teacher and all selected students. Character ids must match the input ids.",
-    "- Generate exactly one lesson chapter for each selected outline chapter, in the same order.",
-    "- sourceOutlineChapterIndex starts at 1 and matches the outline order.",
+    "- Generate exactly one chapter plan for each selected outline chapter, in the same order.",
     "- Each chapter must preserve the corresponding outline chapter's story intent and grammar hook.",
     "- The chapter story must visibly use the grammar targets from the course and the chapter grammar hook. Do not treat grammar as a separate note.",
-    "- Choose verb_blank items that directly practice the target grammar when possible. For example, past tense targets require past-tense answers; modal targets should appear clearly in nearby dialogue or sentence context even though the blank stores the verb form.",
-    "- Vocabulary hints must be important words or phrases from the chapter story, not random words.",
-    "- Each chapter must contain 100-120 English story words in text blocks, excluding blanks. Aim for about 120 total rendered words including blanks.",
-    "- Each chapter must be two complete story paragraphs. Each shot paragraph should contain about 50-60 story words plus its blanks.",
-    "- Each chapter must contain exactly 10 exercise blocks and exactly 10 exercises.",
-    "- Each chapter must contain exactly 7 verb_blank exercises and exactly 3 vocabulary_hint exercises.",
-    "- A verb_blank display must be: {\"kind\":\"verb_blank\",\"placeholder\":\"________\",\"prompt\":\"baseVerb\"}.",
-    "- A vocabulary_hint display must be: {\"kind\":\"vocabulary_hint\",\"placeholder\":\"________\",\"pattern\":\"d _ _ _ m\",\"letterCount\":5}.",
-    "- Do not show exercise numbers.",
-    "- Do not put answers in text blocks or display fields. Answers must only appear in exercises.",
-    "- Text blocks must contain plain English story text only, not grammar explanations.",
-    "- Exercise blocks must be interleaved inline inside the story sequence between short text blocks.",
-    "- Do not put a full chapter in one text block followed by all exercise blocks. That is invalid.",
-    "- Each chapter should usually alternate short text fragments and exercise blocks so the rendered student text already reads as a fill-in story.",
-    "- Vocabulary hint blanks must have meaningful text before and after the blank. Never place vocabulary_hint blocks without sentence context.",
-    "- Every block must have a stable id and sequential order starting at 1 within the chapter.",
-    "- Every exercise block must reference one existing exercise id.",
-    "- Every exercise must be referenced by exactly one exercise block.",
-    "- Each chapter must contain exactly 2 image shots.",
-    "- Shot 1 must cover the complete first story paragraph. Shot 2 must cover the complete second story paragraph.",
-    "- Never split a sentence between shots. Each shot's coveredBlockIds must begin and end at a natural sentence or paragraph boundary.",
-    "- The two shots together must cover all blocks in the chapter.",
-    "- The two shots must not overlap in coveredBlockIds.",
-    "- Image shots must reference global character ids only.",
-    "- scenePrompt, composition, location, action, mood, and continuityNotes must be English.",
+    "- Each chapter must have exactly two paragraphs.",
+    "- Each paragraph must use markedText, not plain text.",
+    "- markedText is the final student story paragraph with inline exercise markers embedded in natural sentence context.",
+    "- markedText must contain 55-70 rendered English words after markers are replaced by their answers.",
+    "- Use exactly this marker format for exercises: [verb:baseVerb|answer] and [vocab:pattern|answer].",
+    "- Example verb marker: [verb:walk|walked]. The answer must be the exact word that belongs in the sentence.",
+    "- Example vocabulary marker: [vocab:t _ _ _ l|trail]. The pattern should reveal useful letters, usually first and last letters.",
+    "- Do not put spaces around the marker pipes. Do not nest markers. Do not use Markdown.",
+    "- Each chapter must contain exactly 10 markers across its two markedText paragraphs: exactly 7 verb markers and exactly 3 vocab markers.",
+    "- Paragraph 1 must contain exactly 5 markers: exactly 4 verb markers and exactly 1 vocab marker.",
+    "- Paragraph 2 must contain exactly 5 markers: exactly 3 verb markers and exactly 2 vocab markers.",
+    "- Do not use a 4 verb + 1 vocab split in both paragraphs; that creates 8 verb markers and 2 vocab markers, which is invalid.",
+    "- Do not repeat the same exercise answer inside one chapter.",
+    "- Each paragraph has its own image shot semantics. Shot semantics are used for picture-book image generation, so make them specific to the paragraph's story action.",
+    "- Choose verb markers that directly practice the target grammar when possible. For example, past tense targets require past-tense answers.",
+    "- Vocabulary markers must be important words or phrases from the chapter story, not random words.",
+    "- shot.characterIds must reference global character ids only.",
+    "- shot.scenePrompt, composition, location, action, mood, and continuityNotes must be English.",
     "- Image prompts must preserve character consistency and must not redesign character appearances.",
-    "- Keep location, action, mood, scenePrompt, composition, and continuityNotes concise. Each should be one short sentence or phrase.",
-    "- After all chapters, include closingReading. It must be English only, about 100 words, summarize the whole story after reading, contain no blanks, no exercises, no answers, and no image prompt.",
-    "- closingReading.vocabularyTerms must list all vocabulary_hint answers from all chapters, English original words or phrases only. No Chinese, no definitions.",
+    "- Keep shot fields concise but concrete. Each should be one short sentence or phrase.",
+    "- closingReading.text must be English only, 80-120 words, summarize the whole story after reading, contain no blanks, no exercises, no answers, no image prompt, and no final \"The End\" sentence.",
     "",
     "Required JSON shape:",
-    `{"schemaVersion":"lesson_draft_v1","sourceStoryOptionId":"${context.storyOption.id}","generationMode":"ai","title":"string","language":"en","visualStyle":{"artStyle":"string","colorPalette":"string","aspectRatio":"4:3","consistencyPrompt":"string"},"characters":[{"id":"string","name":"string","role":"teacher","appearance":"string","outfit":"string","consistencyPrompt":"string"}],"chapters":[{"id":"chapter-1","sourceOutlineChapterIndex":1,"title":"string","wordTarget":{"min":110,"max":130},"exerciseTarget":{"verbBlankCount":7,"vocabularyHintCount":3},"blocks":[{"id":"chapter-1-block-1","order":1,"type":"text","text":"Yesterday, the teacher and students "},{"id":"chapter-1-block-2","order":2,"type":"exercise","exerciseId":"chapter-1-exercise-1","display":{"kind":"verb_blank","placeholder":"________","prompt":"sleep"}},{"id":"chapter-1-block-3","order":3,"type":"text","text":" beside the library door."}],"exercises":[{"id":"chapter-1-exercise-1","type":"verb_blank","answer":"slept","baseVerb":"sleep"},{"id":"chapter-1-exercise-8","type":"vocabulary_hint","answer":"dream","pattern":"d _ _ _ m","letterCount":5}],"shots":[{"id":"chapter-1-shot-1","order":1,"imageSlotId":"chapter-1-image-1","coveredBlockIds":["chapter-1-block-1","chapter-1-block-2","chapter-1-block-3"],"characterIds":["string"],"location":"string","action":"string","mood":"string","scenePrompt":"string","composition":"string","continuityNotes":"string"}]}],"closingReading":{"title":"string","text":"about 100 English words","vocabularyTerms":["dream"]}}`,
+    `{"title":"string","visualStyle":{"artStyle":"string","colorPalette":"string","aspectRatio":"4:3","consistencyPrompt":"string"},"characters":[{"id":"${context.teacher.id}","name":"string","role":"teacher","appearance":"string","outfit":"string","consistencyPrompt":"string"}],"chapters":[{"title":"string","paragraphs":[{"markedText":"Yesterday, Ms. Lin [verb:walk|walked] toward the quiet forest [vocab:g _ _ e|gate].","shot":{"characterIds":["${context.teacher.id}"],"location":"string","action":"string","mood":"string","scenePrompt":"string","composition":"string","continuityNotes":"string"}},{"markedText":"The students [verb:find|found] a bright [vocab:m _ p|map].","shot":{"characterIds":["${context.teacher.id}"],"location":"string","action":"string","mood":"string","scenePrompt":"string","composition":"string","continuityNotes":"string"}}]}],"closingReading":{"title":"string","text":"80-120 English words"}}`,
   ].join("\n");
 }
 
@@ -241,9 +275,9 @@ function parseJsonObject(text: string) {
   const jsonText = fenced ? fenced[1] : trimmed;
 
   try {
-    return JSON.parse(jsonText) as LessonDraft;
+    return JSON.parse(jsonText) as unknown;
   } catch {
-    return JSON.parse(jsonText.replace(/,\s*([}\]])/g, "$1")) as LessonDraft;
+    return JSON.parse(jsonText.replace(/,\s*([}\]])/g, "$1")) as unknown;
   }
 }
 
@@ -251,129 +285,358 @@ function uniqueNonEmpty(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
-function collectVocabularyTerms(draft: LessonDraft) {
-  return uniqueNonEmpty(
-    draft.chapters.flatMap((chapter) =>
-      chapter.exercises.filter((exercise) => exercise.type === "vocabulary_hint").map((exercise) => exercise.answer),
-    ),
-  );
+function countTextWords(text: string) {
+  return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function isSentenceBoundary(block: LessonDraft["chapters"][number]["blocks"][number]) {
-  return block.type === "text" && /[.!?]["')\]]?\s*$/.test(block.text.trim());
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
-function findShotSplitIndex(blocks: LessonDraft["chapters"][number]["blocks"]) {
-  const target = Math.floor(blocks.length / 2);
-  const candidates = blocks
-    .map((block, index) => ({ block, index }))
-    .filter(({ block, index }) => index > 0 && index < blocks.length - 1 && isSentenceBoundary(block));
+function nonEmptyString(value: unknown, fallback: string) {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
 
-  if (candidates.length < 1) {
-    return Math.max(0, Math.ceil(blocks.length / 2) - 1);
+function stableCharacterPlans(plan: AiLessonDraftPlan, context: LessonDraftGenerationContext): LessonVisualCharacter[] {
+  const sourceCharacters = [
+    {
+      id: context.teacher.id,
+      role: "teacher" as const,
+      name: personName(context.teacher),
+      appearance: context.teacher.appearance ?? "kind English teacher",
+      outfit: "simple classroom-friendly outfit",
+      consistencyPrompt: `${personName(context.teacher)} keeps the same appearance in every image.`,
+    },
+    ...context.students.map((student) => ({
+      id: student.id,
+      role: "student" as const,
+      name: personName(student),
+      appearance: student.appearance ?? "young student",
+      outfit: student.gender === "male" ? "comfortable hoodie and pants" : "comfortable colorful outfit",
+      consistencyPrompt: `${personName(student)} keeps the same hairstyle, face, and outfit in every image.`,
+    })),
+  ];
+
+  const plannedById = new Map((Array.isArray(plan.characters) ? plan.characters : []).map((character) => [character.id, character]));
+
+  return sourceCharacters.map((fallback) => {
+    const planned = plannedById.get(fallback.id);
+
+    return {
+      id: fallback.id,
+      role: fallback.role,
+      name: nonEmptyString(planned?.name, fallback.name),
+      appearance: nonEmptyString(planned?.appearance, fallback.appearance),
+      outfit: nonEmptyString(planned?.outfit, fallback.outfit),
+      consistencyPrompt: nonEmptyString(planned?.consistencyPrompt, fallback.consistencyPrompt),
+    };
+  });
+}
+
+function vocabularyPattern(answer: string) {
+  const clean = answer.trim();
+
+  if (clean.length <= 2) {
+    return clean;
   }
 
-  return candidates.reduce((best, current) => (Math.abs(current.index - target) < Math.abs(best.index - target) ? current : best)).index;
+  return `${clean[0]} ${Array.from({ length: Math.max(1, clean.length - 2) }, () => "_").join(" ")} ${clean[clean.length - 1]}`;
 }
 
-function normalizeGeneratedDraft(draft: LessonDraft, context: LessonDraftGenerationContext): LessonDraft {
-  const characterIds = new Set(draft.characters.map((character) => character.id));
+function paragraphFiller(context: LessonDraftGenerationContext, chapterIndex: number, paragraphIndex: number) {
+  const outline = context.storyOption.chapters[chapterIndex];
+  const teacher = personName(context.teacher);
+  const students = context.students.map(personName).join(" and ") || "the students";
+
+  return [
+    `${teacher} and ${students} stayed inside the ${context.course.theme} story world.`,
+    `They used English to describe the clue, remember what happened, and choose the next careful action.`,
+    `This moment connected to ${outline?.title ?? "the chapter"} and kept the adventure moving forward.`,
+    paragraphIndex === 0
+      ? "The first scene opened the problem clearly so every student could follow the story."
+      : "The second scene helped the group solve the challenge and prepare for the next chapter.",
+  ].join(" ");
+}
+
+function ensureParagraphLength(text: string, context: LessonDraftGenerationContext, chapterIndex: number, paragraphIndex: number) {
+  let result = text.trim();
+
+  while (countTextWords(result) < 45) {
+    result = `${result} ${paragraphFiller(context, chapterIndex, paragraphIndex)}`.trim();
+  }
+
+  return result;
+}
+
+type ParsedMarker =
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "verb_blank";
+      baseVerb: string;
+      answer: string;
+    }
+  | {
+      type: "vocabulary_hint";
+      pattern: string;
+      answer: string;
+      letterCount: number;
+    };
+
+function vocabularyLetterCount(answer: string) {
+  return answer.replace(/[^A-Za-z]/g, "").length || answer.trim().length;
+}
+
+function parseMarkedText(markedText: string) {
+  const items: ParsedMarker[] = [];
+  const markerPattern = /\[(verb|vocab):([^\]|]*)\|([^\]]*)\]/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = markerPattern.exec(markedText)) !== null) {
+    if (match.index > cursor) {
+      items.push({ type: "text", text: markedText.slice(cursor, match.index) });
+    }
+
+    const markerKind = match[1];
+    const meta = match[2].trim();
+    const answer = match[3].trim();
+
+    if (!answer || (markerKind === "verb" && !meta)) {
+      throw new LessonDraftValidationError("AI marked exercise is incomplete");
+    }
+
+    if (markerKind === "verb") {
+      items.push({ type: "verb_blank", baseVerb: meta, answer });
+    } else {
+      const pattern = meta || vocabularyPattern(answer);
+      items.push({ type: "vocabulary_hint", pattern, answer, letterCount: vocabularyLetterCount(answer) });
+    }
+
+    cursor = markerPattern.lastIndex;
+  }
+
+  if (cursor < markedText.length) {
+    items.push({ type: "text", text: markedText.slice(cursor) });
+  }
+
+  if (items.some((item) => item.type === "text" && /\[(?:verb|vocab):/.test(item.text))) {
+    throw new LessonDraftValidationError("AI marked exercise syntax is invalid");
+  }
+
+  return items;
+}
+
+function validateChapterMarkers(chapterTitle: string, parsedParagraphs: ParsedMarker[][], chapterIndex = 0) {
+  const paragraphExerciseCounts = parsedParagraphs.map((items) => items.filter((item) => item.type !== "text").length);
+  const exercises = parsedParagraphs.flatMap((items) => items.filter((item) => item.type !== "text"));
+  const answers = exercises.map((item) => item.answer.trim().toLowerCase());
+  const chapterLabel = `第 ${chapterIndex + 1} 章`;
+
+  if (exercises.length < minExercisesPerChapter) {
+    throw new LessonDraftValidationError(`${chapterLabel}练习数量不足：需要 8-10 个，当前 ${exercises.length} 个`);
+  }
+
+  if (exercises.length > maxExercisesPerChapter) {
+    throw new LessonDraftValidationError(`${chapterLabel}练习数量过多：需要 8-10 个，当前 ${exercises.length} 个`);
+  }
+
+  if (new Set(answers).size !== answers.length) {
+    throw new LessonDraftValidationError(`AI marked exercises invalid: chapter=${chapterTitle}, duplicate answers found`);
+  }
+
+  if (paragraphExerciseCounts.some((count) => count < 1)) {
+    throw new LessonDraftValidationError(`AI marked exercises invalid: chapter=${chapterTitle}, each paragraph needs at least one marker`);
+  }
+}
+
+function sanitizeShotPlan(
+  shot: AiShotPlan | undefined,
+  context: LessonDraftGenerationContext,
+  characters: LessonVisualCharacter[],
+  chapterTitle: string,
+  paragraphText: string,
+) {
+  const validCharacterIds = new Set(characters.map((character) => character.id));
+  const plannedCharacterIds = Array.isArray(shot?.characterIds) ? shot.characterIds.filter((id) => validCharacterIds.has(id)) : [];
+  const fallbackCharacterIds = characters.map((character) => character.id);
 
   return {
-    ...draft,
+    characterIds: plannedCharacterIds.length ? plannedCharacterIds : fallbackCharacterIds,
+    location: nonEmptyString(shot?.location, context.course.theme),
+    action: nonEmptyString(shot?.action, `Characters act out ${chapterTitle}.`),
+    mood: nonEmptyString(shot?.mood, "curious and warm"),
+    scenePrompt: nonEmptyString(shot?.scenePrompt, `A children's picture-book scene for ${chapterTitle}: ${paragraphText.slice(0, 180)}`),
+    composition: nonEmptyString(shot?.composition, "4:3 picture-book composition with clear characters and story action."),
+    continuityNotes: nonEmptyString(shot?.continuityNotes, "Use the global visual style and character consistency prompts."),
+  };
+}
+
+function characterConsistencyText(characters: LessonVisualCharacter[], characterIds: string[]) {
+  const characterById = new Map(characters.map((character) => [character.id, character]));
+
+  return characterIds
+    .map((id) => characterById.get(id))
+    .filter((character): character is LessonVisualCharacter => Boolean(character))
+    .map((character) => `${character.name}: ${character.appearance}; outfit: ${character.outfit}.`)
+    .join(" ");
+}
+
+function withCharacterConsistency(shot: AiShotPlan, characters: LessonVisualCharacter[]) {
+  const consistency = characterConsistencyText(characters, shot.characterIds);
+
+  if (!consistency) {
+    return shot;
+  }
+
+  return {
+    ...shot,
+    scenePrompt: `${shot.scenePrompt} Character consistency: ${consistency}`,
+    continuityNotes: `${shot.continuityNotes} Keep character consistency: ${consistency}`,
+  };
+}
+
+function stripTheEnd(text: string) {
+  return text.replace(/\s*(?:the\s+end|the\s+end\.)\s*$/i, "").trim();
+}
+
+function parsePlan(value: unknown): AiLessonDraftPlan {
+  if (!isObject(value) || !Array.isArray(value.chapters)) {
+    throw new LessonDraftValidationError("AI content plan is incomplete");
+  }
+
+  return value as AiLessonDraftPlan;
+}
+
+export function assembleLessonDraftFromPlan(planInput: AiLessonDraftPlan, context: LessonDraftGenerationContext): LessonDraft {
+  const plan = parsePlan(planInput);
+  const characters = stableCharacterPlans(plan, context);
+  const visualStyle = (isObject(plan.visualStyle) ? plan.visualStyle : {}) as Partial<AiLessonDraftPlan["visualStyle"]>;
+  const chapters = context.storyOption.chapters.map((outlineChapter, chapterIndex) => {
+    const chapterPlan = plan.chapters[chapterIndex];
+    const prefix = `chapter-${chapterIndex + 1}`;
+    const rawParagraphs = Array.isArray(chapterPlan?.paragraphs) ? chapterPlan.paragraphs.slice(0, 2) : [];
+    const paragraphs: [AiParagraphPlan, AiParagraphPlan] = [0, 1].map((paragraphIndex) => {
+      const paragraph = rawParagraphs[paragraphIndex];
+      const fallbackMarkedText = ensureParagraphLength(outlineChapter.summary, context, chapterIndex, paragraphIndex);
+      return {
+        markedText: nonEmptyString(paragraph?.markedText, fallbackMarkedText),
+        shot: sanitizeShotPlan(paragraph?.shot, context, characters, chapterPlan?.title ?? outlineChapter.title, paragraph?.markedText ?? outlineChapter.summary),
+      };
+    }) as [AiParagraphPlan, AiParagraphPlan];
+    const parsedParagraphs = paragraphs.map((paragraph) => parseMarkedText(paragraph.markedText)) as [ParsedMarker[], ParsedMarker[]];
+    validateChapterMarkers(chapterPlan?.title ?? outlineChapter.title, parsedParagraphs, chapterIndex);
+
+    const exercises: LessonExercise[] = [];
+    const blocks: LessonDraft["chapters"][number]["blocks"] = [];
+    const paragraphBlockIds: string[][] = [];
+
+    parsedParagraphs.forEach((items) => {
+      const currentParagraphBlockIds: string[] = [];
+
+      items.forEach((item) => {
+        if (item.type === "text") {
+          if (!item.text) {
+            return;
+          }
+
+          const textBlock = { id: `${prefix}-block-${blocks.length + 1}`, order: blocks.length + 1, type: "text" as const, text: item.text };
+          blocks.push(textBlock);
+          currentParagraphBlockIds.push(textBlock.id);
+          return;
+        }
+
+        const exerciseId = `${prefix}-exercise-${exercises.length + 1}`;
+        const exercise: LessonExercise =
+          item.type === "verb_blank"
+            ? {
+                id: exerciseId,
+                type: "verb_blank",
+                answer: item.answer,
+                baseVerb: item.baseVerb,
+              }
+            : {
+                id: exerciseId,
+                type: "vocabulary_hint",
+                answer: item.answer,
+                pattern: item.pattern || vocabularyPattern(item.answer),
+                letterCount: item.letterCount,
+              };
+        exercises.push(exercise);
+
+        const exerciseBlock = {
+          id: `${prefix}-block-${blocks.length + 1}`,
+          order: blocks.length + 1,
+          type: "exercise" as const,
+          exerciseId: exercise.id,
+          display:
+            exercise.type === "verb_blank"
+              ? { kind: "verb_blank" as const, placeholder: "________" as const, prompt: exercise.baseVerb }
+              : {
+                  kind: "vocabulary_hint" as const,
+                  placeholder: "________" as const,
+                  pattern: exercise.pattern,
+                  letterCount: exercise.letterCount,
+                },
+        };
+        blocks.push(exerciseBlock);
+        currentParagraphBlockIds.push(exerciseBlock.id);
+      });
+
+      paragraphBlockIds.push(currentParagraphBlockIds);
+    });
+
+    return {
+      id: prefix,
+      sourceOutlineChapterIndex: chapterIndex + 1,
+      title: nonEmptyString(chapterPlan?.title, outlineChapter.title),
+      wordTarget: { min: chapterWordTarget.min, max: chapterWordTarget.max },
+      exerciseTarget: { verbBlankCount: 7 as const, vocabularyHintCount: 3 as const },
+      blocks,
+      exercises,
+      shots: paragraphs.map((paragraph, paragraphIndex) => ({
+        id: `${prefix}-shot-${paragraphIndex + 1}`,
+        order: (paragraphIndex + 1) as 1 | 2,
+        imageSlotId: `${prefix}-image-${paragraphIndex + 1}`,
+        coveredBlockIds: paragraphBlockIds[paragraphIndex],
+        ...withCharacterConsistency(paragraph.shot, characters),
+      })),
+    };
+  });
+
+  const draft: LessonDraft = {
     schemaVersion: "lesson_draft_v1",
     sourceStoryOptionId: context.storyOption.id,
     generationMode: "ai",
+    title: nonEmptyString(plan.title, context.storyOption.title),
     language: "en",
     visualStyle: {
-      ...draft.visualStyle,
+      artStyle: nonEmptyString(visualStyle.artStyle, "warm children's storybook watercolor"),
+      colorPalette: nonEmptyString(visualStyle.colorPalette, "soft greens, blues, and warm light"),
       aspectRatio: "4:3",
+      consistencyPrompt: nonEmptyString(visualStyle.consistencyPrompt, "Use a consistent picture-book style across all images."),
     },
-    chapters: draft.chapters.map((chapter, chapterIndex) => {
-      const sortedBlocks = chapter.blocks
-        .map((block, blockIndex) => ({ ...block, order: blockIndex + 1 }))
-        .sort((a, b) => a.order - b.order);
-      const normalizedBlocks = sortedBlocks.map((block) => {
-        if (block.type !== "exercise") {
-          return block;
-        }
-
-        const exercise = chapter.exercises.find((item) => item.id === block.exerciseId);
-
-        if (!exercise) {
-          return block;
-        }
-
-        if (exercise.type === "verb_blank") {
-          return {
-            ...block,
-            display: {
-              kind: "verb_blank" as const,
-              placeholder: "________" as const,
-              prompt: exercise.baseVerb,
-            },
-          };
-        }
-
-        return {
-          ...block,
-          display: {
-            kind: "vocabulary_hint" as const,
-            placeholder: "________" as const,
-            pattern: exercise.pattern,
-            letterCount: exercise.letterCount,
-          },
-        };
-      });
-      const splitIndex = findShotSplitIndex(normalizedBlocks);
-      const firstBlockIds = normalizedBlocks.slice(0, splitIndex + 1).map((block) => block.id);
-      const secondBlockIds = normalizedBlocks.slice(splitIndex + 1).map((block) => block.id);
-      const fallbackCharacterIds = draft.characters.map((character) => character.id);
-
-      return {
-        ...chapter,
-        id: chapter.id || `chapter-${chapterIndex + 1}`,
-        sourceOutlineChapterIndex: chapterIndex + 1,
-        wordTarget: { min: chapterWordTarget.min, max: chapterWordTarget.max },
-        exerciseTarget: { verbBlankCount: 7, vocabularyHintCount: 3 },
-        blocks: normalizedBlocks,
-        shots: [0, 1].map((shotIndex) => {
-          const shot = chapter.shots[shotIndex];
-          const coveredBlockIds = shotIndex === 0 ? firstBlockIds : secondBlockIds;
-          const validCharacterIds = shot?.characterIds.filter((id) => characterIds.has(id)) ?? [];
-
-          return {
-            id: shot?.id || `chapter-${chapterIndex + 1}-shot-${shotIndex + 1}`,
-            order: (shotIndex + 1) as 1 | 2,
-            imageSlotId: shot?.imageSlotId || `chapter-${chapterIndex + 1}-image-${shotIndex + 1}`,
-            coveredBlockIds,
-            characterIds: validCharacterIds.length > 0 ? validCharacterIds : fallbackCharacterIds,
-            location: shot?.location || context.course.theme,
-            action: shot?.action || context.storyOption.chapters[chapterIndex]?.summary || chapter.title,
-            mood: shot?.mood || "storybook adventure",
-            scenePrompt: shot?.scenePrompt || `A children's storybook illustration for ${chapter.title}.`,
-            composition: shot?.composition || "4:3 picture-book composition with clear characters and setting.",
-            continuityNotes: shot?.continuityNotes || "Use the global visual style and character consistency prompts.",
-          };
-        }),
-      };
-    }),
+    characters,
+    chapters,
     closingReading: {
-      title: draft.closingReading?.title || `After ${context.storyOption.title}`,
-      text:
-        draft.closingReading?.text ||
-        "After the adventure, the teacher and students remembered how they moved through the story world together. They noticed clues, made choices, and used English to describe what happened. Each chapter helped them practice the target grammar inside real actions, not separate drills. The students became more confident because they solved problems as a team and listened to the teacher's guidance. When the journey ended, they could retell the important moments, name the useful words, and explain how small decisions changed the story step by step.",
-      vocabularyTerms: uniqueNonEmpty(draft.closingReading?.vocabularyTerms ?? []).length
-        ? uniqueNonEmpty(draft.closingReading.vocabularyTerms)
-        : collectVocabularyTerms(draft),
+      title: nonEmptyString(plan.closingReading?.title, `After ${context.storyOption.title}`),
+      text: stripTheEnd(ensureParagraphLength(nonEmptyString(plan.closingReading?.text, ""), context, 0, 1)),
+      vocabularyTerms: uniqueNonEmpty(
+        chapters.flatMap((chapter) =>
+          chapter.exercises.filter((exercise) => exercise.type === "vocabulary_hint").map((exercise) => exercise.answer),
+        ),
+      ).slice(0, 12),
     },
   };
+
+  return draft;
 }
 
 async function callDeepSeek(messages: ChatMessage[]) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   const baseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com";
-  const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
 
   if (!apiKey) {
     throw new Error("AI 服务未配置");
@@ -385,14 +648,7 @@ async function callDeepSeek(messages: ChatMessage[]) {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      messages,
-      max_tokens: 32000,
-      response_format: { type: "json_object" },
-      thinking: { type: "disabled" },
-      temperature: 0.35,
-    }),
+    body: JSON.stringify(buildDeepSeekRequestBody(messages)),
   });
 
   if (!response.ok) {
@@ -413,6 +669,31 @@ async function callDeepSeek(messages: ChatMessage[]) {
   return content;
 }
 
+export function buildDeepSeekRequestBody(messages: ChatMessage[]): DeepSeekRequestBody {
+  const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
+  const thinkingMode = process.env.DEEPSEEK_THINKING === "disabled" ? "disabled" : "enabled";
+
+  if (thinkingMode === "disabled") {
+    return {
+      model,
+      messages,
+      max_tokens: 32000,
+      response_format: { type: "json_object" },
+      thinking: { type: "disabled" },
+      temperature: 0.2,
+    };
+  }
+
+  return {
+    model,
+    messages,
+    max_tokens: 64000,
+    response_format: { type: "json_object" },
+    thinking: { type: "enabled" },
+    reasoning_effort: "max",
+  };
+}
+
 export async function generateLessonDraft(context: LessonDraftGenerationContext) {
   if (process.env.DEEPSEEK_API_KEY === "mock") {
     // TODO: Restrict this deterministic branch to local development after the real DeepSeek key is configured.
@@ -423,7 +704,7 @@ export async function generateLessonDraft(context: LessonDraftGenerationContext)
     {
       role: "system",
       content:
-        "You are an expert English picture-book content designer and structured JSON formatter. Output the final JSON immediately. Do not think step by step. Do not include reasoning. Return strict JSON only.",
+        "You are an expert English picture-book content designer and structured JSON formatter. Carefully check all marker counts and paragraph distributions before answering. Do not include reasoning in the visible response. Return strict JSON only.",
     },
     {
       role: "user",
@@ -433,16 +714,16 @@ export async function generateLessonDraft(context: LessonDraftGenerationContext)
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const parsed = parseJsonObject(await callDeepSeek(messages));
-      return validateLessonDraft(normalizeGeneratedDraft(parsed, context), context.storyOption);
+      const parsed = parsePlan(parseJsonObject(await callDeepSeek(messages)));
+      return validateLessonDraft(assembleLessonDraftFromPlan(parsed, context), context.storyOption);
     } catch (error) {
       if (attempt === 0) {
         messages.push({
           role: "user",
           content:
             error instanceof LessonDraftValidationError
-              ? `The previous JSON failed validation: ${error.message}. Regenerate the full JSON. Keep every chapter at 100-120 story words in text blocks, exactly 10 exercises, and two complete paragraph-based shots. Return strict minified JSON only.`
-              : `The previous response could not be parsed as valid JSON: ${error instanceof Error ? error.message : "unknown error"}. Regenerate the full JSON as strict minified JSON only.`,
+              ? `The previous content plan failed validation: ${error.message}. Regenerate the full content plan. Each chapter needs two markedText paragraphs of 55-70 rendered English words. Paragraph 1 must have exactly 5 inline markers: 4 [verb:baseVerb|answer] markers and 1 [vocab:pattern|answer] marker. Paragraph 2 must have exactly 5 inline markers: 3 [verb:baseVerb|answer] markers and 2 [vocab:pattern|answer] markers. Whole chapter total must be exactly 7 verb markers and 3 vocab markers. Do not use 4 verb + 1 vocab in both paragraphs. Return strict minified JSON only.`
+              : `The previous response could not be parsed as a valid content plan: ${error instanceof Error ? error.message : "unknown error"}. Regenerate strict minified JSON only using the required content-plan shape.`,
         });
         continue;
       }
