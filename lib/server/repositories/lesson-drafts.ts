@@ -49,6 +49,11 @@ export class LessonDraftPrerequisiteError extends Error {
   }
 }
 
+const minExercisesPerChapter = 8;
+const maxExercisesPerChapter = 10;
+const minChapterWords = 60;
+const maxChapterWords = 190;
+
 function isNonEmptyText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -140,6 +145,10 @@ function hasValidWordTarget(draft: LessonDraft["chapters"][number]) {
   return draft.wordTarget.min >= 100 && draft.wordTarget.min <= 120 && draft.wordTarget.max >= 120 && draft.wordTarget.max <= 150;
 }
 
+function chapterLabel(index: number) {
+  return `第 ${index + 1} 章`;
+}
+
 export function validateLessonDraft(draft: LessonDraft, sourceStoryOption: StoryOption) {
   if (
     draft.schemaVersion !== "lesson_draft_v1" ||
@@ -185,8 +194,7 @@ export function validateLessonDraft(draft: LessonDraft, sourceStoryOption: Story
       chapter.sourceOutlineChapterIndex !== index + 1 ||
       !hasValidWordTarget(chapter) ||
       chapter.exerciseTarget.verbBlankCount !== 7 ||
-      chapter.exerciseTarget.vocabularyHintCount !== 3 ||
-      chapter.exercises.length !== 10
+      chapter.exerciseTarget.vocabularyHintCount !== 3
     ) {
       throw new LessonDraftValidationError();
     }
@@ -194,21 +202,27 @@ export function validateLessonDraft(draft: LessonDraft, sourceStoryOption: Story
     const blockIds = new Set(chapter.blocks.map((block) => block.id));
     const exerciseIds = new Set(chapter.exercises.map((exercise) => exercise.id));
     const exerciseBlocks = chapter.blocks.filter((block): block is Extract<LessonBlock, { type: "exercise" }> => block.type === "exercise");
-    const verbCount = chapter.exercises.filter((exercise) => exercise.type === "verb_blank").length;
-    const vocabCount = chapter.exercises.filter((exercise) => exercise.type === "vocabulary_hint").length;
+    if (blockIds.size !== chapter.blocks.length || exerciseIds.size !== chapter.exercises.length) {
+      throw new LessonDraftValidationError(`课文草稿章节结构不完整：${chapterLabel(index)}存在重复的 block 或 exercise id`);
+    }
 
-    if (
-      blockIds.size !== chapter.blocks.length ||
-      exerciseIds.size !== chapter.exercises.length ||
-      exerciseBlocks.length !== 10 ||
-      verbCount !== 7 ||
-      vocabCount !== 3 ||
-      countWords(chapter.blocks) < 90 ||
-      countWords(chapter.blocks) > 150
-    ) {
+    if (exerciseBlocks.length !== chapter.exercises.length) {
       throw new LessonDraftValidationError(
-        `课文草稿章节结构不完整: chapter=${chapter.id}, blocks=${chapter.blocks.length}, exerciseBlocks=${exerciseBlocks.length}, exercises=${chapter.exercises.length}, verb=${verbCount}, vocab=${vocabCount}, words=${countWords(chapter.blocks)}`,
+        `课文草稿章节结构不完整：${chapterLabel(index)}练习 block 数量 ${exerciseBlocks.length} 与 exercises 数量 ${chapter.exercises.length} 不一致`,
       );
+    }
+
+    if (exerciseBlocks.length < minExercisesPerChapter) {
+      throw new LessonDraftValidationError(`${chapterLabel(index)}练习数量不足：需要 8-10 个，当前 ${exerciseBlocks.length} 个`);
+    }
+
+    if (exerciseBlocks.length > maxExercisesPerChapter) {
+      throw new LessonDraftValidationError(`${chapterLabel(index)}练习数量过多：需要 8-10 个，当前 ${exerciseBlocks.length} 个`);
+    }
+
+    const wordCount = countWords(chapter.blocks);
+    if (wordCount < minChapterWords || wordCount > maxChapterWords) {
+      throw new LessonDraftValidationError(`${chapterLabel(index)}正文词数异常：需要 60-190 词，当前 ${wordCount} 词`);
     }
 
     const sortedOrders = chapter.blocks.map((block) => block.order).sort((a, b) => a - b);
