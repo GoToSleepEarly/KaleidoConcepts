@@ -27,12 +27,19 @@ Step 3 是内容填充，不重新构思故事。
 - 英文绘本标题
 - 每章英文标题
 - 每章 120-180 词英文学生正文
-- 每章 10 个练习点
-  - 7 个 `verb_blank`
-  - 3 个 `vocabulary_hint`
+- 每章目标 8-10 个练习点
+  - 以 `verb_blank` 为主
+  - 搭配 `vocabulary_hint`
+  - 不硬性要求固定 7/3 比例
 - 每章 2 个图片分镜 / image shot
 - 全局视觉风格 `visualStyle`
 - 全局人物视觉一致性 `characters`
+
+生成职责边界：
+- AI 生成正文内容、正文内联习题标记、人物视觉描述、每段对应的图片分镜语义。
+- 代码生成最终 `LessonDraft` 结构，包括 chapter / block / exercise / shot id、block order、exercise display、shot `coveredBlockIds` 和 `imageSlotId`。
+- 代码只解析 AI 生成的内联习题标记，不自行选择或补齐习题。
+- 分镜内容语义必须来自 AI，因为它直接服务后续绘本图片生成；分镜覆盖范围由代码按段落边界装配，避免 AI 生成机械引用错误。
 
 不生成：
 - 教师教案
@@ -139,7 +146,11 @@ type LessonShot = {
 未生成：
 - 显示生成按钮
 - 点击后调用 `POST /api/courses/:id/lesson-draft/generate`
-- 生成中显示 loading 进度
+- 生成中显示阶段进度：
+  - 读取故事骨架
+  - AI 生成正文和分镜
+  - 装配练习结构
+  - 校验并保存草稿
 
 已生成：
 - 加载并展示草稿
@@ -174,7 +185,8 @@ type LessonShot = {
 行为：
 - 读取课程、人物画像、已选择故事方案
 - 如果已有草稿，直接返回已有草稿
-- 调用 DeepSeek 或本地 mock
+- 调用 DeepSeek 或本地 mock 获取内容计划
+- 将内容计划装配为 `lesson_draft_v1`
 - 校验并保存 `lesson_draft_v1`
 
 响应：
@@ -219,10 +231,9 @@ type LessonShot = {
 - `language` 必须是 `en`
 - `sourceStoryOptionId` 必须匹配课程选中的故事方案
 - 章节数必须匹配 Step 2
-- 每章必须有 10 个 exercises
-- 每章必须有 7 个 `verb_blank`
-- 每章必须有 3 个 `vocabulary_hint`
-- 每章必须有 10 个 exercise blocks
+- 每章必须有 8-10 个 exercises
+- 每章必须有相同数量的 exercise blocks
+- 不硬性校验 `verb_blank` / `vocabulary_hint` 的固定比例
 - 每个 exercise block 必须引用本章存在的 exercise
 - 每个 exercise 必须被且只被一个 exercise block 引用
 - 每章必须有 2 个 shots
@@ -231,6 +242,29 @@ type LessonShot = {
 - 两个 shots 的 covered blocks 不重叠
 - `characterIds` 必须引用全局 characters
 - exercise 答案只存储在 `exercises` 中，不能出现在 exercise display 字段中
+
+## 生成稳定性策略
+
+- 不要求 AI 直接输出最终 `LessonDraft` 全量结构，避免 block / exercise / shot 引用类机械错误。
+- AI 输出内容计划：每章两段带内联习题标记的英文故事、每段图片分镜语义。
+- 习题由 AI 在正文语境中直接生成，不再使用 `targetText` 搜索机制，也不由代码从正文中猜词补题。
+- 内联习题标记格式：
+  - 动词填空：`[verb:baseVerb|answer]`
+  - 词汇提示：`[vocab:pattern|answer]`
+- 标记解析示例：`Ms. Lin [verb:walk|walked] toward the quiet forest [vocab:g _ _ e|gate].`
+- 后端代码负责：
+  - 每章目标 8-10 个练习 marker
+  - 创建稳定 id 与顺序
+  - 将 AI 内联标记解析为 text block、exercise block 和 exercises
+  - 不再硬性校验每段练习数量或 `verb_blank` / `vocabulary_hint` 精确比例
+  - 校验每章至少 8 个、最多 10 个可解析练习 marker
+  - 校验同章 answer 不重复
+  - 将第 1 段 blocks 绑定到 shot 1，第 2 段 blocks 绑定到 shot 2
+  - 从 vocabulary exercises 自动生成 `closingReading.vocabularyTerms`，按首次出现去重，最多 12 个
+  - 移除 `closingReading.text` 末尾的 `The End`
+  - 将人物外貌和服装一致性自动注入每个 shot 的 `scenePrompt` / `continuityNotes`
+  - 对短 closing reading 补足基础叙事上下文，再进入最终校验
+- 若 AI 生成结果未满足核心硬校验，接口返回可读错误，不保存不合格草稿；本轮不做复杂自动重试。
 
 ## 实现状态
 
@@ -242,3 +276,10 @@ type LessonShot = {
 - 2026-07-05 修复记录：AI 生成约束加强为正文片段与练习 block 交错输出，避免完整正文后追加空格；Step3 预览兼容旧草稿，将单段正文和后置练习按当前分镜组合成可阅读的填空文本；prompt 强化语法点必须进入故事句子、对话和练习选择。
 - 2026-07-05 修复记录：每章目标词数调整为约 120 词，生成目标 110-130 词，后端校验范围 90-150 词；分镜切分改为句子边界，避免半句进入不同分镜；Closing Reading 增加 `vocabularyTerms`，用于罗列本课学习到的英文单词和词组；学生文本中的 vocabulary hint 只展示字母提示，不再展示 `letters` 文案；DeepSeek 调用降低输出长度和温度以减少生成耗时。
 - 2026-07-05 修复记录：课文草稿生成失败根因是 DeepSeek V4 thinking 模式返回 `reasoning_content` 但 `content` 为空，以及输出 JSON 偶发尾逗号 / 截断。已在请求体显式关闭 `thinking`，提高最终 JSON 输出上限，增加尾逗号修复，并在第一次解析或校验失败时携带具体原因要求模型重生成。
+- 2026-07-07 优化记录：Step 3 生成改为 AI 内容计划 + 代码装配最终草稿。AI 只负责正文、练习候选和图片分镜语义；代码负责 block / exercise / shot 结构、分镜覆盖、closing vocabulary 和最终校验。生成等待态同步改为展示“读取故事骨架 / AI 生成正文和分镜 / 装配练习结构 / 校验并保存草稿”。
+- 2026-07-07 修复记录：练习装配改为基于 `targetText` 替换段落原文，避免 `[answer]answer` 重复和练习上下文错位；每段必须保留 vocabulary hint，避免 shot1 / shot2 练习类型单边集中；closing reading 自动移除 `The End`；shot prompt 自动追加人物外貌和服装一致性信息。
+- 2026-07-07 修复记录：练习计划不再完全依赖 AI 数量正确。若 AI 给出的可用练习不足，后端会从段落原文中补齐缺失的动词填空和词汇提示，仍保持每章 7 个 verb blank、3 个 vocabulary hint、每段 5 个练习。
+- 2026-07-07 重构记录：按产品边界调整为“正文和习题均由 AI 生成，代码只解析为最终 JSON”。AI 现在输出 `markedText`，用 `[verb:baseVerb|answer]` / `[vocab:pattern|answer]` 内联标记表达习题；后端删除 `targetText` 搜索和代码补题逻辑，直接解析标记生成 block / exercise / shot 覆盖关系，并校验每章 7/3、每段 5 个、每段至少 1 个词汇题、同章答案不重复。
+- 2026-07-07 修复记录：针对 AI 常见的每段 `4 verb + 1 vocab` 导致全章 `8/2` 的错误，prompt 和后端校验改为精确段落配比：第 1 段 `4 verb + 1 vocab`，第 2 段 `3 verb + 2 vocab`。校验错误会返回 `p1Verb/p1Vocab/p2Verb/p2Vocab`，用于第二次重生成时直接纠偏。
+- 2026-07-07 修复记录：Step 3 DeepSeek 调用默认开启 thinking 模式，`reasoning_effort=max`，并移除 thinking 模式下不生效的 `temperature`。如需兼容旧行为，可用 `DEEPSEEK_THINKING=disabled` 回退到非 thinking 低温 JSON 生成。
+- 2026-07-07 稳定性重设计记录：Step 3 不再把每章 10 题、7/3 比例、每段 5 题作为硬校验；每章固定 2 个分镜，练习数量放宽为 8-10 个，练习仍必须由 AI 在正文中以内联 marker 生成，代码不补题。DeepSeek 默认关闭 thinking 以降低常规生成耗时，可通过 `DEEPSEEK_THINKING=enabled` 开启深度模式。
