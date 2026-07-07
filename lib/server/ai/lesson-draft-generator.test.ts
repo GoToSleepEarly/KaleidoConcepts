@@ -1,8 +1,8 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { CourseBasicDetail, PersonProfile, StoryOption } from "@/lib/contracts/api";
 
-import { assembleLessonDraftFromPlan, buildDeepSeekRequestBody } from "./lesson-draft-generator";
+import { assembleLessonDraftFromPlan, buildDeepSeekRequestBody, generateLessonDraft } from "./lesson-draft-generator";
 import { validateLessonDraft } from "../repositories/lesson-drafts";
 
 const course: CourseBasicDetail = {
@@ -66,6 +66,64 @@ const storyOption: StoryOption = {
 };
 
 const context = { course, teacher, students: [student], storyOption };
+
+function deepSeekResponse(content: unknown) {
+  return new Response(
+    JSON.stringify({
+      choices: [{ message: { content: JSON.stringify(content) } }],
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+function shotPlan(action: string) {
+  return {
+    characterIds: ["teacher-1", "student-1"],
+    location: "quiet forest gate",
+    action,
+    mood: "curious and safe",
+    scenePrompt: `${action} in a warm watercolor forest scene.`,
+    composition: "Wide 4:3 picture-book scene with both characters clearly visible.",
+    continuityNotes: "Keep character consistency.",
+  };
+}
+
+function basePlan(markedText: string) {
+  return {
+    title: "The Forest Gate",
+    visualStyle: {
+      artStyle: "warm watercolor picture book",
+      colorPalette: "soft greens and gold light",
+      consistencyPrompt: "Use a consistent watercolor picture-book style.",
+    },
+    characters: [],
+    chapters: [
+      {
+        title: "The Gate Opens",
+        paragraphs: [
+          {
+            markedText,
+            shot: shotPlan("Ms. Lin and Summer discover the first arrow beside the gate."),
+          },
+          {
+            markedText:
+              "Inside the forest, Ms. Lin [verb:help|helped] Summer read the glowing [vocab:m _ p|map], and they [verb:follow|followed] the trail across a tiny bridge. Summer [verb:share|shared] her idea while a bright clue pointed toward the next tree.",
+            shot: shotPlan("Summer studies the glowing map while Ms. Lin helps her choose the trail."),
+          },
+        ],
+      },
+    ],
+    closingReading: {
+      title: "After the Forest Gate",
+      text: "After the forest gate adventure, Summer remembered how each clue helped her speak in English. She described what she saw, what she did, and what changed in the forest. Ms. Lin helped her slow down and notice the important actions. The map and gate became useful story words. Summer felt proud because she solved the mystery step by step and could retell the journey with clear past tense verbs.",
+    },
+  };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe("lesson draft AI plan assembly", () => {
   test("code parses AI inline exercise markers into ids, exercise blocks, and shot coverage", () => {
@@ -273,59 +331,58 @@ describe("lesson draft AI plan assembly", () => {
     expect(draft.chapters[0].exercises).toHaveLength(7);
   });
 
-  test("accepts 5 AI markers as the hard minimum", () => {
-    const draft = assembleLessonDraftFromPlan(
-      {
-        title: "The Forest Gate",
-        visualStyle: {
-          artStyle: "warm watercolor picture book",
-          colorPalette: "soft greens and gold light",
-          consistencyPrompt: "Use a consistent watercolor picture-book style.",
-        },
-        characters: [],
-        chapters: [
-          {
-            title: "The Gate Opens",
-            paragraphs: [
-              {
-                markedText:
-                  "Yesterday morning, Ms. Lin and Summer [verb:walk|walked] toward the quiet forest [vocab:g _ _ e|gate]. Summer carried her sketchbook and looked at the silver leaves. Ms. Lin [verb:ask|asked] one calm question, and Summer noticed a small arrow on the stone path. They opened the gate together and stepped into warm green light.",
-                shot: {
-                  characterIds: ["teacher-1", "student-1"],
-                  location: "quiet forest gate",
-                  action: "Ms. Lin and Summer discover the first arrow beside the gate.",
-                  mood: "curious and safe",
-                  scenePrompt: "Ms. Lin and Summer stand at a silver forest gate while a small arrow glows on the stone path.",
-                  composition: "Wide 4:3 picture-book scene with the gate on one side and both characters clearly visible.",
-                  continuityNotes: "Keep character consistency.",
-                },
-              },
-              {
-                markedText:
-                  "Inside the forest, the [vocab:m _ p|map] shone under a blue flower. Summer touched the page and found a hidden trail. Ms. Lin [verb:help|helped] her read the marks, and they followed the trail across a tiny bridge. The clue pointed to a bright tree, so Summer smiled and shared her idea.",
-                shot: {
-                  characterIds: ["teacher-1", "student-1"],
-                  location: "tiny forest bridge",
-                  action: "Summer studies the glowing map while Ms. Lin helps her choose the trail.",
-                  mood: "hopeful and focused",
-                  scenePrompt: "Summer studies a glowing map beside a tiny bridge as Ms. Lin points toward a bright tree.",
-                  composition: "Medium 4:3 picture-book scene centered on the glowing map and the bridge.",
-                  continuityNotes: "Use the same forest light.",
-                },
-              },
-            ],
+  test("rejects 5 AI markers before generation repair", () => {
+    expect(() =>
+      assembleLessonDraftFromPlan(
+        {
+          title: "The Forest Gate",
+          visualStyle: {
+            artStyle: "warm watercolor picture book",
+            colorPalette: "soft greens and gold light",
+            consistencyPrompt: "Use a consistent watercolor picture-book style.",
           },
-        ],
-        closingReading: {
-          title: "After the Forest Gate",
-          text: "After the forest gate adventure, Summer remembered how each clue helped her speak in English. She described what she saw, what she did, and what changed in the forest. Ms. Lin helped her slow down and notice the important actions. The map and gate became useful story words. Summer felt proud because she solved the mystery step by step and could retell the journey with clear past tense verbs.",
+          characters: [],
+          chapters: [
+            {
+              title: "The Gate Opens",
+              paragraphs: [
+                {
+                  markedText:
+                    "Yesterday morning, Ms. Lin and Summer [verb:walk|walked] toward the quiet forest [vocab:g _ _ e|gate]. Summer carried her sketchbook and looked at the silver leaves. Ms. Lin [verb:ask|asked] one calm question, and Summer noticed a small arrow on the stone path. They opened the gate together and stepped into warm green light.",
+                  shot: {
+                    characterIds: ["teacher-1", "student-1"],
+                    location: "quiet forest gate",
+                    action: "Ms. Lin and Summer discover the first arrow beside the gate.",
+                    mood: "curious and safe",
+                    scenePrompt: "Ms. Lin and Summer stand at a silver forest gate while a small arrow glows on the stone path.",
+                    composition: "Wide 4:3 picture-book scene with the gate on one side and both characters clearly visible.",
+                    continuityNotes: "Keep character consistency.",
+                  },
+                },
+                {
+                  markedText:
+                    "Inside the forest, the [vocab:m _ p|map] shone under a blue flower. Summer touched the page and found a hidden trail. Ms. Lin [verb:help|helped] her read the marks, and they followed the trail across a tiny bridge. The clue pointed to a bright tree, so Summer smiled and shared her idea.",
+                  shot: {
+                    characterIds: ["teacher-1", "student-1"],
+                    location: "tiny forest bridge",
+                    action: "Summer studies the glowing map while Ms. Lin helps her choose the trail.",
+                    mood: "hopeful and focused",
+                    scenePrompt: "Summer studies a glowing map beside a tiny bridge as Ms. Lin points toward a bright tree.",
+                    composition: "Medium 4:3 picture-book scene centered on the glowing map and the bridge.",
+                    continuityNotes: "Use the same forest light.",
+                  },
+                },
+              ],
+            },
+          ],
+          closingReading: {
+            title: "After the Forest Gate",
+            text: "After the forest gate adventure, Summer remembered how each clue helped her speak in English. She described what she saw, what she did, and what changed in the forest. Ms. Lin helped her slow down and notice the important actions. The map and gate became useful story words. Summer felt proud because she solved the mystery step by step and could retell the journey with clear past tense verbs.",
+          },
         },
-      },
-      context,
-    );
-
-    expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
-    expect(draft.chapters[0].exercises).toHaveLength(5);
+        context,
+      ),
+    ).toThrow("第 1 章练习数量不足：需要 7-10 个，当前 5 个");
   });
 
   test("generates vocabulary pattern from answer when AI leaves pattern empty", () => {
@@ -488,7 +545,7 @@ describe("lesson draft AI plan assembly", () => {
         },
         context,
       ),
-    ).toThrow("第 1 章练习数量不足：需要 5-10 个，当前 3 个");
+    ).toThrow("第 1 章练习数量不足：需要 7-10 个，当前 3 个");
   });
 
   test("accepts the formerly brittle 8 verb and 2 vocabulary split", () => {
@@ -661,6 +718,51 @@ describe("lesson draft AI plan assembly", () => {
         return block?.type === "exercise" && draft.chapters[0].exercises.find((exercise) => exercise.id === block.exerciseId)?.type === "vocabulary_hint";
       }),
     )).toEqual([true, true]);
+  });
+});
+
+describe("lesson draft generation repair", () => {
+  test("repairs an underfilled chapter once and returns a valid draft", async () => {
+    const originalApiKey = process.env.DEEPSEEK_API_KEY;
+    process.env.DEEPSEEK_API_KEY = "test-key";
+    const underfilledPlan = basePlan(
+      "Yesterday morning, Ms. Lin and Summer [verb:walk|walked] toward the quiet forest [vocab:g _ _ e|gate]. Summer carried her sketchbook and looked at the silver leaves. Ms. Lin asked one calm question, and Summer noticed a small arrow on the stone path.",
+    );
+    const repairedChapter = {
+      title: "The Gate Opens",
+      paragraphs: [
+        {
+          markedText:
+            "Yesterday morning, Ms. Lin and Summer [verb:walk|walked] toward the quiet forest [vocab:g _ _ e|gate]. Summer [verb:carry|carried] her sketchbook and [verb:look|looked] at the silver leaves. Ms. Lin [verb:ask|asked] one calm question, and Summer noticed a small arrow on the stone path. They opened the gate together and stepped into warm green light.",
+          shot: shotPlan("Ms. Lin and Summer discover the first arrow beside the gate."),
+        },
+        {
+          markedText:
+            "Inside the forest, the [vocab:m _ p|map] shone under a blue flower. Summer touched the page and found a hidden [vocab:t _ _ _ l|trail]. Ms. Lin [verb:help|helped] her read the marks, and they [verb:follow|followed] the trail across a tiny bridge. The clue pointed to a bright tree, so Summer smiled and [verb:share|shared] her idea.",
+          shot: shotPlan("Summer studies the glowing map while Ms. Lin helps her choose the trail."),
+        },
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(deepSeekResponse(underfilledPlan))
+      .mockResolvedValueOnce(deepSeekResponse(repairedChapter));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const draft = await generateLessonDraft(context);
+
+      expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
+      expect(draft.chapters[0].exercises).toHaveLength(10);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body).thinking).toEqual({ type: "enabled" });
+    } finally {
+      if (originalApiKey === undefined) {
+        delete process.env.DEEPSEEK_API_KEY;
+      } else {
+        process.env.DEEPSEEK_API_KEY = originalApiKey;
+      }
+    }
   });
 });
 

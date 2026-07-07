@@ -22,18 +22,20 @@ type ChatMessage = {
   content: string;
 };
 
+type DeepSeekThinkingMode = "enabled" | "disabled";
+
 type DeepSeekRequestBody = {
   model: string;
   messages: ChatMessage[];
   max_tokens: number;
   response_format: { type: "json_object" };
-  thinking: { type: "enabled" | "disabled" };
+  thinking: { type: DeepSeekThinkingMode };
   reasoning_effort?: "high" | "max";
   temperature?: number;
 };
 
 const chapterWordTarget = { min: 110, max: 130 };
-const minExercisesPerChapter = 5;
+const minExercisesPerChapter = 7;
 const maxExercisesPerChapter = 10;
 
 type AiShotPlan = Omit<LessonShot, "id" | "order" | "imageSlotId" | "coveredBlockIds">;
@@ -113,9 +115,9 @@ function buildPrompt(context: LessonDraftGenerationContext) {
     "- Example verb marker: [verb:walk|walked]. The answer must be the exact word that belongs in the sentence.",
     "- Example vocabulary marker: [vocab:t _ _ _ l|trail]. The pattern should reveal useful letters, usually first and last letters.",
     "- Do not put spaces around the marker pipes. Do not nest markers. Do not use Markdown.",
-    "- Each chapter should contain 8-10 markers total across its two markedText paragraphs.",
-    "- Include both verb blank and vocabulary hint markers when natural, but do not force an exact ratio.",
-    "- Spread markers across both paragraphs so each paragraph has at least one exercise marker.",
+    "- Each chapter should contain 8-10 markers total across its two markedText paragraphs, usually 4-5 markers per paragraph.",
+    "- Include both verb blank and vocabulary hint markers when natural, with at least 2 vocabulary hint markers per chapter.",
+    "- Spread markers across both paragraphs so each paragraph has at least 3 exercise markers.",
     "- Avoid repeating the same exercise answer inside one chapter.",
     "- Each paragraph has its own image shot semantics. Shot semantics are used for picture-book image generation, so make them specific to the paragraph's story action.",
     "- Choose verb markers that directly practice the target grammar when possible. For example, past tense targets require past-tense answers.",
@@ -435,11 +437,11 @@ function validateChapterMarkers(chapterTitle: string, parsedParagraphs: ParsedMa
   const chapterLabel = `第 ${chapterIndex + 1} 章`;
 
   if (exercises.length < minExercisesPerChapter) {
-    throw new LessonDraftValidationError(`${chapterLabel}练习数量不足：需要 5-10 个，当前 ${exercises.length} 个`);
+    throw new LessonDraftValidationError(`${chapterLabel}练习数量不足：需要 7-10 个，当前 ${exercises.length} 个`);
   }
 
   if (exercises.length > maxExercisesPerChapter) {
-    throw new LessonDraftValidationError(`${chapterLabel}练习数量过多：需要 5-10 个，当前 ${exercises.length} 个`);
+    throw new LessonDraftValidationError(`${chapterLabel}练习数量过多：需要 7-10 个，当前 ${exercises.length} 个`);
   }
 
   if (new Set(answers).size !== answers.length) {
@@ -507,6 +509,54 @@ function parsePlan(value: unknown): AiLessonDraftPlan {
   }
 
   return value as AiLessonDraftPlan;
+}
+
+function parseChapterPlan(value: unknown): AiChapterPlan {
+  if (!isObject(value) || !Array.isArray(value.paragraphs)) {
+    throw new LessonDraftValidationError("AI chapter repair plan is incomplete");
+  }
+
+  return value as AiChapterPlan;
+}
+
+function failedChapterIndex(error: LessonDraftValidationError) {
+  const match = error.message.match(/第 (\d+) 章/);
+  return match ? Number(match[1]) - 1 : null;
+}
+
+function buildChapterRepairPrompt(context: LessonDraftGenerationContext, chapterIndex: number, failedChapter: AiChapterPlan | undefined, error: LessonDraftValidationError) {
+  const outline = context.storyOption.chapters[chapterIndex];
+
+  return [
+    "Repair exactly one chapter content plan. Return strict minified JSON only. No Markdown. No explanation. No extra keys.",
+    `Validation failure to fix: ${error.message}`,
+    "Course:",
+    `- Title: ${context.course.title}`,
+    `- English level: ${context.course.englishLevel}`,
+    `- Theme/world setting: ${context.course.theme}`,
+    `- Grammar targets: ${context.course.grammar.join(", ")}`,
+    "Chapter to repair:",
+    `- chapter index: ${chapterIndex + 1}`,
+    `- title: ${outline?.title ?? failedChapter?.title ?? "Chapter"}`,
+    `- story summary: ${outline?.summary ?? "not provided"}`,
+    `- grammar hook: ${outline?.knowledgeHook ?? "not provided"}`,
+    "Characters:",
+    `- teacher: id=${context.teacher.id}; name=${personName(context.teacher)}; appearance=${context.teacher.appearance ?? "not provided"}`,
+    context.students
+      .map((student) => `- student: id=${student.id}; name=${personName(student)}; appearance=${student.appearance ?? "not provided"}; interests=${student.interests.join(", ") || "not provided"}`)
+      .join("\n"),
+    "Requirements:",
+    "- Return one chapter object only: {\"title\":\"string\",\"paragraphs\":[{\"markedText\":\"string\",\"shot\":{...}},{\"markedText\":\"string\",\"shot\":{...}}]}",
+    "- Exactly two paragraphs.",
+    "- Each paragraph must be 60-90 rendered English words after replacing markers with answers.",
+    "- Across the two paragraphs, include 8-10 inline exercise markers total.",
+    "- Include at least 2 vocabulary hint markers and several verb markers that practice the grammar target.",
+    "- Do not repeat exercise answers inside this chapter.",
+    "- Each paragraph must have at least one marker.",
+    "- Marker formats: [verb:baseVerb|answer] and [vocab:pattern|answer].",
+    "- Each paragraph needs a shot with characterIds, location, action, mood, scenePrompt, composition, continuityNotes.",
+    failedChapter ? `Previous invalid chapter JSON: ${JSON.stringify(failedChapter)}` : "",
+  ].filter(Boolean).join("\n");
 }
 
 export function assembleLessonDraftFromPlan(planInput: AiLessonDraftPlan, context: LessonDraftGenerationContext): LessonDraft {
@@ -633,7 +683,7 @@ export function assembleLessonDraftFromPlan(planInput: AiLessonDraftPlan, contex
   return draft;
 }
 
-async function callDeepSeek(messages: ChatMessage[]) {
+async function callDeepSeek(messages: ChatMessage[], thinkingOverride?: DeepSeekThinkingMode) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   const baseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com";
 
@@ -647,7 +697,7 @@ async function callDeepSeek(messages: ChatMessage[]) {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(buildDeepSeekRequestBody(messages)),
+    body: JSON.stringify(buildDeepSeekRequestBody(messages, thinkingOverride)),
   });
 
   if (!response.ok) {
@@ -668,9 +718,9 @@ async function callDeepSeek(messages: ChatMessage[]) {
   return content;
 }
 
-export function buildDeepSeekRequestBody(messages: ChatMessage[]): DeepSeekRequestBody {
+export function buildDeepSeekRequestBody(messages: ChatMessage[], thinkingOverride?: DeepSeekThinkingMode): DeepSeekRequestBody {
   const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
-  const thinkingMode = process.env.DEEPSEEK_THINKING === "enabled" ? "enabled" : "disabled";
+  const thinkingMode = thinkingOverride ?? (process.env.DEEPSEEK_THINKING === "enabled" ? "enabled" : "disabled");
 
   if (thinkingMode === "disabled") {
     return {
@@ -703,7 +753,7 @@ export async function generateLessonDraft(context: LessonDraftGenerationContext)
     {
       role: "system",
       content:
-        "You are an expert English picture-book content designer and structured JSON formatter. Carefully check all marker counts and paragraph distributions before answering. Do not include reasoning in the visible response. Return strict JSON only.",
+        "You are an expert English picture-book content designer and structured JSON formatter. Before answering, verify each chapter has 8-10 markers, enough story text, and no duplicate exercise answers. Do not include reasoning in the visible response. Return strict JSON only.",
     },
     {
       role: "user",
@@ -712,5 +762,36 @@ export async function generateLessonDraft(context: LessonDraftGenerationContext)
   ];
 
   const parsed = parsePlan(parseJsonObject(await callDeepSeek(messages)));
-  return validateLessonDraft(assembleLessonDraftFromPlan(parsed, context), context.storyOption);
+
+  try {
+    return validateLessonDraft(assembleLessonDraftFromPlan(parsed, context), context.storyOption);
+  } catch (error) {
+    if (!(error instanceof LessonDraftValidationError)) {
+      throw error;
+    }
+
+    const chapterIndex = failedChapterIndex(error);
+    if (chapterIndex === null || !parsed.chapters[chapterIndex]) {
+      throw error;
+    }
+
+    const repairMessages: ChatMessage[] = [
+      {
+        role: "system",
+        content:
+          "You repair one English picture-book chapter plan. Carefully count exercise markers, avoid duplicate answers, and return strict JSON only.",
+      },
+      {
+        role: "user",
+        content: buildChapterRepairPrompt(context, chapterIndex, parsed.chapters[chapterIndex], error),
+      },
+    ];
+    const repairedChapter = parseChapterPlan(parseJsonObject(await callDeepSeek(repairMessages, "enabled")));
+    const repairedPlan: AiLessonDraftPlan = {
+      ...parsed,
+      chapters: parsed.chapters.map((chapter, index) => (index === chapterIndex ? repairedChapter : chapter)),
+    };
+
+    return validateLessonDraft(assembleLessonDraftFromPlan(repairedPlan, context), context.storyOption);
+  }
 }

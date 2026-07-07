@@ -184,10 +184,10 @@ describe("lesson draft validation", () => {
     expect(validateLessonDraft(sevenExerciseDraft, storyOption)).toEqual(sevenExerciseDraft);
   });
 
-  test("accepts a draft with 5 exercises in one chapter", () => {
+  test("rejects a draft with fewer than 7 exercises in one chapter", () => {
     const fiveExerciseDraft = removeExercises(draft, ["c1-e6", "c1-e7", "c1-e8", "c1-e9", "c1-e10"]);
 
-    expect(validateLessonDraft(fiveExerciseDraft, storyOption)).toEqual(fiveExerciseDraft);
+    expect(() => validateLessonDraft(fiveExerciseDraft, storyOption)).toThrow("第 1 章练习数量不足：需要 7-10 个，当前 5 个");
   });
 
   test("rejects a draft with extremely short chapter text", () => {
