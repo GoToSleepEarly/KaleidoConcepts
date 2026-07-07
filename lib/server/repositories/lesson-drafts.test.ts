@@ -147,6 +147,50 @@ describe("lesson draft validation", () => {
     expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
   });
 
+  function removeExercises(source: LessonDraft, exerciseIds: string[]) {
+    const next = structuredClone(source);
+    const removeSet = new Set(exerciseIds);
+    next.chapters[0].exercises = next.chapters[0].exercises.filter((exercise) => !removeSet.has(exercise.id));
+    next.chapters[0].blocks = next.chapters[0].blocks.filter((block) => block.type === "text" || !removeSet.has(block.exerciseId));
+    next.chapters[0].blocks = next.chapters[0].blocks.map((block, index) => ({ ...block, order: index + 1 }));
+    next.chapters[0].shots[0].coveredBlockIds = next.chapters[0].blocks.slice(0, 5).map((block) => block.id);
+    next.chapters[0].shots[1].coveredBlockIds = next.chapters[0].blocks.slice(5).map((block) => block.id);
+    return next;
+  }
+
+  test("accepts a draft with 8 exercises in one chapter", () => {
+    const eightExerciseDraft = removeExercises(draft, ["c1-e9", "c1-e10"]);
+
+    expect(validateLessonDraft(eightExerciseDraft, storyOption)).toEqual(eightExerciseDraft);
+  });
+
+  test("accepts a draft when verb and vocabulary ratio is not 7 to 3", () => {
+    const nineExerciseDraft = removeExercises(draft, ["c1-e10"]);
+    nineExerciseDraft.chapters[0].exercises[7] = { id: "c1-e8", type: "verb_blank", answer: "searched", baseVerb: "search" };
+    nineExerciseDraft.chapters[0].blocks[8] = {
+      id: "c1-b9",
+      order: 9,
+      type: "exercise",
+      exerciseId: "c1-e8",
+      display: { kind: "verb_blank", placeholder: "________", prompt: "search" },
+    };
+
+    expect(validateLessonDraft(nineExerciseDraft, storyOption)).toEqual(nineExerciseDraft);
+  });
+
+  test("rejects a draft with fewer than 8 exercises in one chapter", () => {
+    const sevenExerciseDraft = removeExercises(draft, ["c1-e8", "c1-e9", "c1-e10"]);
+
+    expect(() => validateLessonDraft(sevenExerciseDraft, storyOption)).toThrow("第 1 章练习数量不足：需要 8-10 个，当前 7 个");
+  });
+
+  test("rejects a draft with extremely short chapter text", () => {
+    const shortDraft = structuredClone(draft);
+    shortDraft.chapters[0].blocks[0] = { id: "c1-b1", order: 1, type: "text", text: "Short text." };
+
+    expect(() => validateLessonDraft(shortDraft, storyOption)).toThrow("第 1 章正文词数异常：需要 60-190 词");
+  });
+
   test("rejects a draft when an exercise is not referenced exactly once", () => {
     const invalid = structuredClone(draft);
     invalid.chapters[0].blocks[1] = { ...invalid.chapters[0].blocks[1], type: "exercise", exerciseId: "missing", display: { kind: "verb_blank", placeholder: "________", prompt: "walk" } };
