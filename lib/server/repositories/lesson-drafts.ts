@@ -49,7 +49,7 @@ export class LessonDraftPrerequisiteError extends Error {
   }
 }
 
-const minExercisesPerChapter = 5;
+const minExercisesPerChapter = 7;
 const maxExercisesPerChapter = 10;
 const minChapterWords = 60;
 const maxChapterWords = 190;
@@ -213,11 +213,11 @@ export function validateLessonDraft(draft: LessonDraft, sourceStoryOption: Story
     }
 
     if (exerciseBlocks.length < minExercisesPerChapter) {
-      throw new LessonDraftValidationError(`${chapterLabel(index)}练习数量不足：需要 5-10 个，当前 ${exerciseBlocks.length} 个`);
+      throw new LessonDraftValidationError(`${chapterLabel(index)}练习数量不足：需要 7-10 个，当前 ${exerciseBlocks.length} 个`);
     }
 
     if (exerciseBlocks.length > maxExercisesPerChapter) {
-      throw new LessonDraftValidationError(`${chapterLabel(index)}练习数量过多：需要 5-10 个，当前 ${exerciseBlocks.length} 个`);
+      throw new LessonDraftValidationError(`${chapterLabel(index)}练习数量过多：需要 7-10 个，当前 ${exerciseBlocks.length} 个`);
     }
 
     const wordCount = countWords(chapter.blocks);
