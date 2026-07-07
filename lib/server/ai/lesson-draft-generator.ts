@@ -108,16 +108,15 @@ function buildPrompt(context: LessonDraftGenerationContext) {
     "- Each chapter must have exactly two paragraphs.",
     "- Each paragraph must use markedText, not plain text.",
     "- markedText is the final student story paragraph with inline exercise markers embedded in natural sentence context.",
-    "- markedText must contain 55-70 rendered English words after markers are replaced by their answers.",
+    "- markedText should contain about 55-80 rendered English words after markers are replaced by their answers.",
     "- Use exactly this marker format for exercises: [verb:baseVerb|answer] and [vocab:pattern|answer].",
     "- Example verb marker: [verb:walk|walked]. The answer must be the exact word that belongs in the sentence.",
     "- Example vocabulary marker: [vocab:t _ _ _ l|trail]. The pattern should reveal useful letters, usually first and last letters.",
     "- Do not put spaces around the marker pipes. Do not nest markers. Do not use Markdown.",
-    "- Each chapter must contain exactly 10 markers across its two markedText paragraphs: exactly 7 verb markers and exactly 3 vocab markers.",
-    "- Paragraph 1 must contain exactly 5 markers: exactly 4 verb markers and exactly 1 vocab marker.",
-    "- Paragraph 2 must contain exactly 5 markers: exactly 3 verb markers and exactly 2 vocab markers.",
-    "- Do not use a 4 verb + 1 vocab split in both paragraphs; that creates 8 verb markers and 2 vocab markers, which is invalid.",
-    "- Do not repeat the same exercise answer inside one chapter.",
+    "- Each chapter should contain 8-10 markers total across its two markedText paragraphs.",
+    "- Include both verb blank and vocabulary hint markers when natural, but do not force an exact ratio.",
+    "- Spread markers across both paragraphs so each paragraph has at least one exercise marker.",
+    "- Avoid repeating the same exercise answer inside one chapter.",
     "- Each paragraph has its own image shot semantics. Shot semantics are used for picture-book image generation, so make them specific to the paragraph's story action.",
     "- Choose verb markers that directly practice the target grammar when possible. For example, past tense targets require past-tense answers.",
     "- Vocabulary markers must be important words or phrases from the chapter story, not random words.",
@@ -671,7 +670,7 @@ async function callDeepSeek(messages: ChatMessage[]) {
 
 export function buildDeepSeekRequestBody(messages: ChatMessage[]): DeepSeekRequestBody {
   const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
-  const thinkingMode = process.env.DEEPSEEK_THINKING === "disabled" ? "disabled" : "enabled";
+  const thinkingMode = process.env.DEEPSEEK_THINKING === "enabled" ? "enabled" : "disabled";
 
   if (thinkingMode === "disabled") {
     return {
@@ -690,7 +689,7 @@ export function buildDeepSeekRequestBody(messages: ChatMessage[]): DeepSeekReque
     max_tokens: 64000,
     response_format: { type: "json_object" },
     thinking: { type: "enabled" },
-    reasoning_effort: "max",
+    reasoning_effort: "high",
   };
 }
 
@@ -712,27 +711,6 @@ export async function generateLessonDraft(context: LessonDraftGenerationContext)
     },
   ];
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const parsed = parsePlan(parseJsonObject(await callDeepSeek(messages)));
-      return validateLessonDraft(assembleLessonDraftFromPlan(parsed, context), context.storyOption);
-    } catch (error) {
-      if (attempt === 0) {
-        messages.push({
-          role: "user",
-          content:
-            error instanceof LessonDraftValidationError
-              ? `The previous content plan failed validation: ${error.message}. Regenerate the full content plan. Each chapter needs two markedText paragraphs of 55-70 rendered English words. Paragraph 1 must have exactly 5 inline markers: 4 [verb:baseVerb|answer] markers and 1 [vocab:pattern|answer] marker. Paragraph 2 must have exactly 5 inline markers: 3 [verb:baseVerb|answer] markers and 2 [vocab:pattern|answer] markers. Whole chapter total must be exactly 7 verb markers and 3 vocab markers. Do not use 4 verb + 1 vocab in both paragraphs. Return strict minified JSON only.`
-              : `The previous response could not be parsed as a valid content plan: ${error instanceof Error ? error.message : "unknown error"}. Regenerate strict minified JSON only using the required content-plan shape.`,
-        });
-        continue;
-      }
-
-      if (attempt === 1) {
-        throw error;
-      }
-    }
-  }
-
-  throw new Error("课文草稿生成失败");
+  const parsed = parsePlan(parseJsonObject(await callDeepSeek(messages)));
+  return validateLessonDraft(assembleLessonDraftFromPlan(parsed, context), context.storyOption);
 }

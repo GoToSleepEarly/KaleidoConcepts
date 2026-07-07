@@ -609,32 +609,45 @@ describe("lesson draft AI plan assembly", () => {
 });
 
 describe("lesson draft DeepSeek request", () => {
-  test("uses thinking mode with max reasoning effort by default", () => {
-    const body = buildDeepSeekRequestBody([{ role: "user", content: "Generate a lesson draft." }]);
-
-    expect(body).toMatchObject({
-      model: "deepseek-v4-flash",
-      thinking: { type: "enabled" },
-      reasoning_effort: "max",
-      response_format: { type: "json_object" },
-      max_tokens: 64000,
-    });
-    expect(body).not.toHaveProperty("temperature");
-  });
-
-  test("can disable thinking mode through environment for compatibility", () => {
+  test("uses non-thinking mode by default for faster normal generation", () => {
     const original = process.env.DEEPSEEK_THINKING;
-    process.env.DEEPSEEK_THINKING = "disabled";
+    delete process.env.DEEPSEEK_THINKING;
 
     try {
       const body = buildDeepSeekRequestBody([{ role: "user", content: "Generate a lesson draft." }]);
 
       expect(body).toMatchObject({
+        model: "deepseek-v4-flash",
         thinking: { type: "disabled" },
         temperature: 0.2,
+        response_format: { type: "json_object" },
         max_tokens: 32000,
       });
       expect(body).not.toHaveProperty("reasoning_effort");
+    } finally {
+      if (original === undefined) {
+        delete process.env.DEEPSEEK_THINKING;
+      } else {
+        process.env.DEEPSEEK_THINKING = original;
+      }
+    }
+  });
+
+  test("enables thinking mode only through environment configuration", () => {
+    const original = process.env.DEEPSEEK_THINKING;
+    process.env.DEEPSEEK_THINKING = "enabled";
+
+    try {
+      const body = buildDeepSeekRequestBody([{ role: "user", content: "Generate a lesson draft." }]);
+
+      expect(body).toMatchObject({
+        model: "deepseek-v4-flash",
+        thinking: { type: "enabled" },
+        reasoning_effort: "high",
+        response_format: { type: "json_object" },
+        max_tokens: 64000,
+      });
+      expect(body).not.toHaveProperty("temperature");
     } finally {
       if (original === undefined) {
         delete process.env.DEEPSEEK_THINKING;
