@@ -7,6 +7,8 @@ import {
   CourseImageInvalidStateError,
   CourseImageNotFoundError,
   CourseImagePrerequisiteError,
+  type CourseImageRecord,
+  type CourseImagesDb,
   createMissingCourseImages,
   deriveLessonShotImageSlots,
   getCourseResources,
@@ -177,6 +179,19 @@ describe("course image planning", () => {
   });
 });
 
+type TestCourse = {
+  id: string;
+  status: "draft" | "building_resources" | "ready" | "build_failed";
+  lessonDraft: {
+    content: LessonDraft;
+  } | null;
+};
+
+type CreateImageInput = Parameters<CourseImagesDb["courseImage"]["createMany"]>[0]["data"][number];
+type UpdateCourseInput = Parameters<CourseImagesDb["course"]["update"]>[0];
+type FindImageInput = Parameters<CourseImagesDb["courseImage"]["findFirst"]>[0];
+type UpdateImageInput = Parameters<CourseImagesDb["courseImage"]["update"]>[0];
+
 function makeDb() {
   const state = {
     course: {
@@ -185,8 +200,8 @@ function makeDb() {
       lessonDraft: {
         content: draft(),
       },
-    },
-    images: [] as any[],
+    } satisfies TestCourse,
+    images: [] as CourseImageRecord[],
   };
 
   return {
@@ -194,15 +209,15 @@ function makeDb() {
     db: {
       course: {
         findUnique: vi.fn(async () => state.course),
-        update: vi.fn(async ({ data }: any) => {
+        update: vi.fn(async ({ data }: UpdateCourseInput) => {
           state.course.status = data.status;
           return state.course;
         }),
       },
       courseImage: {
         findMany: vi.fn(async () => state.images),
-        createMany: vi.fn(async ({ data }: any) => {
-          data.forEach((item: any) => {
+        createMany: vi.fn(async ({ data }: { data: CreateImageInput[] }) => {
+          data.forEach((item) => {
             state.images.push({
               id: `image-${state.images.length + 1}`,
               ...item,
@@ -217,14 +232,17 @@ function makeDb() {
           });
           return { count: data.length };
         }),
-        findFirst: vi.fn(async ({ where }: any) => state.images.find((image) => image.id === where.id && image.courseId === where.courseId) ?? null),
-        update: vi.fn(async ({ where, data }: any) => {
+        findFirst: vi.fn(async ({ where }: FindImageInput) => state.images.find((image) => image.id === where.id && image.courseId === where.courseId) ?? null),
+        update: vi.fn(async ({ where, data }: UpdateImageInput) => {
           const image = state.images.find((item) => item.id === where.id);
+          if (!image) {
+            throw new Error("image not found");
+          }
           Object.assign(image, data, { updatedAt: new Date("2026-07-08T00:01:00Z") });
           return image;
         }),
       },
-    } as any,
+    } satisfies CourseImagesDb,
   };
 }
 
@@ -235,7 +253,7 @@ describe("course image repository operations", () => {
 
   it("throws a prerequisite error when the course has no lesson draft", async () => {
     const { db, state } = makeDb();
-    state.course.lessonDraft = null as any;
+    state.course.lessonDraft = null;
 
     await expect(getCourseResources(db, "course-1")).rejects.toBeInstanceOf(CourseImagePrerequisiteError);
   });
