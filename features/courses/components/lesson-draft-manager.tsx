@@ -11,7 +11,13 @@ import type { LessonBlock, LessonDraft, LessonExercise, LessonShot } from "@/lib
 import { cn } from "@/lib/utils";
 
 const closingViewId = "__closing__";
-const generationSteps = ["读取故事骨架", "扩写英文正文", "嵌入练习空格", "规划图片分镜"];
+const generationSteps = ["读取故事骨架", "AI 生成正文和分镜", "装配练习结构", "校验并保存草稿"];
+const generationStepNotes: Record<string, string> = {
+  读取故事骨架: "读取课程基础信息、人物画像和已选故事方案。",
+  "AI 生成正文和分镜": "AI 负责每章两段故事、内联习题标记和绘本分镜语义。",
+  装配练习结构: "系统生成 block、exercise、shot 引用，避免结构错位。",
+  校验并保存草稿: "检查词数、练习数量、分镜覆盖和人物引用，通过后写入数据库。",
+};
 
 type ActiveSelection =
   | { type: "shot"; shotId: string }
@@ -557,6 +563,7 @@ function GenerationPanel({ progress, step }: { progress: number; step: string })
       <div className="mx-auto max-w-2xl">
         <p className="text-sm font-medium text-violet-700">AI 正在生成</p>
         <h3 className="mt-1 text-lg font-semibold text-slate-950">{step}</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-500">{generationStepNotes[step]}</p>
         <ProgressBar progress={progress} />
         <div className="mt-4 grid gap-2 sm:grid-cols-4">
           {generationSteps.map((item) => (

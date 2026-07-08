@@ -43,6 +43,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ message: error.message }, { status: 400 });
     }
 
+    console.error("Lesson draft generation failed", error);
     return NextResponse.json({ message: "课文草稿生成失败" }, { status: 500 });
   }
 }
