@@ -40,34 +40,59 @@ const maxExercisesPerChapter = 10;
 
 type AiShotPlan = Omit<LessonShot, "id" | "order" | "imageSlotId" | "coveredBlockIds">;
 
-type AiParagraphPlan = {
-  markedText: string;
+type AiStoryParagraphPlan = {
+  text: string;
   shot: AiShotPlan;
 };
 
-type AiChapterPlan = {
+type AiStoryChapterPlan = {
   title: string;
-  paragraphs: [AiParagraphPlan, AiParagraphPlan];
+  paragraphs: [AiStoryParagraphPlan, AiStoryParagraphPlan];
 };
 
-type AiLessonDraftPlan = {
+type AiStoryContentPlan = {
   title: string;
   visualStyle: Omit<LessonVisualStyle, "aspectRatio"> & { aspectRatio?: "4:3" };
   characters: LessonVisualCharacter[];
-  chapters: AiChapterPlan[];
+  chapters: AiStoryChapterPlan[];
   closingReading: {
     title: string;
     text: string;
   };
 };
 
+type AiExercisePlan = {
+  chapters: AiExerciseChapterPlan[];
+};
+
+type AiExerciseChapterPlan = {
+  chapterIndex: number;
+  exercises: AiExercisePlanItem[];
+};
+
+type AiExercisePlanItem =
+  | {
+      type: "verb_blank";
+      paragraphIndex: 1 | 2;
+      answer: string;
+      occurrenceText: string;
+      baseVerb: string;
+    }
+  | {
+      type: "vocabulary_hint";
+      paragraphIndex: 1 | 2;
+      answer: string;
+      occurrenceText: string;
+      pattern: string;
+    };
+
 function personName(person: PersonProfile) {
   return person.englishName || person.chineseName || person.name;
 }
 
-function buildPrompt(context: LessonDraftGenerationContext) {
+function buildStoryContentPrompt(context: LessonDraftGenerationContext) {
   return [
-    "Use the selected story outline as the fixed skeleton. Your task is to write student-facing English picture-book content and image shot semantics. Do not redesign the story.",
+    "Use the selected story outline as the fixed skeleton. Write pure student-facing English picture-book content and image shot semantics. Do not redesign the story.",
     "",
     "Course:",
     `- Title: ${context.course.title}`,
@@ -82,10 +107,7 @@ function buildPrompt(context: LessonDraftGenerationContext) {
     `- logline: ${context.storyOption.logline}`,
     "- chapters:",
     context.storyOption.chapters
-      .map(
-        (chapter, index) =>
-          `  ${index + 1}. ${chapter.title}\n     story summary: ${chapter.summary}\n     grammar hook: ${chapter.knowledgeHook}`,
-      )
+      .map((chapter, index) => `  ${index + 1}. ${chapter.title}\n     story summary: ${chapter.summary}\n     grammar hook: ${chapter.knowledgeHook}`)
       .join("\n"),
     "",
     "Characters:",
@@ -98,38 +120,52 @@ function buildPrompt(context: LessonDraftGenerationContext) {
       .join("\n"),
     "",
     "Output requirements:",
-    "- Return strict minified JSON only, preferably on one line. No Markdown. No explanation. No comments. No extra keys.",
-    "- Return a content plan, not the final database LessonDraft.",
-    "- The backend will create ids, block order, exercise block references, imageSlotId, shot order, and coveredBlockIds.",
-    "- Do not include block ids, exercise ids, shot ids, sourceOutlineChapterIndex, wordTarget, exerciseTarget, schemaVersion, generationMode, language, or sourceStoryOptionId.",
-    "- visualStyle must describe the illustration style and consistency. aspectRatio is optional and must be \"4:3\" if present.",
-    "- characters must include exactly one teacher and all selected students. Character ids must match the input ids.",
-    "- Generate exactly one chapter plan for each selected outline chapter, in the same order.",
-    "- Each chapter must preserve the corresponding outline chapter's story intent and grammar hook.",
-    "- The chapter story must visibly use the grammar targets from the course and the chapter grammar hook. Do not treat grammar as a separate note.",
+    "- Return strict minified JSON only. No Markdown. No explanation. No comments. No extra keys.",
+    "- Return a story content plan, not the final database LessonDraft.",
+    "- Do not include exercise markers. Do not include [verb:...] or [vocab:...].",
     "- Each chapter must have exactly two paragraphs.",
-    "- Each paragraph must use markedText, not plain text.",
-    "- markedText is the final student story paragraph with inline exercise markers embedded in natural sentence context.",
-    "- markedText should contain about 55-80 rendered English words after markers are replaced by their answers.",
-    "- Use exactly this marker format for exercises: [verb:baseVerb|answer] and [vocab:pattern|answer].",
-    "- Example verb marker: [verb:walk|walked]. The answer must be the exact word that belongs in the sentence.",
-    "- Example vocabulary marker: [vocab:t _ _ _ l|trail]. The pattern should reveal useful letters, usually first and last letters.",
-    "- Do not put spaces around the marker pipes. Do not nest markers. Do not use Markdown.",
-    "- Each chapter should contain 8-10 markers total across its two markedText paragraphs, usually 4-5 markers per paragraph.",
-    "- Include both verb blank and vocabulary hint markers when natural, with at least 2 vocabulary hint markers per chapter.",
-    "- Spread markers across both paragraphs so each paragraph has at least 3 exercise markers.",
-    "- Avoid repeating the same exercise answer inside one chapter.",
-    "- Each paragraph has its own image shot semantics. Shot semantics are used for picture-book image generation, so make them specific to the paragraph's story action.",
-    "- Choose verb markers that directly practice the target grammar when possible. For example, past tense targets require past-tense answers.",
-    "- Vocabulary markers must be important words or phrases from the chapter story, not random words.",
+    "- Each paragraph.text must be pure English story text, about 45-70 words.",
+    "- The chapter story must visibly use the grammar targets and chapter grammar hook in natural story actions.",
+    "- Each paragraph has its own image shot semantics.",
     "- shot.characterIds must reference global character ids only.",
-    "- shot.scenePrompt, composition, location, action, mood, and continuityNotes must be English.",
-    "- Image prompts must preserve character consistency and must not redesign character appearances.",
-    "- Keep shot fields concise but concrete. Each should be one short sentence or phrase.",
-    "- closingReading.text must be English only, 80-120 words, summarize the whole story after reading, contain no blanks, no exercises, no answers, no image prompt, and no final \"The End\" sentence.",
+    "- closingReading.text must be English only, 80-120 words, no blanks, no exercises, no image prompt, and no final The End sentence.",
     "",
     "Required JSON shape:",
-    `{"title":"string","visualStyle":{"artStyle":"string","colorPalette":"string","aspectRatio":"4:3","consistencyPrompt":"string"},"characters":[{"id":"${context.teacher.id}","name":"string","role":"teacher","appearance":"string","outfit":"string","consistencyPrompt":"string"}],"chapters":[{"title":"string","paragraphs":[{"markedText":"Yesterday, Ms. Lin [verb:walk|walked] toward the quiet forest [vocab:g _ _ e|gate].","shot":{"characterIds":["${context.teacher.id}"],"location":"string","action":"string","mood":"string","scenePrompt":"string","composition":"string","continuityNotes":"string"}},{"markedText":"The students [verb:find|found] a bright [vocab:m _ p|map].","shot":{"characterIds":["${context.teacher.id}"],"location":"string","action":"string","mood":"string","scenePrompt":"string","composition":"string","continuityNotes":"string"}}]}],"closingReading":{"title":"string","text":"80-120 English words"}}`,
+    `{"title":"string","visualStyle":{"artStyle":"string","colorPalette":"string","aspectRatio":"4:3","consistencyPrompt":"string"},"characters":[{"id":"${context.teacher.id}","name":"string","role":"teacher","appearance":"string","outfit":"string","consistencyPrompt":"string"}],"chapters":[{"title":"string","paragraphs":[{"text":"pure story paragraph with no exercise markers","shot":{"characterIds":["${context.teacher.id}"],"location":"string","action":"string","mood":"string","scenePrompt":"string","composition":"string","continuityNotes":"string"}},{"text":"pure story paragraph with no exercise markers","shot":{"characterIds":["${context.teacher.id}"],"location":"string","action":"string","mood":"string","scenePrompt":"string","composition":"string","continuityNotes":"string"}}]}],"closingReading":{"title":"string","text":"80-120 English words"}}`,
+  ].join("\n");
+}
+
+function buildExercisePlanPrompt(context: LessonDraftGenerationContext, storyPlan: AiStoryContentPlan) {
+  return [
+    "Create an exercise plan from the provided story text. Do not rewrite story text. Return strict minified JSON only.",
+    "",
+    "Course grammar targets:",
+    context.course.grammar.join(", "),
+    "",
+    "Exercise rules:",
+    "- Each chapter must have 7-10 exercises; prefer 8-10 when possible.",
+    "- Use verb_blank for grammar practice and vocabulary_hint for important story words.",
+    "- Do not repeat answer within the same chapter.",
+    "- occurrenceText must be copied exactly from the specified paragraph text.",
+    "- occurrenceText must appear exactly once in that paragraph.",
+    "- answer must be contained inside occurrenceText.",
+    "- Code will do exact string replacement only, so do not rely on semantic matching.",
+    "",
+    "Story text by chapter:",
+    storyPlan.chapters
+      .map((chapter, chapterIndex) => {
+        const outline = context.storyOption.chapters[chapterIndex];
+        return [
+          `Chapter ${chapterIndex + 1}: ${chapter.title}`,
+          `Knowledge hook: ${outline?.knowledgeHook ?? "not provided"}`,
+          `Paragraph 1: ${chapter.paragraphs[0]?.text ?? ""}`,
+          `Paragraph 2: ${chapter.paragraphs[1]?.text ?? ""}`,
+        ].join("\n");
+      })
+      .join("\n\n"),
+    "",
+    "Required JSON shape:",
+    '{"chapters":[{"chapterIndex":1,"exercises":[{"type":"verb_blank","paragraphIndex":1,"answer":"walked","occurrenceText":"walked","baseVerb":"walk"},{"type":"vocabulary_hint","paragraphIndex":1,"answer":"gate","occurrenceText":"gate","pattern":"g _ _ e"}]}]}',
   ].join("\n");
 }
 
@@ -298,7 +334,7 @@ function nonEmptyString(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-function stableCharacterPlans(plan: AiLessonDraftPlan, context: LessonDraftGenerationContext): LessonVisualCharacter[] {
+function stableCharacterPlans(plan: { characters?: LessonVisualCharacter[] }, context: LessonDraftGenerationContext): LessonVisualCharacter[] {
   const sourceCharacters = [
     {
       id: context.teacher.id,
@@ -344,139 +380,8 @@ function vocabularyPattern(answer: string) {
   return `${clean[0]} ${Array.from({ length: Math.max(1, clean.length - 2) }, () => "_").join(" ")} ${clean[clean.length - 1]}`;
 }
 
-function paragraphFiller(context: LessonDraftGenerationContext, chapterIndex: number, paragraphIndex: number) {
-  const outline = context.storyOption.chapters[chapterIndex];
-  const teacher = personName(context.teacher);
-  const students = context.students.map(personName).join(" and ") || "the students";
-
-  return [
-    `${teacher} and ${students} stayed inside the ${context.course.theme} story world.`,
-    `They used English to describe the clue, remember what happened, and choose the next careful action.`,
-    `This moment connected to ${outline?.title ?? "the chapter"} and kept the adventure moving forward.`,
-    paragraphIndex === 0
-      ? "The first scene opened the problem clearly so every student could follow the story."
-      : "The second scene helped the group solve the challenge and prepare for the next chapter.",
-  ].join(" ");
-}
-
-function ensureParagraphLength(text: string, context: LessonDraftGenerationContext, chapterIndex: number, paragraphIndex: number) {
-  let result = text.trim();
-
-  while (countTextWords(result) < 45) {
-    result = `${result} ${paragraphFiller(context, chapterIndex, paragraphIndex)}`.trim();
-  }
-
-  return result;
-}
-
-type ParsedMarker =
-  | {
-      type: "text";
-      text: string;
-    }
-  | {
-      type: "verb_blank";
-      baseVerb: string;
-      answer: string;
-    }
-  | {
-      type: "vocabulary_hint";
-      pattern: string;
-      answer: string;
-      letterCount: number;
-    };
-
 function vocabularyLetterCount(answer: string) {
   return answer.replace(/[^A-Za-z]/g, "").length || answer.trim().length;
-}
-
-function parseMarkedText(markedText: string) {
-  const items: ParsedMarker[] = [];
-  const markerPattern = /\[(verb|vocab):([^\]|]*)\|([^\]]*)\]/g;
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = markerPattern.exec(markedText)) !== null) {
-    if (match.index > cursor) {
-      items.push({ type: "text", text: markedText.slice(cursor, match.index) });
-    }
-
-    const markerKind = match[1];
-    const meta = match[2].trim();
-    const answer = match[3].trim();
-
-    if (!answer || (markerKind === "verb" && !meta)) {
-      throw new LessonDraftValidationError("AI marked exercise is incomplete");
-    }
-
-    if (markerKind === "verb") {
-      items.push({ type: "verb_blank", baseVerb: meta, answer });
-    } else {
-      const pattern = meta || vocabularyPattern(answer);
-      items.push({ type: "vocabulary_hint", pattern, answer, letterCount: vocabularyLetterCount(answer) });
-    }
-
-    cursor = markerPattern.lastIndex;
-  }
-
-  if (cursor < markedText.length) {
-    items.push({ type: "text", text: markedText.slice(cursor) });
-  }
-
-  if (items.some((item) => item.type === "text" && /\[(?:verb|vocab):/.test(item.text))) {
-    throw new LessonDraftValidationError("AI marked exercise syntax is invalid");
-  }
-
-  return items;
-}
-
-function capChapterMarkers(parsedParagraphs: [ParsedMarker[], ParsedMarker[]]) {
-  let keptExercises = 0;
-  const seenAnswers = new Set<string>();
-
-  return parsedParagraphs.map((items) =>
-    items.map((item): ParsedMarker => {
-      if (item.type === "text") {
-        return item;
-      }
-
-      const answerKey = item.answer.trim().toLowerCase();
-      if (seenAnswers.has(answerKey)) {
-        return { type: "text", text: item.answer };
-      }
-
-      keptExercises += 1;
-      if (keptExercises <= maxExercisesPerChapter) {
-        seenAnswers.add(answerKey);
-        return item;
-      }
-
-      return { type: "text", text: item.answer };
-    }),
-  ) as [ParsedMarker[], ParsedMarker[]];
-}
-
-function validateChapterMarkers(chapterTitle: string, parsedParagraphs: ParsedMarker[][], chapterIndex = 0) {
-  const paragraphExerciseCounts = parsedParagraphs.map((items) => items.filter((item) => item.type !== "text").length);
-  const exercises = parsedParagraphs.flatMap((items) => items.filter((item) => item.type !== "text"));
-  const answers = exercises.map((item) => item.answer.trim().toLowerCase());
-  const chapterLabel = `第 ${chapterIndex + 1} 章`;
-
-  if (exercises.length < minExercisesPerChapter) {
-    throw new LessonDraftValidationError(`${chapterLabel}练习数量不足：需要 7-10 个，当前 ${exercises.length} 个`);
-  }
-
-  if (exercises.length > maxExercisesPerChapter) {
-    throw new LessonDraftValidationError(`${chapterLabel}练习数量过多：需要 7-10 个，当前 ${exercises.length} 个`);
-  }
-
-  if (new Set(answers).size !== answers.length) {
-    throw new LessonDraftValidationError(`AI marked exercises invalid: chapter=${chapterTitle}, duplicate answers found`);
-  }
-
-  if (paragraphExerciseCounts.some((count) => count < 1)) {
-    throw new LessonDraftValidationError(`AI marked exercises invalid: chapter=${chapterTitle}, each paragraph needs at least one marker`);
-  }
 }
 
 function sanitizeShotPlan(
@@ -529,139 +434,182 @@ function stripTheEnd(text: string) {
   return text.replace(/\s*(?:the\s+end|the\s+end\.)\s*$/i, "").trim();
 }
 
-function parsePlan(value: unknown): AiLessonDraftPlan {
+function parseStoryContentPlan(value: unknown): AiStoryContentPlan {
   if (!isObject(value) || !Array.isArray(value.chapters)) {
-    throw new LessonDraftValidationError("AI content plan is incomplete");
+    throw new LessonDraftValidationError("AI story content plan is incomplete");
   }
 
-  return value as AiLessonDraftPlan;
+  return value as AiStoryContentPlan;
 }
 
-function parseChapterPlan(value: unknown): AiChapterPlan {
-  if (!isObject(value) || !Array.isArray(value.paragraphs)) {
-    throw new LessonDraftValidationError("AI chapter repair plan is incomplete");
+function parseExercisePlan(value: unknown): AiExercisePlan {
+  if (!isObject(value) || !Array.isArray(value.chapters)) {
+    throw new LessonDraftValidationError("AI exercise plan is incomplete");
   }
 
-  return value as AiChapterPlan;
+  return value as AiExercisePlan;
 }
 
-function failedChapterIndex(error: LessonDraftValidationError) {
-  const match = error.message.match(/第 (\d+) 章/);
-  return match ? Number(match[1]) - 1 : null;
+function assertNoLegacyMarkers(text: string, chapterIndex: number) {
+  if (/\[(?:verb|vocab):/.test(text)) {
+    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章正文包含旧 marker，请重新生成纯正文`);
+  }
 }
 
-function buildChapterRepairPrompt(context: LessonDraftGenerationContext, chapterIndex: number, failedChapter: AiChapterPlan | undefined, error: LessonDraftValidationError) {
-  const outline = context.storyOption.chapters[chapterIndex];
+function findUniqueOccurrence(text: string, occurrenceText: string, chapterIndex: number, paragraphIndex: number) {
+  const first = text.indexOf(occurrenceText);
+  if (first < 0) {
+    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${occurrenceText}" 在第 ${paragraphIndex} 段中不存在`);
+  }
 
-  return [
-    "Repair exactly one chapter content plan. Return strict minified JSON only. No Markdown. No explanation. No extra keys.",
-    `Validation failure to fix: ${error.message}`,
-    "Course:",
-    `- Title: ${context.course.title}`,
-    `- English level: ${context.course.englishLevel}`,
-    `- Theme/world setting: ${context.course.theme}`,
-    `- Grammar targets: ${context.course.grammar.join(", ")}`,
-    "Chapter to repair:",
-    `- chapter index: ${chapterIndex + 1}`,
-    `- title: ${outline?.title ?? failedChapter?.title ?? "Chapter"}`,
-    `- story summary: ${outline?.summary ?? "not provided"}`,
-    `- grammar hook: ${outline?.knowledgeHook ?? "not provided"}`,
-    "Characters:",
-    `- teacher: id=${context.teacher.id}; name=${personName(context.teacher)}; appearance=${context.teacher.appearance ?? "not provided"}`,
-    context.students
-      .map((student) => `- student: id=${student.id}; name=${personName(student)}; appearance=${student.appearance ?? "not provided"}; interests=${student.interests.join(", ") || "not provided"}`)
-      .join("\n"),
-    "Requirements:",
-    "- Return one chapter object only: {\"title\":\"string\",\"paragraphs\":[{\"markedText\":\"string\",\"shot\":{...}},{\"markedText\":\"string\",\"shot\":{...}}]}",
-    "- Exactly two paragraphs.",
-    "- Each paragraph must be 60-90 rendered English words after replacing markers with answers.",
-    "- Across the two paragraphs, include 8-10 inline exercise markers total.",
-    "- Include at least 2 vocabulary hint markers and several verb markers that practice the grammar target.",
-    "- Do not repeat exercise answers inside this chapter.",
-    "- Each paragraph must have at least one marker.",
-    "- Marker formats: [verb:baseVerb|answer] and [vocab:pattern|answer].",
-    "- Each paragraph needs a shot with characterIds, location, action, mood, scenePrompt, composition, continuityNotes.",
-    failedChapter ? `Previous invalid chapter JSON: ${JSON.stringify(failedChapter)}` : "",
-  ].filter(Boolean).join("\n");
+  const second = text.indexOf(occurrenceText, first + occurrenceText.length);
+  if (second >= 0) {
+    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${occurrenceText}" 在第 ${paragraphIndex} 段中出现多次，无法稳定替换`);
+  }
+
+  return first;
 }
 
-export function assembleLessonDraftFromPlan(planInput: AiLessonDraftPlan, context: LessonDraftGenerationContext): LessonDraft {
-  const plan = parsePlan(planInput);
-  const characters = stableCharacterPlans(plan, context);
-  const visualStyle = (isObject(plan.visualStyle) ? plan.visualStyle : {}) as Partial<AiLessonDraftPlan["visualStyle"]>;
+function validateExercisePlanItem(item: AiExercisePlanItem, chapterIndex: number) {
+  if (item.type !== "verb_blank" && item.type !== "vocabulary_hint") {
+    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：练习类型不支持`);
+  }
+
+  if (!Number.isInteger(item.paragraphIndex) || (item.paragraphIndex !== 1 && item.paragraphIndex !== 2)) {
+    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：paragraphIndex 必须是 1 或 2`);
+  }
+
+  if (!nonEmptyString(item.answer, "") || !nonEmptyString(item.occurrenceText, "")) {
+    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：answer 和 occurrenceText 不能为空`);
+  }
+
+  if (!item.occurrenceText.includes(item.answer)) {
+    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${item.occurrenceText}" 不包含 answer "${item.answer}"`);
+  }
+
+  if (item.type === "verb_blank" && !nonEmptyString(item.baseVerb, "")) {
+    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：verb_blank 缺少 baseVerb`);
+  }
+}
+
+function assembleParagraphBlocks({
+  paragraphText,
+  exercises,
+  chapterIndex,
+  paragraphIndex,
+  prefix,
+  blocks,
+  lessonExercises,
+}: {
+  paragraphText: string;
+  exercises: AiExercisePlanItem[];
+  chapterIndex: number;
+  paragraphIndex: 1 | 2;
+  prefix: string;
+  blocks: LessonDraft["chapters"][number]["blocks"];
+  lessonExercises: LessonExercise[];
+}) {
+  const sorted = exercises
+    .map((exercise) => {
+      validateExercisePlanItem(exercise, chapterIndex);
+      return { exercise, start: findUniqueOccurrence(paragraphText, exercise.occurrenceText, chapterIndex, paragraphIndex) };
+    })
+    .sort((a, b) => a.start - b.start);
+
+  let cursor = 0;
+  const paragraphBlockIds: string[] = [];
+
+  for (const { exercise, start } of sorted) {
+    if (start < cursor) {
+      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：第 ${paragraphIndex} 段练习位置重叠`);
+    }
+
+    if (start > cursor) {
+      const textBlock = { id: `${prefix}-block-${blocks.length + 1}`, order: blocks.length + 1, type: "text" as const, text: paragraphText.slice(cursor, start) };
+      blocks.push(textBlock);
+      paragraphBlockIds.push(textBlock.id);
+    }
+
+    const exerciseId = `${prefix}-exercise-${lessonExercises.length + 1}`;
+    const lessonExercise: LessonExercise =
+      exercise.type === "verb_blank"
+        ? { id: exerciseId, type: "verb_blank", answer: exercise.answer, baseVerb: exercise.baseVerb }
+        : { id: exerciseId, type: "vocabulary_hint", answer: exercise.answer, pattern: exercise.pattern || vocabularyPattern(exercise.answer), letterCount: vocabularyLetterCount(exercise.answer) };
+    lessonExercises.push(lessonExercise);
+
+    const exerciseBlock = {
+      id: `${prefix}-block-${blocks.length + 1}`,
+      order: blocks.length + 1,
+      type: "exercise" as const,
+      exerciseId,
+      display:
+        lessonExercise.type === "verb_blank"
+          ? { kind: "verb_blank" as const, placeholder: "________" as const, prompt: lessonExercise.baseVerb }
+          : { kind: "vocabulary_hint" as const, placeholder: "________" as const, pattern: lessonExercise.pattern, letterCount: lessonExercise.letterCount },
+    };
+    blocks.push(exerciseBlock);
+    paragraphBlockIds.push(exerciseBlock.id);
+
+    cursor = start + exercise.occurrenceText.length;
+  }
+
+  if (cursor < paragraphText.length) {
+    const textBlock = { id: `${prefix}-block-${blocks.length + 1}`, order: blocks.length + 1, type: "text" as const, text: paragraphText.slice(cursor) };
+    blocks.push(textBlock);
+    paragraphBlockIds.push(textBlock.id);
+  }
+
+  return paragraphBlockIds;
+}
+
+export function assembleLessonDraftFromPlans(storyPlanInput: AiStoryContentPlan, exercisePlanInput: AiExercisePlan, context: LessonDraftGenerationContext): LessonDraft {
+  const storyPlan = parseStoryContentPlan(storyPlanInput);
+  const exercisePlan = parseExercisePlan(exercisePlanInput);
+  const characters = stableCharacterPlans(storyPlan, context);
+  const visualStyle = (isObject(storyPlan.visualStyle) ? storyPlan.visualStyle : {}) as Partial<AiStoryContentPlan["visualStyle"]>;
+  const exercisePlanByChapter = new Map(exercisePlan.chapters.map((chapter) => [chapter.chapterIndex, chapter]));
+
   const chapters = context.storyOption.chapters.map((outlineChapter, chapterIndex) => {
-    const chapterPlan = plan.chapters[chapterIndex];
+    const chapterPlan = storyPlan.chapters[chapterIndex];
+    const exerciseChapter = exercisePlanByChapter.get(chapterIndex + 1);
     const prefix = `chapter-${chapterIndex + 1}`;
     const rawParagraphs = Array.isArray(chapterPlan?.paragraphs) ? chapterPlan.paragraphs.slice(0, 2) : [];
-    const paragraphs: [AiParagraphPlan, AiParagraphPlan] = [0, 1].map((paragraphIndex) => {
+    const paragraphs = [0, 1].map((paragraphIndex) => {
       const paragraph = rawParagraphs[paragraphIndex];
-      const fallbackMarkedText = ensureParagraphLength(outlineChapter.summary, context, chapterIndex, paragraphIndex);
+      const text = nonEmptyString(paragraph?.text, outlineChapter.summary);
+      assertNoLegacyMarkers(text, chapterIndex);
       return {
-        markedText: nonEmptyString(paragraph?.markedText, fallbackMarkedText),
-        shot: sanitizeShotPlan(paragraph?.shot, context, characters, chapterPlan?.title ?? outlineChapter.title, paragraph?.markedText ?? outlineChapter.summary),
+        text,
+        shot: sanitizeShotPlan(paragraph?.shot, context, characters, chapterPlan?.title ?? outlineChapter.title, text),
       };
-    }) as [AiParagraphPlan, AiParagraphPlan];
-    const parsedParagraphs = capChapterMarkers(paragraphs.map((paragraph) => parseMarkedText(paragraph.markedText)) as [ParsedMarker[], ParsedMarker[]]);
-    validateChapterMarkers(chapterPlan?.title ?? outlineChapter.title, parsedParagraphs, chapterIndex);
+    }) as [AiStoryParagraphPlan, AiStoryParagraphPlan];
 
-    const exercises: LessonExercise[] = [];
+    if (!exerciseChapter) {
+      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划缺失`);
+    }
+
+    const answers = exerciseChapter.exercises.map((exercise) => exercise.answer.trim().toLowerCase());
+    if (new Set(answers).size !== answers.length) {
+      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：answer 在同章重复`);
+    }
+
+    if (exerciseChapter.exercises.length < minExercisesPerChapter || exerciseChapter.exercises.length > maxExercisesPerChapter) {
+      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习数量${exerciseChapter.exercises.length < minExercisesPerChapter ? "不足" : "过多"}：需要 7-10 个，当前 ${exerciseChapter.exercises.length} 个`);
+    }
+
     const blocks: LessonDraft["chapters"][number]["blocks"] = [];
-    const paragraphBlockIds: string[][] = [];
-
-    parsedParagraphs.forEach((items) => {
-      const currentParagraphBlockIds: string[] = [];
-
-      items.forEach((item) => {
-        if (item.type === "text") {
-          if (!item.text) {
-            return;
-          }
-
-          const textBlock = { id: `${prefix}-block-${blocks.length + 1}`, order: blocks.length + 1, type: "text" as const, text: item.text };
-          blocks.push(textBlock);
-          currentParagraphBlockIds.push(textBlock.id);
-          return;
-        }
-
-        const exerciseId = `${prefix}-exercise-${exercises.length + 1}`;
-        const exercise: LessonExercise =
-          item.type === "verb_blank"
-            ? {
-                id: exerciseId,
-                type: "verb_blank",
-                answer: item.answer,
-                baseVerb: item.baseVerb,
-              }
-            : {
-                id: exerciseId,
-                type: "vocabulary_hint",
-                answer: item.answer,
-                pattern: item.pattern || vocabularyPattern(item.answer),
-                letterCount: item.letterCount,
-              };
-        exercises.push(exercise);
-
-        const exerciseBlock = {
-          id: `${prefix}-block-${blocks.length + 1}`,
-          order: blocks.length + 1,
-          type: "exercise" as const,
-          exerciseId: exercise.id,
-          display:
-            exercise.type === "verb_blank"
-              ? { kind: "verb_blank" as const, placeholder: "________" as const, prompt: exercise.baseVerb }
-              : {
-                  kind: "vocabulary_hint" as const,
-                  placeholder: "________" as const,
-                  pattern: exercise.pattern,
-                  letterCount: exercise.letterCount,
-                },
-        };
-        blocks.push(exerciseBlock);
-        currentParagraphBlockIds.push(exerciseBlock.id);
-      });
-
-      paragraphBlockIds.push(currentParagraphBlockIds);
-    });
+    const lessonExercises: LessonExercise[] = [];
+    const paragraphBlockIds = paragraphs.map((paragraph, paragraphIndex) =>
+      assembleParagraphBlocks({
+        paragraphText: paragraph.text,
+        exercises: exerciseChapter.exercises.filter((exercise) => exercise.paragraphIndex === paragraphIndex + 1),
+        chapterIndex,
+        paragraphIndex: (paragraphIndex + 1) as 1 | 2,
+        prefix,
+        blocks,
+        lessonExercises,
+      }),
+    );
 
     return {
       id: prefix,
@@ -670,7 +618,7 @@ export function assembleLessonDraftFromPlan(planInput: AiLessonDraftPlan, contex
       wordTarget: { min: chapterWordTarget.min, max: chapterWordTarget.max },
       exerciseTarget: { verbBlankCount: 7 as const, vocabularyHintCount: 3 as const },
       blocks,
-      exercises,
+      exercises: lessonExercises,
       shots: paragraphs.map((paragraph, paragraphIndex) => ({
         id: `${prefix}-shot-${paragraphIndex + 1}`,
         order: (paragraphIndex + 1) as 1 | 2,
@@ -685,7 +633,7 @@ export function assembleLessonDraftFromPlan(planInput: AiLessonDraftPlan, contex
     schemaVersion: "lesson_draft_v1",
     sourceStoryOptionId: context.storyOption.id,
     generationMode: "ai",
-    title: nonEmptyString(plan.title, context.storyOption.title),
+    title: nonEmptyString(storyPlan.title, context.storyOption.title),
     language: "en",
     visualStyle: {
       artStyle: nonEmptyString(visualStyle.artStyle, "warm children's storybook watercolor"),
@@ -696,12 +644,10 @@ export function assembleLessonDraftFromPlan(planInput: AiLessonDraftPlan, contex
     characters,
     chapters,
     closingReading: {
-      title: nonEmptyString(plan.closingReading?.title, `After ${context.storyOption.title}`),
-      text: stripTheEnd(ensureParagraphLength(nonEmptyString(plan.closingReading?.text, ""), context, 0, 1)),
+      title: nonEmptyString(storyPlan.closingReading?.title, `After ${context.storyOption.title}`),
+      text: stripTheEnd(nonEmptyString(storyPlan.closingReading?.text, "")),
       vocabularyTerms: uniqueNonEmpty(
-        chapters.flatMap((chapter) =>
-          chapter.exercises.filter((exercise) => exercise.type === "vocabulary_hint").map((exercise) => exercise.answer),
-        ),
+        chapters.flatMap((chapter) => chapter.exercises.filter((exercise) => exercise.type === "vocabulary_hint").map((exercise) => exercise.answer)),
       ).slice(0, 12),
     },
   };
@@ -738,10 +684,6 @@ async function callDeepSeek(messages: ChatMessage[], thinkingOverride?: DeepSeek
     throw new Error(`DeepSeek returned empty content: ${JSON.stringify(data).slice(0, 1000)}`);
   }
 
-  if (!content) {
-    throw new Error("DeepSeek 返回为空");
-  }
-
   return content;
 }
 
@@ -772,53 +714,34 @@ export function buildDeepSeekRequestBody(messages: ChatMessage[], thinkingOverri
 
 export async function generateLessonDraft(context: LessonDraftGenerationContext) {
   if (process.env.DEEPSEEK_API_KEY === "mock") {
-    // TODO: Restrict this deterministic branch to local development after the real DeepSeek key is configured.
     return validateLessonDraft(mockLessonDraft(context), context.storyOption);
   }
 
-  const messages: ChatMessage[] = [
+  const storyMessages: ChatMessage[] = [
     {
       role: "system",
       content:
-        "You are an expert English picture-book content designer and structured JSON formatter. Before answering, verify each chapter has 8-10 markers, enough story text, and no duplicate exercise answers. Do not include reasoning in the visible response. Return strict JSON only.",
+        "You are an expert English picture-book content designer and structured JSON formatter. Return pure story content with no exercise markers. Return strict JSON only.",
     },
     {
       role: "user",
-      content: buildPrompt(context),
+      content: buildStoryContentPrompt(context),
     },
   ];
+  const storyPlan = parseStoryContentPlan(parseJsonObject(await callDeepSeek(storyMessages)));
 
-  const parsed = parsePlan(parseJsonObject(await callDeepSeek(messages)));
+  const exerciseMessages: ChatMessage[] = [
+    {
+      role: "system",
+      content:
+        "You create precise exercise plans from existing text. Copy occurrenceText exactly and return strict JSON only.",
+    },
+    {
+      role: "user",
+      content: buildExercisePlanPrompt(context, storyPlan),
+    },
+  ];
+  const exercisePlan = parseExercisePlan(parseJsonObject(await callDeepSeek(exerciseMessages)));
 
-  try {
-    return validateLessonDraft(assembleLessonDraftFromPlan(parsed, context), context.storyOption);
-  } catch (error) {
-    if (!(error instanceof LessonDraftValidationError)) {
-      throw error;
-    }
-
-    const chapterIndex = failedChapterIndex(error);
-    if (chapterIndex === null || !parsed.chapters[chapterIndex]) {
-      throw error;
-    }
-
-    const repairMessages: ChatMessage[] = [
-      {
-        role: "system",
-        content:
-          "You repair one English picture-book chapter plan. Carefully count exercise markers, avoid duplicate answers, and return strict JSON only.",
-      },
-      {
-        role: "user",
-        content: buildChapterRepairPrompt(context, chapterIndex, parsed.chapters[chapterIndex], error),
-      },
-    ];
-    const repairedChapter = parseChapterPlan(parseJsonObject(await callDeepSeek(repairMessages)));
-    const repairedPlan: AiLessonDraftPlan = {
-      ...parsed,
-      chapters: parsed.chapters.map((chapter, index) => (index === chapterIndex ? repairedChapter : chapter)),
-    };
-
-    return validateLessonDraft(assembleLessonDraftFromPlan(repairedPlan, context), context.storyOption);
-  }
+  return validateLessonDraft(assembleLessonDraftFromPlans(storyPlan, exercisePlan, context), context.storyOption);
 }
