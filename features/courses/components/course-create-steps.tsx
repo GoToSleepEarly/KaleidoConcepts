@@ -12,8 +12,8 @@ type CreateStep = {
 const steps: CreateStep[] = [
   { step: 1, label: "基础信息", href: "basic" },
   { step: 2, label: "故事方案", href: "story-options" },
-  { step: 3, label: "课文编辑" },
-  { step: 4, label: "资源生成" },
+  { step: 3, label: "课文编辑", href: "lesson-draft" },
+  { step: 4, label: "资源生成", href: "resources" },
   { step: 5, label: "课程预览" },
 ] as const;
 
