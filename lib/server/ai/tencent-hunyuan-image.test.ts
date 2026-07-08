@@ -1,96 +1,68 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createTencentHunyuanImageClient, normalizeTencentImageJob, TencentHunyuanImageConfigError } from "./tencent-hunyuan-image";
+import { createTencentHunyuanImageClient, TencentHunyuanImageConfigError } from "./tencent-hunyuan-image";
 
-describe("Tencent Hunyuan image client", () => {
+describe("Tencent HY-Image-Lite client", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    delete process.env.TENCENTCLOUD_SECRET_ID;
-    delete process.env.TENCENTCLOUD_SECRET_KEY;
-    delete process.env.TENCENTCLOUD_REGION;
+    delete process.env.TENCENT_HUNYUAN_API_KEY;
     delete process.env.TENCENT_HUNYUAN_IMAGE_MODEL;
   });
 
-  it("throws when config is missing", () => {
+  it("throws when API key is missing", () => {
     expect(() => createTencentHunyuanImageClient()).toThrow(TencentHunyuanImageConfigError);
   });
 
-  it("normalizes succeeded, failed, and running jobs", () => {
-    expect(normalizeTencentImageJob({ JobStatusCode: "5", ResultImage: ["https://example.com/a.png"] })).toEqual({
-      status: "succeeded",
-      imageUrl: "https://example.com/a.png",
-      failureReason: null,
-    });
-
-    expect(normalizeTencentImageJob({ JobStatusCode: "6", JobErrorMsg: "blocked" })).toEqual({
-      status: "failed",
-      imageUrl: null,
-      failureReason: "blocked",
-    });
-
-    expect(normalizeTencentImageJob({ JobStatusCode: "4" })).toEqual({
-      status: "generating",
-      imageUrl: null,
-      failureReason: null,
-    });
-  });
-
-  it("submits a job through Tencent API", async () => {
-    process.env.TENCENTCLOUD_SECRET_ID = "id";
-    process.env.TENCENTCLOUD_SECRET_KEY = "key";
-    process.env.TENCENTCLOUD_REGION = "ap-guangzhou";
-    process.env.TENCENT_HUNYUAN_IMAGE_MODEL = "hunyuan-image";
+  it("generates an image URL through HY-Image-Lite", async () => {
+    process.env.TENCENT_HUNYUAN_API_KEY = "secret";
+    process.env.TENCENT_HUNYUAN_IMAGE_MODEL = "hy-image-lite";
 
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({
         ok: true,
         status: 200,
-        json: async () => ({ Response: { JobId: "job-1", RequestId: "request-1" } }),
+        json: async () => ({ data: [{ url: "https://example.com/a.png" }] }),
       })),
     );
 
     const client = createTencentHunyuanImageClient();
-    const result = await client.submit({ prompt: "A picture-book scene.", width: 1024, height: 768 });
+    const result = await client.generate({ prompt: "A picture-book scene.", width: 1024, height: 768 });
 
-    expect(result).toEqual({ taskId: "job-1" });
+    expect(result).toEqual({ imageUrl: "https://example.com/a.png" });
     expect(fetch).toHaveBeenCalledWith(
-      "https://hunyuan.tencentcloudapi.com",
+      "https://tokenhub.tencentmaas.com/v1/api/image/lite",
       expect.objectContaining({
         method: "POST",
-        headers: expect.objectContaining({
-          "Content-Type": "application/json; charset=utf-8",
-          Host: "hunyuan.tencentcloudapi.com",
-          "X-TC-Action": expect.any(String),
+        headers: {
+          Authorization: "Bearer secret",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "hy-image-lite",
+          prompt: "A picture-book scene.",
+          n: 1,
+          size: "1024x768",
+          rsp_img_type: "url",
         }),
       }),
     );
   });
 
-  it("queries a job through Tencent API", async () => {
-    process.env.TENCENTCLOUD_SECRET_ID = "id";
-    process.env.TENCENTCLOUD_SECRET_KEY = "key";
-    process.env.TENCENTCLOUD_REGION = "ap-guangzhou";
-    process.env.TENCENT_HUNYUAN_IMAGE_MODEL = "hunyuan-image";
+  it("surfaces HY-Image-Lite API errors", async () => {
+    process.env.TENCENT_HUNYUAN_API_KEY = "secret";
 
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          Response: {
-            JobStatusCode: "5",
-            ResultImage: ["https://example.com/a.png"],
-            RequestId: "request-1",
-          },
-        }),
+        ok: false,
+        status: 401,
+        json: async () => ({ error: { message: "invalid api key" } }),
       })),
     );
 
     const client = createTencentHunyuanImageClient();
-    const result = await client.query({ taskId: "job-1" });
 
-    expect(result).toEqual({ status: "succeeded", imageUrl: "https://example.com/a.png", failureReason: null });
+    await expect(client.generate({ prompt: "A scene.", width: 1024, height: 768 })).rejects.toThrow("invalid api key");
   });
 });

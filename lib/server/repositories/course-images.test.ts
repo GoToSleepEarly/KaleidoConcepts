@@ -122,9 +122,30 @@ describe("course image planning", () => {
     expect(prompt).toContain("A child and teacher open a glowing garden gate.");
     expect(prompt).toContain("warm watercolor");
     expect(prompt).toContain("Wide 4:3 picture-book spread");
-    expect(prompt).toContain("Ms. Lin always has short black hair");
-    expect(prompt).toContain("Summer always has a ponytail");
+    expect(prompt).toContain("Ms. Lin: kind eyes and short black hair");
+    expect(prompt).toContain("Summer: bright eyes and a ponytail");
     expect(prompt).toContain("No text, no letters, no captions, no speech bubbles");
+    expect(prompt.length).toBeLessThanOrEqual(900);
+  });
+
+  it("keeps verbose generated shot prompts short enough for HY-Image-Lite", () => {
+    const sampleDraft = draft();
+    const verbose = "long visual consistency detail ".repeat(40);
+    sampleDraft.visualStyle.consistencyPrompt = verbose;
+    sampleDraft.characters[0].appearance = verbose;
+    sampleDraft.characters[0].outfit = verbose;
+    sampleDraft.characters[0].consistencyPrompt = verbose;
+    sampleDraft.characters[1].appearance = verbose;
+    sampleDraft.characters[1].outfit = verbose;
+    sampleDraft.characters[1].consistencyPrompt = verbose;
+    sampleDraft.chapters[0].shots[0].scenePrompt = verbose;
+    sampleDraft.chapters[0].shots[0].continuityNotes = verbose;
+
+    const prompt = buildImagePrompt(sampleDraft, sampleDraft.chapters[0], sampleDraft.chapters[0].shots[0]);
+
+    expect(prompt).toContain("warm watercolor");
+    expect(prompt).toContain("No text, no letters, no captions, no speech bubbles");
+    expect(prompt.length).toBeLessThanOrEqual(900);
   });
 
   it("keeps source hashes stable for identical input and different for changed prompt", () => {
@@ -417,7 +438,7 @@ describe("course image repository operations", () => {
 });
 
 describe("course image queue advancement", () => {
-  it("submits one pending image when no image is active", async () => {
+  it("generates one pending image and stores the downloaded local file", async () => {
     const { db, state } = makeDb();
     const slots = deriveLessonShotImageSlots("course-1", draft());
     state.images.push({
@@ -443,19 +464,28 @@ describe("course image queue advancement", () => {
 
     await advanceCourseImageQueue(db, "course-1", {
       provider: {
-        submit: vi.fn(async () => ({ taskId: "task-1" })),
-        query: vi.fn(),
+        generate: vi.fn(async () => ({ imageUrl: "https://example.com/a.png" })),
       },
-      download: vi.fn(),
+      download: vi.fn(async () => ({
+        storagePath: "/data/pbl-images/course-images/course-1/image-1.png",
+        publicUrl: "/api/course-images/course-1/image-1.png",
+      })),
     });
 
     expect(db.courseImage.update).toHaveBeenCalledWith({
       where: { id: "image-1" },
-      data: { status: "generating", providerTaskId: "task-1", failureReason: null },
+      data: expect.objectContaining({
+        status: "succeeded",
+        providerImageUrl: "https://example.com/a.png",
+        storagePath: "/data/pbl-images/course-images/course-1/image-1.png",
+        publicUrl: "/api/course-images/course-1/image-1.png",
+        providerTaskId: null,
+        failureReason: null,
+      }),
     });
   });
 
-  it("marks submitting failures as failed", async () => {
+  it("marks provider configuration and API errors as failed", async () => {
     const { db, state } = makeDb();
     const slots = deriveLessonShotImageSlots("course-1", draft());
     state.images.push({
@@ -481,17 +511,62 @@ describe("course image queue advancement", () => {
 
     await advanceCourseImageQueue(db, "course-1", {
       provider: {
-        submit: vi.fn(async () => {
-          throw new Error("quota exceeded");
+        generate: vi.fn(async () => {
+          throw new Error("HY-Image-Lite API Key 缺失");
         }),
-        query: vi.fn(),
       },
       download: vi.fn(),
     });
 
     expect(db.courseImage.update).toHaveBeenCalledWith({
       where: { id: "image-1" },
-      data: { status: "failed", failureReason: "quota exceeded" },
+      data: { status: "failed", providerTaskId: null, failureReason: "HY-Image-Lite API Key 缺失" },
+    });
+  });
+
+  it("refreshes stale pending prompts before generating", async () => {
+    const { db, state } = makeDb();
+    const slots = deriveLessonShotImageSlots("course-1", draft());
+    const generate = vi.fn(async () => ({ imageUrl: "https://example.com/a.png" }));
+    state.images.push({
+      id: "image-1",
+      courseId: "course-1",
+      chapterId: "chapter-1",
+      shotId: "shot-1",
+      slotId: "slot-1",
+      slotType: "lesson_shot",
+      slotIndex: 1,
+      prompt: "old verbose prompt",
+      sourceHash: "old-hash",
+      status: "pending",
+      provider: "tencent_hunyuan",
+      providerTaskId: null,
+      providerImageUrl: null,
+      storagePath: null,
+      publicUrl: null,
+      failureReason: null,
+      createdAt: new Date("2026-07-08T00:00:00Z"),
+      updatedAt: new Date("2026-07-08T00:00:00Z"),
+    });
+
+    await advanceCourseImageQueue(db, "course-1", {
+      provider: {
+        generate,
+      },
+      download: vi.fn(async () => ({
+        storagePath: "/data/pbl-images/course-images/course-1/image-1.png",
+        publicUrl: "/api/course-images/course-1/image-1.png",
+      })),
+    });
+
+    expect(generate).toHaveBeenCalledWith({ prompt: slots[0].prompt, width: 1024, height: 768 });
+    expect(db.courseImage.update).toHaveBeenCalledWith({
+      where: { id: "image-1" },
+      data: expect.objectContaining({
+        prompt: slots[0].prompt,
+        sourceHash: slots[0].sourceHash,
+        status: "succeeded",
+      }),
     });
   });
 

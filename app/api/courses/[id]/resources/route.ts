@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { createTencentHunyuanImageClient, TencentHunyuanImageConfigError } from "@/lib/server/ai/tencent-hunyuan-image";
+import { createTencentHunyuanImageClient } from "@/lib/server/ai/tencent-hunyuan-image";
 import { getDb } from "@/lib/server/db";
 import {
   CourseImageNotFoundError,
   CourseImagePrerequisiteError,
-  getCourseResources,
   getCourseResourcesAndAdvance,
 } from "@/lib/server/repositories/course-images";
 import { downloadCourseImage } from "@/lib/server/storage/course-images";
@@ -30,11 +29,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
     if (error instanceof CourseImagePrerequisiteError) {
       return NextResponse.json({ message: error.message }, { status: 400 });
-    }
-
-    if (error instanceof TencentHunyuanImageConfigError) {
-      const result = await getCourseResources(getDb(), id);
-      return NextResponse.json(result);
     }
 
     console.error("Resource status loading failed", error);
