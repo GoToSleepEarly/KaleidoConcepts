@@ -34,6 +34,46 @@ export type CourseImageRecord = {
   updatedAt: Date;
 };
 
+type CourseWithDraft = {
+  id: string;
+  status: "draft" | "building_resources" | "ready" | "build_failed";
+  lessonDraft: {
+    content: LessonDraft;
+  } | null;
+};
+
+export type CourseImagesDb = {
+  course: {
+    findUnique: (query: {
+      where: { id: string };
+      include: {
+        lessonDraft: true;
+      };
+    }) => Promise<CourseWithDraft | null>;
+    update: (query: { where: { id: string }; data: { status: "building_resources" | "ready" | "build_failed" } }) => Promise<unknown>;
+  };
+  courseImage: {
+    findMany: (query: { where: { courseId: string }; orderBy?: Array<{ slotIndex: "asc" } | { createdAt: "asc" }> }) => Promise<CourseImageRecord[]>;
+    createMany: (query: {
+      data: Array<{
+        courseId: string;
+        chapterId: string;
+        shotId: string;
+        slotId: string;
+        slotType: "lesson_shot";
+        slotIndex: number;
+        prompt: string;
+        sourceHash: string;
+        status: "pending";
+        provider: "tencent_hunyuan";
+      }>;
+      skipDuplicates: true;
+    }) => Promise<{ count: number }>;
+    findFirst: (query: { where: { id: string; courseId: string } }) => Promise<CourseImageRecord | null>;
+    update: (query: { where: { id: string }; data: Partial<CourseImageRecord> }) => Promise<CourseImageRecord>;
+  };
+};
+
 export type PlannedImageSlot = {
   courseId: string;
   chapterId: string;
@@ -198,5 +238,189 @@ export function toResourcesResponse(images: CourseResourceImage[]): CourseResour
   return {
     progress: summarizeResourceProgress(images),
     images,
+  };
+}
+
+export class CourseImageNotFoundError extends Error {
+  constructor(message = "课程不存在") {
+    super(message);
+    this.name = "CourseImageNotFoundError";
+  }
+}
+
+export class CourseImagePrerequisiteError extends Error {
+  constructor(message = "请先生成课文草稿") {
+    super(message);
+    this.name = "CourseImagePrerequisiteError";
+  }
+}
+
+export class CourseImageInvalidStateError extends Error {
+  constructor(message = "当前图片状态不能执行该操作") {
+    super(message);
+    this.name = "CourseImageInvalidStateError";
+  }
+}
+
+async function getCourseDraftOrThrow(db: CourseImagesDb, courseId: string) {
+  const course = await db.course.findUnique({
+    where: { id: courseId },
+    include: { lessonDraft: true },
+  });
+
+  if (!course) {
+    throw new CourseImageNotFoundError("课程不存在");
+  }
+
+  if (!course.lessonDraft) {
+    throw new CourseImagePrerequisiteError();
+  }
+
+  return {
+    course,
+    draft: course.lessonDraft.content,
+  };
+}
+
+async function listRecords(db: CourseImagesDb, courseId: string) {
+  return db.courseImage.findMany({
+    where: { courseId },
+    orderBy: [{ slotIndex: "asc" }, { createdAt: "asc" }],
+  });
+}
+
+function findSlot(slots: PlannedImageSlot[], record: CourseImageRecord) {
+  return slots.find((slot) => slot.slotId === record.slotId);
+}
+
+async function refreshCourseStatus(db: CourseImagesDb, courseId: string, images: CourseResourceImage[]) {
+  const progress = summarizeResourceProgress(images);
+
+  if (progress.total > 0 && progress.succeeded === progress.total && progress.stale === 0) {
+    await db.course.update({ where: { id: courseId }, data: { status: "ready" } });
+    return;
+  }
+
+  if (progress.generating > 0) {
+    await db.course.update({ where: { id: courseId }, data: { status: "building_resources" } });
+    return;
+  }
+
+  if (progress.failed > 0) {
+    await db.course.update({ where: { id: courseId }, data: { status: "build_failed" } });
+  }
+}
+
+export async function getCourseResources(db: CourseImagesDb, courseId: string): Promise<CourseResourcesResponse> {
+  const { draft } = await getCourseDraftOrThrow(db, courseId);
+  const slots = deriveLessonShotImageSlots(courseId, draft);
+  const records = await listRecords(db, courseId);
+  const images = mergeImageSlotsWithRecords(slots, records);
+  await refreshCourseStatus(db, courseId, images);
+  return toResourcesResponse(images);
+}
+
+export async function createMissingCourseImages(db: CourseImagesDb, courseId: string): Promise<CourseResourcesResponse> {
+  const { draft } = await getCourseDraftOrThrow(db, courseId);
+  const slots = deriveLessonShotImageSlots(courseId, draft);
+  const records = await listRecords(db, courseId);
+  const existingSlotIds = new Set(records.map((record) => record.slotId));
+  const missing = slots.filter((slot) => !existingSlotIds.has(slot.slotId));
+
+  if (missing.length === 0) {
+    throw new CourseImageInvalidStateError("没有需要生成的图片");
+  }
+
+  await db.courseImage.createMany({
+    data: missing.map((slot) => ({
+      courseId: slot.courseId,
+      chapterId: slot.chapterId,
+      shotId: slot.shotId,
+      slotId: slot.slotId,
+      slotType: slot.slotType,
+      slotIndex: slot.slotIndex,
+      prompt: slot.prompt,
+      sourceHash: slot.sourceHash,
+      status: "pending",
+      provider: "tencent_hunyuan",
+    })),
+    skipDuplicates: true,
+  });
+
+  await db.course.update({ where: { id: courseId }, data: { status: "building_resources" } });
+  return getCourseResources(db, courseId);
+}
+
+export async function retryCourseImage(db: CourseImagesDb, courseId: string, imageId: string) {
+  const { draft } = await getCourseDraftOrThrow(db, courseId);
+  const record = await db.courseImage.findFirst({ where: { id: imageId, courseId } });
+
+  if (!record) {
+    throw new CourseImageNotFoundError("图片不存在");
+  }
+
+  const slot = findSlot(deriveLessonShotImageSlots(courseId, draft), record);
+
+  if (!slot) {
+    throw new CourseImageInvalidStateError("当前图片状态不能重试");
+  }
+
+  const isStaleSucceeded = record.status === "succeeded" && record.sourceHash !== slot.sourceHash;
+  if (record.status !== "failed" && !isStaleSucceeded) {
+    throw new CourseImageInvalidStateError("当前图片状态不能重试");
+  }
+
+  const updated = await db.courseImage.update({
+    where: { id: imageId },
+    data: {
+      chapterId: slot.chapterId,
+      shotId: slot.shotId,
+      slotId: slot.slotId,
+      slotType: slot.slotType,
+      slotIndex: slot.slotIndex,
+      prompt: slot.prompt,
+      sourceHash: slot.sourceHash,
+      status: "pending",
+      provider: "tencent_hunyuan",
+      providerTaskId: null,
+      providerImageUrl: null,
+      storagePath: null,
+      publicUrl: null,
+      failureReason: null,
+    },
+  });
+
+  await db.course.update({ where: { id: courseId }, data: { status: "building_resources" } });
+  return {
+    image: mergeImageSlotsWithRecords([slot], [updated])[0],
+  };
+}
+
+export async function keepStaleCourseImage(db: CourseImagesDb, courseId: string, imageId: string) {
+  const { draft } = await getCourseDraftOrThrow(db, courseId);
+  const record = await db.courseImage.findFirst({ where: { id: imageId, courseId } });
+
+  if (!record) {
+    throw new CourseImageNotFoundError("图片不存在");
+  }
+
+  const slot = findSlot(deriveLessonShotImageSlots(courseId, draft), record);
+  const isStaleSucceeded = slot && record.status === "succeeded" && record.sourceHash !== slot.sourceHash;
+
+  if (!slot || !isStaleSucceeded) {
+    throw new CourseImageInvalidStateError("当前图片不能沿用旧图");
+  }
+
+  const updated = await db.courseImage.update({
+    where: { id: imageId },
+    data: {
+      prompt: slot.prompt,
+      sourceHash: slot.sourceHash,
+      failureReason: null,
+    },
+  });
+
+  return {
+    image: mergeImageSlotsWithRecords([slot], [updated])[0],
   };
 }
