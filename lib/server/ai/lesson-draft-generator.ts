@@ -432,6 +432,7 @@ function parseMarkedText(markedText: string) {
 
 function capChapterMarkers(parsedParagraphs: [ParsedMarker[], ParsedMarker[]]) {
   let keptExercises = 0;
+  const seenAnswers = new Set<string>();
 
   return parsedParagraphs.map((items) =>
     items.map((item): ParsedMarker => {
@@ -439,8 +440,14 @@ function capChapterMarkers(parsedParagraphs: [ParsedMarker[], ParsedMarker[]]) {
         return item;
       }
 
+      const answerKey = item.answer.trim().toLowerCase();
+      if (seenAnswers.has(answerKey)) {
+        return { type: "text", text: item.answer };
+      }
+
       keptExercises += 1;
       if (keptExercises <= maxExercisesPerChapter) {
+        seenAnswers.add(answerKey);
         return item;
       }
 
