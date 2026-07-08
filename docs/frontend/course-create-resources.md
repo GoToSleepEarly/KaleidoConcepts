@@ -327,7 +327,7 @@ MVP 不引入 Worker、MQ、WebSocket 或定时任务。
 
 ## 实现状态
 
-- 状态：已确认，待开发
-- 实现提交：待记录
-- 验证命令：待开发后记录
-- 验证结果：待开发后记录
+- 状态：已实现，待用户验收
+- 实现提交：`c42c059`
+- 验证命令：`pnpm prisma:generate`、`pnpm test lib/server/repositories/course-images.test.ts lib/server/ai/tencent-hunyuan-image.test.ts lib/server/storage/course-images.test.ts`、`pnpm test`、`pnpm lint`、`pnpm build`
+- 验证结果：通过。新增 Step 4 资源生成页面、`course_images` 持久化表、腾讯混元异步任务适配、本地图片保存、缺失图片生成、失败重试、stale 图片沿用 / 重新生成和轮询推进队列。
