@@ -258,7 +258,7 @@ type LessonShot = {
   - 将 AI 内联标记解析为 text block、exercise block 和 exercises
   - 不再硬性校验每段练习数量或 `verb_blank` / `vocabulary_hint` 精确比例
   - 校验每章至少 7 个、最多 10 个可解析练习 marker；若 AI 生成超过 10 个 marker，代码保留前 10 个练习并将多余 marker 还原为普通正文答案
-  - 校验同章保留的 exercise answer 不重复
+  - 校验同章保留的 exercise answer 不重复；若 AI 生成重复 answer，代码保留第一次出现的 marker，并将后续重复 marker 还原为普通正文答案
   - 将第 1 段 blocks 绑定到 shot 1，第 2 段 blocks 绑定到 shot 2
   - 从 vocabulary exercises 自动生成 `closingReading.vocabularyTerms`，按首次出现去重，最多 12 个
   - 移除 `closingReading.text` 末尾的 `The End`

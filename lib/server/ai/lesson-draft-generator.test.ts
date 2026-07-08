@@ -385,6 +385,49 @@ describe("lesson draft AI plan assembly", () => {
     ).toThrow("第 1 章练习数量不足：需要 7-10 个，当前 5 个");
   });
 
+  test("renders duplicate answer markers as text after the first occurrence", () => {
+    const draft = assembleLessonDraftFromPlan(
+      {
+        title: "The Forest Gate",
+        visualStyle: {
+          artStyle: "warm watercolor picture book",
+          colorPalette: "soft greens and gold light",
+          consistencyPrompt: "Use a consistent watercolor picture-book style.",
+        },
+        characters: [],
+        chapters: [
+          {
+            title: "The Gate Opens",
+            paragraphs: [
+              {
+                markedText:
+                  "Yesterday morning, Ms. Lin and Summer [verb:walk|walked] toward the quiet forest [vocab:g _ _ e|gate]. Summer [verb:carry|carried] her sketchbook and [verb:look|looked] at the silver leaves. Ms. Lin [verb:ask|asked] one calm question, and Summer [verb:walk|walked] past a second stone arch.",
+                shot: shotPlan("Ms. Lin and Summer discover the first arrow beside the gate."),
+              },
+              {
+                markedText:
+                  "Inside the forest, the [vocab:m _ p|map] shone under a blue flower. Summer [verb:touch|touched] the page and found a hidden [vocab:t _ _ _ l|trail]. Ms. Lin [verb:help|helped] her read the marks, and they [verb:follow|followed] the trail across a tiny bridge.",
+                shot: shotPlan("Summer studies the glowing map while Ms. Lin helps her choose the trail."),
+              },
+            ],
+          },
+        ],
+        closingReading: {
+          title: "After the Forest Gate",
+          text: "After the forest gate adventure, Summer remembered how each clue helped her speak in English. She described what she saw, what she did, and what changed in the forest. Ms. Lin helped her slow down and notice the important actions. The map, trail, and gate became useful story words. Summer felt proud because she solved the mystery step by step and could retell the journey with clear past tense verbs.",
+        },
+      },
+      context,
+    );
+
+    expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
+    expect(draft.chapters[0].exercises.map((exercise) => exercise.answer)).toEqual(["walked", "gate", "carried", "looked", "asked", "map", "touched", "trail", "helped", "followed"]);
+    const rendered = draft.chapters[0].blocks
+      .map((block) => (block.type === "text" ? block.text : `[${draft.chapters[0].exercises.find((exercise) => exercise.id === block.exerciseId)?.answer}]`))
+      .join("");
+    expect(rendered).toContain("walked past a second stone arch");
+  });
+
   test("caps excess AI markers at 10 exercises and renders overflow as text", () => {
     const draft = assembleLessonDraftFromPlan(
       {
