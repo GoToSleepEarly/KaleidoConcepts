@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LessonDraft } from "@/lib/contracts/api";
 import {
   buildImagePrompt,
+  advanceCourseImageQueue,
   CourseImageInvalidStateError,
   CourseImageNotFoundError,
   CourseImagePrerequisiteError,
@@ -394,5 +395,170 @@ describe("course image repository operations", () => {
     const { db } = makeDb();
 
     await expect(keepStaleCourseImage(db, "course-1", "missing")).rejects.toBeInstanceOf(CourseImageNotFoundError);
+  });
+});
+
+describe("course image queue advancement", () => {
+  it("submits one pending image when no image is active", async () => {
+    const { db, state } = makeDb();
+    const slots = deriveLessonShotImageSlots("course-1", draft());
+    state.images.push({
+      id: "image-1",
+      courseId: "course-1",
+      chapterId: "chapter-1",
+      shotId: "shot-1",
+      slotId: "slot-1",
+      slotType: "lesson_shot",
+      slotIndex: 1,
+      prompt: slots[0].prompt,
+      sourceHash: slots[0].sourceHash,
+      status: "pending",
+      provider: "tencent_hunyuan",
+      providerTaskId: null,
+      providerImageUrl: null,
+      storagePath: null,
+      publicUrl: null,
+      failureReason: null,
+      createdAt: new Date("2026-07-08T00:00:00Z"),
+      updatedAt: new Date("2026-07-08T00:00:00Z"),
+    });
+
+    await advanceCourseImageQueue(db, "course-1", {
+      provider: {
+        submit: vi.fn(async () => ({ taskId: "task-1" })),
+        query: vi.fn(),
+      },
+      download: vi.fn(),
+    });
+
+    expect(db.courseImage.update).toHaveBeenCalledWith({
+      where: { id: "image-1" },
+      data: { status: "generating", providerTaskId: "task-1", failureReason: null },
+    });
+  });
+
+  it("marks submitting failures as failed", async () => {
+    const { db, state } = makeDb();
+    const slots = deriveLessonShotImageSlots("course-1", draft());
+    state.images.push({
+      id: "image-1",
+      courseId: "course-1",
+      chapterId: "chapter-1",
+      shotId: "shot-1",
+      slotId: "slot-1",
+      slotType: "lesson_shot",
+      slotIndex: 1,
+      prompt: slots[0].prompt,
+      sourceHash: slots[0].sourceHash,
+      status: "pending",
+      provider: "tencent_hunyuan",
+      providerTaskId: null,
+      providerImageUrl: null,
+      storagePath: null,
+      publicUrl: null,
+      failureReason: null,
+      createdAt: new Date("2026-07-08T00:00:00Z"),
+      updatedAt: new Date("2026-07-08T00:00:00Z"),
+    });
+
+    await advanceCourseImageQueue(db, "course-1", {
+      provider: {
+        submit: vi.fn(async () => {
+          throw new Error("quota exceeded");
+        }),
+        query: vi.fn(),
+      },
+      download: vi.fn(),
+    });
+
+    expect(db.courseImage.update).toHaveBeenCalledWith({
+      where: { id: "image-1" },
+      data: { status: "failed", failureReason: "quota exceeded" },
+    });
+  });
+
+  it("downloads succeeded remote image and marks local image succeeded", async () => {
+    const { db, state } = makeDb();
+    const slots = deriveLessonShotImageSlots("course-1", draft());
+    state.images.push({
+      id: "image-1",
+      courseId: "course-1",
+      chapterId: "chapter-1",
+      shotId: "shot-1",
+      slotId: "slot-1",
+      slotType: "lesson_shot",
+      slotIndex: 1,
+      prompt: slots[0].prompt,
+      sourceHash: slots[0].sourceHash,
+      status: "generating",
+      provider: "tencent_hunyuan",
+      providerTaskId: "task-1",
+      providerImageUrl: null,
+      storagePath: null,
+      publicUrl: null,
+      failureReason: null,
+      createdAt: new Date("2026-07-08T00:00:00Z"),
+      updatedAt: new Date("2026-07-08T00:00:00Z"),
+    });
+
+    await advanceCourseImageQueue(db, "course-1", {
+      provider: {
+        submit: vi.fn(),
+        query: vi.fn(async () => ({ status: "succeeded", imageUrl: "https://example.com/a.png", failureReason: null })),
+      },
+      download: vi.fn(async () => ({
+        storagePath: "/data/pbl-images/course-images/course-1/image-1.png",
+        publicUrl: "/api/course-images/course-1/image-1.png",
+      })),
+    });
+
+    expect(db.courseImage.update).toHaveBeenCalledWith({
+      where: { id: "image-1" },
+      data: {
+        status: "succeeded",
+        providerImageUrl: "https://example.com/a.png",
+        storagePath: "/data/pbl-images/course-images/course-1/image-1.png",
+        publicUrl: "/api/course-images/course-1/image-1.png",
+        failureReason: null,
+      },
+    });
+  });
+
+  it("marks remote failed jobs as failed", async () => {
+    const { db, state } = makeDb();
+    const slots = deriveLessonShotImageSlots("course-1", draft());
+    state.images.push({
+      id: "image-1",
+      courseId: "course-1",
+      chapterId: "chapter-1",
+      shotId: "shot-1",
+      slotId: "slot-1",
+      slotType: "lesson_shot",
+      slotIndex: 1,
+      prompt: slots[0].prompt,
+      sourceHash: slots[0].sourceHash,
+      status: "generating",
+      provider: "tencent_hunyuan",
+      providerTaskId: "task-1",
+      providerImageUrl: null,
+      storagePath: null,
+      publicUrl: null,
+      failureReason: null,
+      createdAt: new Date("2026-07-08T00:00:00Z"),
+      updatedAt: new Date("2026-07-08T00:00:00Z"),
+    });
+
+    await advanceCourseImageQueue(db, "course-1", {
+      provider: {
+        submit: vi.fn(),
+        query: vi.fn(async () => ({ status: "failed", imageUrl: null, failureReason: "content rejected" })),
+      },
+      download: vi.fn(),
+    });
+
+    expect(db.courseImage.update).toHaveBeenCalledWith({
+      where: { id: "image-1" },
+      data: { status: "failed", failureReason: "content rejected" },
+    });
   });
 });
