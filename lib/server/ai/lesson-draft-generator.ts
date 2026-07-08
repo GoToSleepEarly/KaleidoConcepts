@@ -430,6 +430,25 @@ function parseMarkedText(markedText: string) {
   return items;
 }
 
+function capChapterMarkers(parsedParagraphs: [ParsedMarker[], ParsedMarker[]]) {
+  let keptExercises = 0;
+
+  return parsedParagraphs.map((items) =>
+    items.map((item): ParsedMarker => {
+      if (item.type === "text") {
+        return item;
+      }
+
+      keptExercises += 1;
+      if (keptExercises <= maxExercisesPerChapter) {
+        return item;
+      }
+
+      return { type: "text", text: item.answer };
+    }),
+  ) as [ParsedMarker[], ParsedMarker[]];
+}
+
 function validateChapterMarkers(chapterTitle: string, parsedParagraphs: ParsedMarker[][], chapterIndex = 0) {
   const paragraphExerciseCounts = parsedParagraphs.map((items) => items.filter((item) => item.type !== "text").length);
   const exercises = parsedParagraphs.flatMap((items) => items.filter((item) => item.type !== "text"));
@@ -575,7 +594,7 @@ export function assembleLessonDraftFromPlan(planInput: AiLessonDraftPlan, contex
         shot: sanitizeShotPlan(paragraph?.shot, context, characters, chapterPlan?.title ?? outlineChapter.title, paragraph?.markedText ?? outlineChapter.summary),
       };
     }) as [AiParagraphPlan, AiParagraphPlan];
-    const parsedParagraphs = paragraphs.map((paragraph) => parseMarkedText(paragraph.markedText)) as [ParsedMarker[], ParsedMarker[]];
+    const parsedParagraphs = capChapterMarkers(paragraphs.map((paragraph) => parseMarkedText(paragraph.markedText)) as [ParsedMarker[], ParsedMarker[]]);
     validateChapterMarkers(chapterPlan?.title ?? outlineChapter.title, parsedParagraphs, chapterIndex);
 
     const exercises: LessonExercise[] = [];
