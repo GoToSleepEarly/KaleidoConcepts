@@ -50,6 +50,7 @@ model Course {
   people          CoursePerson[]
   storyOptions    CourseStoryOption[]
   lessonDraft     CourseLessonDraft?
+  images          CourseImage[]
 }
 
 model CoursePerson {
@@ -85,6 +86,31 @@ model CourseLessonDraft {
   course              Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
 
+model CourseImage {
+  id               String              @id @default(cuid())
+  courseId         String
+  chapterId        String
+  shotId           String
+  slotId           String
+  slotType         CourseImageSlotType
+  slotIndex        Int
+  prompt           String
+  sourceHash       String
+  status           CourseImageStatus
+  provider         CourseImageProvider
+  providerTaskId   String?
+  providerImageUrl String?
+  storagePath      String?
+  publicUrl        String?
+  failureReason    String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  course           Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, slotId])
+  @@index([courseId, status])
+}
+
 enum PersonRole {
   student
   teacher
@@ -114,4 +140,20 @@ enum CourseStatus {
   building_resources
   ready
   build_failed
+}
+
+enum CourseImageStatus {
+  pending
+  submitting
+  generating
+  succeeded
+  failed
+}
+
+enum CourseImageSlotType {
+  lesson_shot
+}
+
+enum CourseImageProvider {
+  tencent_hunyuan
 }
