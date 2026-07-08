@@ -523,3 +523,8 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
     });
   }
 }
+
+export async function getCourseResourcesAndAdvance(db: CourseImagesDb, courseId: string, deps: CourseImageQueueDeps) {
+  await advanceCourseImageQueue(db, courseId, deps);
+  return getCourseResources(db, courseId);
+}
