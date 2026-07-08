@@ -114,15 +114,19 @@ type AiExercisePlan = {
       | {
           type: "verb_blank";
           paragraphIndex: 1 | 2;
+          sentenceId: string;
           answer: string;
           occurrenceText: string;
+          occurrenceIndex: number;
           baseVerb: string;
         }
       | {
           type: "vocabulary_hint";
           paragraphIndex: 1 | 2;
+          sentenceId: string;
           answer: string;
           occurrenceText: string;
+          occurrenceIndex: number;
           pattern: string;
         }
     >;
@@ -140,9 +144,10 @@ The exercise prompt must be separate from the story prompt. It should emphasize:
 - Prefer 8-10 when possible.
 - Use verb blanks for grammar practice and vocabulary hints for important story words.
 - Do not repeat `answer` within the same chapter.
-- `occurrenceText` must be copied exactly from the paragraph text.
-- Choose `occurrenceText` values that appear exactly once in the specified paragraph.
-- If a word appears multiple times, choose a longer unique phrase only if the full phrase should be blanked; otherwise choose a different answer.
+- `sentenceId` must reference a backend-provided sentence id from the story text, such as `c1p1s2`.
+- `occurrenceText` must be copied exactly from that sentence.
+- `occurrenceIndex` selects which occurrence inside the sentence to replace, using 1 for the first occurrence, 2 for the second, and so on.
+- Do not copy full sentences back into the exercise plan.
 - Return strict JSON only.
 
 ### Stage 2 hard validation
@@ -154,8 +159,10 @@ For each chapter:
 - Exercises count must be 7-10.
 - `paragraphIndex` must be 1 or 2.
 - `answer` and `occurrenceText` must be non-empty.
-- `occurrenceText` must appear exactly once in the target paragraph text.
-- The occurrence must not overlap a previously selected occurrence in the same paragraph.
+- `sentenceId` must exist in the target chapter and paragraph.
+- `occurrenceIndex` must be a positive integer.
+- `occurrenceText` must appear at least `occurrenceIndex` times in the referenced sentence.
+- The selected occurrence must not overlap a previously selected occurrence in the same paragraph.
 - `answer` must be contained within `occurrenceText`.
 - Same-chapter answers must not repeat.
 - Verb exercises must have non-empty `baseVerb`.
