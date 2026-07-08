@@ -102,25 +102,31 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function compactText(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength - 1).trimEnd()}.`;
+}
+
 export function buildImagePrompt(draft: LessonDraft, chapter: LessonChapter, shot: LessonShot) {
   const characterPrompts = draft.characters
     .filter((character) => shot.characterIds.includes(character.id))
-    .map((character) => `${character.name}: ${character.appearance}; outfit: ${character.outfit}; ${character.consistencyPrompt}`)
-    .join("\n");
+    .map((character) => `${character.name}: ${compactText(character.appearance, 55)}; outfit: ${compactText(character.outfit, 40)}`)
+    .join("; ");
 
   return [
-    `Create a children's picture-book illustration in ${draft.visualStyle.artStyle}.`,
-    `Use this color palette: ${draft.visualStyle.colorPalette}.`,
-    `Aspect ratio: ${draft.visualStyle.aspectRatio}, target size 1024x768.`,
-    `Chapter: ${chapter.title}.`,
-    `Scene: ${shot.scenePrompt}`,
-    `Action: ${shot.action}`,
-    `Location: ${shot.location}`,
-    `Mood: ${shot.mood}`,
-    `Composition: ${shot.composition}`,
-    `Continuity: ${shot.continuityNotes}`,
-    `Global style consistency: ${draft.visualStyle.consistencyPrompt}`,
-    `Character consistency:\n${characterPrompts}`,
+    `Children's picture-book illustration, ${compactText(draft.visualStyle.artStyle, 60)}.`,
+    `Palette: ${compactText(draft.visualStyle.colorPalette, 60)}.`,
+    "Wide 4:3 composition, target size 1024x768.",
+    `Chapter: ${compactText(chapter.title, 80)}.`,
+    `Scene: ${compactText(shot.scenePrompt, 180)}`,
+    `Action: ${compactText(shot.action, 100)}`,
+    `Location: ${compactText(shot.location, 60)}; mood: ${compactText(shot.mood, 60)}.`,
+    `Composition: ${compactText(shot.composition, 90)}`,
+    `Continuity: ${compactText(shot.continuityNotes, 70)}`,
+    `Characters: ${characterPrompts}`,
     "No text, no letters, no captions, no speech bubbles, no watermark.",
   ].join("\n");
 }
@@ -427,8 +433,8 @@ export async function keepStaleCourseImage(db: CourseImagesDb, courseId: string,
 
 export type CourseImageQueueDeps = {
   provider: {
-    submit: (input: { prompt: string; width: 1024; height: 768 }) => Promise<{ taskId: string }>;
-    query: (input: { taskId: string }) => Promise<
+    generate: (input: { prompt: string; width: 1024; height: 768 }) => Promise<{ imageUrl: string }>;
+    query?: (input: { taskId: string }) => Promise<
       | { status: "generating"; imageUrl: null; failureReason: null }
       | { status: "succeeded"; imageUrl: string; failureReason: null }
       | { status: "failed"; imageUrl: null; failureReason: string }
@@ -442,11 +448,20 @@ function errorMessage(error: unknown) {
 }
 
 export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: string, deps: CourseImageQueueDeps) {
-  await getCourseDraftOrThrow(db, courseId);
+  const { draft } = await getCourseDraftOrThrow(db, courseId);
+  const slots = deriveLessonShotImageSlots(courseId, draft);
   const records = await listRecords(db, courseId);
-  const active = records.filter((image) => image.status === "submitting" || image.status === "generating");
+  const active = records.filter((image) => image.status === "generating");
 
   for (const image of active) {
+    if (!deps.provider.query) {
+      await db.courseImage.update({
+        where: { id: image.id },
+        data: { status: "failed", providerTaskId: null, failureReason: "旧版异步图片任务无法用 HY-Image-Lite 查询，请重新生成" },
+      });
+      continue;
+    }
+
     if (!image.providerTaskId) {
       await db.courseImage.update({
         where: { id: image.id },
@@ -494,7 +509,7 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
   }
 
   const refreshed = await listRecords(db, courseId);
-  const stillActive = refreshed.some((image) => image.status === "submitting" || image.status === "generating");
+  const stillActive = refreshed.some((image) => image.status === "generating");
 
   if (stillActive) {
     return;
@@ -506,20 +521,34 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
     return;
   }
 
+  const pendingSlot = findSlot(slots, pending);
+  const prompt = pendingSlot?.prompt ?? pending.prompt;
+  const sourceHash = pendingSlot?.sourceHash ?? pending.sourceHash;
+
   try {
     await db.courseImage.update({
       where: { id: pending.id },
-      data: { status: "submitting", failureReason: null },
+      data: { status: "submitting", prompt, sourceHash, failureReason: null },
     });
-    const submitted = await deps.provider.submit({ prompt: pending.prompt, width: 1024, height: 768 });
+    const generated = await deps.provider.generate({ prompt, width: 1024, height: 768 });
+    const local = await deps.download({ sourceUrl: generated.imageUrl, courseId, imageId: pending.id });
     await db.courseImage.update({
       where: { id: pending.id },
-      data: { status: "generating", providerTaskId: submitted.taskId, failureReason: null },
+      data: {
+        status: "succeeded",
+        prompt,
+        sourceHash,
+        providerTaskId: null,
+        providerImageUrl: generated.imageUrl,
+        storagePath: local.storagePath,
+        publicUrl: local.publicUrl,
+        failureReason: null,
+      },
     });
   } catch (error) {
     await db.courseImage.update({
       where: { id: pending.id },
-      data: { status: "failed", failureReason: errorMessage(error) },
+      data: { status: "failed", providerTaskId: null, failureReason: errorMessage(error) },
     });
   }
 }
