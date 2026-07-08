@@ -424,3 +424,102 @@ export async function keepStaleCourseImage(db: CourseImagesDb, courseId: string,
     image: mergeImageSlotsWithRecords([slot], [updated])[0],
   };
 }
+
+export type CourseImageQueueDeps = {
+  provider: {
+    submit: (input: { prompt: string; width: 1024; height: 768 }) => Promise<{ taskId: string }>;
+    query: (input: { taskId: string }) => Promise<
+      | { status: "generating"; imageUrl: null; failureReason: null }
+      | { status: "succeeded"; imageUrl: string; failureReason: null }
+      | { status: "failed"; imageUrl: null; failureReason: string }
+    >;
+  };
+  download: (input: { sourceUrl: string; courseId: string; imageId: string }) => Promise<{ storagePath: string; publicUrl: string }>;
+};
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "图片任务处理失败";
+}
+
+export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: string, deps: CourseImageQueueDeps) {
+  await getCourseDraftOrThrow(db, courseId);
+  const records = await listRecords(db, courseId);
+  const active = records.filter((image) => image.status === "submitting" || image.status === "generating");
+
+  for (const image of active) {
+    if (!image.providerTaskId) {
+      await db.courseImage.update({
+        where: { id: image.id },
+        data: { status: "failed", failureReason: "腾讯混元任务 ID 缺失" },
+      });
+      continue;
+    }
+
+    try {
+      const remote = await deps.provider.query({ taskId: image.providerTaskId });
+
+      if (remote.status === "generating") {
+        continue;
+      }
+
+      if (remote.status === "failed") {
+        await db.courseImage.update({
+          where: { id: image.id },
+          data: { status: "failed", failureReason: remote.failureReason },
+        });
+        continue;
+      }
+
+      const local = await deps.download({ sourceUrl: remote.imageUrl, courseId, imageId: image.id });
+      await db.courseImage.update({
+        where: { id: image.id },
+        data: {
+          status: "succeeded",
+          providerImageUrl: remote.imageUrl,
+          storagePath: local.storagePath,
+          publicUrl: local.publicUrl,
+          failureReason: null,
+        },
+      });
+    } catch (error) {
+      await db.courseImage.update({
+        where: { id: image.id },
+        data: {
+          status: "failed",
+          providerImageUrl: image.providerImageUrl,
+          failureReason: errorMessage(error),
+        },
+      });
+    }
+  }
+
+  const refreshed = await listRecords(db, courseId);
+  const stillActive = refreshed.some((image) => image.status === "submitting" || image.status === "generating");
+
+  if (stillActive) {
+    return;
+  }
+
+  const pending = refreshed.find((image) => image.status === "pending");
+
+  if (!pending) {
+    return;
+  }
+
+  try {
+    await db.courseImage.update({
+      where: { id: pending.id },
+      data: { status: "submitting", failureReason: null },
+    });
+    const submitted = await deps.provider.submit({ prompt: pending.prompt, width: 1024, height: 768 });
+    await db.courseImage.update({
+      where: { id: pending.id },
+      data: { status: "generating", providerTaskId: submitted.taskId, failureReason: null },
+    });
+  } catch (error) {
+    await db.courseImage.update({
+      where: { id: pending.id },
+      data: { status: "failed", failureReason: errorMessage(error) },
+    });
+  }
+}
