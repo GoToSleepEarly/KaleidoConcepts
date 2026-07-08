@@ -314,10 +314,15 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
           <p className="mt-2 text-sm text-slate-500">按章节和分镜检查最终展示文案，右侧编辑答案、正文和图片提示。</p>
         </div>
         {draft ? (
-          <Button className="bg-violet-600 text-white hover:bg-violet-700" disabled={isSaving} onClick={saveDraft} type="button">
-            {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-            保存草稿
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button className="bg-violet-600 text-white hover:bg-violet-700" disabled={isSaving} onClick={saveDraft} type="button">
+              {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+              保存草稿
+            </Button>
+            <Button asChild className="bg-slate-950 text-white hover:bg-slate-800">
+              <Link href={`/courses/${courseId}/create/resources`}>进入资源生成</Link>
+            </Button>
+          </div>
         ) : null}
       </div>
 
