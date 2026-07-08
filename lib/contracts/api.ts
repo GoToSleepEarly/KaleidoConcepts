@@ -100,6 +100,50 @@ export type CourseImage = {
   url: string | null;
 };
 
+export type ResourceImageStatus = "missing" | "pending" | "submitting" | "generating" | "succeeded" | "failed";
+export type CourseImageSlotType = "lesson_shot";
+export type CourseImageProvider = "tencent_hunyuan";
+
+export type ResourceProgress = {
+  total: number;
+  succeeded: number;
+  generating: number;
+  failed: number;
+  missing: number;
+  stale: number;
+};
+
+export type CourseResourceImage = {
+  id: string | null;
+  courseId: string;
+  chapterId: string;
+  chapterTitle: string;
+  shotId: string;
+  shotOrder: 1 | 2;
+  slotId: string;
+  slotType: CourseImageSlotType;
+  slotIndex: number;
+  prompt: string;
+  sourceHash: string | null;
+  currentSourceHash: string;
+  stale: boolean;
+  status: ResourceImageStatus;
+  provider: CourseImageProvider;
+  providerTaskId: string | null;
+  providerImageUrl: string | null;
+  publicUrl: string | null;
+  failureReason: string | null;
+  action: string;
+  scenePrompt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type CourseResourcesResponse = {
+  progress: ResourceProgress;
+  images: CourseResourceImage[];
+};
+
 export type BuildProgress = {
   structureDone: boolean;
   generatedImages: number;
