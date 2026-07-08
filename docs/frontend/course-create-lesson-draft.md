@@ -248,10 +248,10 @@ type LessonShot = {
 - 不要求 AI 直接输出最终 `LessonDraft` 全量结构，避免 block / exercise / shot 引用类机械错误。
 - AI 不再直接输出带 marker 的最终正文。
 - 第一次 LLM 请求生成纯正文内容计划：每章 2 段纯英文正文、每段 1 个图片分镜语义、closing reading、人物和视觉风格。
-- 第二次 LLM 请求基于纯正文生成练习计划：每章 7-10 个练习，包含 `type`、`paragraphIndex`、`answer`、`occurrenceText`，以及 `baseVerb` 或 `pattern`。
-- 后端代码只做 exact string replacement，将 `occurrenceText` 稳定替换为 exercise block。
+- 第二次 LLM 请求基于纯正文生成练习计划：每章 7-10 个练习，包含 `type`、`paragraphIndex`、`answer`、`occurrenceText`、`sentence`，以及 `baseVerb` 或 `pattern`。
+- 后端代码只做 exact string replacement：先用 `sentence` 在段落中定位唯一句子，再在该句中替换唯一的 `occurrenceText` 为 exercise block。
 - 后端不从正文中猜词、不补题、不做语义判断。
-- 若练习计划中的 `occurrenceText` 找不到、出现多次、与 answer 不匹配、数量不足或 answer 重复，接口返回可读错误，不做第三次 LLM 重试。
+- 若练习计划中的 `sentence` 找不到或出现多次、`occurrenceText` 在句中找不到或出现多次、与 answer 不匹配、数量不足或 answer 重复，接口返回可读错误，不做第三次 LLM 重试。
 - 分镜覆盖范围仍由代码按 paragraph 绑定：paragraph 1 → shot 1，paragraph 2 → shot 2。
 - 后端代码继续负责稳定 id、block order、exercise block references、imageSlotId、shot order、coveredBlockIds、`closingReading.vocabularyTerms`、character consistency 注入和最终校验。
 

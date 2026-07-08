@@ -76,6 +76,7 @@ type AiExercisePlanItem =
       paragraphIndex: 1 | 2;
       answer: string;
       occurrenceText: string;
+      sentence?: string;
       baseVerb: string;
     }
   | {
@@ -83,6 +84,7 @@ type AiExercisePlanItem =
       paragraphIndex: 1 | 2;
       answer: string;
       occurrenceText: string;
+      sentence?: string;
       pattern: string;
     };
 
@@ -147,7 +149,9 @@ function buildExercisePlanPrompt(context: LessonDraftGenerationContext, storyPla
     "- Use verb_blank for grammar practice and vocabulary_hint for important story words.",
     "- Do not repeat answer within the same chapter.",
     "- occurrenceText must be copied exactly from the specified paragraph text.",
-    "- occurrenceText must appear exactly once in that paragraph.",
+    "- sentence must be copied exactly from the specified paragraph text and contain occurrenceText.",
+    "- If occurrenceText appears multiple times in the paragraph, sentence must identify the unique sentence that should receive the blank.",
+    "- occurrenceText must appear exactly once inside sentence.",
     "- answer must be contained inside occurrenceText.",
     "- Code will do exact string replacement only, so do not rely on semantic matching.",
     "",
@@ -165,7 +169,7 @@ function buildExercisePlanPrompt(context: LessonDraftGenerationContext, storyPla
       .join("\n\n"),
     "",
     "Required JSON shape:",
-    '{"chapters":[{"chapterIndex":1,"exercises":[{"type":"verb_blank","paragraphIndex":1,"answer":"walked","occurrenceText":"walked","baseVerb":"walk"},{"type":"vocabulary_hint","paragraphIndex":1,"answer":"gate","occurrenceText":"gate","pattern":"g _ _ e"}]}]}',
+    '{"chapters":[{"chapterIndex":1,"exercises":[{"type":"verb_blank","paragraphIndex":1,"answer":"walked","occurrenceText":"walked","sentence":"Ms. Lin walked toward the gate.","baseVerb":"walk"},{"type":"vocabulary_hint","paragraphIndex":1,"answer":"gate","occurrenceText":"gate","sentence":"Ms. Lin walked toward the gate.","pattern":"g _ _ e"}]}]}',
   ].join("\n");
 }
 
@@ -452,18 +456,44 @@ function assertNoLegacyMarkers(text: string, chapterIndex: number) {
   }
 }
 
-function findUniqueOccurrence(text: string, occurrenceText: string, chapterIndex: number, paragraphIndex: number) {
-  const first = text.indexOf(occurrenceText);
+function findUniqueText(text: string, searchText: string, missingMessage: string, duplicateMessage: string) {
+  const first = text.indexOf(searchText);
   if (first < 0) {
-    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${occurrenceText}" 在第 ${paragraphIndex} 段中不存在`);
+    throw new LessonDraftValidationError(missingMessage);
   }
 
-  const second = text.indexOf(occurrenceText, first + occurrenceText.length);
+  const second = text.indexOf(searchText, first + searchText.length);
   if (second >= 0) {
-    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${occurrenceText}" 在第 ${paragraphIndex} 段中出现多次，无法稳定替换`);
+    throw new LessonDraftValidationError(duplicateMessage);
   }
 
   return first;
+}
+
+function findExerciseOccurrence(text: string, exercise: AiExercisePlanItem, chapterIndex: number, paragraphIndex: number) {
+  if (!exercise.sentence) {
+    return findUniqueText(
+      text,
+      exercise.occurrenceText,
+      `第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在第 ${paragraphIndex} 段中不存在`,
+      `第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在第 ${paragraphIndex} 段中出现多次，无法稳定替换`,
+    );
+  }
+
+  const sentenceStart = findUniqueText(
+    text,
+    exercise.sentence,
+    `第 ${chapterIndex + 1} 章练习计划无效：sentence "${exercise.sentence}" 在第 ${paragraphIndex} 段中不存在`,
+    `第 ${chapterIndex + 1} 章练习计划无效：sentence "${exercise.sentence}" 在第 ${paragraphIndex} 段中出现多次，无法稳定替换`,
+  );
+  const occurrenceInSentence = findUniqueText(
+    exercise.sentence,
+    exercise.occurrenceText,
+    `第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在 sentence 中不存在`,
+    `第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在 sentence 中出现多次，无法稳定替换`,
+  );
+
+  return sentenceStart + occurrenceInSentence;
 }
 
 function validateExercisePlanItem(item: AiExercisePlanItem, chapterIndex: number) {
@@ -508,7 +538,7 @@ function assembleParagraphBlocks({
   const sorted = exercises
     .map((exercise) => {
       validateExercisePlanItem(exercise, chapterIndex);
-      return { exercise, start: findUniqueOccurrence(paragraphText, exercise.occurrenceText, chapterIndex, paragraphIndex) };
+      return { exercise, start: findExerciseOccurrence(paragraphText, exercise, chapterIndex, paragraphIndex) };
     })
     .sort((a, b) => a.start - b.start);
 
