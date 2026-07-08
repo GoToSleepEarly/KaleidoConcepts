@@ -1,7 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LessonDraft } from "@/lib/contracts/api";
-import { buildImagePrompt, deriveLessonShotImageSlots, hashImageSource, mergeImageSlotsWithRecords } from "./course-images";
+import {
+  buildImagePrompt,
+  CourseImageInvalidStateError,
+  CourseImageNotFoundError,
+  CourseImagePrerequisiteError,
+  createMissingCourseImages,
+  deriveLessonShotImageSlots,
+  getCourseResources,
+  hashImageSource,
+  keepStaleCourseImage,
+  mergeImageSlotsWithRecords,
+  retryCourseImage,
+} from "./course-images";
 
 function draft(): LessonDraft {
   return {
@@ -161,5 +173,226 @@ describe("course image planning", () => {
       status: "missing",
       stale: false,
     });
+  });
+});
+
+function makeDb() {
+  const state = {
+    course: {
+      id: "course-1",
+      status: "draft",
+      lessonDraft: {
+        content: draft(),
+      },
+    },
+    images: [] as any[],
+  };
+
+  return {
+    state,
+    db: {
+      course: {
+        findUnique: vi.fn(async () => state.course),
+        update: vi.fn(async ({ data }: any) => {
+          state.course.status = data.status;
+          return state.course;
+        }),
+      },
+      courseImage: {
+        findMany: vi.fn(async () => state.images),
+        createMany: vi.fn(async ({ data }: any) => {
+          data.forEach((item: any) => {
+            state.images.push({
+              id: `image-${state.images.length + 1}`,
+              ...item,
+              providerTaskId: null,
+              providerImageUrl: null,
+              storagePath: null,
+              publicUrl: null,
+              failureReason: null,
+              createdAt: new Date("2026-07-08T00:00:00Z"),
+              updatedAt: new Date("2026-07-08T00:00:00Z"),
+            });
+          });
+          return { count: data.length };
+        }),
+        findFirst: vi.fn(async ({ where }: any) => state.images.find((image) => image.id === where.id && image.courseId === where.courseId) ?? null),
+        update: vi.fn(async ({ where, data }: any) => {
+          const image = state.images.find((item) => item.id === where.id);
+          Object.assign(image, data, { updatedAt: new Date("2026-07-08T00:01:00Z") });
+          return image;
+        }),
+      },
+    } as any,
+  };
+}
+
+describe("course image repository operations", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("throws a prerequisite error when the course has no lesson draft", async () => {
+    const { db, state } = makeDb();
+    state.course.lessonDraft = null as any;
+
+    await expect(getCourseResources(db, "course-1")).rejects.toBeInstanceOf(CourseImagePrerequisiteError);
+  });
+
+  it("creates pending records only for missing images", async () => {
+    const { db } = makeDb();
+    const result = await createMissingCourseImages(db, "course-1");
+
+    expect(result.progress).toMatchObject({ total: 2, generating: 2, missing: 0 });
+    expect(db.courseImage.createMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({ slotId: "slot-1", status: "pending", provider: "tencent_hunyuan" }),
+        expect.objectContaining({ slotId: "slot-2", status: "pending", provider: "tencent_hunyuan" }),
+      ]),
+      skipDuplicates: true,
+    });
+    expect(db.course.update).toHaveBeenCalledWith({ where: { id: "course-1" }, data: { status: "building_resources" } });
+  });
+
+  it("does not create records for succeeded current images", async () => {
+    const { db, state } = makeDb();
+    const slots = deriveLessonShotImageSlots("course-1", draft());
+    state.images.push({
+      id: "image-1",
+      courseId: "course-1",
+      chapterId: "chapter-1",
+      shotId: "shot-1",
+      slotId: "slot-1",
+      slotType: "lesson_shot",
+      slotIndex: 1,
+      prompt: slots[0].prompt,
+      sourceHash: slots[0].sourceHash,
+      status: "succeeded",
+      provider: "tencent_hunyuan",
+      providerTaskId: "task-1",
+      providerImageUrl: "https://example.com/image.png",
+      storagePath: "/data/pbl-images/course-images/course-1/image-1.png",
+      publicUrl: "/api/course-images/image-1",
+      failureReason: null,
+      createdAt: new Date("2026-07-08T00:00:00Z"),
+      updatedAt: new Date("2026-07-08T00:00:00Z"),
+    });
+
+    await createMissingCourseImages(db, "course-1");
+
+    expect(db.courseImage.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ slotId: "slot-2" })],
+      skipDuplicates: true,
+    });
+  });
+
+  it("retries failed images by resetting task fields", async () => {
+    const { db, state } = makeDb();
+    const slots = deriveLessonShotImageSlots("course-1", draft());
+    state.images.push({
+      id: "image-1",
+      courseId: "course-1",
+      chapterId: "chapter-1",
+      shotId: "shot-1",
+      slotId: "slot-1",
+      slotType: "lesson_shot",
+      slotIndex: 1,
+      prompt: "old",
+      sourceHash: "old",
+      status: "failed",
+      provider: "tencent_hunyuan",
+      providerTaskId: "task-1",
+      providerImageUrl: "https://example.com/image.png",
+      storagePath: null,
+      publicUrl: null,
+      failureReason: "remote failed",
+      createdAt: new Date("2026-07-08T00:00:00Z"),
+      updatedAt: new Date("2026-07-08T00:00:00Z"),
+    });
+
+    const result = await retryCourseImage(db, "course-1", "image-1");
+
+    expect(result.image).toMatchObject({ id: "image-1", status: "pending", sourceHash: slots[0].sourceHash, stale: false });
+    expect(db.courseImage.update).toHaveBeenCalledWith({
+      where: { id: "image-1" },
+      data: expect.objectContaining({
+        status: "pending",
+        providerTaskId: null,
+        providerImageUrl: null,
+        storagePath: null,
+        publicUrl: null,
+        failureReason: null,
+      }),
+    });
+  });
+
+  it("rejects retry for succeeded current images", async () => {
+    const { db, state } = makeDb();
+    const slots = deriveLessonShotImageSlots("course-1", draft());
+    state.images.push({
+      id: "image-1",
+      courseId: "course-1",
+      chapterId: "chapter-1",
+      shotId: "shot-1",
+      slotId: "slot-1",
+      slotType: "lesson_shot",
+      slotIndex: 1,
+      prompt: slots[0].prompt,
+      sourceHash: slots[0].sourceHash,
+      status: "succeeded",
+      provider: "tencent_hunyuan",
+      providerTaskId: "task-1",
+      providerImageUrl: "https://example.com/image.png",
+      storagePath: "/data/pbl-images/course-images/course-1/image-1.png",
+      publicUrl: "/api/course-images/image-1",
+      failureReason: null,
+      createdAt: new Date("2026-07-08T00:00:00Z"),
+      updatedAt: new Date("2026-07-08T00:00:00Z"),
+    });
+
+    await expect(retryCourseImage(db, "course-1", "image-1")).rejects.toBeInstanceOf(CourseImageInvalidStateError);
+  });
+
+  it("keeps a stale succeeded image by accepting the current hash", async () => {
+    const { db, state } = makeDb();
+    const slots = deriveLessonShotImageSlots("course-1", draft());
+    state.images.push({
+      id: "image-1",
+      courseId: "course-1",
+      chapterId: "chapter-1",
+      shotId: "shot-1",
+      slotId: "slot-1",
+      slotType: "lesson_shot",
+      slotIndex: 1,
+      prompt: "old prompt",
+      sourceHash: "old-hash",
+      status: "succeeded",
+      provider: "tencent_hunyuan",
+      providerTaskId: "task-1",
+      providerImageUrl: "https://example.com/image.png",
+      storagePath: "/data/pbl-images/course-images/course-1/image-1.png",
+      publicUrl: "/api/course-images/image-1",
+      failureReason: null,
+      createdAt: new Date("2026-07-08T00:00:00Z"),
+      updatedAt: new Date("2026-07-08T00:00:00Z"),
+    });
+
+    const result = await keepStaleCourseImage(db, "course-1", "image-1");
+
+    expect(result.image).toMatchObject({ id: "image-1", sourceHash: slots[0].sourceHash, stale: false });
+    expect(db.courseImage.update).toHaveBeenCalledWith({
+      where: { id: "image-1" },
+      data: {
+        prompt: slots[0].prompt,
+        sourceHash: slots[0].sourceHash,
+        failureReason: null,
+      },
+    });
+  });
+
+  it("throws not found for missing image id", async () => {
+    const { db } = makeDb();
+
+    await expect(keepStaleCourseImage(db, "course-1", "missing")).rejects.toBeInstanceOf(CourseImageNotFoundError);
   });
 });
