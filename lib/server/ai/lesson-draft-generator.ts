@@ -41,7 +41,8 @@ const maxExercisesPerChapter = 10;
 type AiShotPlan = Omit<LessonShot, "id" | "order" | "imageSlotId" | "coveredBlockIds">;
 
 type AiStoryParagraphPlan = {
-  text: string;
+  text?: string;
+  sentences?: string[];
   shot: AiShotPlan;
 };
 
@@ -74,16 +75,20 @@ type AiExercisePlanItem =
   | {
       type: "verb_blank";
       paragraphIndex: 1 | 2;
+      sentenceId?: string;
       answer: string;
       occurrenceText: string;
+      occurrenceIndex?: number;
       sentence?: string;
       baseVerb: string;
     }
   | {
       type: "vocabulary_hint";
       paragraphIndex: 1 | 2;
+      sentenceId?: string;
       answer: string;
       occurrenceText: string;
+      occurrenceIndex?: number;
       sentence?: string;
       pattern: string;
     };
@@ -126,14 +131,14 @@ function buildStoryContentPrompt(context: LessonDraftGenerationContext) {
     "- Return a story content plan, not the final database LessonDraft.",
     "- Do not include exercise markers. Do not include [verb:...] or [vocab:...].",
     "- Each chapter must have exactly two paragraphs.",
-    "- Each paragraph.text must be pure English story text, about 45-70 words.",
+    "- Each paragraph.sentences must be an array of pure English story sentences, about 3-5 sentences per paragraph.",
     "- The chapter story must visibly use the grammar targets and chapter grammar hook in natural story actions.",
     "- Each paragraph has its own image shot semantics.",
     "- shot.characterIds must reference global character ids only.",
     "- closingReading.text must be English only, 80-120 words, no blanks, no exercises, no image prompt, and no final The End sentence.",
     "",
     "Required JSON shape:",
-    `{"title":"string","visualStyle":{"artStyle":"string","colorPalette":"string","aspectRatio":"4:3","consistencyPrompt":"string"},"characters":[{"id":"${context.teacher.id}","name":"string","role":"teacher","appearance":"string","outfit":"string","consistencyPrompt":"string"}],"chapters":[{"title":"string","paragraphs":[{"text":"pure story paragraph with no exercise markers","shot":{"characterIds":["${context.teacher.id}"],"location":"string","action":"string","mood":"string","scenePrompt":"string","composition":"string","continuityNotes":"string"}},{"text":"pure story paragraph with no exercise markers","shot":{"characterIds":["${context.teacher.id}"],"location":"string","action":"string","mood":"string","scenePrompt":"string","composition":"string","continuityNotes":"string"}}]}],"closingReading":{"title":"string","text":"80-120 English words"}}`,
+    `{"title":"string","visualStyle":{"artStyle":"string","colorPalette":"string","aspectRatio":"4:3","consistencyPrompt":"string"},"characters":[{"id":"${context.teacher.id}","name":"string","role":"teacher","appearance":"string","outfit":"string","consistencyPrompt":"string"}],"chapters":[{"title":"string","paragraphs":[{"sentences":["pure story sentence with no exercise markers","another pure story sentence"],"shot":{"characterIds":["${context.teacher.id}"],"location":"string","action":"string","mood":"string","scenePrompt":"string","composition":"string","continuityNotes":"string"}},{"sentences":["pure story sentence with no exercise markers","another pure story sentence"],"shot":{"characterIds":["${context.teacher.id}"],"location":"string","action":"string","mood":"string","scenePrompt":"string","composition":"string","continuityNotes":"string"}}]}],"closingReading":{"title":"string","text":"80-120 English words"}}`,
   ].join("\n");
 }
 
@@ -148,10 +153,10 @@ function buildExercisePlanPrompt(context: LessonDraftGenerationContext, storyPla
     "- Each chapter must have 7-10 exercises; prefer 8-10 when possible.",
     "- Use verb_blank for grammar practice and vocabulary_hint for important story words.",
     "- Do not repeat answer within the same chapter.",
-    "- occurrenceText must be copied exactly from the specified paragraph text.",
-    "- sentence must be copied exactly from the specified paragraph text and contain occurrenceText.",
-    "- If occurrenceText appears multiple times in the paragraph, sentence must identify the unique sentence that should receive the blank.",
-    "- occurrenceText must appear exactly once inside sentence.",
+    "- sentenceId must reference one of the provided sentence ids, such as c1p1s2.",
+    "- occurrenceText must be copied exactly from that sentence.",
+    "- occurrenceIndex selects which occurrence inside the sentence to replace; use 1 for the first occurrence, 2 for the second, and so on.",
+    "- Do not copy full sentences back into the exercise plan.",
     "- answer must be contained inside occurrenceText.",
     "- Code will do exact string replacement only, so do not rely on semantic matching.",
     "",
@@ -162,14 +167,15 @@ function buildExercisePlanPrompt(context: LessonDraftGenerationContext, storyPla
         return [
           `Chapter ${chapterIndex + 1}: ${chapter.title}`,
           `Knowledge hook: ${outline?.knowledgeHook ?? "not provided"}`,
-          `Paragraph 1: ${chapter.paragraphs[0]?.text ?? ""}`,
-          `Paragraph 2: ${chapter.paragraphs[1]?.text ?? ""}`,
+          ...chapter.paragraphs.flatMap((paragraph, paragraphIndex) =>
+            paragraphSentences(paragraph, "").map((sentence, sentenceIndex) => `${sentenceId(chapterIndex, paragraphIndex + 1, sentenceIndex)}: ${sentence}`),
+          ),
         ].join("\n");
       })
       .join("\n\n"),
     "",
     "Required JSON shape:",
-    '{"chapters":[{"chapterIndex":1,"exercises":[{"type":"verb_blank","paragraphIndex":1,"answer":"walked","occurrenceText":"walked","sentence":"Ms. Lin walked toward the gate.","baseVerb":"walk"},{"type":"vocabulary_hint","paragraphIndex":1,"answer":"gate","occurrenceText":"gate","sentence":"Ms. Lin walked toward the gate.","pattern":"g _ _ e"}]}]}',
+    '{"chapters":[{"chapterIndex":1,"exercises":[{"type":"verb_blank","paragraphIndex":1,"sentenceId":"c1p1s1","answer":"walked","occurrenceText":"walked","occurrenceIndex":1,"baseVerb":"walk"},{"type":"vocabulary_hint","paragraphIndex":1,"sentenceId":"c1p1s2","answer":"gate","occurrenceText":"gate","occurrenceIndex":1,"pattern":"g _ _ e"}]}]}',
   ].join("\n");
 }
 
@@ -456,6 +462,33 @@ function assertNoLegacyMarkers(text: string, chapterIndex: number) {
   }
 }
 
+function sentenceId(chapterIndex: number, paragraphIndex: number, sentenceIndex: number) {
+  return `c${chapterIndex + 1}p${paragraphIndex}s${sentenceIndex + 1}`;
+}
+
+function paragraphSentences(paragraph: AiStoryParagraphPlan, fallback: string) {
+  if (Array.isArray(paragraph.sentences) && paragraph.sentences.length) {
+    return paragraph.sentences.map((sentence) => sentence.trim()).filter(Boolean);
+  }
+
+  return [nonEmptyString(paragraph.text, fallback)];
+}
+
+function findNthOccurrence(text: string, searchText: string, occurrenceIndex: number) {
+  let cursor = 0;
+  let found = -1;
+
+  for (let count = 1; count <= occurrenceIndex; count += 1) {
+    found = text.indexOf(searchText, cursor);
+    if (found < 0) {
+      return -1;
+    }
+    cursor = found + searchText.length;
+  }
+
+  return found;
+}
+
 function findUniqueText(text: string, searchText: string, missingMessage: string, duplicateMessage: string) {
   const first = text.indexOf(searchText);
   if (first < 0) {
@@ -470,7 +503,39 @@ function findUniqueText(text: string, searchText: string, missingMessage: string
   return first;
 }
 
-function findExerciseOccurrence(text: string, exercise: AiExercisePlanItem, chapterIndex: number, paragraphIndex: number) {
+function findExerciseOccurrence(text: string, sentences: string[], exercise: AiExercisePlanItem, chapterIndex: number, paragraphIndex: number) {
+  if (exercise.sentenceId) {
+    const expectedPrefix = `c${chapterIndex + 1}p${paragraphIndex}s`;
+    if (!exercise.sentenceId.startsWith(expectedPrefix)) {
+      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：sentenceId "${exercise.sentenceId}" 不属于第 ${paragraphIndex} 段`);
+    }
+
+    const sentenceNumber = Number(exercise.sentenceId.slice(expectedPrefix.length));
+    const sentence = sentences[sentenceNumber - 1];
+    if (!sentence) {
+      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：sentenceId "${exercise.sentenceId}" 不存在`);
+    }
+
+    const occurrenceIndex = exercise.occurrenceIndex ?? 1;
+    if (!Number.isInteger(occurrenceIndex) || occurrenceIndex < 1) {
+      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：occurrenceIndex 必须是正整数`);
+    }
+
+    const occurrenceInSentence = findNthOccurrence(sentence, exercise.occurrenceText, occurrenceIndex);
+    if (occurrenceInSentence < 0) {
+      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在 sentenceId "${exercise.sentenceId}" 中不存在第 ${occurrenceIndex} 次`);
+    }
+
+    const sentenceStart = findUniqueText(
+      text,
+      sentence,
+      `第 ${chapterIndex + 1} 章练习计划无效：sentenceId "${exercise.sentenceId}" 对应句子在第 ${paragraphIndex} 段中不存在`,
+      `第 ${chapterIndex + 1} 章练习计划无效：sentenceId "${exercise.sentenceId}" 对应句子在第 ${paragraphIndex} 段中出现多次`,
+    );
+
+    return sentenceStart + occurrenceInSentence;
+  }
+
   if (!exercise.sentence) {
     return findUniqueText(
       text,
@@ -520,6 +585,7 @@ function validateExercisePlanItem(item: AiExercisePlanItem, chapterIndex: number
 
 function assembleParagraphBlocks({
   paragraphText,
+  sentences,
   exercises,
   chapterIndex,
   paragraphIndex,
@@ -528,6 +594,7 @@ function assembleParagraphBlocks({
   lessonExercises,
 }: {
   paragraphText: string;
+  sentences: string[];
   exercises: AiExercisePlanItem[];
   chapterIndex: number;
   paragraphIndex: 1 | 2;
@@ -538,7 +605,7 @@ function assembleParagraphBlocks({
   const sorted = exercises
     .map((exercise) => {
       validateExercisePlanItem(exercise, chapterIndex);
-      return { exercise, start: findExerciseOccurrence(paragraphText, exercise, chapterIndex, paragraphIndex) };
+      return { exercise, start: findExerciseOccurrence(paragraphText, sentences, exercise, chapterIndex, paragraphIndex) };
     })
     .sort((a, b) => a.start - b.start);
 
@@ -601,14 +668,16 @@ export function assembleLessonDraftFromPlans(storyPlanInput: AiStoryContentPlan,
     const prefix = `chapter-${chapterIndex + 1}`;
     const rawParagraphs = Array.isArray(chapterPlan?.paragraphs) ? chapterPlan.paragraphs.slice(0, 2) : [];
     const paragraphs = [0, 1].map((paragraphIndex) => {
-      const paragraph = rawParagraphs[paragraphIndex];
-      const text = nonEmptyString(paragraph?.text, outlineChapter.summary);
+      const paragraph = rawParagraphs[paragraphIndex] ?? { text: outlineChapter.summary, shot: undefined };
+      const sentences = paragraphSentences(paragraph, outlineChapter.summary);
+      const text = sentences.join(" ");
       assertNoLegacyMarkers(text, chapterIndex);
       return {
         text,
+        sentences,
         shot: sanitizeShotPlan(paragraph?.shot, context, characters, chapterPlan?.title ?? outlineChapter.title, text),
       };
-    }) as [AiStoryParagraphPlan, AiStoryParagraphPlan];
+    }) as Array<AiStoryParagraphPlan & { text: string; sentences: string[] }> as [AiStoryParagraphPlan & { text: string; sentences: string[] }, AiStoryParagraphPlan & { text: string; sentences: string[] }];
 
     if (!exerciseChapter) {
       throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划缺失`);
@@ -628,6 +697,7 @@ export function assembleLessonDraftFromPlans(storyPlanInput: AiStoryContentPlan,
     const paragraphBlockIds = paragraphs.map((paragraph, paragraphIndex) =>
       assembleParagraphBlocks({
         paragraphText: paragraph.text,
+        sentences: paragraph.sentences,
         exercises: exerciseChapter.exercises.filter((exercise) => exercise.paragraphIndex === paragraphIndex + 1),
         chapterIndex,
         paragraphIndex: (paragraphIndex + 1) as 1 | 2,

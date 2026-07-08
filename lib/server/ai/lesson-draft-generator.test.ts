@@ -187,6 +187,45 @@ describe("lesson draft two-stage assembly", () => {
     expect(() => assembleLessonDraftFromPlans(storyPlan, invalidPlan, context)).toThrow('occurrenceText "danced" 在 sentence 中不存在');
   });
 
+  test("uses sentenceId and occurrenceIndex to replace repeated text deterministically", () => {
+    const sentenceStory = structuredClone(storyPlan);
+    sentenceStory.chapters[0].paragraphs[0] = {
+      sentences: [
+        "Yesterday morning, Ms. Lin walked toward the quiet forest gate with Summer beside her.",
+        "Summer carried her sketchbook and looked at the silver leaves.",
+        "Ms. Lin asked one calm question about the strange path, and Summer noticed a small arrow on the stone.",
+        "They opened the door together and stepped into warm green light.",
+        "Ms. Lin looks at the map and says, \"This map has a big red X.\"",
+      ],
+      shot: shotPlan("Ms. Lin and Summer study the red X on the map."),
+    } as never;
+    const sentenceExercisePlan = structuredClone(exercisePlan);
+    sentenceExercisePlan.chapters[0].exercises[0] = {
+      type: "vocabulary_hint",
+      paragraphIndex: 1,
+      sentenceId: "c1p1s5",
+      answer: "map",
+      occurrenceText: "map",
+      occurrenceIndex: 2,
+      pattern: "m _ p",
+    } as never;
+    sentenceExercisePlan.chapters[0].exercises[5] = {
+      type: "vocabulary_hint",
+      paragraphIndex: 2,
+      answer: "flower",
+      occurrenceText: "flower",
+      pattern: "f _ _ _ r",
+    } as never;
+
+    const draft = assembleLessonDraftFromPlans(sentenceStory, sentenceExercisePlan, context);
+
+    expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
+    const rendered = draft.chapters[0].blocks
+      .map((block) => (block.type === "text" ? block.text : `[${draft.chapters[0].exercises.find((exercise) => exercise.id === block.exerciseId)?.answer}]`))
+      .join("");
+    expect(rendered).toContain('Ms. Lin looks at the map and says, "This [map] has a big red X."');
+  });
+
   test("uses sentence locator when occurrence text appears multiple times in a paragraph", () => {
     const repeatedStory = structuredClone(storyPlan);
     repeatedStory.chapters[0].paragraphs[0].text = `${repeatedStory.chapters[0].paragraphs[0].text} The quiet forest gate opened again.`;
