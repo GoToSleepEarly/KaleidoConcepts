@@ -322,10 +322,6 @@ function uniqueNonEmpty(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
-function countTextWords(text: string) {
-  return text.trim().split(/\s+/).filter(Boolean).length;
-}
-
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }

@@ -246,25 +246,14 @@ type LessonShot = {
 ## 生成稳定性策略
 
 - 不要求 AI 直接输出最终 `LessonDraft` 全量结构，避免 block / exercise / shot 引用类机械错误。
-- AI 输出内容计划：每章两段带内联习题标记的英文故事、每段图片分镜语义。
-- 习题由 AI 在正文语境中直接生成，不再使用 `targetText` 搜索机制，也不由代码从正文中猜词补题。
-- 内联习题标记格式：
-  - 动词填空：`[verb:baseVerb|answer]`
-  - 词汇提示：`[vocab:pattern|answer]`
-- 标记解析示例：`Ms. Lin [verb:walk|walked] toward the quiet forest [vocab:g _ _ e|gate].`
-- 后端代码负责：
-  - 每章目标 8-10 个练习 marker，硬性保存底线为 7-10 个
-  - 创建稳定 id 与顺序
-  - 将 AI 内联标记解析为 text block、exercise block 和 exercises
-  - 不再硬性校验每段练习数量或 `verb_blank` / `vocabulary_hint` 精确比例
-  - 校验每章至少 7 个、最多 10 个可解析练习 marker；若 AI 生成超过 10 个 marker，代码保留前 10 个练习并将多余 marker 还原为普通正文答案
-  - 校验同章保留的 exercise answer 不重复；若 AI 生成重复 answer，代码保留第一次出现的 marker，并将后续重复 marker 还原为普通正文答案
-  - 将第 1 段 blocks 绑定到 shot 1，第 2 段 blocks 绑定到 shot 2
-  - 从 vocabulary exercises 自动生成 `closingReading.vocabularyTerms`，按首次出现去重，最多 12 个
-  - 移除 `closingReading.text` 末尾的 `The End`
-  - 将人物外貌和服装一致性自动注入每个 shot 的 `scenePrompt` / `continuityNotes`
-  - 对短 closing reading 补足基础叙事上下文，再进入最终校验
-- 若某章 AI 生成结果未满足核心硬校验，后端会针对失败章节做一次局部重生成修复；修复仍失败时，接口返回可读错误，不保存不合格草稿。
+- AI 不再直接输出带 marker 的最终正文。
+- 第一次 LLM 请求生成纯正文内容计划：每章 2 段纯英文正文、每段 1 个图片分镜语义、closing reading、人物和视觉风格。
+- 第二次 LLM 请求基于纯正文生成练习计划：每章 7-10 个练习，包含 `type`、`paragraphIndex`、`answer`、`occurrenceText`，以及 `baseVerb` 或 `pattern`。
+- 后端代码只做 exact string replacement，将 `occurrenceText` 稳定替换为 exercise block。
+- 后端不从正文中猜词、不补题、不做语义判断。
+- 若练习计划中的 `occurrenceText` 找不到、出现多次、与 answer 不匹配、数量不足或 answer 重复，接口返回可读错误，不做第三次 LLM 重试。
+- 分镜覆盖范围仍由代码按 paragraph 绑定：paragraph 1 → shot 1，paragraph 2 → shot 2。
+- 后端代码继续负责稳定 id、block order、exercise block references、imageSlotId、shot order、coveredBlockIds、`closingReading.vocabularyTerms`、character consistency 注入和最终校验。
 
 ## 实现状态
 
@@ -283,3 +272,4 @@ type LessonShot = {
 - 2026-07-07 修复记录：针对 AI 常见的每段 `4 verb + 1 vocab` 导致全章 `8/2` 的错误，prompt 和后端校验改为精确段落配比：第 1 段 `4 verb + 1 vocab`，第 2 段 `3 verb + 2 vocab`。校验错误会返回 `p1Verb/p1Vocab/p2Verb/p2Vocab`，用于第二次重生成时直接纠偏。
 - 2026-07-07 修复记录：Step 3 DeepSeek 调用默认开启 thinking 模式，`reasoning_effort=max`，并移除 thinking 模式下不生效的 `temperature`。如需兼容旧行为，可用 `DEEPSEEK_THINKING=disabled` 回退到非 thinking 低温 JSON 生成。
 - 2026-07-07 稳定性重设计记录：Step 3 不再把每章 10 题、7/3 比例、每段 5 题作为硬校验；每章固定 2 个分镜，练习目标为 8-10 个、硬性底线保持 7-10 个；若某章首次生成未达标，后端会对失败章节做一次局部重生成修复，练习仍必须由 AI 在正文中以内联 marker 生成，代码不补题。DeepSeek 默认关闭 thinking 以降低常规生成耗时，可通过 `DEEPSEEK_THINKING=enabled` 开启深度模式。
+- 2026-07-08 重构记录：Step 3 生成改为两阶段 LLM。第一阶段生成纯正文、分镜和 closing；第二阶段基于正文生成练习计划。代码只做 exact string replacement 和最终 `LessonDraft` 装配，不再让 AI 直接输出带 marker 的正文，也不再保留旧的 marker 修复/截断/去重主路径。
