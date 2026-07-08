@@ -143,7 +143,7 @@ const exercisePlan = {
     {
       chapterIndex: 1,
       exercises: [
-        { type: "verb_blank" as const, paragraphIndex: 1 as const, answer: "walked", occurrenceText: "walked", baseVerb: "walk" },
+        { type: "verb_blank" as const, paragraphIndex: 1 as const, answer: "walked", occurrenceText: "walked", sentence: "Yesterday morning, Ms. Lin walked toward the quiet forest gate with Summer beside her.", baseVerb: "walk" },
         { type: "vocabulary_hint" as const, paragraphIndex: 1 as const, answer: "gate", occurrenceText: "gate", pattern: "g _ _ e" },
         { type: "verb_blank" as const, paragraphIndex: 1 as const, answer: "carried", occurrenceText: "carried", baseVerb: "carry" },
         { type: "verb_blank" as const, paragraphIndex: 1 as const, answer: "looked", occurrenceText: "looked", baseVerb: "look" },
@@ -184,14 +184,27 @@ describe("lesson draft two-stage assembly", () => {
     invalidPlan.chapters[0].exercises[0].occurrenceText = "danced";
     invalidPlan.chapters[0].exercises[0].answer = "danced";
 
-    expect(() => assembleLessonDraftFromPlans(storyPlan, invalidPlan, context)).toThrow('occurrenceText "danced" 在第 1 段中不存在');
+    expect(() => assembleLessonDraftFromPlans(storyPlan, invalidPlan, context)).toThrow('occurrenceText "danced" 在 sentence 中不存在');
   });
 
-  test("rejects exercise occurrence text that appears multiple times", () => {
+  test("uses sentence locator when occurrence text appears multiple times in a paragraph", () => {
     const repeatedStory = structuredClone(storyPlan);
-    repeatedStory.chapters[0].paragraphs[0].text = `${repeatedStory.chapters[0].paragraphs[0].text} Ms. Lin walked again.`;
+    repeatedStory.chapters[0].paragraphs[0].text = `${repeatedStory.chapters[0].paragraphs[0].text} The quiet forest gate opened again.`;
+    const locatedPlan = structuredClone(exercisePlan);
+    const vocabularyExercise = locatedPlan.chapters[0].exercises[1];
+    if (vocabularyExercise.type !== "vocabulary_hint") {
+      throw new Error("Expected vocabulary exercise");
+    }
+    vocabularyExercise.sentence = "Yesterday morning, Ms. Lin walked toward the quiet forest gate with Summer beside her.";
 
-    expect(() => assembleLessonDraftFromPlans(repeatedStory, exercisePlan, context)).toThrow('occurrenceText "walked" 在第 1 段中出现多次');
+    const draft = assembleLessonDraftFromPlans(repeatedStory, locatedPlan, context);
+
+    expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
+    const rendered = draft.chapters[0].blocks
+      .map((block) => (block.type === "text" ? block.text : `[${draft.chapters[0].exercises.find((exercise) => exercise.id === block.exerciseId)?.answer}]`))
+      .join("");
+    expect(rendered).toContain("quiet forest [gate] with Summer");
+    expect(rendered).toContain("The quiet forest gate opened again.");
   });
 
   test("rejects duplicate exercise answers in one chapter", () => {
