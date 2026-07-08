@@ -701,7 +701,8 @@ async function callDeepSeek(messages: ChatMessage[], thinkingOverride?: DeepSeek
   });
 
   if (!response.ok) {
-    throw new Error("DeepSeek 请求失败");
+    const errorText = await response.text().catch(() => "");
+    throw new Error(`DeepSeek 请求失败: status=${response.status}, body=${errorText.slice(0, 500)}`);
   }
 
   const data = (await response.json()) as { choices?: Array<{ finish_reason?: string; message?: { content?: string | null; reasoning_content?: string | null } }> };
@@ -786,7 +787,7 @@ export async function generateLessonDraft(context: LessonDraftGenerationContext)
         content: buildChapterRepairPrompt(context, chapterIndex, parsed.chapters[chapterIndex], error),
       },
     ];
-    const repairedChapter = parseChapterPlan(parseJsonObject(await callDeepSeek(repairMessages, "enabled")));
+    const repairedChapter = parseChapterPlan(parseJsonObject(await callDeepSeek(repairMessages)));
     const repairedPlan: AiLessonDraftPlan = {
       ...parsed,
       chapters: parsed.chapters.map((chapter, index) => (index === chapterIndex ? repairedChapter : chapter)),

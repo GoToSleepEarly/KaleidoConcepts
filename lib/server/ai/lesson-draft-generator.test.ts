@@ -755,7 +755,7 @@ describe("lesson draft generation repair", () => {
       expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
       expect(draft.chapters[0].exercises).toHaveLength(10);
       expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(JSON.parse(fetchMock.mock.calls[1][1].body).thinking).toEqual({ type: "enabled" });
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body).thinking).toEqual({ type: "disabled" });
     } finally {
       if (originalApiKey === undefined) {
         delete process.env.DEEPSEEK_API_KEY;
