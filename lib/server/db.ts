@@ -3,12 +3,13 @@ import { PrismaClient } from "@prisma/client";
 
 import type { AuthDb } from "@/lib/server/repositories/auth";
 import type { CourseImagesDb } from "@/lib/server/repositories/course-images";
+import type { CoursePreviewDb } from "@/lib/server/repositories/course-preview";
 import type { CoursesDb } from "@/lib/server/repositories/courses";
 import type { LessonDraftsDb } from "@/lib/server/repositories/lesson-drafts";
 import type { PeopleDb } from "@/lib/server/repositories/people";
 import type { StoryOptionsDb } from "@/lib/server/repositories/story-options";
 
-export type AppDb = AuthDb & PeopleDb & CoursesDb & StoryOptionsDb & LessonDraftsDb & CourseImagesDb;
+export type AppDb = AuthDb & PeopleDb & CoursesDb & StoryOptionsDb & LessonDraftsDb & CourseImagesDb & CoursePreviewDb;
 
 let prisma: AppDb | null = null;
 

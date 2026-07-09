@@ -97,7 +97,7 @@ function personName(person: PersonProfile) {
   return person.englishName || person.chineseName || person.name;
 }
 
-function buildStoryContentPrompt(context: LessonDraftGenerationContext) {
+export function buildStoryContentPrompt(context: LessonDraftGenerationContext) {
   return [
     "Use the selected story outline as the fixed skeleton. Write pure student-facing English picture-book content and image shot semantics. Do not redesign the story.",
     "",
@@ -131,18 +131,103 @@ function buildStoryContentPrompt(context: LessonDraftGenerationContext) {
     "- Return a story content plan, not the final database LessonDraft.",
     "- Do not include exercise markers. Do not include [verb:...] or [vocab:...].",
     "- Each chapter must have exactly two paragraphs.",
+    "- Each chapter must contain 90-140 English words total across its two paragraphs.",
+    "- Each paragraph should contain 45-70 English words.",
     "- Each paragraph.sentences must be an array of pure English story sentences, about 3-5 sentences per paragraph.",
     "- The chapter story must visibly use the grammar targets and chapter grammar hook in natural story actions.",
+    "- Each chapter must include at least 8 concrete phrases that can later become grammar or vocabulary blanks.",
+    "- If the chapter knowledge hook names a tense, write several real sentences in that exact tense.",
+    "- Do not leave the exercise planner to invent tense forms later.",
     "- Each paragraph has its own image shot semantics.",
+    "- visualStyle.studentAppealPrompt should describe a cute, detailed, student-friendly picture-book treatment based on the student age, interests, and story world.",
+    "- Each character must include stable faceAndEyes, hair, signatureFeatures, and personalityVisualCue fields for image consistency.",
+    "- Each shot must include focus, keyObjects, spatialDetails, and studentAppeal. These are semantic image instructions, not final model prompts.",
+    "- Shot focus must state the exact visual priority: main character, key object, and action. Avoid generic phrases like 'solving the challenge'.",
+    "- Shot spatialDetails must lock important object positions when a location repeats.",
     "- shot.characterIds must reference global character ids only.",
     "- closingReading.text must be English only, 80-120 words, no blanks, no exercises, no image prompt, and no final The End sentence.",
+    "- paragraph.sentences must be an array of strings.",
+    '- Correct paragraph sentence shape: "sentences": ["Sentence 1.", "Sentence 2.", "Sentence 3."].',
+    '- Do not use "sentence" as a field name.',
+    "- Do not write standalone string properties inside paragraph objects.",
+    "- Every JSON object property must have a name followed by a colon.",
     "",
-    "Required JSON shape:",
-    `{"title":"string","visualStyle":{"artStyle":"string","colorPalette":"string","aspectRatio":"4:3","consistencyPrompt":"string"},"characters":[{"id":"${context.teacher.id}","name":"string","role":"teacher","appearance":"string","outfit":"string","consistencyPrompt":"string"}],"chapters":[{"title":"string","paragraphs":[{"sentences":["pure story sentence with no exercise markers","another pure story sentence"],"shot":{"characterIds":["${context.teacher.id}"],"location":"string","action":"string","mood":"string","scenePrompt":"string","composition":"string","continuityNotes":"string"}},{"sentences":["pure story sentence with no exercise markers","another pure story sentence"],"shot":{"characterIds":["${context.teacher.id}"],"location":"string","action":"string","mood":"string","scenePrompt":"string","composition":"string","continuityNotes":"string"}}]}],"closingReading":{"title":"string","text":"80-120 English words"}}`,
+    "Required JSON example. Follow this shape exactly, with your own content:",
+    JSON.stringify(
+      {
+        title: "Story Title",
+        visualStyle: {
+          artStyle: "cute detailed cartoon picture-book illustration",
+          colorPalette: "warm bright colors",
+          aspectRatio: "4:3",
+          consistencyPrompt: "Same art style across all images.",
+          studentAppealPrompt: "Cute, detailed, age-appropriate picture-book treatment based on student interests.",
+        },
+        characters: [
+          {
+            id: context.teacher.id,
+            name: "Character Name",
+            role: "teacher",
+            appearance: "stable appearance",
+            outfit: "stable outfit",
+            consistencyPrompt: "Keep face, hair, outfit, and key features stable.",
+            faceAndEyes: "stable face and eye description",
+            hair: "stable hair description",
+            signatureFeatures: ["feature 1", "feature 2"],
+            personalityVisualCue: "stable expression or pose cue",
+          },
+        ],
+        chapters: [
+          {
+            title: "Chapter Title",
+            paragraphs: [
+              {
+                sentences: ["Sentence 1.", "Sentence 2.", "Sentence 3."],
+                shot: {
+                  characterIds: [context.teacher.id],
+                  location: "specific repeated location",
+                  action: "specific visible action",
+                  mood: "clear mood",
+                  scenePrompt: "semantic scene description",
+                  composition: "4:3 composition with clear focal point",
+                  continuityNotes: "continuity details",
+                  focus: "main character, key object, and action",
+                  keyObjects: ["object 1", "object 2"],
+                  spatialDetails: "where important objects are placed",
+                  studentAppeal: "cute details linked to the student profile",
+                },
+              },
+              {
+                sentences: ["Sentence 1.", "Sentence 2.", "Sentence 3."],
+                shot: {
+                  characterIds: [context.teacher.id],
+                  location: "specific repeated location",
+                  action: "specific visible action",
+                  mood: "clear mood",
+                  scenePrompt: "semantic scene description",
+                  composition: "4:3 composition with clear focal point",
+                  continuityNotes: "continuity details",
+                  focus: "main character, key object, and action",
+                  keyObjects: ["object 1", "object 2"],
+                  spatialDetails: "where important objects are placed",
+                  studentAppeal: "cute details linked to the student profile",
+                },
+              },
+            ],
+          },
+        ],
+        closingReading: {
+          title: "Closing Reading Title",
+          text: "80-120 English words.",
+        },
+      },
+      null,
+      2,
+    ),
   ].join("\n");
 }
 
-function buildExercisePlanPrompt(context: LessonDraftGenerationContext, storyPlan: AiStoryContentPlan) {
+export function buildExercisePlanPrompt(context: LessonDraftGenerationContext, storyPlan: AiStoryContentPlan, previousError?: string) {
   return [
     "Create an exercise plan from the provided story text. Do not rewrite story text. Return strict minified JSON only.",
     "",
@@ -154,10 +239,13 @@ function buildExercisePlanPrompt(context: LessonDraftGenerationContext, storyPla
     "- Use verb_blank for grammar practice and vocabulary_hint for important story words.",
     "- Do not repeat answer within the same chapter.",
     "- sentenceId must reference one of the provided sentence ids, such as c1p1s2.",
+    "- answer must be copied exactly from the target sentence.",
     "- occurrenceText must be copied exactly from that sentence.",
     "- occurrenceIndex selects which occurrence inside the sentence to replace; use 1 for the first occurrence, 2 for the second, and so on.",
     "- Do not copy full sentences back into the exercise plan.",
     "- answer must be contained inside occurrenceText.",
+    "- Do not change tense, aspect, spelling, or wording. If the sentence says 'blared', answer must be 'blared', not 'has blared'.",
+    "- For verb_blank, answer is the exact verb phrase already present in the sentence; baseVerb is the dictionary form.",
     "- Code will do exact string replacement only, so do not rely on semantic matching.",
     "",
     "Story text by chapter:",
@@ -176,6 +264,14 @@ function buildExercisePlanPrompt(context: LessonDraftGenerationContext, storyPla
     "",
     "Required JSON shape:",
     '{"chapters":[{"chapterIndex":1,"exercises":[{"type":"verb_blank","paragraphIndex":1,"sentenceId":"c1p1s1","answer":"walked","occurrenceText":"walked","occurrenceIndex":1,"baseVerb":"walk"},{"type":"vocabulary_hint","paragraphIndex":1,"sentenceId":"c1p1s2","answer":"gate","occurrenceText":"gate","occurrenceIndex":1,"pattern":"g _ _ e"}]}]}',
+    previousError
+      ? [
+          "",
+          "Previous exercise plan failed validation:",
+          previousError,
+          "Fix only the exercise plan. Keep the story text unchanged. Choose answers, sentenceId, occurrenceText, and occurrenceIndex that pass exact string replacement.",
+        ].join("\n")
+      : "",
   ].join("\n");
 }
 
@@ -188,6 +284,10 @@ function mockLessonDraft(context: LessonDraftGenerationContext): LessonDraft {
       appearance: context.teacher.appearance ?? "kind English teacher",
       outfit: "blue cardigan, white shirt, simple classroom-friendly outfit",
       consistencyPrompt: `${personName(context.teacher)} always has the same appearance and blue cardigan.`,
+      faceAndEyes: "kind adult face with warm attentive eyes",
+      hair: context.teacher.appearance ?? "neat teacher hairstyle",
+      signatureFeatures: ["blue cardigan"],
+      personalityVisualCue: "gentle guiding smile",
     },
     ...context.students.map((student) => ({
       id: student.id,
@@ -196,6 +296,10 @@ function mockLessonDraft(context: LessonDraftGenerationContext): LessonDraft {
       appearance: student.appearance ?? "young student",
       outfit: student.gender === "male" ? "green hoodie and dark pants" : "yellow hoodie and jeans",
       consistencyPrompt: `${personName(student)} always keeps the same hairstyle, outfit, and face shape.`,
+      faceAndEyes: "round child face with bright curious eyes",
+      hair: student.appearance ?? "consistent child hairstyle",
+      signatureFeatures: [student.gender === "male" ? "green hoodie" : "yellow hoodie", ...(student.interests.slice(0, 1).map((interest) => `${interest} themed detail`))],
+      personalityVisualCue: student.interests.length ? `curious expression inspired by ${student.interests.join(", ")}` : "curious classroom learner expression",
     })),
   ];
 
@@ -210,6 +314,7 @@ function mockLessonDraft(context: LessonDraftGenerationContext): LessonDraft {
       colorPalette: "soft blues, greens, and warm golden light",
       aspectRatio: "4:3",
       consistencyPrompt: "Use one consistent children's watercolor picture-book style across all images.",
+      studentAppealPrompt: "Cute detailed cartoon picture-book world with rounded shapes, expressive eyes, warm light, and small discoverable details for children.",
     },
     characters,
     closingReading: {
@@ -296,6 +401,10 @@ function mockLessonDraft(context: LessonDraftGenerationContext): LessonDraft {
             scenePrompt: `A children's storybook scene in ${context.course.theme}, showing the teacher guiding the students as the chapter begins.`,
             composition: "Wide 4:3 storybook illustration, characters grouped clearly in the foreground.",
             continuityNotes: "Use the same visualStyle and global character appearances.",
+            focus: "students' faces and the first story clue",
+            keyObjects: ["first clue", context.course.theme],
+            spatialDetails: "main clue in the foreground, teacher beside the students, story world behind them",
+            studentAppeal: "add cute small details tied to the students' interests",
           },
           {
             id: `${prefix}-shot-2`,
@@ -309,6 +418,10 @@ function mockLessonDraft(context: LessonDraftGenerationContext): LessonDraft {
             scenePrompt: `A children's storybook scene in ${context.course.theme}, showing the teacher and students solving the chapter challenge together.`,
             composition: "Medium 4:3 storybook illustration with expressive faces and clear action.",
             continuityNotes: "Use the same visualStyle and global character appearances.",
+            focus: "the student using the key clue to solve the chapter challenge",
+            keyObjects: ["key clue", "chapter challenge object"],
+            spatialDetails: "key clue near the student's hands, teacher slightly behind, challenge object clearly visible",
+            studentAppeal: "make the solution moment feel playful, bright, and rewarding",
           },
         ],
       };
@@ -316,7 +429,7 @@ function mockLessonDraft(context: LessonDraftGenerationContext): LessonDraft {
   };
 }
 
-function parseJsonObject(text: string) {
+function parseJsonObject(text: string, invalidMessage: string) {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
   const jsonText = fenced ? fenced[1] : trimmed;
@@ -324,7 +437,11 @@ function parseJsonObject(text: string) {
   try {
     return JSON.parse(jsonText) as unknown;
   } catch {
-    return JSON.parse(jsonText.replace(/,\s*([}\]])/g, "$1")) as unknown;
+    try {
+      return JSON.parse(jsonText.replace(/,\s*([}\]])/g, "$1")) as unknown;
+    } catch {
+      throw new LessonDraftValidationError(invalidMessage);
+    }
   }
 }
 
@@ -341,7 +458,7 @@ function nonEmptyString(value: unknown, fallback: string) {
 }
 
 function stableCharacterPlans(plan: { characters?: LessonVisualCharacter[] }, context: LessonDraftGenerationContext): LessonVisualCharacter[] {
-  const sourceCharacters = [
+  const sourceCharacters: LessonVisualCharacter[] = [
     {
       id: context.teacher.id,
       role: "teacher" as const,
@@ -372,6 +489,10 @@ function stableCharacterPlans(plan: { characters?: LessonVisualCharacter[] }, co
       appearance: nonEmptyString(planned?.appearance, fallback.appearance),
       outfit: nonEmptyString(planned?.outfit, fallback.outfit),
       consistencyPrompt: nonEmptyString(planned?.consistencyPrompt, fallback.consistencyPrompt),
+      faceAndEyes: nonEmptyString(planned?.faceAndEyes, fallback.faceAndEyes ?? fallback.appearance),
+      hair: nonEmptyString(planned?.hair, fallback.hair ?? fallback.appearance),
+      signatureFeatures: Array.isArray(planned?.signatureFeatures) && planned.signatureFeatures.length ? planned.signatureFeatures.filter((item) => typeof item === "string" && item.trim()) : fallback.signatureFeatures,
+      personalityVisualCue: nonEmptyString(planned?.personalityVisualCue, fallback.personalityVisualCue ?? "friendly classroom expression"),
     };
   });
 }
@@ -409,6 +530,13 @@ function sanitizeShotPlan(
     scenePrompt: nonEmptyString(shot?.scenePrompt, `A children's picture-book scene for ${chapterTitle}: ${paragraphText.slice(0, 180)}`),
     composition: nonEmptyString(shot?.composition, "4:3 picture-book composition with clear characters and story action."),
     continuityNotes: nonEmptyString(shot?.continuityNotes, "Use the global visual style and character consistency prompts."),
+    focus: nonEmptyString(shot?.focus, nonEmptyString(shot?.action, `The main story action for ${chapterTitle}.`)),
+    keyObjects:
+      Array.isArray(shot?.keyObjects) && shot.keyObjects.some((item) => typeof item === "string" && item.trim())
+        ? shot.keyObjects.filter((item) => typeof item === "string" && item.trim())
+        : [nonEmptyString(shot?.location, context.course.theme), nonEmptyString(shot?.action, chapterTitle)],
+    spatialDetails: nonEmptyString(shot?.spatialDetails, "Keep the important story objects clearly placed around the main character."),
+    studentAppeal: nonEmptyString(shot?.studentAppeal, "Use cute, clear, child-friendly details that support the story action."),
   };
 }
 
@@ -489,6 +617,30 @@ function findNthOccurrence(text: string, searchText: string, occurrenceIndex: nu
   return found;
 }
 
+function countOccurrences(text: string, searchText: string) {
+  if (!searchText) {
+    return 0;
+  }
+
+  let count = 0;
+  let cursor = 0;
+
+  while (cursor <= text.length) {
+    const index = text.indexOf(searchText, cursor);
+    if (index < 0) {
+      return count;
+    }
+    count += 1;
+    cursor = index + searchText.length;
+  }
+
+  return count;
+}
+
+function normalizeOccurrenceText(exercise: AiExercisePlanItem, occurrenceText: string) {
+  return { ...exercise, occurrenceText } as AiExercisePlanItem;
+}
+
 function findUniqueText(text: string, searchText: string, missingMessage: string, duplicateMessage: string) {
   const first = text.indexOf(searchText);
   if (first < 0) {
@@ -521,9 +673,23 @@ function findExerciseOccurrence(text: string, sentences: string[], exercise: AiE
       throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：occurrenceIndex 必须是正整数`);
     }
 
-    const occurrenceInSentence = findNthOccurrence(sentence, exercise.occurrenceText, occurrenceIndex);
+    let effectiveExercise = exercise;
+    let occurrenceInSentence = findNthOccurrence(sentence, exercise.occurrenceText, occurrenceIndex);
     if (occurrenceInSentence < 0) {
-      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在 sentenceId "${exercise.sentenceId}" 中不存在第 ${occurrenceIndex} 次`);
+      const answerOccurrenceCount = countOccurrences(sentence, exercise.answer);
+      if (answerOccurrenceCount !== 1) {
+        if (countOccurrences(text, exercise.occurrenceText) === 1) {
+          return findUniqueText(
+            text,
+            exercise.occurrenceText,
+            `第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在第 ${paragraphIndex} 段中不存在`,
+            `第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在第 ${paragraphIndex} 段中出现多次，无法稳定替换`,
+          );
+        }
+        throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在 sentenceId "${exercise.sentenceId}" 中不存在第 ${occurrenceIndex} 次`);
+      }
+      effectiveExercise = normalizeOccurrenceText(exercise, exercise.answer);
+      occurrenceInSentence = findNthOccurrence(sentence, effectiveExercise.occurrenceText, 1);
     }
 
     const sentenceStart = findUniqueText(
@@ -532,6 +698,9 @@ function findExerciseOccurrence(text: string, sentences: string[], exercise: AiE
       `第 ${chapterIndex + 1} 章练习计划无效：sentenceId "${exercise.sentenceId}" 对应句子在第 ${paragraphIndex} 段中不存在`,
       `第 ${chapterIndex + 1} 章练习计划无效：sentenceId "${exercise.sentenceId}" 对应句子在第 ${paragraphIndex} 段中出现多次`,
     );
+
+    exercise.occurrenceText = effectiveExercise.occurrenceText;
+    exercise.occurrenceIndex = 1;
 
     return sentenceStart + occurrenceInSentence;
   }
@@ -736,6 +905,7 @@ export function assembleLessonDraftFromPlans(storyPlanInput: AiStoryContentPlan,
       colorPalette: nonEmptyString(visualStyle.colorPalette, "soft greens, blues, and warm light"),
       aspectRatio: "4:3",
       consistencyPrompt: nonEmptyString(visualStyle.consistencyPrompt, "Use a consistent picture-book style across all images."),
+      studentAppealPrompt: nonEmptyString(visualStyle.studentAppealPrompt, "Cute detailed cartoon picture-book style with rounded shapes, expressive eyes, warm light, and clear story focus for children."),
     },
     characters,
     chapters,
@@ -824,20 +994,33 @@ export async function generateLessonDraft(context: LessonDraftGenerationContext)
       content: buildStoryContentPrompt(context),
     },
   ];
-  const storyPlan = parseStoryContentPlan(parseJsonObject(await callDeepSeek(storyMessages)));
+  const storyPlan = parseStoryContentPlan(parseJsonObject(await callDeepSeek(storyMessages), "AI 返回的故事内容 JSON 格式无效，请重试生成"));
 
-  const exerciseMessages: ChatMessage[] = [
-    {
-      role: "system",
-      content:
-        "You create precise exercise plans from existing text. Copy occurrenceText exactly and return strict JSON only.",
-    },
-    {
-      role: "user",
-      content: buildExercisePlanPrompt(context, storyPlan),
-    },
-  ];
-  const exercisePlan = parseExercisePlan(parseJsonObject(await callDeepSeek(exerciseMessages)));
+  let previousExerciseError: string | undefined;
 
-  return validateLessonDraft(assembleLessonDraftFromPlans(storyPlan, exercisePlan, context), context.storyOption);
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const exerciseMessages: ChatMessage[] = [
+      {
+        role: "system",
+        content:
+          "You create precise exercise plans from existing text. Copy occurrenceText exactly and return strict JSON only.",
+      },
+      {
+        role: "user",
+        content: buildExercisePlanPrompt(context, storyPlan, previousExerciseError),
+      },
+    ];
+    const exercisePlan = parseExercisePlan(parseJsonObject(await callDeepSeek(exerciseMessages), "AI 返回的练习计划 JSON 格式无效，请重试生成"));
+
+    try {
+      return validateLessonDraft(assembleLessonDraftFromPlans(storyPlan, exercisePlan, context), context.storyOption);
+    } catch (error) {
+      if (!(error instanceof LessonDraftValidationError) || attempt === 2) {
+        throw error;
+      }
+      previousExerciseError = error.message;
+    }
+  }
+
+  throw new LessonDraftValidationError("AI 练习计划生成失败，请重试生成");
 }

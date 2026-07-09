@@ -67,8 +67,8 @@ describe("listCourses", () => {
         storyOptionsCount: 3,
         selectedStoryOptionId: "option-1",
         lessonDraftExists: true,
-        currentStep: "lesson_draft",
-        nextEditPath: "/courses/course-1/create/lesson-draft",
+        currentStep: "resources",
+        nextEditPath: "/courses/course-1/create/resources",
         updatedAt: "2026-07-03T09:00:00.000Z",
       },
     ]);

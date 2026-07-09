@@ -1,3 +1,4 @@
+import React from "react";
 import Link from "next/link";
 import { Check } from "lucide-react";
 
@@ -14,7 +15,7 @@ const steps: CreateStep[] = [
   { step: 2, label: "故事方案", href: "story-options" },
   { step: 3, label: "课文编辑", href: "lesson-draft" },
   { step: 4, label: "资源生成", href: "resources" },
-  { step: 5, label: "课程预览" },
+  { step: 5, label: "课程预览", href: "preview" },
 ] as const;
 
 export function CourseCreateSteps({ currentStep, courseId }: { currentStep: number; courseId?: string }) {

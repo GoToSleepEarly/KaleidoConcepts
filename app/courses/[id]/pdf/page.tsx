@@ -1,10 +1,13 @@
+import React from "react";
 import { ProtectedLayout } from "@/components/protected-layout";
-import { CoursePlayer } from "@/features/courses/components/course-player";
+import { CoursePdfPreview } from "@/features/courses/components/course-preview";
 
-export default function CoursePdfPage() {
+export default async function CoursePdfPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+
   return (
-    <ProtectedLayout>
-      <CoursePlayer pdfMode />
+    <ProtectedLayout chromeless>
+      <CoursePdfPreview courseId={id} />
     </ProtectedLayout>
   );
 }

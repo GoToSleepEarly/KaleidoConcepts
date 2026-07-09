@@ -13,6 +13,9 @@ type PrismaClientLike = {
   course: {
     upsert: (query: unknown) => Promise<unknown>;
   };
+  courseLessonDraft: {
+    upsert: (query: unknown) => Promise<unknown>;
+  };
   coursePerson: {
     upsert: (query: unknown) => Promise<unknown>;
   };
@@ -26,6 +29,73 @@ if (!process.env.DATABASE_URL) {
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
 }) as PrismaClientLike;
+
+const lessonDraftContent = {
+  schemaVersion: "lesson_draft_v1",
+  sourceStoryOptionId: "seed-story-option",
+  generationMode: "ai",
+  title: "The Brave Little Rabbit",
+  language: "en",
+  visualStyle: {
+    artStyle: "bright picture-book watercolor",
+    colorPalette: "leaf green, sky blue, warm sunlight",
+    aspectRatio: "4:3",
+    consistencyPrompt: "Keep the same gentle classroom picture-book style.",
+  },
+  characters: [],
+  chapters: [
+    {
+      id: "chapter-1",
+      sourceOutlineChapterIndex: 1,
+      title: "The Tiny Garden",
+      wordTarget: { min: 90, max: 130 },
+      exerciseTarget: { verbBlankCount: 2, vocabularyHintCount: 1 },
+      blocks: [
+        { id: "block-1", order: 1, type: "text", text: "Summer walked into the garden and saw a tiny rabbit beside a blue flower." },
+        { id: "block-2", order: 2, type: "exercise", exerciseId: "exercise-1", display: { kind: "verb_blank", placeholder: "________", prompt: "walk" } },
+        { id: "block-3", order: 3, type: "text", text: "The rabbit waved and pointed to a shining leaf path under the warm sun." },
+        { id: "block-4", order: 4, type: "exercise", exerciseId: "exercise-2", display: { kind: "vocabulary_hint", placeholder: "________", pattern: "l__f", letterCount: 4 } },
+      ],
+      exercises: [
+        { id: "exercise-1", type: "verb_blank", answer: "walked", baseVerb: "walk" },
+        { id: "exercise-2", type: "vocabulary_hint", answer: "leaf", hint: "A green part of a plant." },
+      ],
+      shots: [
+        {
+          id: "shot-1",
+          order: 1,
+          imageSlotId: "slot-1",
+          coveredBlockIds: ["block-1", "block-2"],
+          characterIds: [],
+          location: "a sunny garden",
+          action: "Summer finds a tiny rabbit beside a blue flower.",
+          mood: "curious and bright",
+          scenePrompt: "Summer in a sunny garden with a tiny rabbit and blue flower.",
+          composition: "Wide 4:3 picture-book page.",
+          continuityNotes: "Keep Summer and the rabbit consistent.",
+        },
+        {
+          id: "shot-2",
+          order: 2,
+          imageSlotId: "slot-2",
+          coveredBlockIds: ["block-3", "block-4"],
+          characterIds: [],
+          location: "a leaf path",
+          action: "The rabbit points to a shining leaf path.",
+          mood: "adventurous",
+          scenePrompt: "A tiny rabbit points to a shining leaf path in warm sunlight.",
+          composition: "Wide 4:3 picture-book page.",
+          continuityNotes: "Keep the same garden palette.",
+        },
+      ],
+    },
+  ],
+  closingReading: {
+    title: "The Leaf Path",
+    text: "Summer followed the rabbit and read the signs on the leaf path. She remembered the blue flower, the warm sun, and the brave little rabbit.",
+    vocabularyTerms: ["rabbit", "flower", "leaf"],
+  },
+};
 
 async function main() {
   const teacher = await prisma.user.upsert({
@@ -158,6 +228,19 @@ async function main() {
       },
     });
   }
+
+  await prisma.courseLessonDraft.upsert({
+    where: { courseId },
+    update: {
+      sourceStoryOptionId: "seed-story-option",
+      content: lessonDraftContent,
+    },
+    create: {
+      courseId,
+      sourceStoryOptionId: "seed-story-option",
+      content: lessonDraftContent,
+    },
+  });
 
   console.log(`Seeded ${teacher.username}`);
 }

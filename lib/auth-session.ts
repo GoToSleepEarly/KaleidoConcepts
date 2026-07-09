@@ -6,8 +6,21 @@ export type MockSession = {
 };
 
 const sessionKey = "kaleido.mock.session";
+const sessionChangeEvent = "kaleido.mock.session.change";
 let cachedStoredSession: string | null = null;
 let cachedSession: MockSession | null = null;
+
+function notifyAuthSessionChanged() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new Event(sessionChangeEvent));
+}
+
+export function getAuthSessionChangeEventName() {
+  return sessionChangeEvent;
+}
 
 export function saveAuthSession(session: MockSession, remember: boolean) {
   const serialized = JSON.stringify(session);
@@ -20,6 +33,8 @@ export function saveAuthSession(session: MockSession, remember: boolean) {
   } else {
     localStorage.removeItem(sessionKey);
   }
+
+  notifyAuthSessionChanged();
 }
 
 export function getStoredSession(): MockSession | null {
@@ -58,4 +73,5 @@ export function clearAuthSession() {
   localStorage.removeItem(sessionKey);
   cachedStoredSession = null;
   cachedSession = null;
+  notifyAuthSessionChanged();
 }

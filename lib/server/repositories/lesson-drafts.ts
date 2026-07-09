@@ -58,6 +58,14 @@ function isNonEmptyText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function isOptionalNonEmptyText(value: unknown) {
+  return value === undefined || isNonEmptyText(value);
+}
+
+function isOptionalNonEmptyTextArray(value: unknown) {
+  return value === undefined || (Array.isArray(value) && value.length > 0 && value.every(isNonEmptyText));
+}
+
 function countWords(blocks: LessonBlock[]) {
   return blocks
     .map((block) => (block.type === "text" ? block.text : "blank"))
@@ -114,6 +122,10 @@ function validateShots(shots: LessonShot[], blockIds: Set<string>, characterIds:
       !isNonEmptyText(shot.scenePrompt) ||
       !isNonEmptyText(shot.composition) ||
       !isNonEmptyText(shot.continuityNotes) ||
+      !isOptionalNonEmptyText(shot.focus) ||
+      !isOptionalNonEmptyTextArray(shot.keyObjects) ||
+      !isOptionalNonEmptyText(shot.spatialDetails) ||
+      !isOptionalNonEmptyText(shot.studentAppeal) ||
       shot.coveredBlockIds.length < 1 ||
       shot.characterIds.length < 1
     ) {
@@ -181,7 +193,11 @@ export function validateLessonDraft(draft: LessonDraft, sourceStoryOption: Story
         isNonEmptyText(character.name) &&
         isNonEmptyText(character.appearance) &&
         isNonEmptyText(character.outfit) &&
-        isNonEmptyText(character.consistencyPrompt),
+        isNonEmptyText(character.consistencyPrompt) &&
+        isOptionalNonEmptyText(character.faceAndEyes) &&
+        isOptionalNonEmptyText(character.hair) &&
+        isOptionalNonEmptyTextArray(character.signatureFeatures) &&
+        isOptionalNonEmptyText(character.personalityVisualCue),
     )
   ) {
     throw new LessonDraftValidationError();

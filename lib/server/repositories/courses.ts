@@ -291,7 +291,16 @@ function getCourseProgress(course: DbCourse): {
   const storyOptionsCount = course._count?.storyOptions ?? 0;
   const lessonDraftExists = Boolean(course.lessonDraft);
 
-  if (lessonDraftExists || course.selectedStoryOptionId) {
+  if (lessonDraftExists) {
+    return {
+      currentStep: "resources",
+      nextEditPath: `/courses/${course.id}/create/resources`,
+      lessonDraftExists,
+      storyOptionsCount,
+    };
+  }
+
+  if (course.selectedStoryOptionId) {
     return {
       currentStep: "lesson_draft",
       nextEditPath: `/courses/${course.id}/create/lesson-draft`,

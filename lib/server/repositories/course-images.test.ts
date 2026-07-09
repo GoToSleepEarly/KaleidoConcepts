@@ -58,8 +58,8 @@ function draft(): LessonDraft {
         exerciseTarget: { verbBlankCount: 7, vocabularyHintCount: 3 },
         blocks: [{ id: "block-1", order: 1, type: "text", text: "Summer opens the gate." }],
         exercises: [],
-        shots: [
-          {
+    shots: [
+      {
             id: "shot-1",
             order: 1,
             imageSlotId: "slot-1",
@@ -68,10 +68,14 @@ function draft(): LessonDraft {
             location: "garden gate",
             action: "Summer and Ms. Lin open a glowing gate.",
             mood: "curious",
-            scenePrompt: "A child and teacher open a glowing garden gate.",
-            composition: "Wide 4:3 picture-book spread with the gate centered.",
-            continuityNotes: "Keep both characters consistent.",
-          },
+        scenePrompt: "A child and teacher open a glowing garden gate.",
+        composition: "Wide 4:3 picture-book spread with the gate centered.",
+        continuityNotes: "Keep both characters consistent.",
+        focus: "Summer's hands and surprised face as the glowing garden gate opens",
+        keyObjects: ["glowing garden gate", "Summer's sketchbook"],
+        spatialDetails: "gate centered, blue flowers on the left, stone path leading into the background",
+        studentAppeal: "add cute glowing leaves and tiny friendly garden details",
+      },
           {
             id: "shot-2",
             order: 2,
@@ -81,10 +85,14 @@ function draft(): LessonDraft {
             location: "moon path",
             action: "Summer steps onto a moonlit path.",
             mood: "brave",
-            scenePrompt: "A child steps onto a silver moon path.",
-            composition: "Wide 4:3 picture-book spread with path leading right.",
-            continuityNotes: "Keep Summer consistent.",
-          },
+        scenePrompt: "A child steps onto a silver moon path.",
+        composition: "Wide 4:3 picture-book spread with path leading right.",
+        continuityNotes: "Keep Summer consistent.",
+        focus: "Summer bravely stepping onto the silver path",
+        keyObjects: ["silver moon path", "soft moonlight"],
+        spatialDetails: "path leads from lower left to upper right",
+        studentAppeal: "make the moon path magical and friendly",
+      },
         ],
       },
     ],
@@ -120,12 +128,15 @@ describe("course image planning", () => {
     const prompt = buildImagePrompt(sampleDraft, sampleDraft.chapters[0], sampleDraft.chapters[0].shots[0]);
 
     expect(prompt).toContain("A child and teacher open a glowing garden gate.");
-    expect(prompt).toContain("warm watercolor");
-    expect(prompt).toContain("Wide 4:3 picture-book spread");
-    expect(prompt).toContain("Ms. Lin: kind eyes and short black hair");
-    expect(prompt).toContain("Summer: bright eyes and a ponytail");
+    expect(prompt).toContain("STYLE LOCK");
+    expect(prompt).toContain("cute, detailed cartoon picture-book");
+    expect(prompt).toContain("CHARACTER LOCK");
+    expect(prompt).toContain("Ms. Lin");
+    expect(prompt).toContain("Summer");
+    expect(prompt).toContain("SHOT FOCUS");
+    expect(prompt).toContain("TEXT ANCHOR");
     expect(prompt).toContain("No text, no letters, no captions, no speech bubbles");
-    expect(prompt.length).toBeLessThanOrEqual(900);
+    expect(prompt.length).toBeLessThanOrEqual(2200);
   });
 
   it("keeps verbose generated shot prompts short enough for HY-Image-Lite", () => {
@@ -145,7 +156,7 @@ describe("course image planning", () => {
 
     expect(prompt).toContain("warm watercolor");
     expect(prompt).toContain("No text, no letters, no captions, no speech bubbles");
-    expect(prompt.length).toBeLessThanOrEqual(900);
+    expect(prompt.length).toBeLessThanOrEqual(2200);
   });
 
   it("keeps source hashes stable for identical input and different for changed prompt", () => {
@@ -191,6 +202,9 @@ describe("course image planning", () => {
       sourceHash: "old-hash",
       currentSourceHash: currentHash,
       stale: true,
+      sourceText: "Summer opens the gate.",
+      focus: "Summer's hands and surprised face as the glowing garden gate opens",
+      keyObjects: ["glowing garden gate", "Summer's sketchbook"],
     });
     expect(merged[1]).toMatchObject({
       id: null,
@@ -438,7 +452,7 @@ describe("course image repository operations", () => {
 });
 
 describe("course image queue advancement", () => {
-  it("generates one pending image and stores the downloaded local file", async () => {
+  it("submits one pending image to HY-Image-V3 and stores the task id", async () => {
     const { db, state } = makeDb();
     const slots = deriveLessonShotImageSlots("course-1", draft());
     state.images.push({
@@ -462,26 +476,20 @@ describe("course image queue advancement", () => {
       updatedAt: new Date("2026-07-08T00:00:00Z"),
     });
 
+    const submit = vi.fn(async () => ({ taskId: "task-1" }));
+
     await advanceCourseImageQueue(db, "course-1", {
       provider: {
-        generate: vi.fn(async () => ({ imageUrl: "https://example.com/a.png" })),
+        submit,
+        query: vi.fn(),
       },
-      download: vi.fn(async () => ({
-        storagePath: "/data/pbl-images/course-images/course-1/image-1.png",
-        publicUrl: "/api/course-images/course-1/image-1.png",
-      })),
+      download: vi.fn(),
     });
 
+    expect(submit).toHaveBeenCalledWith({ prompt: slots[0].prompt, width: 1024, height: 768 });
     expect(db.courseImage.update).toHaveBeenCalledWith({
       where: { id: "image-1" },
-      data: expect.objectContaining({
-        status: "succeeded",
-        providerImageUrl: "https://example.com/a.png",
-        storagePath: "/data/pbl-images/course-images/course-1/image-1.png",
-        publicUrl: "/api/course-images/course-1/image-1.png",
-        providerTaskId: null,
-        failureReason: null,
-      }),
+      data: { status: "generating", providerTaskId: "task-1", prompt: slots[0].prompt, sourceHash: slots[0].sourceHash, failureReason: null },
     });
   });
 
@@ -511,9 +519,10 @@ describe("course image queue advancement", () => {
 
     await advanceCourseImageQueue(db, "course-1", {
       provider: {
-        generate: vi.fn(async () => {
+        submit: vi.fn(async () => {
           throw new Error("HY-Image-Lite API Key 缺失");
         }),
+        query: vi.fn(),
       },
       download: vi.fn(),
     });
@@ -527,7 +536,7 @@ describe("course image queue advancement", () => {
   it("refreshes stale pending prompts before generating", async () => {
     const { db, state } = makeDb();
     const slots = deriveLessonShotImageSlots("course-1", draft());
-    const generate = vi.fn(async () => ({ imageUrl: "https://example.com/a.png" }));
+    const submit = vi.fn(async () => ({ taskId: "task-1" }));
     state.images.push({
       id: "image-1",
       courseId: "course-1",
@@ -551,22 +560,22 @@ describe("course image queue advancement", () => {
 
     await advanceCourseImageQueue(db, "course-1", {
       provider: {
-        generate,
+        submit,
+        query: vi.fn(),
       },
-      download: vi.fn(async () => ({
-        storagePath: "/data/pbl-images/course-images/course-1/image-1.png",
-        publicUrl: "/api/course-images/course-1/image-1.png",
-      })),
+      download: vi.fn(),
     });
 
-    expect(generate).toHaveBeenCalledWith({ prompt: slots[0].prompt, width: 1024, height: 768 });
+    expect(submit).toHaveBeenCalledWith({ prompt: slots[0].prompt, width: 1024, height: 768 });
     expect(db.courseImage.update).toHaveBeenCalledWith({
       where: { id: "image-1" },
-      data: expect.objectContaining({
+      data: {
         prompt: slots[0].prompt,
         sourceHash: slots[0].sourceHash,
-        status: "succeeded",
-      }),
+        status: "generating",
+        providerTaskId: "task-1",
+        failureReason: null,
+      },
     });
   });
 
