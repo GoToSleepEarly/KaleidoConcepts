@@ -1,5 +1,5 @@
 import type { Gender, PersonInput, PersonProfile, PersonRole } from "@/lib/contracts/api";
-import { defaultStudentAvatars, defaultTeacherAvatars } from "@/lib/mock-course-data";
+import { defaultStudentAvatars, defaultTeacherAvatars } from "@/lib/mock/assets";
 
 type DbPerson = {
   id: string;

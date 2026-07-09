@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { getDb } from "@/lib/server/db";
 import { createPerson, listPeople } from "@/lib/server/repositories/people";
-import type { PersonRole } from "@/lib/api-contract";
+import type { PersonRole } from "@/lib/contracts/api";
 
 const genderSchema = z.enum(["male", "female"]);
 

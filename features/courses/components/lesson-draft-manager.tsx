@@ -7,7 +7,7 @@ import { ArrowLeft, BookOpen, ImageIcon, Loader2, Save, Sparkles } from "lucide-
 
 import { Button } from "@/components/ui/button";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
-import type { LessonBlock, LessonDraft, LessonExercise, LessonShot } from "@/lib/api-contract";
+import type { LessonBlock, LessonDraft, LessonExercise, LessonShot } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
 const closingViewId = "__closing__";

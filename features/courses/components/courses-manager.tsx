@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { AlertCircle, FileText, Plus, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { CourseListItem, CourseStatus } from "@/lib/api-contract";
+import type { CourseListItem, CourseStatus } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
 const statusCopy: Record<CourseStatus, string> = {

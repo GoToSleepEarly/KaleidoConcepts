@@ -1,15 +1,6 @@
-import type { CourseDetail, CourseImage, StoryPlan, StudentProfile } from "@/lib/api-contract";
+import type { CourseDetail, CourseImage, StoryPlan, StudentProfile } from "@/lib/contracts/api";
 import type { StructuredLesson } from "@/lib/lesson/types";
-
-export const defaultStudentAvatars = {
-  male: "/mock-assets/student-boy.png",
-  female: "/mock-assets/student-girl.png",
-} as const;
-
-export const defaultTeacherAvatars = {
-  male: "/mock-assets/teacher-male-default.png",
-  female: "/mock-assets/teacher-default.png",
-} as const;
+import { defaultStudentAvatars } from "@/lib/mock/assets";
 
 export const mockStudents: StudentProfile[] = [
   {
