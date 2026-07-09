@@ -147,6 +147,28 @@ describe("lesson draft validation", () => {
     expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
   });
 
+  test("accepts structured image semantics when present", () => {
+    const visualDraft = structuredClone(draft);
+    visualDraft.visualStyle.studentAppealPrompt = "Cute detailed cartoon picture-book style for young plant-loving students.";
+    visualDraft.characters[1].faceAndEyes = "round child face with big curious brown eyes";
+    visualDraft.characters[1].hair = "black ponytail with a leaf clip";
+    visualDraft.characters[1].signatureFeatures = ["yellow hoodie", "leaf clip"];
+    visualDraft.characters[1].personalityVisualCue = "curious plant-loving smile";
+    visualDraft.chapters[0].shots[0].focus = "Summer's surprised face and the glowing forest gate";
+    visualDraft.chapters[0].shots[0].keyObjects = ["forest gate", "silver river"];
+    visualDraft.chapters[0].shots[0].spatialDetails = "gate on the right, river behind the characters";
+    visualDraft.chapters[0].shots[0].studentAppeal = "add cute leaf sparkles and tiny moss details";
+
+    expect(validateLessonDraft(visualDraft, storyOption)).toEqual(visualDraft);
+  });
+
+  test("rejects empty structured image semantics when present", () => {
+    const invalid = structuredClone(draft);
+    invalid.chapters[0].shots[0].focus = "";
+
+    expect(() => validateLessonDraft(invalid, storyOption)).toThrow("课文草稿信息不完整");
+  });
+
   function removeExercises(source: LessonDraft, exerciseIds: string[]) {
     const next = structuredClone(source);
     const removeSet = new Set(exerciseIds);

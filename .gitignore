@@ -6,3 +6,6 @@ node_modules
 storage/images
 prisma/dev.db
 .local
+.claude/
+.playwright-cli/
+output/

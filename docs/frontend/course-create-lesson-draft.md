@@ -34,12 +34,16 @@ Step 3 是内容填充，不重新构思故事。
 - 每章 2 个图片分镜 / image shot
 - 全局视觉风格 `visualStyle`
 - 全局人物视觉一致性 `characters`
+- 图片语义锁：
+  - `visualStyle.studentAppealPrompt`：面向学生兴趣和年龄的可爱细致绘本风格要求
+  - `characters[].faceAndEyes / hair / signatureFeatures / personalityVisualCue`：角色眼睛、发型、服装标志物和视觉气质
+  - `shots[].focus / keyObjects / spatialDetails / studentAppeal`：每张图的画面重点、关键物件、空间位置和学生吸引点
 
 生成职责边界：
-- AI 生成正文内容、正文内联习题标记、人物视觉描述、每段对应的图片分镜语义。
+- AI 生成正文内容、人物视觉描述、每段对应的图片分镜语义和图片语义锁。
 - 代码生成最终 `LessonDraft` 结构，包括 chapter / block / exercise / shot id、block order、exercise display、shot `coveredBlockIds` 和 `imageSlotId`。
 - 代码只解析 AI 生成的内联习题标记，不自行选择或补齐习题。
-- 分镜内容语义必须来自 AI，因为它直接服务后续绘本图片生成；分镜覆盖范围由代码按段落边界装配，避免 AI 生成机械引用错误。
+- 分镜内容语义必须来自 AI，因为它直接服务后续绘本图片生成；Step 4 只把这些语义编译成具体生图模型 prompt，不重新创作故事内容。
 
 不生成：
 - 教师教案
@@ -135,6 +139,10 @@ type LessonShot = {
   scenePrompt: string;
   composition: string;
   continuityNotes: string;
+  focus?: string;
+  keyObjects?: string[];
+  spatialDetails?: string;
+  studentAppeal?: string;
 };
 ```
 
@@ -253,6 +261,10 @@ type LessonShot = {
 - 后端不从正文中猜词、不补题、不做语义判断。
 - 若练习计划中的 `sentenceId` 不存在、`occurrenceText` 在句中找不到、`occurrenceIndex` 不合法、与 answer 不匹配、数量不足或 answer 重复，接口返回可读错误，不做第三次 LLM 重试。
 - 分镜覆盖范围仍由代码按 paragraph 绑定：paragraph 1 → shot 1，paragraph 2 → shot 2。
+- AI 必须为图片提供结构化语义锁，而不是最终模型 prompt：
+  - 角色锁用于保持眼睛、发型、服装、标志物一致。
+  - 场景锁用于保持空间物件和位置关系一致。
+  - 镜头重点用于让生图模型突出本段故事动作和关键物件。
 - 后端代码继续负责稳定 id、block order、exercise block references、imageSlotId、shot order、coveredBlockIds、`closingReading.vocabularyTerms`、character consistency 注入和最终校验。
 
 ## 实现状态

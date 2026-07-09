@@ -1,10 +1,13 @@
+import React from "react";
 import { ProtectedLayout } from "@/components/protected-layout";
-import { CoursePlayer } from "@/features/courses/components/course-player";
+import { CourseHtmlPreview } from "@/features/courses/components/course-preview";
 
-export default function CoursePage() {
+export default async function CoursePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+
   return (
-    <ProtectedLayout>
-      <CoursePlayer />
+    <ProtectedLayout chromeless>
+      <CourseHtmlPreview courseId={id} />
     </ProtectedLayout>
   );
 }

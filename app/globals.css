@@ -36,12 +36,96 @@ select {
   font: inherit;
 }
 
+.preview-deck {
+  width: min(calc(100vw - 32px), calc((100vh - 32px) * 16 / 9));
+  margin-inline: auto;
+}
+
+.preview-deck-html {
+  max-height: calc(100vh - 32px);
+}
+
+.preview-deck-pdf {
+  max-width: 1280px;
+}
+
+.preview-slide {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid rgb(148 163 184 / 0.28);
+  background:
+    radial-gradient(circle at 18% 18%, rgb(37 99 235 / 0.12), transparent 26%),
+    radial-gradient(circle at 86% 12%, rgb(14 165 233 / 0.1), transparent 24%),
+    linear-gradient(135deg, #f8fafc 0%, #eff6ff 52%, #eef2ff 100%);
+  box-shadow: 0 18px 54px rgb(15 23 42 / 0.22);
+}
+
+.preview-slide::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 0 62%, rgb(37 99 235 / 0.08) 62% 63%, transparent 63%),
+    linear-gradient(90deg, rgb(37 99 235 / 0.05) 1px, transparent 1px),
+    linear-gradient(0deg, rgb(37 99 235 / 0.04) 1px, transparent 1px);
+  background-size: auto, 56px 56px, 56px 56px;
+  opacity: 0.8;
+}
+
+.preview-slide-cover,
+.preview-slide-closing {
+  background:
+    radial-gradient(circle at 18% 18%, rgb(37 99 235 / 0.18), transparent 28%),
+    radial-gradient(circle at 82% 12%, rgb(14 165 233 / 0.12), transparent 24%),
+    linear-gradient(135deg, #0f172a 0%, #17345f 52%, #f8fafc 100%);
+}
+
+.preview-slide-image::before {
+  opacity: 0.35;
+}
+
+.preview-slide-cover,
+.preview-slide-closing {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 6%;
+}
+
 @media print {
+  @page {
+    size: 16in 9in landscape;
+    margin: 0;
+  }
+
   .print-hidden {
     display: none !important;
   }
 
   body {
     background: white;
+  }
+
+  .preview-deck {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+  }
+
+  .preview-slide {
+    width: 16in;
+    height: 9in;
+    border: 0;
+    box-shadow: none;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .preview-slide:last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
 }

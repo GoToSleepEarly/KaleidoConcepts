@@ -135,6 +135,9 @@ export type CourseResourceImage = {
   failureReason: string | null;
   action: string;
   scenePrompt: string;
+  sourceText: string;
+  focus: string | null;
+  keyObjects: string[];
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -142,6 +145,63 @@ export type CourseResourceImage = {
 export type CourseResourcesResponse = {
   progress: ResourceProgress;
   images: CourseResourceImage[];
+};
+
+export type CoursePreviewCourse = {
+  id: string;
+  title: string;
+  teacherName: string | null;
+  studentNames: string[];
+  englishLevel: EnglishLevel;
+  durationMinutes: number;
+  theme: string;
+  grammar: string[];
+};
+
+export type CoursePreviewResourceProgress = ResourceProgress;
+
+export type CoursePreviewImage = {
+  status: ResourceImageStatus;
+  publicUrl: string | null;
+  stale: boolean;
+  failureReason: string | null;
+};
+
+export type CoursePreviewBlock = LessonBlock;
+
+export type CoursePreviewExercise = LessonExercise;
+
+export type CoursePreviewPage =
+  | {
+      id: string;
+      type: "cover";
+      title: string;
+    }
+  | {
+      id: string;
+      type: "lesson_shot";
+      chapterId: string;
+      chapterTitle: string;
+      chapterIndex: number;
+      shotId: string;
+      shotOrder: 1 | 2;
+      title: string;
+      image: CoursePreviewImage;
+      blocks: CoursePreviewBlock[];
+      exercises: CoursePreviewExercise[];
+    }
+  | {
+      id: string;
+      type: "closing_reading";
+      title: string;
+      text: string;
+      vocabularyTerms: string[];
+    };
+
+export type CoursePreviewResponse = {
+  course: CoursePreviewCourse;
+  resourceProgress: CoursePreviewResourceProgress;
+  pages: CoursePreviewPage[];
 };
 
 export type BuildProgress = {
@@ -254,6 +314,7 @@ export type LessonVisualStyle = {
   colorPalette: string;
   aspectRatio: "4:3";
   consistencyPrompt: string;
+  studentAppealPrompt?: string;
 };
 
 export type LessonVisualCharacter = {
@@ -263,6 +324,10 @@ export type LessonVisualCharacter = {
   appearance: string;
   outfit: string;
   consistencyPrompt: string;
+  faceAndEyes?: string;
+  hair?: string;
+  signatureFeatures?: string[];
+  personalityVisualCue?: string;
 };
 
 export type LessonChapter = {
@@ -337,6 +402,10 @@ export type LessonShot = {
   scenePrompt: string;
   composition: string;
   continuityNotes: string;
+  focus?: string;
+  keyObjects?: string[];
+  spatialDetails?: string;
+  studentAppeal?: string;
 };
 
 export type LessonDraftResponse = {

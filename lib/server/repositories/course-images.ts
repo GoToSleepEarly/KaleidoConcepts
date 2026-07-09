@@ -5,6 +5,7 @@ import type {
   CourseImageSlotType,
   CourseResourceImage,
   CourseResourcesResponse,
+  LessonBlock,
   LessonChapter,
   LessonDraft,
   LessonShot,
@@ -87,7 +88,13 @@ export type PlannedImageSlot = {
   sourceHash: string;
   action: string;
   scenePrompt: string;
+  sourceText: string;
+  focus: string | null;
+  keyObjects: string[];
 };
+
+export const maxImagePromptLength = 2200;
+const imagePromptSafetySuffix = "No text, no letters, no captions, no speech bubbles, no watermark.";
 
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) {
@@ -110,25 +117,90 @@ function compactText(value: string, maxLength: number) {
   return `${normalized.slice(0, maxLength - 1).trimEnd()}.`;
 }
 
-export function buildImagePrompt(draft: LessonDraft, chapter: LessonChapter, shot: LessonShot) {
-  const characterPrompts = draft.characters
-    .filter((character) => shot.characterIds.includes(character.id))
-    .map((character) => `${character.name}: ${compactText(character.appearance, 55)}; outfit: ${compactText(character.outfit, 40)}`)
-    .join("; ");
+export function capImagePrompt(value: string, suffix = imagePromptSafetySuffix) {
+  const normalizedSuffix = suffix.replace(/\s+/g, " ").trim();
+  const normalized = value.replace(/\s+/g, " ").trim();
 
-  return [
-    `Children's picture-book illustration, ${compactText(draft.visualStyle.artStyle, 60)}.`,
-    `Palette: ${compactText(draft.visualStyle.colorPalette, 60)}.`,
-    "Wide 4:3 composition, target size 1024x768.",
-    `Chapter: ${compactText(chapter.title, 80)}.`,
-    `Scene: ${compactText(shot.scenePrompt, 180)}`,
-    `Action: ${compactText(shot.action, 100)}`,
-    `Location: ${compactText(shot.location, 60)}; mood: ${compactText(shot.mood, 60)}.`,
-    `Composition: ${compactText(shot.composition, 90)}`,
-    `Continuity: ${compactText(shot.continuityNotes, 70)}`,
-    `Characters: ${characterPrompts}`,
-    "No text, no letters, no captions, no speech bubbles, no watermark.",
-  ].join("\n");
+  if (normalized.length <= maxImagePromptLength && normalized.endsWith(normalizedSuffix)) {
+    return normalized;
+  }
+
+  const body = normalized.endsWith(normalizedSuffix) ? normalized.slice(0, -normalizedSuffix.length).trim() : normalized;
+  const separator = body ? " " : "";
+  const bodyLimit = Math.max(0, maxImagePromptLength - normalizedSuffix.length - separator.length);
+  const cappedBody = compactText(body, bodyLimit);
+  return `${cappedBody}${separator}${normalizedSuffix}`.trim();
+}
+
+function textFromBlocks(blocks: LessonBlock[], blockIds: string[]) {
+  const idSet = new Set(blockIds);
+  return blocks
+    .filter((block) => idSet.has(block.id))
+    .sort((a, b) => a.order - b.order)
+    .map((block) => {
+      if (block.type === "text") {
+        return block.text;
+      }
+
+      return block.display.kind === "verb_blank" ? `[blank: ${block.display.prompt}]` : `[word hint: ${block.display.pattern}]`;
+    })
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function characterLockText(draft: LessonDraft, shot: LessonShot) {
+  return draft.characters
+    .filter((character) => shot.characterIds.includes(character.id))
+    .map((character) =>
+      [
+        `${character.name} (${character.role})`,
+        `appearance: ${character.appearance}`,
+        `face/eyes: ${character.faceAndEyes ?? character.appearance}`,
+        `hair: ${character.hair ?? character.appearance}`,
+        `outfit: ${character.outfit}`,
+        `signature: ${(character.signatureFeatures ?? []).join(", ") || character.consistencyPrompt}`,
+        `visual cue: ${character.personalityVisualCue ?? "friendly child-friendly expression"}`,
+      ].join("; "),
+    )
+    .join("\n");
+}
+
+export function buildImagePrompt(draft: LessonDraft, chapter: LessonChapter, shot: LessonShot) {
+  const sourceText = compactText(textFromBlocks(chapter.blocks, shot.coveredBlockIds), 520);
+
+  return capImagePrompt([
+    "STYLE LOCK:",
+    `cute, detailed cartoon picture-book illustration for children; rounded shapes; expressive eyes; warm soft lighting; clear focal action; ${draft.visualStyle.artStyle}.`,
+    `Palette: ${draft.visualStyle.colorPalette}.`,
+    `Consistency: ${draft.visualStyle.consistencyPrompt}`,
+    `Student appeal: ${draft.visualStyle.studentAppealPrompt ?? "friendly, playful, visually rich but not cluttered."}`,
+    "",
+    "CHARACTER LOCK:",
+    characterLockText(draft, shot),
+    "",
+    "SCENE LOCK:",
+    `Location: ${shot.location}.`,
+    `Spatial details: ${shot.spatialDetails ?? "keep important objects in stable, readable positions."}`,
+    `Continuity: ${shot.continuityNotes}`,
+    "",
+    "TEXT ANCHOR:",
+    sourceText,
+    "",
+    "SHOT FOCUS:",
+    `Chapter: ${chapter.title}.`,
+    `Story action: ${shot.action}`,
+    `Visual focus: ${shot.focus ?? shot.action}`,
+    `Key objects: ${(shot.keyObjects ?? []).join(", ") || "main story object"}`,
+    `Mood: ${shot.mood}.`,
+    `Scene: ${shot.scenePrompt}`,
+    `Composition: ${shot.composition}`,
+    `Student-friendly detail: ${shot.studentAppeal ?? "make the important story moment cute, clear, and engaging."}`,
+    "",
+    "OUTPUT:",
+    "4:3 wide picture-book image, 1024x768, main character and key object clearly readable, background supports the story and does not steal focus.",
+    imagePromptSafetySuffix,
+  ].join("\n"));
 }
 
 export function hashImageSource(slot: Omit<PlannedImageSlot, "sourceHash"> | PlannedImageSlot) {
@@ -159,6 +231,9 @@ export function deriveLessonShotImageSlots(courseId: string, draft: LessonDraft)
         prompt: buildImagePrompt(draft, chapter, shot),
         action: shot.action,
         scenePrompt: shot.scenePrompt,
+        sourceText: textFromBlocks(chapter.blocks, shot.coveredBlockIds),
+        focus: shot.focus ?? null,
+        keyObjects: shot.keyObjects ?? [],
       };
 
       return {
@@ -196,6 +271,9 @@ export function mergeImageSlotsWithRecords(slots: PlannedImageSlot[], records: C
         failureReason: null,
         action: slot.action,
         scenePrompt: slot.scenePrompt,
+        sourceText: slot.sourceText,
+        focus: slot.focus,
+        keyObjects: slot.keyObjects,
         createdAt: null,
         updatedAt: null,
       };
@@ -223,6 +301,9 @@ export function mergeImageSlotsWithRecords(slots: PlannedImageSlot[], records: C
       failureReason: record.failureReason,
       action: slot.action,
       scenePrompt: slot.scenePrompt,
+      sourceText: slot.sourceText,
+      focus: slot.focus,
+      keyObjects: slot.keyObjects,
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
     };
@@ -433,8 +514,8 @@ export async function keepStaleCourseImage(db: CourseImagesDb, courseId: string,
 
 export type CourseImageQueueDeps = {
   provider: {
-    generate: (input: { prompt: string; width: 1024; height: 768 }) => Promise<{ imageUrl: string }>;
-    query?: (input: { taskId: string }) => Promise<
+    submit: (input: { prompt: string; width: 1024; height: 768 }) => Promise<{ taskId: string }>;
+    query: (input: { taskId: string }) => Promise<
       | { status: "generating"; imageUrl: null; failureReason: null }
       | { status: "succeeded"; imageUrl: string; failureReason: null }
       | { status: "failed"; imageUrl: null; failureReason: string }
@@ -454,14 +535,6 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
   const active = records.filter((image) => image.status === "generating");
 
   for (const image of active) {
-    if (!deps.provider.query) {
-      await db.courseImage.update({
-        where: { id: image.id },
-        data: { status: "failed", providerTaskId: null, failureReason: "旧版异步图片任务无法用 HY-Image-Lite 查询，请重新生成" },
-      });
-      continue;
-    }
-
     if (!image.providerTaskId) {
       await db.courseImage.update({
         where: { id: image.id },
@@ -526,22 +599,14 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
   const sourceHash = pendingSlot?.sourceHash ?? pending.sourceHash;
 
   try {
-    await db.courseImage.update({
-      where: { id: pending.id },
-      data: { status: "submitting", prompt, sourceHash, failureReason: null },
-    });
-    const generated = await deps.provider.generate({ prompt, width: 1024, height: 768 });
-    const local = await deps.download({ sourceUrl: generated.imageUrl, courseId, imageId: pending.id });
+    const submitted = await deps.provider.submit({ prompt, width: 1024, height: 768 });
     await db.courseImage.update({
       where: { id: pending.id },
       data: {
-        status: "succeeded",
+        status: "generating",
         prompt,
         sourceHash,
-        providerTaskId: null,
-        providerImageUrl: generated.imageUrl,
-        storagePath: local.storagePath,
-        publicUrl: local.publicUrl,
+        providerTaskId: submitted.taskId,
         failureReason: null,
       },
     });

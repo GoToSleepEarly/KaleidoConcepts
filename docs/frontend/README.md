@@ -41,8 +41,8 @@
 | 故事方案 Step 2 | `docs/frontend/course-create-story-options.md` | 已实现，待用户验收 | - |
 | 绘本内容草稿 Step 3 | `docs/frontend/course-create-lesson-draft.md` | 已确认，开发中 | - |
 | 资源生成 Step 4 | `docs/frontend/course-create-resources.md` | 已确认，待开发 | - |
-| 课程预览 Step 5 | 待创建 | 待讨论 | - |
-| PDF 预览 / 导出 | 待创建 | 待讨论 | - |
+| 课程预览 Step 5 | `docs/frontend/course-preview-and-pdf.md` | 已实现，待用户验收 | - |
+| PDF 预览 / 导出 | `docs/frontend/course-preview-and-pdf.md` | 已实现，待用户验收 | - |
 | API 与数据合同 | 待创建 | 随模块同步维护 | - |
 
 ## 当前默认入口

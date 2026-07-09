@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { AlertCircle, CheckCircle2, ImageIcon, Loader2, RefreshCcw, WandSparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -106,7 +107,15 @@ function ImageCard({
           </div>
           <StatusBadge image={image} />
         </div>
-        <p className="line-clamp-3 text-sm leading-6 text-slate-500">{image.scenePrompt}</p>
+        <InfoBlock label="对应正文" value={image.sourceText} />
+        <div className="grid gap-2 md:grid-cols-2">
+          <InfoBlock label="画面重点" value={image.focus || image.action} />
+          <InfoBlock label="关键物件" value={image.keyObjects.length ? image.keyObjects.join(" / ") : image.scenePrompt} />
+        </div>
+        <details className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <summary className="cursor-pointer text-xs font-semibold text-slate-700">查看最终生图提示词</summary>
+          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-slate-600">{image.prompt}</pre>
+        </details>
         {image.failureReason ? <p className="rounded-md bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">{image.failureReason}</p> : null}
         {image.stale ? (
           <p className="rounded-md bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">课文分镜内容已变化，可沿用旧图或重新生成。</p>
@@ -137,6 +146,15 @@ function ImageCard({
         </div>
       </div>
     </article>
+  );
+}
+
+function InfoBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-xs font-semibold text-slate-500">{label}</p>
+      <p className="mt-1 line-clamp-4 text-xs leading-5 text-slate-700">{value}</p>
+    </div>
   );
 }
 
@@ -250,15 +268,23 @@ export function CourseResourcesManager({ courseId }: { courseId: string }) {
             <p className="text-sm font-semibold text-slate-950">图片任务</p>
             <p className="mt-1 text-sm text-slate-500">进入页面不会自动消耗额度，点击后只创建缺失图片任务。</p>
           </div>
-          <button
-            type="button"
-            disabled={busy || !data || data.progress.missing === 0}
-            onClick={() => void mutate(`/api/courses/${courseId}/resources/generate`)}
-            className="inline-flex min-h-10 items-center gap-2 rounded-md bg-violet-600 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <WandSparkles className="size-4" />}
-            生成全部缺失图片
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/courses/${courseId}/create/preview`}
+              className="inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-300 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              查看课程预览
+            </Link>
+            <button
+              type="button"
+              disabled={busy || !data || data.progress.missing === 0}
+              onClick={() => void mutate(`/api/courses/${courseId}/resources/generate`)}
+              className="inline-flex min-h-10 items-center gap-2 rounded-md bg-violet-600 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <WandSparkles className="size-4" />}
+              生成全部缺失图片
+            </button>
+          </div>
         </div>
 
         {error ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}

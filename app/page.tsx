@@ -1,5 +1,5 @@
-import { RootRedirect } from "@/components/root-redirect";
+import { redirect } from "next/navigation";
 
 export default function HomePage() {
-  return <RootRedirect />;
+  redirect("/login");
 }

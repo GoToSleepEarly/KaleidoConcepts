@@ -4,6 +4,8 @@ import type { CourseBasicDetail, PersonProfile, StoryOption } from "@/lib/contra
 
 import {
   assembleLessonDraftFromPlans,
+  buildExercisePlanPrompt,
+  buildStoryContentPrompt,
   buildDeepSeekRequestBody,
   generateLessonDraft,
 } from "./lesson-draft-generator";
@@ -98,6 +100,7 @@ const storyPlan = {
     artStyle: "warm watercolor picture book",
     colorPalette: "soft greens and gold light",
     consistencyPrompt: "Use a consistent watercolor picture-book style.",
+    studentAppealPrompt: "Make the forest feel cute, friendly, and full of tiny drawing details for an 8-year-old who loves plants and drawing.",
   },
   characters: [
     {
@@ -107,6 +110,10 @@ const storyPlan = {
       appearance: "kind teacher with black hair and round glasses",
       outfit: "blue cardigan and white shirt",
       consistencyPrompt: "Ms. Lin keeps the same glasses, hair, and cardigan.",
+      faceAndEyes: "warm oval face, gentle brown eyes behind round glasses",
+      hair: "short neat black hair",
+      signatureFeatures: ["round glasses", "blue cardigan"],
+      personalityVisualCue: "calm guiding smile",
     },
     {
       id: "student-1",
@@ -115,6 +122,10 @@ const storyPlan = {
       appearance: "girl with black hair and a green dress",
       outfit: "green dress and yellow backpack",
       consistencyPrompt: "Summer keeps the same hair, dress, and backpack.",
+      faceAndEyes: "round child face with big curious brown eyes",
+      hair: "black ponytail with a small leaf clip",
+      signatureFeatures: ["green dress", "yellow backpack", "leaf hair clip"],
+      personalityVisualCue: "curious plant-loving expression",
     },
   ],
   chapters: [
@@ -177,6 +188,33 @@ describe("lesson draft two-stage assembly", () => {
       .join("");
     expect(rendered).toContain("Ms. Lin [walked] toward the quiet forest [gate]");
     expect(rendered).toContain("the glowing [map] shone");
+  });
+
+  test("preserves structured visual locks for image generation", () => {
+    const visualStoryPlan = structuredClone(storyPlan);
+    visualStoryPlan.chapters[0].paragraphs[0].shot = {
+      ...visualStoryPlan.chapters[0].paragraphs[0].shot,
+      focus: "Summer's surprised face and the tiny arrow carved into the stone gate",
+      keyObjects: ["silver forest gate", "tiny arrow", "Summer's sketchbook"],
+      spatialDetails: "gate on the right, river behind the characters, arrow low on the front stone",
+      studentAppeal: "add cute moss patterns and small leaf-shaped sparkles because Summer loves plants and drawing",
+    };
+
+    const draft = assembleLessonDraftFromPlans(visualStoryPlan, exercisePlan, context);
+
+    expect(draft.visualStyle.studentAppealPrompt).toContain("cute");
+    expect(draft.characters[1]).toMatchObject({
+      faceAndEyes: "round child face with big curious brown eyes",
+      hair: "black ponytail with a small leaf clip",
+      signatureFeatures: ["green dress", "yellow backpack", "leaf hair clip"],
+      personalityVisualCue: "curious plant-loving expression",
+    });
+    expect(draft.chapters[0].shots[0]).toMatchObject({
+      focus: "Summer's surprised face and the tiny arrow carved into the stone gate",
+      keyObjects: ["silver forest gate", "tiny arrow", "Summer's sketchbook"],
+      spatialDetails: "gate on the right, river behind the characters, arrow low on the front stone",
+      studentAppeal: "add cute moss patterns and small leaf-shaped sparkles because Summer loves plants and drawing",
+    });
   });
 
   test("rejects exercise occurrence text that is missing from the paragraph", () => {
@@ -246,6 +284,58 @@ describe("lesson draft two-stage assembly", () => {
     expect(rendered).toContain("The quiet forest gate opened again.");
   });
 
+  test("falls back to the answer when AI occurrence text adds missing context", () => {
+    const contextDriftPlan = structuredClone(exercisePlan);
+    contextDriftPlan.chapters[0].exercises[0] = {
+      type: "verb_blank",
+      paragraphIndex: 1,
+      sentenceId: "c1p1s1",
+      answer: "walked",
+      occurrenceText: "has walked",
+      occurrenceIndex: 1,
+      baseVerb: "walk",
+    };
+
+    const draft = assembleLessonDraftFromPlans(storyPlan, contextDriftPlan, context);
+
+    expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
+    const rendered = draft.chapters[0].blocks
+      .map((block) => (block.type === "text" ? block.text : `[${draft.chapters[0].exercises.find((exercise) => exercise.id === block.exerciseId)?.answer}]`))
+      .join("");
+    expect(rendered).toContain("Ms. Lin [walked] toward the quiet forest [gate]");
+  });
+
+  test("falls back to paragraph-level unique text when AI sentenceId points to the wrong sentence", () => {
+    const sentenceStory = structuredClone(storyPlan);
+    sentenceStory.chapters[0].paragraphs[0] = {
+      sentences: [
+        "Yesterday morning, Ms. Lin walked toward the quiet forest gate with Summer beside her.",
+        "Summer carried her sketchbook and looked at the silver leaves.",
+        "Ms. Lin asked one calm question about the strange path, and Summer noticed a small arrow on the stone.",
+        "They opened the door together and stepped into warm green light.",
+      ],
+      shot: shotPlan("Ms. Lin and Summer discover the first arrow beside the gate."),
+    } as never;
+    const wrongSentencePlan = structuredClone(exercisePlan);
+    wrongSentencePlan.chapters[0].exercises[0] = {
+      type: "verb_blank",
+      paragraphIndex: 1,
+      sentenceId: "c1p1s2",
+      answer: "walked",
+      occurrenceText: "walked",
+      occurrenceIndex: 1,
+      baseVerb: "walk",
+    };
+
+    const draft = assembleLessonDraftFromPlans(sentenceStory, wrongSentencePlan, context);
+
+    expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
+    const rendered = draft.chapters[0].blocks
+      .map((block) => (block.type === "text" ? block.text : `[${draft.chapters[0].exercises.find((exercise) => exercise.id === block.exerciseId)?.answer}]`))
+      .join("");
+    expect(rendered).toContain("Ms. Lin [walked] toward the quiet forest [gate]");
+  });
+
   test("rejects duplicate exercise answers in one chapter", () => {
     const invalidPlan = structuredClone(exercisePlan);
     invalidPlan.chapters[0].exercises[1] = { ...invalidPlan.chapters[0].exercises[1], answer: "walked", occurrenceText: "walked" };
@@ -258,6 +348,41 @@ describe("lesson draft two-stage assembly", () => {
     invalidPlan.chapters[0].exercises = invalidPlan.chapters[0].exercises.slice(0, 6);
 
     expect(() => assembleLessonDraftFromPlans(storyPlan, invalidPlan, context)).toThrow("第 1 章练习数量不足：需要 7-10 个，当前 6 个");
+  });
+});
+
+describe("lesson draft story content prompt", () => {
+  test("requires valid sentences arrays instead of sentence fields", () => {
+    const prompt = buildStoryContentPrompt(context);
+
+    expect(prompt).toContain('"sentences": ["Sentence 1.", "Sentence 2.", "Sentence 3."]');
+    expect(prompt).toContain('Do not use "sentence" as a field name');
+    expect(prompt).toContain("Every JSON object property must have a name followed by a colon");
+  });
+
+  test("sets explicit chapter and paragraph word-count targets", () => {
+    const prompt = buildStoryContentPrompt(context);
+
+    expect(prompt).toContain("Each chapter must contain 90-140 English words total");
+    expect(prompt).toContain("Each paragraph should contain 45-70 English words");
+  });
+
+  test("requires story sentences to include target grammar forms for later exercises", () => {
+    const prompt = buildStoryContentPrompt(context);
+
+    expect(prompt).toContain("Each chapter must include at least 8 concrete phrases that can later become grammar or vocabulary blanks");
+    expect(prompt).toContain("If the chapter knowledge hook names a tense, write several real sentences in that exact tense");
+    expect(prompt).toContain("Do not leave the exercise planner to invent tense forms later");
+  });
+});
+
+describe("lesson draft exercise plan prompt", () => {
+  test("requires answer and occurrence text to be copied from the target sentence", () => {
+    const prompt = buildExercisePlanPrompt(context, storyPlan);
+
+    expect(prompt).toContain("answer must be copied exactly from the target sentence");
+    expect(prompt).toContain("Do not change tense, aspect, spelling, or wording");
+    expect(prompt).toContain('"answer":"walked","occurrenceText":"walked"');
   });
 });
 
@@ -336,17 +461,54 @@ describe("lesson draft generation", () => {
     }
   });
 
-  test("does not make a third LLM call after invalid exercise plan", async () => {
+  test("retries exercise planning once after an invalid exercise plan", async () => {
     const originalApiKey = process.env.DEEPSEEK_API_KEY;
     process.env.DEEPSEEK_API_KEY = "test-key";
     const invalidExercisePlan = structuredClone(exercisePlan);
     invalidExercisePlan.chapters[0].exercises = invalidExercisePlan.chapters[0].exercises.slice(0, 6);
-    const fetchMock = vi.fn().mockResolvedValueOnce(deepSeekResponse(storyPlan)).mockResolvedValueOnce(deepSeekResponse(invalidExercisePlan));
+    const fetchMock = vi.fn().mockResolvedValueOnce(deepSeekResponse(storyPlan)).mockResolvedValueOnce(deepSeekResponse(invalidExercisePlan)).mockResolvedValueOnce(deepSeekResponse(exercisePlan));
     vi.stubGlobal("fetch", fetchMock);
 
     try {
-      await expect(generateLessonDraft(context)).rejects.toThrow("第 1 章练习数量不足：需要 7-10 个，当前 6 个");
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const draft = await generateLessonDraft(context);
+
+      expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      const retryBody = JSON.parse(fetchMock.mock.calls[2][1].body);
+      expect(retryBody.messages[1].content).toContain("Previous exercise plan failed validation");
+      expect(retryBody.messages[1].content).toContain("第 1 章练习数量不足");
+    } finally {
+      if (originalApiKey === undefined) {
+        delete process.env.DEEPSEEK_API_KEY;
+      } else {
+        process.env.DEEPSEEK_API_KEY = originalApiKey;
+      }
+    }
+  });
+
+  test("reports invalid story JSON as a recoverable validation error", async () => {
+    const originalApiKey = process.env.DEEPSEEK_API_KEY;
+    process.env.DEEPSEEK_API_KEY = "test-key";
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content:
+                  '{"title":"Broken","chapters":[{"title":"Chapter","paragraphs":[{"sentence":"One sentence.","Another standalone string"}]}]}',
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      await expect(generateLessonDraft(context)).rejects.toThrow("AI 返回的故事内容 JSON 格式无效，请重试生成");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
       if (originalApiKey === undefined) {
         delete process.env.DEEPSEEK_API_KEY;
