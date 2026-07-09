@@ -8,7 +8,7 @@ import { ArrowLeft, Check, Loader2, Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
-import type { CourseBasicDetail, CourseBasicInput, EnglishLevel, PersonProfile, StoryIdeaMode } from "@/lib/api-contract";
+import type { CourseBasicDetail, CourseBasicInput, EnglishLevel, PersonProfile, StoryIdeaMode } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
 const englishLevels: EnglishLevel[] = ["A1", "A2", "B1", "B2", "C1", "C2"];

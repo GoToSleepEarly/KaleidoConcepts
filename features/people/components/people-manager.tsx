@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Edit3, Plus, UserRound, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { Gender, PersonInput, PersonProfile, PersonRole } from "@/lib/api-contract";
+import type { Gender, PersonInput, PersonProfile, PersonRole } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
 type PersonFormState = {

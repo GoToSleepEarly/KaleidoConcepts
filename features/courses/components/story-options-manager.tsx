@@ -7,7 +7,7 @@ import { ArrowLeft, BookOpen, Check, Loader2, Route, Save, Sparkles } from "luci
 
 import { Button } from "@/components/ui/button";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
-import type { StoryOption, StoryTeachingDesign } from "@/lib/api-contract";
+import type { StoryOption, StoryTeachingDesign } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
 type LoadResponse = {
