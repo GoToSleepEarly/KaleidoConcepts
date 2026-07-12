@@ -63,15 +63,15 @@ model CoursePerson {
 }
 
 model CourseStoryOption {
-  id             String
-  courseId       String
-  title          String
-  logline        String
-  chapters       Json
-  teachingDesign Json
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  course         Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  id        String
+  courseId  String
+  variant   String
+  title     String
+  storyline String
+  chapters  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@id([courseId, id])
   @@index([courseId])

@@ -8,7 +8,7 @@ import { ChevronLeft, ChevronRight, Edit3, FileText, ImageIcon, Loader2, Printer
 
 import { Button } from "@/components/ui/button";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
-import type { CoursePreviewBlock, CoursePreviewPage, CoursePreviewResponse, LessonBlankDisplay } from "@/lib/contracts/api";
+import type { CoursePreviewPage, CoursePreviewResponse } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
 type DocumentMode = "html" | "pdf";
@@ -68,14 +68,6 @@ function useCoursePreview(courseId: string) {
   return { data, error, isLoading };
 }
 
-function exerciseLabel(display: LessonBlankDisplay) {
-  if (display.kind === "verb_blank") {
-    return `verb: ${display.prompt}`;
-  }
-
-  return `${display.pattern} · ${display.letterCount} letters`;
-}
-
 function modeTextClass(mode: DocumentMode, size: "body" | "title" | "display") {
   if (mode === "pdf") {
     return size === "display" ? "text-5xl" : size === "title" ? "text-3xl" : "text-2xl";
@@ -108,40 +100,6 @@ function buildSlides(pages: CoursePreviewPage[]): PreviewSlide[] {
   });
 
   return slides;
-}
-
-function PreviewBlock({
-  block,
-  exercise,
-  audience,
-  mode,
-}: {
-  block: CoursePreviewBlock;
-  exercise?: Extract<CoursePreviewPage, { type: "lesson_shot" }>["exercises"][number];
-  audience: Audience;
-  mode: DocumentMode;
-}) {
-  const [revealed, setRevealed] = useState(false);
-
-  if (block.type === "text") {
-    return <span className="whitespace-normal break-words">{block.text}</span>;
-  }
-
-  const canReveal = audience === "teacher" && exercise;
-
-  return (
-    <button
-      type="button"
-      aria-label={`blank ${exerciseLabel(block.display)}`}
-      onClick={() => canReveal && setRevealed((current) => !current)}
-      className={cn(
-        "mx-1 inline-flex max-w-full align-baseline items-baseline border-0 border-b-[0.12em] border-[#2563EB] bg-transparent px-3 pb-0.5 text-left font-semibold leading-none text-[#1E3A8A] transition hover:bg-[#DBEAFE]",
-        mode === "pdf" ? "min-w-20 text-xl shadow-none" : "min-w-28 text-2xl",
-      )}
-    >
-      <span>{revealed && exercise ? exercise.answer : "________"}</span>
-    </button>
-  );
 }
 
 function CoursePreviewImageFrame({ page, fill = false }: { page: Extract<CoursePreviewPage, { type: "lesson_shot" }>; fill?: boolean }) {
@@ -231,13 +189,11 @@ function ImageSlide({ page, mode }: { page: Extract<CoursePreviewPage, { type: "
 }
 
 function PracticeSlide({ page, audience, mode }: { page: Extract<CoursePreviewPage, { type: "lesson_shot" }>; audience: Audience; mode: DocumentMode }) {
-  const exercises = new Map(page.exercises.map((exercise) => [exercise.id, exercise]));
-
   return (
     <section id={`${page.id}-practice`} role="group" aria-label={`Slide practice ${page.chapterIndex}-${page.shotOrder}`} className="preview-slide preview-slide-practice">
       <div className="relative z-10 flex h-full flex-col p-12">
         <div>
-          <p className="text-sm font-black uppercase text-[#2563EB]">Practice Mission</p>
+          <p className="text-sm font-black uppercase text-[#2563EB]">Reading Mission</p>
           <h2 className={cn("mt-3 text-balance font-black leading-none text-[#0F172A]", modeTextClass(mode, "title"))}>{page.chapterTitle}</h2>
         </div>
         <div
@@ -247,13 +203,15 @@ function PracticeSlide({ page, audience, mode }: { page: Extract<CoursePreviewPa
             modeTextClass(mode, "body"),
           )}
         >
-          {page.blocks.map((block) => (
-            <React.Fragment key={block.id}>
-              <PreviewBlock block={block} audience={audience} mode={mode} exercise={block.type === "exercise" ? exercises.get(block.exerciseId) : undefined} />
-              {block.type === "text" ? " " : null}
-            </React.Fragment>
-          ))}
+          {page.text}
         </div>
+        {audience === "teacher" && page.exercises.length ? (
+          <div className="mt-6 grid max-w-5xl grid-cols-2 gap-2 text-lg font-bold text-[#1E3A8A]">
+            {page.exercises.map((exercise) => (
+              <div key={exercise.id}>{exercise.order}. {exercise.answer}</div>
+            ))}
+          </div>
+        ) : null}
       </div>
     </section>
   );

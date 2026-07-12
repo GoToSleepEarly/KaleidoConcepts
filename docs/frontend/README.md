@@ -38,8 +38,8 @@
 | 人物档案 | `docs/frontend/people-profiles.md` | 已实现，待用户验收 | - |
 | 课程列表 | `docs/frontend/courses-list-management.md` | 已实现课程列表管理，Prisma 依赖待安装 | - |
 | 新建课程 Step 1 | `docs/frontend/course-create-basic.md` | 已实现，待用户验收 | - |
-| 故事方案 Step 2 | `docs/frontend/course-create-story-options.md` | 已实现，待用户验收 | - |
-| 绘本内容草稿 Step 3 | `docs/frontend/course-create-lesson-draft.md` | 已确认，开发中 | - |
+| 故事方案 Step 2 | `docs/frontend/course-create-story-options.md` | 二期重构方案已对齐，待实现 | - |
+| 绘本内容草稿 Step 3 | `docs/frontend/course-create-lesson-draft.md` | 二期质量重构方案已对齐，待实现 | - |
 | 资源生成 Step 4 | `docs/frontend/course-create-resources.md` | 已确认，待开发 | - |
 | 课程预览 Step 5 | `docs/frontend/course-preview-and-pdf.md` | 已实现，待用户验收 | - |
 | PDF 预览 / 导出 | `docs/frontend/course-preview-and-pdf.md` | 已实现，待用户验收 | - |
@@ -51,6 +51,30 @@
 - 登录成功后：`/courses`
 - 账号：`teacher`
 - 密码：`123456`
+
+## 本地真实数据库预览
+
+本地预览默认使用真实 PostgreSQL，不使用 `MOCK_DB`：
+
+```bash
+pnpm dev:preview
+```
+
+该命令会：
+
+1. 启动项目内嵌 PostgreSQL，数据目录为 `.local/postgres`
+2. 使用 `.env` 中的 `DATABASE_URL`
+3. 执行 `pnpm prisma:generate`
+4. 执行 `pnpm prisma:deploy`
+5. 执行 `pnpm prisma:seed`
+6. 清理 `.next`，避免旧 build / dev manifest 导致页面卡在登录状态检查
+7. 启动 `pnpm dev`
+
+如果只需要单独启动数据库：
+
+```bash
+pnpm dev:db
+```
 
 ## 新模块启动检查
 

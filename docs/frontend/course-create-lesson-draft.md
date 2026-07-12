@@ -1,287 +1,338 @@
-# 新建课程 Step 3：绘本内容草稿模块说明
+# 新建课程 Step 3：英文互动阅读草稿模块说明
 
 ## 模块目标
 
-本模块覆盖新建课程流程第三步：基于 Step 2 已选择的故事方案，一次性生成可编辑、可生图、可预览的英文绘本内容草稿。
+本模块覆盖新建课程流程第三步：基于 Step 2 已选择的中文故事大纲，一次性生成完整英文互动阅读草稿。
 
-Step 3 是内容填充，不重新构思故事。
+Step 3 负责：
+- 英文故事正文
+- 嵌入式练习题锚点
+- 答案
+- closing reading
+
+Step 3 不负责：
+- 图片分镜
+- visual style
+- character visual lock
+- image prompt
+- 页面分页
+- HTML / PDF
+
+图片、绘本页面和生图资源统一移到 Step 4，根据 Step 3 最终 clean text 生成。
+
+## 本期重构目标
+
+针对 MVP 反馈“Step3 耗时和稳定性严重问题”，本期将 Step 3 从“正文 + 练习 + 图片分镜 + 视觉描述”的混合生成，收敛为“英文互动阅读内容生成”。
+
+核心变化：
+1. AI 一次性生成整篇英文阅读内容，保证故事连贯。
+2. AI 输出 JSON，不输出 Markdown。
+3. AI 输出薄结构：clean sentences + exercise anchors。
+4. AI 不输出最终 blanks、题号、segments、pattern、letterCount、图片字段。
+5. 代码负责校验、生成 ids、编译 segments、生成题号和词汇 pattern。
+6. 前端 MVP 只展示最终拼接好的带题阅读文本和答案列表，不做复杂编辑和模式切换。
 
 ## 输入边界
 
 必须读取：
 - Step 1 课程基础信息
 - 老师和学生人物画像
-- Step 2 已选择的 `StoryOption`
+- Step 2 已选择的中文故事大纲：`storyline` 与每章 `summary`
 
 对齐规则：
 - `sourceStoryOptionId` 必须等于课程已选择的故事方案 id
 - 章节数量必须等于 Step 2 选中方案的章节数量
 - 每章必须对应 Step 2 的同序号章节
-- 每章正文扩写 Step 2 的 `summary`
-- 每章练习服务 Step 2 的 `knowledgeHook`
-- 不重新设计主线，不新增主要角色
+- 每章英文正文扩写 Step 2 该章的 `summary`，并服务全局 `storyline`
+- 知识点来自 Step 1，不再读取 Step 2 的知识点字段
+- 不重新设计主线，不改变章节顺序，不新增主要角色
 
-## 本期产物
+## AI 输出结构
 
-生成：
-- 英文绘本标题
-- 每章英文标题
-- 每章 120-180 词英文学生正文
-- 每章目标 8-10 个练习点，硬性保存底线为 7-10 个
-  - 以 `verb_blank` 为主
-  - 搭配 `vocabulary_hint`
-  - 不硬性要求固定 7/3 比例
-- 每章 2 个图片分镜 / image shot
-- 全局视觉风格 `visualStyle`
-- 全局人物视觉一致性 `characters`
-- 图片语义锁：
-  - `visualStyle.studentAppealPrompt`：面向学生兴趣和年龄的可爱细致绘本风格要求
-  - `characters[].faceAndEyes / hair / signatureFeatures / personalityVisualCue`：角色眼睛、发型、服装标志物和视觉气质
-  - `shots[].focus / keyObjects / spatialDetails / studentAppeal`：每张图的画面重点、关键物件、空间位置和学生吸引点
-
-生成职责边界：
-- AI 生成正文内容、人物视觉描述、每段对应的图片分镜语义和图片语义锁。
-- 代码生成最终 `LessonDraft` 结构，包括 chapter / block / exercise / shot id、block order、exercise display、shot `coveredBlockIds` 和 `imageSlotId`。
-- 代码只解析 AI 生成的内联习题标记，不自行选择或补齐习题。
-- 分镜内容语义必须来自 AI，因为它直接服务后续绘本图片生成；Step 4 只把这些语义编译成具体生图模型 prompt，不重新创作故事内容。
-
-不生成：
-- 教师教案
-- 课堂流程
-- 图片文件
-- HTML / PDF 文件
-- 新增 / 删除练习点
-- 新增 / 删除分镜
-
-## JSON 结构
+AI 返回的是中间计划 `AiLessonContentPlan`，不是最终数据库结构。
 
 ```ts
-type LessonDraft = {
-  schemaVersion: "lesson_draft_v1";
+type AiLessonContentPlan = {
+  title: string;
+  chapters: AiLessonChapter[];
+  closingReading: AiClosingReading;
+};
+
+type AiLessonChapter = {
+  title: string;
+  paragraphs: [AiParagraph, AiParagraph];
+  exercises: AiExerciseAnchor[];
+};
+
+type AiParagraph = {
+  sentences: string[];
+};
+
+type AiExerciseAnchor = AiVerbBlankAnchor | AiVocabularyHintAnchor;
+
+type AiVerbBlankAnchor = {
+  type: "verb_blank";
+  sentenceId: string;
+  answer: string;
+  prompt: string;
+  baseVerb: string;
+};
+
+type AiVocabularyHintAnchor = {
+  type: "vocabulary_hint";
+  sentenceId: string;
+  answer: string;
+  hint: string;
+};
+
+type AiClosingReading = {
+  title: string;
+  sentences: string[];
+  vocabularyTerms: string[];
+};
+```
+
+### Sentence ID 规则
+
+AI 不在 sentences 内输出 id。代码和 Prompt 共同约定：
+
+```text
+c{chapterNumber}p{paragraphNumber}s{sentenceNumber}
+```
+
+示例：
+- `c1p1s1` = 第 1 章第 1 段第 1 句
+- `c1p2s3` = 第 1 章第 2 段第 3 句
+- `c2p1s4` = 第 2 章第 1 段第 4 句
+
+每个 exercise 的 `sentenceId` 必须引用真实句子。
+
+### Clean sentence 规则
+
+story sentence 必须是完整英文句子，不允许包含：
+- `(1)`、`(2)` 等题号
+- `________`
+- `[V1]`
+- Markdown
+- HTML
+- 答案标签
+
+错误示例：
+
+```text
+Yesterday morning, Ms. PAN ________ (leave) the school quietly.
+```
+
+正确示例：
+
+```text
+Yesterday morning, Ms. PAN left the school quietly.
+```
+
+### Exercise anchor 规则
+
+- `answer` 必须是对应 sentence 的 exact substring。
+- `answer` 在该 sentence 中必须只出现一次。
+- 同一章不重复使用相同 answer。
+- exercises 要分布在两个 paragraph 中。
+- `verb_blank` 为主，`vocabulary_hint` 为辅。
+- `vocabulary_hint.hint` 必须是中文。
+- AI 不输出 pattern / letterCount / label / order，这些由代码生成。
+
+## 练习策略配置
+
+题量和题型比例通过 policy 配置，不写死在业务逻辑里。
+
+默认建议：
+
+| 课程时长 | 每章题量 | verb_blank | vocabulary_hint |
+| --- | ---: | ---: | ---: |
+| 30 分钟 | 6-8 | 至少 4 | 不超过 2 |
+| 45 分钟 | 7-9 | 至少 5 | 不超过 3 |
+| 60 分钟 | 8-10 | 至少 6 | 不超过 3 |
+
+`verb_blank` 约占 75%，`vocabulary_hint` 约占 25%。后续可按课程模板或知识点类型调整。
+
+## 后端编译结构
+
+代码将 `AiLessonContentPlan` 编译为数据库结构 `lesson_content_v1`。
+
+```ts
+type LessonContentDraft = {
+  schemaVersion: "lesson_content_v1";
   sourceStoryOptionId: string;
   generationMode: "ai";
   title: string;
   language: "en";
-  visualStyle: VisualStyle;
-  characters: VisualCharacter[];
-  chapters: LessonChapter[];
+  chapters: LessonContentChapter[];
+  closingReading: LessonClosingReading;
 };
 
-type LessonChapter = {
+type LessonContentChapter = {
   id: string;
   sourceOutlineChapterIndex: number;
   title: string;
-  wordTarget: {
-    min: 110;
-    max: 130;
-  };
-  exerciseTarget: {
-    verbBlankCount: 7;
-    vocabularyHintCount: 3;
-  };
-  blocks: LessonBlock[];
+  paragraphs: LessonParagraph[];
   exercises: LessonExercise[];
-  shots: LessonShot[];
 };
 
-type LessonBlock =
-  | {
-      id: string;
-      order: number;
-      type: "text";
-      text: string;
-    }
-  | {
-      id: string;
-      order: number;
-      type: "exercise";
-      exerciseId: string;
-      display: BlankDisplay;
-    };
+type LessonParagraph = {
+  id: string;
+  order: 1 | 2;
+  sentences: LessonSentence[];
+};
 
-type BlankDisplay =
-  | {
-      kind: "verb_blank";
-      placeholder: "________";
-      prompt: string;
-    }
-  | {
-      kind: "vocabulary_hint";
-      placeholder: "________";
-      pattern: string;
-      letterCount: number;
-    };
+type LessonSentence = {
+  id: string;
+  text: string;
+  segments: LessonSegment[];
+};
+
+type LessonSegment =
+  | { type: "text"; text: string }
+  | { type: "exercise"; exerciseId: string };
 
 type LessonExercise =
   | {
       id: string;
+      order: number;
       type: "verb_blank";
+      sentenceId: string;
       answer: string;
+      prompt: string;
       baseVerb: string;
     }
   | {
       id: string;
+      order: number;
       type: "vocabulary_hint";
+      sentenceId: string;
       answer: string;
+      hint: string;
       pattern: string;
       letterCount: number;
     };
 
-type LessonShot = {
-  id: string;
-  order: 1 | 2;
-  imageSlotId: string;
-  coveredBlockIds: string[];
-  characterIds: string[];
-  location: string;
-  action: string;
-  mood: string;
-  scenePrompt: string;
-  composition: string;
-  continuityNotes: string;
-  focus?: string;
-  keyObjects?: string[];
-  spatialDetails?: string;
-  studentAppeal?: string;
+type LessonClosingReading = {
+  title: string;
+  sentences: string[];
+  vocabularyTerms: string[];
 };
 ```
 
-## 页面行为
+编译职责：
+- 生成 chapter / paragraph / sentence / exercise id
+- 校验 sentenceId 是否存在
+- 校验 answer 是否是 exact substring
+- 按 answer 切分 sentence segments
+- 生成题号 `order`
+- 生成 vocabulary pattern，例如 `destiny -> d _ _ _ _ _ y`
+- 生成 `letterCount`
+- 生成学生版阅读文本
+- 生成答案列表
+- 给 Step 4 提供 clean text
+
+## 前端 MVP 行为
 
 入口：
 - `/courses/:id/create/lesson-draft`
 
 未生成：
-- 显示生成按钮
-- 点击后调用 `POST /api/courses/:id/lesson-draft/generate`
+- 显示生成按钮。
+- 点击后调用 `POST /api/courses/:id/lesson-draft/generate`。
 - 生成中显示阶段进度：
-  - 读取故事骨架
-  - AI 生成正文和分镜
-  - 装配练习结构
-  - 校验并保存草稿
+  - 规划英文阅读结构
+  - 生成故事正文与互动题
+  - 校验题目锚点
+  - 保存草稿
 
 已生成：
-- 加载并展示草稿
-- 顶部按章节 Tab 切换
-- 老师可编辑：
-  - 绘本标题
-  - 章节标题
-  - 文本 block
-  - 练习答案 / 提示 / base verb
-  - 每章 2 个 image shot prompt
-- 本期不支持新增 / 删除 block、exercise、shot
-- 点击保存调用 `PUT /api/courses/:id/lesson-draft`
+- 顶部按章节切换。
+- 主区域展示最终拼接好的带题阅读文本。
+- 右侧或下方展示本章答案列表。
+- Closing Reading 单独展示，不带题。
+- 不提供学生版/答案版切换。
+- 不提供复杂 segment 编辑。
+- 不显示图片提示编辑。
+- 显示提示：图片将在资源生成步骤根据最终正文自动生成。
+- 点击进入资源生成。
 
-## API 合同
+### 学生阅读文本渲染
 
-### `GET /api/courses/:id/lesson-draft`
+`verb_blank` 渲染：
 
-响应：
+```text
+(1) ________ (leave)
+```
 
-```ts
+`vocabulary_hint` 渲染：
+
+```text
+(4) [V1: d _ _ _ _ _ y（提示：天命/使命，7个字母）]
+```
+
+答案列表示例：
+
+```text
+1. left
+2. had already sent
+3. has just recorded
+4. destiny
+```
+
+## Step 4 边界
+
+Step 4 后续升级为“绘本页面与图片资源生成”：
+- 读取 Step 3 clean text
+- 设计页面结构
+- 总结每页画面
+- 生成 visualStyle
+- 生成角色视觉一致性
+- 生成 image prompt
+- 调用图片模型
+- 生成 Preview/PDF 所需资源
+
+Step 4 不应读取学生版挖空文本作为图片语义来源。
+
+## DeepSeek 参数建议
+
+45 分钟及以下：
+
+```json
 {
-  draft: LessonDraft | null;
+  "model": "deepseek-v4-pro",
+  "response_format": { "type": "json_object" },
+  "thinking": { "type": "enabled" },
+  "reasoning_effort": "high",
+  "max_tokens": 16000
 }
 ```
 
-失败：
-- `404 { message: "课程不存在" }`
-- `500 { message: "课文草稿加载失败" }`
+60 分钟 / 5 章：
 
-### `POST /api/courses/:id/lesson-draft/generate`
-
-行为：
-- 读取课程、人物画像、已选择故事方案
-- 如果已有草稿，直接返回已有草稿
-- 调用 DeepSeek 或本地 mock 获取内容计划
-- 将内容计划装配为 `lesson_draft_v1`
-- 校验并保存 `lesson_draft_v1`
-
-响应：
-
-```ts
-201 {
-  draft: LessonDraft;
-}
-```
-
-失败：
-- `400 { message: "请先选择故事方案" }`
-- `404 { message: "课程不存在" }`
-- `500 { message: "课文草稿生成失败" }`
-
-### `PUT /api/courses/:id/lesson-draft`
-
-请求：
-
-```ts
+```json
 {
-  draft: LessonDraft;
+  "model": "deepseek-v4-pro",
+  "response_format": { "type": "json_object" },
+  "thinking": { "type": "enabled" },
+  "reasoning_effort": "high",
+  "max_tokens": 20000
 }
 ```
 
-响应：
+## 预期耗时
 
-```ts
-{
-  draft: LessonDraft;
-}
-```
+基于测试样例：
+- 45 分钟 / 4 章 / 每章 8 题：约 118 秒。
+- 产品文案按 1-2 分钟预期展示，复杂任务允许接近 3 分钟。
 
-失败：
-- `400 { message: "课文草稿信息不完整" }`
-- `404 { message: "课程不存在" }`
-- `500 { message: "课文草稿保存失败" }`
+## 验证重点
 
-## 校验规则
-
-- `schemaVersion` 必须是 `lesson_draft_v1`
-- `language` 必须是 `en`
-- `sourceStoryOptionId` 必须匹配课程选中的故事方案
-- 章节数必须匹配 Step 2
-- 每章必须有 7-10 个 exercises
-- 每章必须有相同数量的 exercise blocks
-- 不硬性校验 `verb_blank` / `vocabulary_hint` 的固定比例
-- 每个 exercise block 必须引用本章存在的 exercise
-- 每个 exercise 必须被且只被一个 exercise block 引用
-- 每章必须有 2 个 shots
-- shot 的 `coveredBlockIds` 必须引用本章 block
-- 两个 shots 合起来必须覆盖本章所有 blocks
-- 两个 shots 的 covered blocks 不重叠
-- `characterIds` 必须引用全局 characters
-- exercise 答案只存储在 `exercises` 中，不能出现在 exercise display 字段中
-
-## 生成稳定性策略
-
-- 不要求 AI 直接输出最终 `LessonDraft` 全量结构，避免 block / exercise / shot 引用类机械错误。
-- AI 不再直接输出带 marker 的最终正文。
-- 第一次 LLM 请求生成纯正文内容计划：每章 2 段纯英文正文、每段 1 个图片分镜语义、closing reading、人物和视觉风格。
-- 第二次 LLM 请求基于纯正文生成练习计划：每章 7-10 个练习，包含 `type`、`paragraphIndex`、`sentenceId`、`answer`、`occurrenceText`、`occurrenceIndex`，以及 `baseVerb` 或 `pattern`。
-- 后端代码只做 exact string replacement：先用代码生成的 `sentenceId` 定位句子，再用 `occurrenceText` + `occurrenceIndex` 在句中定位要替换的片段。
-- 后端不从正文中猜词、不补题、不做语义判断。
-- 若练习计划中的 `sentenceId` 不存在、`occurrenceText` 在句中找不到、`occurrenceIndex` 不合法、与 answer 不匹配、数量不足或 answer 重复，接口返回可读错误，不做第三次 LLM 重试。
-- 分镜覆盖范围仍由代码按 paragraph 绑定：paragraph 1 → shot 1，paragraph 2 → shot 2。
-- AI 必须为图片提供结构化语义锁，而不是最终模型 prompt：
-  - 角色锁用于保持眼睛、发型、服装、标志物一致。
-  - 场景锁用于保持空间物件和位置关系一致。
-  - 镜头重点用于让生图模型突出本段故事动作和关键物件。
-- 后端代码继续负责稳定 id、block order、exercise block references、imageSlotId、shot order、coveredBlockIds、`closingReading.vocabularyTerms`、character consistency 注入和最终校验。
-
-## 实现状态
-
-- 状态：已实现，待用户验收
-- 实现提交：待记录
-- 验证命令：`pnpm prisma:generate`、`pnpm prisma:deploy`、`pnpm test`、`pnpm lint`、`pnpm build`
-- 验证结果：通过。真实 DeepSeek 验证已为测试课程 `cmr6h7zqm0000tcvove7d1720` 生成草稿，结果为 3 章、首章 10 个练习、首章 2 个图片分镜。
-- 2026-07-05 优化记录：Step 3 增加 `closingReading`，约 100 英文词，可编辑，不包含练习和额外图片；页面改为章节 Tab + 分镜 Tab + Closing Tab。章节内左侧展示当前分镜覆盖的最终学生文案，空格已按最终形态渲染；右侧根据点击对象编辑正文、练习答案/提示或分镜图片 prompt，并显示当前分镜答案。MVP 不支持新增/删除空格、block 或分镜。
-- 2026-07-05 修复记录：AI 生成约束加强为正文片段与练习 block 交错输出，避免完整正文后追加空格；Step3 预览兼容旧草稿，将单段正文和后置练习按当前分镜组合成可阅读的填空文本；prompt 强化语法点必须进入故事句子、对话和练习选择。
-- 2026-07-05 修复记录：每章目标词数调整为约 120 词，生成目标 110-130 词，后端校验范围 90-150 词；分镜切分改为句子边界，避免半句进入不同分镜；Closing Reading 增加 `vocabularyTerms`，用于罗列本课学习到的英文单词和词组；学生文本中的 vocabulary hint 只展示字母提示，不再展示 `letters` 文案；DeepSeek 调用降低输出长度和温度以减少生成耗时。
-- 2026-07-05 修复记录：课文草稿生成失败根因是 DeepSeek V4 thinking 模式返回 `reasoning_content` 但 `content` 为空，以及输出 JSON 偶发尾逗号 / 截断。已在请求体显式关闭 `thinking`，提高最终 JSON 输出上限，增加尾逗号修复，并在第一次解析或校验失败时携带具体原因要求模型重生成。
-- 2026-07-07 优化记录：Step 3 生成改为 AI 内容计划 + 代码装配最终草稿。AI 只负责正文、练习候选和图片分镜语义；代码负责 block / exercise / shot 结构、分镜覆盖、closing vocabulary 和最终校验。生成等待态同步改为展示“读取故事骨架 / AI 生成正文和分镜 / 装配练习结构 / 校验并保存草稿”。
-- 2026-07-07 修复记录：练习装配改为基于 `targetText` 替换段落原文，避免 `[answer]answer` 重复和练习上下文错位；每段必须保留 vocabulary hint，避免 shot1 / shot2 练习类型单边集中；closing reading 自动移除 `The End`；shot prompt 自动追加人物外貌和服装一致性信息。
-- 2026-07-07 修复记录：练习计划不再完全依赖 AI 数量正确。若 AI 给出的可用练习不足，后端会从段落原文中补齐缺失的动词填空和词汇提示，仍保持每章 7 个 verb blank、3 个 vocabulary hint、每段 5 个练习。
-- 2026-07-07 重构记录：按产品边界调整为“正文和习题均由 AI 生成，代码只解析为最终 JSON”。AI 现在输出 `markedText`，用 `[verb:baseVerb|answer]` / `[vocab:pattern|answer]` 内联标记表达习题；后端删除 `targetText` 搜索和代码补题逻辑，直接解析标记生成 block / exercise / shot 覆盖关系，并校验每章 7/3、每段 5 个、每段至少 1 个词汇题、同章答案不重复。
-- 2026-07-07 修复记录：针对 AI 常见的每段 `4 verb + 1 vocab` 导致全章 `8/2` 的错误，prompt 和后端校验改为精确段落配比：第 1 段 `4 verb + 1 vocab`，第 2 段 `3 verb + 2 vocab`。校验错误会返回 `p1Verb/p1Vocab/p2Verb/p2Vocab`，用于第二次重生成时直接纠偏。
-- 2026-07-07 修复记录：Step 3 DeepSeek 调用默认开启 thinking 模式，`reasoning_effort=max`，并移除 thinking 模式下不生效的 `temperature`。如需兼容旧行为，可用 `DEEPSEEK_THINKING=disabled` 回退到非 thinking 低温 JSON 生成。
-- 2026-07-07 稳定性重设计记录：Step 3 不再把每章 10 题、7/3 比例、每段 5 题作为硬校验；每章固定 2 个分镜，练习目标为 8-10 个、硬性底线保持 7-10 个；若某章首次生成未达标，后端会对失败章节做一次局部重生成修复，练习仍必须由 AI 在正文中以内联 marker 生成，代码不补题。DeepSeek 默认关闭 thinking 以降低常规生成耗时，可通过 `DEEPSEEK_THINKING=enabled` 开启深度模式。
-- 2026-07-08 重构记录：Step 3 生成改为两阶段 LLM。第一阶段生成纯正文、分镜和 closing；第二阶段基于正文生成练习计划。代码只做 exact string replacement 和最终 `LessonDraft` 装配，不再让 AI 直接输出带 marker 的正文，也不再保留旧的 marker 修复/截断/去重主路径。
+- JSON 合法。
+- 没有图片字段。
+- sentence 中没有 blank / 题号 / Markdown。
+- exercises 引用真实 sentenceId。
+- answer 是 exact substring。
+- 每章题量符合 policy。
+- vocabulary_hint hint 为中文。
+- 生成的学生阅读文本符合嵌入式题目预期。

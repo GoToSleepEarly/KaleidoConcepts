@@ -1,4 +1,4 @@
-import type { LessonBlock, LessonDraft, LessonExercise, LessonShot, StoryOption } from "@/lib/contracts/api";
+import type { LessonContentChapter, LessonDraft, LessonExercise, StoryOption } from "@/lib/contracts/api";
 
 type CourseForDraft = {
   id: string;
@@ -49,222 +49,123 @@ export class LessonDraftPrerequisiteError extends Error {
   }
 }
 
-const minExercisesPerChapter = 7;
-const maxExercisesPerChapter = 10;
-const minChapterWords = 60;
-const maxChapterWords = 190;
-
 function isNonEmptyText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
-}
-
-function isOptionalNonEmptyText(value: unknown) {
-  return value === undefined || isNonEmptyText(value);
-}
-
-function isOptionalNonEmptyTextArray(value: unknown) {
-  return value === undefined || (Array.isArray(value) && value.length > 0 && value.every(isNonEmptyText));
-}
-
-function countWords(blocks: LessonBlock[]) {
-  return blocks
-    .map((block) => (block.type === "text" ? block.text : "blank"))
-    .join(" ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean).length;
-}
-
-function countTextWords(text: string) {
-  return text
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean).length;
-}
-
-function validateExerciseDisplay(block: Extract<LessonBlock, { type: "exercise" }>, exercise: LessonExercise) {
-  if (block.display.placeholder !== "________" || block.display.kind !== exercise.type) {
-    throw new LessonDraftValidationError();
-  }
-
-  if (exercise.type === "verb_blank") {
-    if (block.display.kind !== "verb_blank" || !isNonEmptyText(block.display.prompt) || block.display.prompt !== exercise.baseVerb) {
-      throw new LessonDraftValidationError();
-    }
-    return;
-  }
-
-  if (
-    block.display.kind !== "vocabulary_hint" ||
-    !isNonEmptyText(block.display.pattern) ||
-    block.display.pattern !== exercise.pattern ||
-    block.display.letterCount !== exercise.letterCount
-  ) {
-    throw new LessonDraftValidationError();
-  }
-}
-
-function validateShots(shots: LessonShot[], blockIds: Set<string>, characterIds: Set<string>) {
-  if (shots.length !== 2) {
-    throw new LessonDraftValidationError();
-  }
-
-  const covered = new Set<string>();
-
-  for (const shot of shots) {
-    if (
-      (shot.order !== 1 && shot.order !== 2) ||
-      !isNonEmptyText(shot.id) ||
-      !isNonEmptyText(shot.imageSlotId) ||
-      !isNonEmptyText(shot.location) ||
-      !isNonEmptyText(shot.action) ||
-      !isNonEmptyText(shot.mood) ||
-      !isNonEmptyText(shot.scenePrompt) ||
-      !isNonEmptyText(shot.composition) ||
-      !isNonEmptyText(shot.continuityNotes) ||
-      !isOptionalNonEmptyText(shot.focus) ||
-      !isOptionalNonEmptyTextArray(shot.keyObjects) ||
-      !isOptionalNonEmptyText(shot.spatialDetails) ||
-      !isOptionalNonEmptyText(shot.studentAppeal) ||
-      shot.coveredBlockIds.length < 1 ||
-      shot.characterIds.length < 1
-    ) {
-      throw new LessonDraftValidationError();
-    }
-
-    for (const characterId of shot.characterIds) {
-      if (!characterIds.has(characterId)) {
-        throw new LessonDraftValidationError();
-      }
-    }
-
-    for (const blockId of shot.coveredBlockIds) {
-      if (!blockIds.has(blockId) || covered.has(blockId)) {
-        throw new LessonDraftValidationError();
-      }
-      covered.add(blockId);
-    }
-  }
-
-  for (const blockId of blockIds) {
-    if (!covered.has(blockId)) {
-      throw new LessonDraftValidationError();
-    }
-  }
-}
-
-function hasValidWordTarget(draft: LessonDraft["chapters"][number]) {
-  return draft.wordTarget.min >= 100 && draft.wordTarget.min <= 120 && draft.wordTarget.max >= 120 && draft.wordTarget.max <= 150;
 }
 
 function chapterLabel(index: number) {
   return `第 ${index + 1} 章`;
 }
 
+function validateExercise(exercise: LessonExercise, chapter: LessonContentChapter, chapterIndex: number) {
+  if (!isNonEmptyText(exercise.id) || !Number.isInteger(exercise.order) || !isNonEmptyText(exercise.sentenceId) || !isNonEmptyText(exercise.answer)) {
+    throw new LessonDraftValidationError();
+  }
+
+  if (exercise.type === "given_word_blank") {
+    if (!isNonEmptyText(exercise.prompt)) {
+      throw new LessonDraftValidationError();
+    }
+  } else if (exercise.type === "choice_blank") {
+    if (!Array.isArray(exercise.choices) || exercise.choices.length < 2 || !exercise.choices.includes(exercise.answer)) {
+      throw new LessonDraftValidationError();
+    }
+  } else if (!isNonEmptyText(exercise.hint) || !isNonEmptyText(exercise.pattern) || !isNonEmptyText(String(exercise.letterCount))) {
+    throw new LessonDraftValidationError();
+  }
+
+  const sentence = chapter.paragraphs.flatMap((paragraph) => paragraph.sentences).find((item) => item.id === exercise.sentenceId);
+  if (!sentence) {
+    throw new LessonDraftValidationError(`${chapterLabel(chapterIndex)}练习引用不存在的句子：${exercise.sentenceId}`);
+  }
+
+  const occurrenceCount = sentence.text.split(exercise.answer).length - 1;
+  if (occurrenceCount !== 1) {
+    throw new LessonDraftValidationError(`${chapterLabel(chapterIndex)}练习答案不在句子中唯一出现：${exercise.answer}`);
+  }
+
+  const embeddedCount = chapter.paragraphs
+    .flatMap((paragraph) => paragraph.sentences)
+    .flatMap((sentenceItem) => sentenceItem.segments)
+    .filter((segment) => segment.type === "exercise" && segment.exerciseId === exercise.id).length;
+
+  if (embeddedCount !== 1) {
+    throw new LessonDraftValidationError(`${chapterLabel(chapterIndex)}练习未嵌入正文：${exercise.id}`);
+  }
+}
+
+function validateChapter(chapter: LessonContentChapter, chapterIndex: number) {
+  if (!isNonEmptyText(chapter.id) || !isNonEmptyText(chapter.title) || chapter.sourceOutlineChapterIndex !== chapterIndex + 1) {
+    throw new LessonDraftValidationError();
+  }
+
+  if (!Array.isArray(chapter.paragraphs) || chapter.paragraphs.length !== 2 || !Array.isArray(chapter.exercises) || chapter.exercises.length < 1) {
+    throw new LessonDraftValidationError();
+  }
+
+  const exerciseIds = new Set(chapter.exercises.map((exercise) => exercise.id));
+  if (exerciseIds.size !== chapter.exercises.length) {
+    throw new LessonDraftValidationError(`${chapterLabel(chapterIndex)}存在重复的练习 id`);
+  }
+
+  chapter.paragraphs.forEach((paragraph, paragraphIndex) => {
+    if (!isNonEmptyText(paragraph.id) || paragraph.order !== paragraphIndex + 1 || !Array.isArray(paragraph.sentences) || paragraph.sentences.length < 1) {
+      throw new LessonDraftValidationError();
+    }
+
+    const sentenceIds = new Set(paragraph.sentences.map((sentence) => sentence.id));
+    if (sentenceIds.size !== paragraph.sentences.length) {
+      throw new LessonDraftValidationError(`${chapterLabel(chapterIndex)}存在重复的句子 id`);
+    }
+
+    for (const sentence of paragraph.sentences) {
+      if (!isNonEmptyText(sentence.id) || !isNonEmptyText(sentence.text) || !Array.isArray(sentence.segments) || sentence.segments.length < 1) {
+        throw new LessonDraftValidationError();
+      }
+
+      for (const segment of sentence.segments) {
+        if (segment.type === "text") {
+          if (segment.text.length < 1) {
+            throw new LessonDraftValidationError();
+          }
+        } else if (!exerciseIds.has(segment.exerciseId)) {
+          throw new LessonDraftValidationError(`${chapterLabel(chapterIndex)}正文引用不存在的练习：${segment.exerciseId}`);
+        }
+      }
+    }
+  });
+
+  const sortedOrders = chapter.exercises.map((exercise) => exercise.order).sort((a, b) => a - b);
+  if (!sortedOrders.every((order, index) => order === index + 1)) {
+    throw new LessonDraftValidationError();
+  }
+
+  for (const exercise of chapter.exercises) {
+    validateExercise(exercise, chapter, chapterIndex);
+  }
+}
+
 export function validateLessonDraft(draft: LessonDraft, sourceStoryOption: StoryOption) {
   if (
-    draft.schemaVersion !== "lesson_draft_v1" ||
+    draft.schemaVersion !== "lesson_content_v1" ||
     draft.generationMode !== "ai" ||
     draft.language !== "en" ||
-    draft.visualStyle.aspectRatio !== "4:3" ||
     draft.sourceStoryOptionId !== sourceStoryOption.id ||
     !isNonEmptyText(draft.title) ||
     !draft.closingReading ||
     !isNonEmptyText(draft.closingReading.title) ||
-    !isNonEmptyText(draft.closingReading.text) ||
+    !Array.isArray(draft.closingReading.sentences) ||
+    draft.closingReading.sentences.length < 1 ||
+    !draft.closingReading.sentences.every(isNonEmptyText) ||
     !Array.isArray(draft.closingReading.vocabularyTerms) ||
     draft.closingReading.vocabularyTerms.length < 1 ||
     !draft.closingReading.vocabularyTerms.every(isNonEmptyText) ||
-    countTextWords(draft.closingReading.text) < 60 ||
-    countTextWords(draft.closingReading.text) > 150 ||
     draft.chapters.length !== sourceStoryOption.chapters.length
   ) {
     throw new LessonDraftValidationError();
   }
 
-  const characterIds = new Set(draft.characters.map((character) => character.id));
-
-  if (
-    draft.characters.length < 2 ||
-    draft.characters.filter((character) => character.role === "teacher").length !== 1 ||
-    !draft.characters.every(
-      (character) =>
-        isNonEmptyText(character.id) &&
-        isNonEmptyText(character.name) &&
-        isNonEmptyText(character.appearance) &&
-        isNonEmptyText(character.outfit) &&
-        isNonEmptyText(character.consistencyPrompt) &&
-        isOptionalNonEmptyText(character.faceAndEyes) &&
-        isOptionalNonEmptyText(character.hair) &&
-        isOptionalNonEmptyTextArray(character.signatureFeatures) &&
-        isOptionalNonEmptyText(character.personalityVisualCue),
-    )
-  ) {
-    throw new LessonDraftValidationError();
-  }
-
-  draft.chapters.forEach((chapter, index) => {
-    if (
-      !isNonEmptyText(chapter.id) ||
-      !isNonEmptyText(chapter.title) ||
-      chapter.sourceOutlineChapterIndex !== index + 1 ||
-      !hasValidWordTarget(chapter) ||
-      chapter.exerciseTarget.verbBlankCount !== 7 ||
-      chapter.exerciseTarget.vocabularyHintCount !== 3
-    ) {
-      throw new LessonDraftValidationError();
-    }
-
-    const blockIds = new Set(chapter.blocks.map((block) => block.id));
-    const exerciseIds = new Set(chapter.exercises.map((exercise) => exercise.id));
-    const exerciseBlocks = chapter.blocks.filter((block): block is Extract<LessonBlock, { type: "exercise" }> => block.type === "exercise");
-    if (blockIds.size !== chapter.blocks.length || exerciseIds.size !== chapter.exercises.length) {
-      throw new LessonDraftValidationError(`课文草稿章节结构不完整：${chapterLabel(index)}存在重复的 block 或 exercise id`);
-    }
-
-    if (exerciseBlocks.length !== chapter.exercises.length) {
-      throw new LessonDraftValidationError(
-        `课文草稿章节结构不完整：${chapterLabel(index)}练习 block 数量 ${exerciseBlocks.length} 与 exercises 数量 ${chapter.exercises.length} 不一致`,
-      );
-    }
-
-    if (exerciseBlocks.length < minExercisesPerChapter) {
-      throw new LessonDraftValidationError(`${chapterLabel(index)}练习数量不足：需要 7-10 个，当前 ${exerciseBlocks.length} 个`);
-    }
-
-    if (exerciseBlocks.length > maxExercisesPerChapter) {
-      throw new LessonDraftValidationError(`${chapterLabel(index)}练习数量过多：需要 7-10 个，当前 ${exerciseBlocks.length} 个`);
-    }
-
-    const wordCount = countWords(chapter.blocks);
-    if (wordCount < minChapterWords || wordCount > maxChapterWords) {
-      throw new LessonDraftValidationError(`${chapterLabel(index)}正文词数异常：需要 60-190 词，当前 ${wordCount} 词`);
-    }
-
-    const sortedOrders = chapter.blocks.map((block) => block.order).sort((a, b) => a - b);
-    if (!sortedOrders.every((order, orderIndex) => order === orderIndex + 1)) {
-      throw new LessonDraftValidationError();
-    }
-
-    const referencedExercises = new Set<string>();
-    for (const block of exerciseBlocks) {
-      const exercise = chapter.exercises.find((item) => item.id === block.exerciseId);
-      if (!exercise || referencedExercises.has(block.exerciseId)) {
-        throw new LessonDraftValidationError();
-      }
-
-      validateExerciseDisplay(block, exercise);
-      referencedExercises.add(block.exerciseId);
-    }
-
-    for (const exercise of chapter.exercises) {
-      if (!referencedExercises.has(exercise.id) || !isNonEmptyText(exercise.answer)) {
-        throw new LessonDraftValidationError();
-      }
-    }
-
-    validateShots(chapter.shots, blockIds, characterIds);
-  });
+  draft.chapters.forEach(validateChapter);
 
   return draft;
 }

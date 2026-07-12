@@ -26,4 +26,14 @@ export default [
       "@typescript-eslint/triple-slash-reference": "off",
     },
   },
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        setTimeout: "readonly",
+      },
+    },
+  },
 ];

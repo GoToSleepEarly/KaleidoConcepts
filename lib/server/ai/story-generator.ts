@@ -12,6 +12,14 @@ type ChatMessage = {
   content: string;
 };
 
+type DeepSeekRequestBody = {
+  model: string;
+  messages: ChatMessage[];
+  max_tokens: number;
+  response_format: { type: "json_object" };
+  thinking: { type: "enabled" };
+};
+
 const chapterCountByDuration: Record<number, number> = {
   30: 3,
   45: 4,
@@ -22,90 +30,286 @@ export function getExpectedChapterCount(durationMinutes: number) {
   return chapterCountByDuration[durationMinutes] ?? 4;
 }
 
+function personName(person: PersonProfile) {
+  return person.englishName?.trim() || person.chineseName?.trim() || person.name.trim();
+}
+
+function teacherDescription(teacher: PersonProfile) {
+  return teacher.appearance?.trim() || teacher.notes?.trim() || "普通老师";
+}
+
+function studentBlock(students: PersonProfile[]) {
+  return students
+    .map((student) =>
+      [
+        `- studentId: ${student.id}`,
+        `  nameToUseInStory: ${personName(student)}`,
+        `  年龄：${student.age ?? "未知"}`,
+        `  兴趣：${student.interests.join(" / ") || "未提供"}`,
+        `  外貌：${student.appearance ?? "未提供"}`,
+        `  补充说明：${student.notes ?? "无"}`,
+      ].join("\n"),
+    )
+    .join("\n");
+}
+
 export function buildPrompt(context: StoryGenerationContext) {
   const expectedChapterCount = getExpectedChapterCount(context.course.durationMinutes);
-  const storySeed = context.course.storyIdea
-    ? `Teacher-provided story seed: ${context.course.storyIdea}`
-    : "No teacher-provided story seed. Invent a suitable story premise from the theme, students, teacher profile, and grammar targets.";
 
   return [
-    "Generate story-teaching outline options for a project-based English picture-book lesson.",
+    "请生成 3 个中文故事大纲候选方案。",
     "",
-    "Course context:",
-    `- Course title: ${context.course.title}`,
-    `- English level: ${context.course.englishLevel}`,
-    `- Duration: ${context.course.durationMinutes} minutes`,
-    `- Required chapter count per option: exactly ${expectedChapterCount}`,
-    `- Theme/world setting: ${context.course.theme}`,
-    `- Grammar targets: ${context.course.grammar.join(" / ")}`,
-    `- Story idea mode: ${context.course.storyIdeaMode}`,
-    `- ${storySeed}`,
+    "这些方案用于老师选择故事方向。",
+    "当前只需要故事大纲，不需要正文、教学设计、练习题或图片设计。",
     "",
-    "Cast:",
-    `- Teacher guide: ${context.teacher.name}; appearance: ${context.teacher.appearance ?? "not provided"}; notes: ${context.teacher.notes ?? "none"}`,
-    `- Students: ${context.students
-      .map((student) =>
-        [
-          student.chineseName ?? student.name,
-          `English name: ${student.englishName ?? student.name}`,
-          `age: ${student.age ?? "unknown"}`,
-          `appearance: ${student.appearance ?? "not provided"}`,
-          `interests: ${student.interests.join(" / ") || "not provided"}`,
-          `learning goal: ${student.learningGoal ?? "not provided"}`,
-          `notes: ${student.notes ?? "none"}`,
-        ].join("，"),
-      )
-      .join("\n")}`,
+    "请先在内部完成以下思考，不要输出思考过程：",
+    "1. 理解课程主题、学生兴趣、老师设定和故事想法。",
+    "2. 如果老师提供了故事想法，识别其中必须保留的核心人物、历史人物、地点、时代、关键物品、核心任务和主要事件。",
+    "3. 判断故事如何适合后续改写成英文绘本内容，但不要输出任何知识点设计。",
+    "4. 生成 3 个不同方向的短大纲。",
+    "5. 自检输出是否足够短、是否保留人名和老师原意、是否没有正文化。",
     "",
-    "Non-negotiable story rules:",
-    "- Generate exactly 3 story options. They must use clearly different narrative angles, conflicts, missions, and emotional hooks. Do not produce three minor variations of the same plot.",
-    "- Every option must have a coherent story arc: setup, development, turning point, and resolution. The chapter summaries together must form a reasonable cause-and-effect story.",
-    "- The teacher and all selected students must actively participate in the story. The teacher is a guide inside the story, not a narrator, judge, or after-class commentator.",
-    "- Do not introduce unrelated story characters. You may use unnamed environmental obstacles, objects, clues, places, or background groups only when needed, but the active decision-makers must be the teacher and students.",
-    "- The story must integrate the grammar targets into the plot mechanics, character choices, and dialogue opportunities.",
-    "- Keep story and grammar separated in the JSON fields: chapter.summary must describe only the story events, with no grammar labels, no teaching instructions, and no phrases like \"Use There be\". chapter.knowledgeHook must explain how the grammar target can be practiced in that chapter.",
-    "- Keep the outline concise. This step is for choosing the story architecture, not reading a full plan.",
-    "- Keep the outline age-appropriate for the English level and feasible for the course duration.",
-    "- Do not generate full lesson text, full scripts, exercises, answers, illustration suggestions, image prompts, HTML, or PDF content.",
-    "- If the theme refers to copyrighted worlds or characters, use only a generic inspired setting and do not mention protected character names.",
+    "【课程背景】",
     "",
-    "Output rules:",
-    "- Return strict JSON only.",
-    "- Do not wrap the JSON in Markdown.",
-    "- Do not include explanations, comments, trailing commas, or extra top-level keys.",
-    "- The top-level JSON object must be exactly: {\"options\": [...]}.",
-    "- There must be exactly 3 options.",
-    "- Option ids must be exactly \"option-1\", \"option-2\", and \"option-3\".",
-    `- Each option must contain exactly ${expectedChapterCount} chapters.`,
-    "- All fields must be non-empty strings.",
-    "- logline: 1-2 short sentences.",
-    "- chapter.summary: 1-3 short sentences focused only on story events.",
-    "- chapter.knowledgeHook: 1 short sentence explaining how grammar enters the action or dialogue.",
-    "- Each teachingDesign field: 1 short sentence. Do not write detailed teaching plans.",
+    "主题 / 世界观：",
+    context.course.theme,
     "",
-    `Required JSON schema: {"options":[{"id":"option-1","title":"...","logline":"...","chapters":[{"title":"pure story events only, no grammar explanation","summary":"pure story events only, no grammar explanation","knowledgeHook":"grammar practice design for this chapter"}],"teachingDesign":{"grammarIntegration":"overall grammar integration strategy","studentFit":"...","teacherGuidance":"...","difficultyFit":"..."}}]}`,
+    "课程时长：",
+    `${context.course.durationMinutes} 分钟`,
+    "",
+    "英语等级：",
+    context.course.englishLevel,
+    "",
+    "后续内容开发需要覆盖的学习目标：",
+    context.course.grammar.join(" / "),
+    "",
+    "老师是否提供故事想法：",
+    context.course.storyIdea ? "是" : "否",
+    "",
+    "老师提供的故事想法：",
+    context.course.storyIdea || "无。请根据主题、学生兴趣和角色信息生成。",
+    "",
+    "【章节数量】",
+    "",
+    `每个方案必须生成 ${expectedChapterCount} 章。`,
+    "",
+    "章节数规则：",
+    "- 30 分钟：3 章",
+    "- 45 分钟：4 章",
+    "- 60 分钟：5 章",
+    "",
+    "【角色表】",
+    "",
+    "故事中只能使用 nameToUseInStory 作为角色名。",
+    "人名是专有名词，必须原样保留。",
+    "",
+    "老师：",
+    `- teacherId: ${context.teacher.id}`,
+    `- nameToUseInStory: ${personName(context.teacher)}`,
+    `- 角色说明：${teacherDescription(context.teacher)}`,
+    "",
+    "学生：",
+    studentBlock(context.students),
+    "",
+    "【人名规则】",
+    "",
+    "必须严格遵守：",
+    "- 禁止翻译人名。",
+    "- 禁止改写人名。",
+    "- 禁止解释人名。",
+    "- 禁止给角色另起名字。",
+    "- 如果姓名是单字，例如“尤”，它就是姓名“尤”，不能理解成“你”。",
+    "- 如果没有英文名，不要自行创造英文名。",
+    "- 故事中出现老师或学生时，只能使用角色表里的 nameToUseInStory。",
+    "",
+    "【老师原意规则】",
+    "",
+    "如果老师提供了故事想法，必须先遵循老师原意，再优化故事大纲。",
+    "",
+    "必须保留老师故事想法中的：",
+    "- 明确人物",
+    "- 历史人物",
+    "- 地点",
+    "- 时代",
+    "- 关键物品",
+    "- 核心任务",
+    "- 主要事件",
+    "- 明确故事风格",
+    "",
+    "禁止：",
+    "- 把老师指定的人物换成别人。",
+    "- 把历史人物换成虚构人物。",
+    "- 把历史人物放到明显错误的时代。",
+    "- 编造会误导儿童的历史事实。",
+    "- 抛弃老师原本想讲的故事另起炉灶。",
+    "",
+    "如果涉及历史人物：",
+    "- 保持尊重和基本历史合理性。",
+    "- 可以用梦境、博物馆、时间旅行课堂、故事书进入等儿童化方式连接。",
+    "- 不要捏造严重违背常识的历史内容。",
+    "- 不要把历史人物写成无关的魔法角色、怪物、现代网红或完全虚构人物。",
+    "",
+    "【三个方案定位】",
+    "",
+    "必须生成 3 个明显不同的方案。",
+    "",
+    "option-1:",
+    '- id 必须是 "option-1"',
+    '- variant 必须是 "faithful"',
+    "- 定位：贴近原意",
+    "- 如果老师提供故事想法，最大程度保留原设定，只补足故事推进。",
+    "- 如果老师没有故事想法，生成最直接、最好理解的故事方向。",
+    "",
+    "option-2:",
+    '- id 必须是 "option-2"',
+    '- variant 必须是 "enhanced"',
+    "- 定位：推荐 · 结构增强",
+    "- 保留主题和核心设定，让故事更完整、更适合课堂。",
+    "- 这是默认推荐方案。",
+    "",
+    "option-3:",
+    '- id 必须是 "option-3"',
+    '- variant 必须是 "creative"',
+    "- 定位：创意拓展",
+    "- 可以更有想象力，但不能离题。",
+    "- 不能丢掉老师指定的核心元素。",
+    "",
+    "【故事质量要求】",
+    "",
+    "每个方案必须：",
+    "- 使用中文。",
+    "- 有清楚的故事主线。",
+    "- 有开端、推进和收束。",
+    "- 每章都推动故事前进。",
+    "- 最后一章要自然完成、发现、解决或成长。",
+    "- 老师和学生都参与故事行动。",
+    "- 老师是故事中的引导者，不是旁白或评委。",
+    "- 学生参与观察、选择、行动或合作。",
+    "- 适合儿童课堂。",
+    "- 不恐怖、不暴力、无真实危险。",
+    "",
+    "【学习目标边界】",
+    "",
+    "学习目标只作为后续内容开发的背景参考。",
+    "故事应方便后续改写成英文绘本和练习，但输出中不要呈现任何学习目标设计。",
+    "",
+    "禁止输出：",
+    "- 知识点设计",
+    "- 语法说明",
+    "- 教学目标说明",
+    "- grammar 字段",
+    "- knowledge 字段",
+    "- teaching 字段",
+    "- exercise 字段",
+    "- “本章练习……”",
+    "- “通过某语法点……”",
+    "- “说对英语才能通关”的固定套路",
+    "",
+    "【长度限制】",
+    "",
+    "这是故事大纲，不是正文。必须短。",
+    "",
+    "每个方案：",
+    "- title：最多 12 个中文字符",
+    "- storyline：最多 55 个中文字符，1 句",
+    "- chapter.title：最多 10 个中文字符",
+    "- chapter.summary：最多 30 个中文字符，1 句",
+    "",
+    "禁止：",
+    "- 不写对白。",
+    "- 不写台词。",
+    "- 不写完整场景。",
+    "- 不写细节描写。",
+    "- 不写心理活动。",
+    "- 不展开正文。",
+    "- 不写长段落。",
+    "- 不超过长度限制。",
+    "",
+    "【字段含义】",
+    "",
+    "title：",
+    "中文故事标题，短，有画面感。",
+    "",
+    "storyline：",
+    "故事主线，说明整个故事靠什么推进。",
+    "不要写成宣传语。",
+    "不要写知识点。",
+    "不要写正文细节。",
+    "",
+    "chapters[].summary：",
+    "每章一个关键推进事件。",
+    "不要拆成目标、阻碍、转折。",
+    "不要写正文。",
+    "不要写教学设计。",
+    "",
+    "【最终输出要求】",
+    "",
+    "最终回复只输出 JSON。",
+    "顶层只能有 options 一个字段。",
+    "不得添加任何其他字段。",
+    "",
+    "严格输出以下结构：",
+    JSON.stringify(
+      {
+        options: [
+          {
+            id: "option-1",
+            variant: "faithful",
+            title: "不超过12字",
+            storyline: "不超过55字的一句故事主线。",
+            chapters: [{ title: "不超过10字", summary: "不超过30字的一句章节大纲。" }],
+          },
+          {
+            id: "option-2",
+            variant: "enhanced",
+            title: "不超过12字",
+            storyline: "不超过55字的一句故事主线。",
+            chapters: [{ title: "不超过10字", summary: "不超过30字的一句章节大纲。" }],
+          },
+          {
+            id: "option-3",
+            variant: "creative",
+            title: "不超过12字",
+            storyline: "不超过55字的一句故事主线。",
+            chapters: [{ title: "不超过10字", summary: "不超过30字的一句章节大纲。" }],
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    "",
+    "输出前请在内部自检，不要输出自检过程：",
+    "- 顶层是否只有 options？",
+    "- 是否正好 3 个方案？",
+    `- 每个方案是否正好 ${expectedChapterCount} 章？`,
+    "- id 和 variant 是否完全正确？",
+    "- 是否没有 title、storyline、chapters、chapter.title、chapter.summary 以外的字段？",
+    "- 是否没有知识点、练习、教案、图片提示？",
+    "- 是否没有英文正文？",
+    "- 是否没有对白、台词、长描写？",
+    "- 是否保留老师指定的核心人物、历史人物、地点、时代和事件？",
+    "- 是否所有角色名都严格照抄 nameToUseInStory？",
+    "- 是否每个字段都足够短？",
+    "",
+    "现在只输出 JSON。",
   ].join("\n");
 }
 
 function mockStoryOptions(context: StoryGenerationContext): StoryOption[] {
   const expectedChapterCount = getExpectedChapterCount(context.course.durationMinutes);
-  const chapterTemplates = Array.from({ length: expectedChapterCount }, (_, index) => ({
-    title: `Chapter ${index + 1}: ${context.course.theme} Mission ${index + 1}`,
-    summary: `老师作为引导者，带领学生在${context.course.theme}中完成第 ${index + 1} 个任务，并推动故事向最终目标前进。学生需要观察线索、做出选择，并解决本章的小挑战。`,
-    knowledgeHook: `本章语法重点是 ${context.course.grammar.join(" / ")}，可通过角色对白、场景描述和任务复述进行练习。`,
-  }));
+  const variants = [
+    { id: "option-1", variant: "faithful" as const, title: "贴近故事", storyline: `老师和学生围绕${context.course.theme}完成一条清楚的课堂冒险线。` },
+    { id: "option-2", variant: "enhanced" as const, title: "推荐故事", storyline: `大家在${context.course.theme}中沿线索推进，最终完成温暖发现。` },
+    { id: "option-3", variant: "creative" as const, title: "创意故事", storyline: `${context.course.theme}出现奇妙规则，老师和学生合作找到答案。` },
+  ];
 
-  return [1, 2, 3].map((item) => ({
-    id: `option-${item}`,
-    title: `${context.course.theme} Story Option ${item}`,
-    logline: `老师带领学生进入${context.course.theme}，通过连续任务解决问题，并自然练习目标语法。`,
-    chapters: chapterTemplates,
-    teachingDesign: {
-      grammarIntegration: `将 ${context.course.grammar.join(" / ")} 放入任务指令、角色对白和章节复述中，保证重复出现但不脱离剧情。`,
-      studentFit: `故事结合学生兴趣与学习目标，让学生能把自己代入主角行动。`,
-      teacherGuidance: `老师作为 guide 陪伴学生观察线索、提出问题、做出选择，并在关键节点提供语言支架。`,
-      difficultyFit: `故事结构和章节数量匹配 ${context.course.englishLevel} 与 ${context.course.durationMinutes} 分钟课时。`,
-    },
+  return variants.map((option) => ({
+    ...option,
+    chapters: Array.from({ length: expectedChapterCount }, (_, index) => ({
+      title: `第${index + 1}章`,
+      summary: `老师和学生推进第${index + 1}个关键事件。`,
+    })),
   }));
 }
 
@@ -115,10 +319,21 @@ function parseJsonObject(text: string) {
   return JSON.parse(fenced ? fenced[1] : trimmed) as { options?: StoryOption[] };
 }
 
+export function buildDeepSeekRequestBody(messages: ChatMessage[]): DeepSeekRequestBody {
+  const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro";
+
+  return {
+    model,
+    messages,
+    max_tokens: 4000,
+    response_format: { type: "json_object" },
+    thinking: { type: "enabled" },
+  };
+}
+
 async function callDeepSeek(messages: ChatMessage[]) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   const baseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com";
-  const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
 
   if (!apiKey) {
     throw new Error("AI 服务未配置");
@@ -130,12 +345,7 @@ async function callDeepSeek(messages: ChatMessage[]) {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      messages,
-      response_format: { type: "json_object" },
-      temperature: 0.8,
-    }),
+    body: JSON.stringify(buildDeepSeekRequestBody(messages)),
   });
 
   if (!response.ok) {
@@ -163,8 +373,22 @@ export async function generateStoryOptions(context: StoryGenerationContext) {
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content:
-        "You are an expert bilingual PBL picture-book curriculum designer for children. You design coherent story-teaching outlines that tightly integrate English grammar into narrative action. Return strict JSON only.",
+      content: [
+        "你是儿童 PBL 英语绘本课程的中文故事大纲策划专家。",
+        "你的任务是生成中文故事大纲候选方案，供老师选择故事方向。",
+        "请先在内部思考和自检，但最终只输出严格 JSON。",
+        "硬性规则：",
+        "1. 只写故事大纲，不写正文。",
+        "2. 不写英文课文。",
+        "3. 不写教案。",
+        "4. 不写知识点设计。",
+        "5. 不写练习题、答案、挖空题。",
+        "6. 不写图片提示词或分镜。",
+        "7. 不翻译、改写、解释或替换任何人名。",
+        "8. 不替换老师明确指定的人物、历史人物、地点、时代、关键物品或核心事件。",
+        "9. 输出内容必须简短，用于选择故事方向，不要替代后续正文创作。",
+        "10. 最终回复必须是严格 JSON，不要 Markdown，不要解释，不要注释，不要多余字段。",
+      ].join("\n"),
     },
     {
       role: "user",
@@ -172,17 +396,7 @@ export async function generateStoryOptions(context: StoryGenerationContext) {
     },
   ];
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const content = await callDeepSeek(messages);
-      const parsed = parseJsonObject(content);
-      return validateStoryOptions(parsed.options ?? [], expectedChapterCount);
-    } catch (error) {
-      if (attempt === 1) {
-        throw error;
-      }
-    }
-  }
-
-  throw new Error("故事方案生成失败");
+  const content = await callDeepSeek(messages);
+  const parsed = parseJsonObject(content);
+  return validateStoryOptions(parsed.options ?? [], expectedChapterCount);
 }

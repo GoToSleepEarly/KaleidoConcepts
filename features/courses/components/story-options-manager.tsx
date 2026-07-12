@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowLeft, BookOpen, Check, Loader2, Route, Save, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Pencil, Save, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
-import type { StoryOption, StoryTeachingDesign } from "@/lib/contracts/api";
+import type { StoryOption, StoryOptionVariant } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
 type LoadResponse = {
@@ -15,20 +15,32 @@ type LoadResponse = {
   selectedOptionId: string | null;
 };
 
-const teachingFields: Array<{ key: keyof StoryTeachingDesign; label: string }> = [
-  { key: "grammarIntegration", label: "语法融入" },
-  { key: "studentFit", label: "学生适配" },
-  { key: "teacherGuidance", label: "老师引导" },
-  { key: "difficultyFit", label: "难度适配" },
-];
+const generationSteps = ["理解故事种子", "生成三种方向", "压缩故事大纲", "整理方案 JSON"];
 
-const generationSteps = ["分析课程信息", "构思故事角度", "组织章节结构", "校验 JSON 输出"];
+const variantMeta: Record<StoryOptionVariant, { label: string; tone: string; description: string }> = {
+  faithful: {
+    label: "贴近原意",
+    tone: "border-sky-200 bg-sky-50 text-sky-700",
+    description: "尽量保留老师输入，只补足故事推进。",
+  },
+  enhanced: {
+    label: "推荐 · 结构增强",
+    tone: "border-violet-200 bg-violet-50 text-violet-700",
+    description: "结构最完整，适合课堂默认选择。",
+  },
+  creative: {
+    label: "创意拓展",
+    tone: "border-amber-200 bg-amber-50 text-amber-700",
+    description: "保留核心设定，加入更有想象力的走向。",
+  },
+};
 
 export function StoryOptionsManager({ courseId }: { courseId: string }) {
   const router = useRouter();
   const [options, setOptions] = useState<StoryOption[]>([]);
   const [activeOptionId, setActiveOptionId] = useState("");
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  const [editingOptionId, setEditingOptionId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -39,7 +51,6 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
 
   const isLocked = Boolean(selectedOptionId);
   const activeOption = options.find((option) => option.id === activeOptionId) ?? options[0] ?? null;
-  const activeOptionIndex = activeOption ? options.findIndex((option) => option.id === activeOption.id) : -1;
   const activeGenerationStep = generationSteps[Math.min(generationSteps.length - 1, Math.floor(progress / 25))];
 
   useEffect(() => {
@@ -80,7 +91,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
         if (isActive) {
           setOptions(data.options);
           setSelectedOptionId(data.selectedOptionId);
-          setActiveOptionId(data.selectedOptionId ?? data.options[0]?.id ?? "");
+          setActiveOptionId(data.selectedOptionId ?? data.options.find((option) => option.variant === "enhanced")?.id ?? data.options[0]?.id ?? "");
         }
       } catch (loadError) {
         if (isActive) {
@@ -119,8 +130,9 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
       const data = (await response.json()) as { options: StoryOption[] };
       setProgress(100);
       setOptions(data.options);
-      setActiveOptionId(data.options[0]?.id ?? "");
-      setMessage("已生成 3 个故事方案。");
+      setActiveOptionId(data.options.find((option) => option.variant === "enhanced")?.id ?? data.options[0]?.id ?? "");
+      setEditingOptionId("");
+      setMessage("已生成 3 个故事大纲。");
     } catch (generateError) {
       setError(generateError instanceof Error ? generateError.message : "故事方案生成失败");
     } finally {
@@ -149,6 +161,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
       setOptions(data.options);
       setSelectedOptionId(data.selectedOptionId);
       setActiveOptionId((current) => data.options.find((option) => option.id === current)?.id ?? data.selectedOptionId ?? data.options[0]?.id ?? "");
+      setEditingOptionId("");
       setMessage("故事方案已保存。");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "故事方案保存失败");
@@ -199,22 +212,6 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
     );
   }
 
-  function updateTeaching(optionId: string, key: keyof StoryTeachingDesign, value: string) {
-    setOptions((current) =>
-      current.map((option) =>
-        option.id === optionId
-          ? {
-              ...option,
-              teachingDesign: {
-                ...option.teachingDesign,
-                [key]: value,
-              },
-            }
-          : option,
-      ),
-    );
-  }
-
   if (isLoading) {
     return <LoadingPanel label="正在加载故事方案..." progress={72} />;
   }
@@ -231,8 +228,8 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
               返回基础信息
             </Link>
           </Button>
-          <h2 className="text-xl font-semibold tracking-tight text-slate-950">故事方案</h2>
-          <p className="mt-2 text-sm text-slate-500">选择一个大纲后进入课文编辑。</p>
+          <h2 className="text-xl font-semibold tracking-tight text-slate-950">选择中文故事大纲</h2>
+          <p className="mt-2 text-sm text-slate-500">先比较 3 个故事方向。知识点、英文正文和题目会在下一步统一设计。</p>
         </div>
         {options.length > 0 && !isLocked ? (
           <Button className="bg-violet-600 text-white hover:bg-violet-700" disabled={isSaving} onClick={saveOptions} type="button">
@@ -250,157 +247,167 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
           <GenerationPanel progress={progress} step={activeGenerationStep} />
         ) : (
           <section className="rounded-lg border border-[#E5E7EB] bg-white p-8 text-center shadow-sm">
-            <h3 className="text-lg font-semibold text-slate-950">生成故事方案</h3>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">系统会基于基础信息生成 3 个可编辑方案。</p>
+            <h3 className="text-lg font-semibold text-slate-950">生成故事大纲</h3>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">系统会生成“贴近原意 / 推荐结构增强 / 创意拓展”三个中文故事方向。</p>
             <Button className="mt-6 bg-violet-600 text-white hover:bg-violet-700" onClick={generateOptions} type="button">
               <Sparkles className="size-4" />
-              生成故事方案
+              生成故事大纲
             </Button>
           </section>
         )
-      ) : activeOption ? (
-        <div className="space-y-4">
-          <div className="grid gap-2 rounded-lg border border-[#E5E7EB] bg-white p-2 shadow-sm lg:grid-cols-3">
-            {options.map((option, optionIndex) => {
-              const isActive = option.id === activeOption.id;
-              const isSelected = selectedOptionId === option.id;
-
-              return (
-                <button
-                  className={cn(
-                    "min-h-20 rounded-lg px-4 py-3 text-left transition-colors duration-200",
-                    isActive && "bg-violet-50 text-violet-700 ring-1 ring-violet-200",
-                    !isActive && "text-slate-600 hover:bg-slate-50",
-                  )}
-                  key={option.id}
-                  onClick={() => setActiveOptionId(option.id)}
-                  type="button"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-semibold">方案 {optionIndex + 1}</span>
-                    {isSelected ? <Check className="size-4 text-violet-700" /> : null}
-                  </div>
-                  <div className="mt-1 truncate text-sm font-semibold">{option.title || "未命名方案"}</div>
-                  <div className="mt-1 line-clamp-1 text-xs opacity-80">{option.logline}</div>
-                </button>
-              );
-            })}
-          </div>
-
-          <section
-            className={cn(
-              "grid gap-0 overflow-hidden rounded-lg border border-[#E5E7EB] bg-white shadow-sm xl:grid-cols-[280px_1fr]",
-              selectedOptionId === activeOption.id && "border-violet-500 ring-2 ring-violet-100",
-            )}
-          >
-            <aside className="border-b border-[#E5E7EB] bg-slate-50/70 p-5 xl:border-b-0 xl:border-r">
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-violet-700">方案 {activeOptionIndex + 1}</p>
-              <h3 className="mt-2 text-lg font-semibold leading-7 text-slate-950">{activeOption.title || "未命名方案"}</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-600">{activeOption.logline}</p>
-              <div className="mt-5 grid gap-3 text-sm">
-                <Metric label="章节" value={`${activeOption.chapters.length} 章`} />
-                <Metric label="状态" value={selectedOptionId === activeOption.id ? "已选择" : "待选择"} />
-              </div>
-              <Button
-                className="mt-5 w-full bg-violet-600 text-white hover:bg-violet-700"
-                disabled={(isLocked && selectedOptionId !== activeOption.id) || selectingId === activeOption.id}
-                onClick={() => {
-                  if (selectedOptionId === activeOption.id) {
+      ) : (
+        <div className="space-y-5">
+          <div className="grid gap-4 xl:grid-cols-3">
+            {options.map((option) => (
+              <StoryOptionCard
+                isActive={option.id === activeOption?.id}
+                isEditing={editingOptionId === option.id}
+                isLocked={isLocked}
+                isSelected={selectedOptionId === option.id}
+                key={option.id}
+                option={option}
+                selectingId={selectingId}
+                onActivate={() => setActiveOptionId(option.id)}
+                onEdit={() => {
+                  setActiveOptionId(option.id);
+                  setEditingOptionId((current) => (current === option.id ? "" : option.id));
+                }}
+                onSelect={() => {
+                  if (selectedOptionId === option.id) {
                     router.push(`/courses/${courseId}/create/lesson-draft`);
                     return;
                   }
-
-                  void selectOption(activeOption.id);
+                  void selectOption(option.id);
                 }}
-                type="button"
-              >
-                {selectingId === activeOption.id ? <Loader2 className="size-4 animate-spin" /> : selectedOptionId === activeOption.id ? <Check className="size-4" /> : null}
-                {selectedOptionId === activeOption.id ? "已选择" : "选择此方案"}
-              </Button>
-              {selectedOptionId === activeOption.id ? (
-                <Button asChild className="mt-3 w-full" variant="outline">
-                  <Link href={`/courses/${courseId}/create/lesson-draft`}>继续进入课文草稿</Link>
-                </Button>
-              ) : null}
-            </aside>
+              />
+            ))}
+          </div>
 
-            <div className="space-y-6 p-5">
-              <section>
-                <SectionTitle icon={<BookOpen className="size-4" />} title="方案概览" />
-                <div className="mt-3 grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-                  <TextInput disabled={isLocked} label="标题" value={activeOption.title} onChange={(value) => updateOption(activeOption.id, { title: value })} />
-                  <TextareaInput
-                    disabled={isLocked}
-                    label="故事大纲"
-                    minRows="min-h-20"
-                    value={activeOption.logline}
-                    onChange={(value) => updateOption(activeOption.id, { logline: value })}
-                  />
-                </div>
-              </section>
-
-              <section>
-                <SectionTitle icon={<Route className="size-4" />} title="故事结构" />
-                <div className="mt-3 space-y-3">
-                  {activeOption.chapters.map((chapter, chapterIndex) => (
-                    <div className="rounded-lg border border-slate-200 bg-white p-3" key={`${activeOption.id}-${chapterIndex}`}>
-                      <div className="mb-3 flex items-center gap-3">
-                        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-violet-50 text-xs font-semibold text-violet-700">
-                          {chapterIndex + 1}
-                        </span>
-                        <TextInput
-                          disabled={isLocked}
-                          label="章节标题"
-                          value={chapter.title}
-                          onChange={(value) => updateChapter(activeOption.id, chapterIndex, { title: value })}
-                        />
-                      </div>
-                      <TextareaInput
-                        disabled={isLocked}
-                        label="剧情摘要"
-                        minRows="min-h-16"
-                        value={chapter.summary}
-                        onChange={(value) => updateChapter(activeOption.id, chapterIndex, { summary: value })}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section>
-                <SectionTitle icon={<Sparkles className="size-4" />} title="语法与教学设计" />
-                <div className="mt-3 grid gap-3 xl:grid-cols-2">
-                  {activeOption.chapters.map((chapter, chapterIndex) => (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3" key={`${activeOption.id}-grammar-${chapterIndex}`}>
-                      <div className="mb-3 text-sm font-semibold text-slate-700">章节 {chapterIndex + 1} 语法承载</div>
-                      <TextareaInput
-                        disabled={isLocked}
-                        label="语法点设计"
-                        minRows="min-h-16"
-                        value={chapter.knowledgeHook}
-                        onChange={(value) => updateChapter(activeOption.id, chapterIndex, { knowledgeHook: value })}
-                      />
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 grid gap-4 xl:grid-cols-2">
-                  {teachingFields.map((field) => (
-                    <TextareaInput
-                      disabled={isLocked}
-                      key={field.key}
-                      label={field.label}
-                      minRows="min-h-16"
-                      value={activeOption.teachingDesign[field.key]}
-                      onChange={(value) => updateTeaching(activeOption.id, field.key, value)}
-                    />
-                  ))}
-                </div>
-              </section>
-            </div>
-          </section>
+          {activeOption && editingOptionId === activeOption.id ? (
+            <EditPanel
+              disabled={isLocked}
+              option={activeOption}
+              onChapterChange={(chapterIndex, patch) => updateChapter(activeOption.id, chapterIndex, patch)}
+              onOptionChange={(patch) => updateOption(activeOption.id, patch)}
+            />
+          ) : null}
         </div>
-      ) : null}
+      )}
     </div>
+  );
+}
+
+function StoryOptionCard({
+  option,
+  isActive,
+  isEditing,
+  isLocked,
+  isSelected,
+  selectingId,
+  onActivate,
+  onEdit,
+  onSelect,
+}: {
+  option: StoryOption;
+  isActive: boolean;
+  isEditing: boolean;
+  isLocked: boolean;
+  isSelected: boolean;
+  selectingId: string;
+  onActivate: () => void;
+  onEdit: () => void;
+  onSelect: () => void;
+}) {
+  const meta = variantMeta[option.variant];
+
+  return (
+    <section
+      className={cn(
+        "flex min-h-[460px] flex-col rounded-2xl border bg-white p-5 shadow-sm transition duration-200",
+        isActive ? "border-violet-300 ring-2 ring-violet-100" : "border-[#E5E7EB] hover:border-violet-200 hover:shadow-md",
+        isSelected && "border-violet-500 ring-2 ring-violet-100",
+      )}
+      onClick={onActivate}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <span className={cn("rounded-full border px-3 py-1 text-xs font-semibold", meta.tone)}>{meta.label}</span>
+        {isSelected ? <Check className="size-5 text-violet-700" /> : null}
+      </div>
+
+      <div className="mt-4">
+        <h3 className="text-xl font-semibold leading-8 text-slate-950">{option.title || "未命名故事"}</h3>
+        <p className="mt-1 text-xs text-slate-500">{meta.description}</p>
+      </div>
+
+      <div className="mt-5 rounded-xl bg-slate-50 p-4">
+        <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">故事主线</div>
+        <p className="mt-2 text-sm leading-6 text-slate-800">{option.storyline}</p>
+      </div>
+
+      <div className="mt-5 flex-1">
+        <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">章节线</div>
+        <ol className="mt-3 space-y-3">
+          {option.chapters.map((chapter, index) => (
+            <li className="grid grid-cols-[28px_1fr] gap-3" key={`${option.id}-${index}`}>
+              <span className="flex size-7 items-center justify-center rounded-full bg-violet-50 text-xs font-semibold text-violet-700">{index + 1}</span>
+              <div>
+                <div className="text-sm font-semibold text-slate-900">{chapter.title}</div>
+                <p className="mt-1 text-sm leading-6 text-slate-600">{chapter.summary}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <div className="mt-5 grid gap-2">
+        <Button className="w-full bg-violet-600 text-white hover:bg-violet-700" disabled={(isLocked && !isSelected) || selectingId === option.id} onClick={onSelect} type="button">
+          {selectingId === option.id ? <Loader2 className="size-4 animate-spin" /> : isSelected ? <Check className="size-4" /> : null}
+          {isSelected ? "已选择，继续" : "选择这个故事"}
+        </Button>
+        {!isLocked ? (
+          <Button className="w-full" onClick={onEdit} type="button" variant="outline">
+            <Pencil className="size-4" />
+            {isEditing ? "收起编辑" : "轻微编辑"}
+          </Button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function EditPanel({
+  option,
+  disabled,
+  onOptionChange,
+  onChapterChange,
+}: {
+  option: StoryOption;
+  disabled: boolean;
+  onOptionChange: (patch: Partial<StoryOption>) => void;
+  onChapterChange: (chapterIndex: number, patch: Partial<StoryOption["chapters"][number]>) => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-violet-200 bg-violet-50/40 p-5 shadow-sm">
+      <div className="mb-4">
+        <h3 className="text-base font-semibold text-slate-950">编辑当前故事大纲</h3>
+        <p className="mt-1 text-sm text-slate-500">建议只做轻微修改；英文正文、知识点和题目会在下一步生成。</p>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[0.7fr_1.3fr]">
+        <TextInput disabled={disabled} label="故事标题" value={option.title} onChange={(value) => onOptionChange({ title: value })} />
+        <TextareaInput disabled={disabled} label="故事主线" minRows="min-h-20" value={option.storyline} onChange={(value) => onOptionChange({ storyline: value })} />
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {option.chapters.map((chapter, index) => (
+          <div className="rounded-xl border border-violet-100 bg-white p-4" key={`${option.id}-edit-${index}`}>
+            <div className="mb-3 text-sm font-semibold text-violet-700">章节 {index + 1}</div>
+            <TextInput disabled={disabled} label="章节标题" value={chapter.title} onChange={(value) => onChapterChange(index, { title: value })} />
+            <div className="mt-3">
+              <TextareaInput disabled={disabled} label="章节大纲" minRows="min-h-20" value={chapter.summary} onChange={(value) => onChapterChange(index, { summary: value })} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -463,30 +470,12 @@ function ProgressBar({ progress, className }: { progress: number; className?: st
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="mt-1 font-semibold text-slate-900">{value}</div>
-    </div>
-  );
-}
-
-function SectionTitle({ title, icon }: { title: string; icon: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-      <span className="flex size-7 items-center justify-center rounded-lg bg-slate-100 text-slate-600">{icon}</span>
-      {title}
-    </div>
-  );
-}
-
 function TextInput({ label, value, onChange, disabled }: { label: string; value: string; onChange: (value: string) => void; disabled: boolean }) {
   return (
     <label className="block">
       <span className="mb-2 block text-sm font-medium text-slate-700">{label}</span>
       <input
-        className="h-10 w-full rounded-lg border border-[#E5E7EB] px-3 text-sm outline-none transition duration-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-slate-50 disabled:text-slate-500"
+        className="h-10 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm outline-none transition duration-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-slate-50 disabled:text-slate-500"
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         value={value}
@@ -513,7 +502,7 @@ function TextareaInput({
       <span className="mb-2 block text-sm font-medium text-slate-700">{label}</span>
       <textarea
         className={cn(
-          "w-full resize-none rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm leading-6 outline-none transition duration-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-slate-50 disabled:text-slate-500",
+          "w-full resize-none rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm leading-6 outline-none transition duration-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-slate-50 disabled:text-slate-500",
           minRows,
         )}
         disabled={disabled}

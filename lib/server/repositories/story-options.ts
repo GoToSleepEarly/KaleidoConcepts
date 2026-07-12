@@ -1,4 +1,4 @@
-import type { StoryOption, StoryOptionsListResponse, StoryTeachingDesign, StoryChapter } from "@/lib/contracts/api";
+import type { StoryOption, StoryOptionsListResponse, StoryChapter } from "@/lib/contracts/api";
 
 type CourseRecord = {
   id: string;
@@ -52,16 +52,7 @@ function isNonEmptyText(value: unknown): value is string {
 }
 
 function validateChapter(value: StoryChapter) {
-  return isNonEmptyText(value.title) && isNonEmptyText(value.summary) && isNonEmptyText(value.knowledgeHook);
-}
-
-function validateTeachingDesign(value: StoryTeachingDesign) {
-  return (
-    isNonEmptyText(value.grammarIntegration) &&
-    isNonEmptyText(value.studentFit) &&
-    isNonEmptyText(value.teacherGuidance) &&
-    isNonEmptyText(value.difficultyFit)
-  );
+  return isNonEmptyText(value.title) && isNonEmptyText(value.summary);
 }
 
 function getExpectedChapterCount(durationMinutes: number) {
@@ -76,13 +67,20 @@ function getExpectedChapterCount(durationMinutes: number) {
   return 4;
 }
 
+const storyOptionVariants = new Set(["faithful", "enhanced", "creative"]);
+
 export function validateStoryOptions(options: StoryOption[], expectedChapterCount?: number) {
   if (!Array.isArray(options) || options.length !== 3) {
     throw new StoryOptionsValidationError();
   }
 
   for (const option of options) {
-    if (!isNonEmptyText(option.id) || !isNonEmptyText(option.title) || !isNonEmptyText(option.logline)) {
+    if (
+      !isNonEmptyText(option.id) ||
+      !storyOptionVariants.has(option.variant) ||
+      !isNonEmptyText(option.title) ||
+      !isNonEmptyText(option.storyline)
+    ) {
       throw new StoryOptionsValidationError();
     }
 
@@ -90,7 +88,7 @@ export function validateStoryOptions(options: StoryOption[], expectedChapterCoun
       throw new StoryOptionsValidationError();
     }
 
-    if (!option.chapters.every(validateChapter) || !validateTeachingDesign(option.teachingDesign)) {
+    if (!option.chapters.every(validateChapter)) {
       throw new StoryOptionsValidationError();
     }
   }
@@ -101,10 +99,10 @@ export function validateStoryOptions(options: StoryOption[], expectedChapterCoun
 function toStoryOption(record: DbStoryOption): StoryOption {
   return {
     id: record.id,
+    variant: record.variant,
     title: record.title,
-    logline: record.logline,
+    storyline: record.storyline,
     chapters: record.chapters,
-    teachingDesign: record.teachingDesign,
   };
 }
 

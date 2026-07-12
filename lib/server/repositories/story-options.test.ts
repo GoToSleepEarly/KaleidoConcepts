@@ -7,51 +7,36 @@ import { listStoryOptions, saveGeneratedStoryOptions, selectStoryOption, updateS
 const options: StoryOption[] = [
   {
     id: "option-1",
+    variant: "faithful",
     title: "The Star Gate",
-    logline: "Students follow their teacher into a space gate.",
+    storyline: "The class follows a star map and reopens the gate home.",
     chapters: [
-      { title: "Chapter 1", summary: "They find a map.", knowledgeHook: "Use There be to describe the map." },
-      { title: "Chapter 2", summary: "They meet an alien.", knowledgeHook: "Use Past Simple for actions." },
-      { title: "Chapter 3", summary: "They return home.", knowledgeHook: "Use target grammar in retelling." },
+      { title: "Chapter 1", summary: "They find the scrambled map room." },
+      { title: "Chapter 2", summary: "They cross the asteroid belt." },
+      { title: "Chapter 3", summary: "They combine clues to power the gate." },
     ],
-    teachingDesign: {
-      grammarIntegration: "Grammar appears in repeated dialogue.",
-      studentFit: "The adventure fits the students' interests.",
-      teacherGuidance: "The teacher guides each decision.",
-      difficultyFit: "The plot matches the level.",
-    },
   },
   {
     id: "option-2",
+    variant: "enhanced",
     title: "The Moon Garden",
-    logline: "Students grow a garden on the moon.",
+    storyline: "The class grows a moon garden and learns why the seeds matter.",
     chapters: [
-      { title: "Chapter 1", summary: "They launch.", knowledgeHook: "Use There be." },
-      { title: "Chapter 2", summary: "They plant seeds.", knowledgeHook: "Use Past Simple." },
-      { title: "Chapter 3", summary: "They share food.", knowledgeHook: "Use target grammar." },
+      { title: "Chapter 1", summary: "They land the seed pod on moon soil." },
+      { title: "Chapter 2", summary: "They build a warm dome for the seeds." },
+      { title: "Chapter 3", summary: "They share the first small harvest." },
     ],
-    teachingDesign: {
-      grammarIntegration: "Grammar supports scene description.",
-      studentFit: "The topic fits the class.",
-      teacherGuidance: "The teacher acts as guide.",
-      difficultyFit: "The chapter count fits time.",
-    },
   },
   {
     id: "option-3",
+    variant: "creative",
     title: "The Robot Planet",
-    logline: "Students help robots fix a planet.",
+    storyline: "The class helps a quiet robot city restart its factory together.",
     chapters: [
-      { title: "Chapter 1", summary: "They arrive.", knowledgeHook: "Use There be." },
-      { title: "Chapter 2", summary: "They fix robots.", knowledgeHook: "Use Past Simple." },
-      { title: "Chapter 3", summary: "They celebrate.", knowledgeHook: "Use target grammar." },
+      { title: "Chapter 1", summary: "They wake one small helper robot." },
+      { title: "Chapter 2", summary: "They invent a tool for the frozen robots." },
+      { title: "Chapter 3", summary: "They restart the factory as a team." },
     ],
-    teachingDesign: {
-      grammarIntegration: "Grammar is practiced through tasks.",
-      studentFit: "The challenge fits students.",
-      teacherGuidance: "The teacher guides teamwork.",
-      difficultyFit: "The language is simple.",
-    },
   },
 ];
 
