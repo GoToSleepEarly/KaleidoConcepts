@@ -2,17 +2,23 @@ import { describe, expect, test } from "vitest";
 
 import type { LessonContentDraft, StoryOption } from "@/lib/contracts/api";
 
-import { getLessonDraft, saveLessonDraft, validateLessonDraft } from "./lesson-drafts";
+import {
+  getLessonDraft,
+  saveLessonDraft,
+  validateLessonDraft,
+} from "./lesson-drafts";
 
 const storyOption: StoryOption = {
   id: "option-1",
   variant: "enhanced",
   title: "The Forest Gate",
-  storyline: "The teacher guides the students through a magical forest gate and finds the safe trail.",
+  storyline:
+    "The teacher guides the students through a magical forest gate and finds the safe trail.",
   chapters: [
     {
       title: "The Gate Opens",
-      summary: "The class reaches the glowing gate and follows the first safe trail.",
+      summary:
+        "The class reaches the glowing gate and follows the first safe trail.",
     },
   ],
 };
@@ -26,7 +32,10 @@ const draft: LessonContentDraft = {
   castAliases: [{ alias: "SummerStudent", displayName: "Summer" }],
   closingReading: {
     title: "After the Forest Gate",
-    sentences: ["Summer remembered the forest gate.", "She followed clues and felt brave."],
+    sentences: [
+      "Summer remembered the forest gate.",
+      "She followed clues and felt brave.",
+    ],
     vocabularyTerms: ["gate", "clue"],
   },
   chapters: [
@@ -75,9 +84,40 @@ const draft: LessonContentDraft = {
         },
       ],
       exercises: [
-        { id: "chapter-1-exercise-1", order: 1, type: "given_word_blank", targetCategory: "grammar", target: "Past Simple", sentenceId: "c1p1s1", answer: "walked", prompt: "walk", baseWord: "walk" },
-        { id: "chapter-1-exercise-2", order: 2, type: "given_word_blank", targetCategory: "grammar", target: "There be", sentenceId: "c1p1s2", answer: "There was", prompt: "there / be", baseWord: "be" },
-        { id: "chapter-1-exercise-3", order: 3, type: "vocab_hint", targetCategory: "vocab", target: "Vocabulary", sentenceId: "c1p2s1", answer: "clue", hint: "线索", pattern: "c _ _ e", letterCount: 4 },
+        {
+          id: "chapter-1-exercise-1",
+          order: 1,
+          type: "given_word_blank",
+          targetCategory: "grammar",
+          target: "Past Simple",
+          sentenceId: "c1p1s1",
+          answer: "walked",
+          prompt: "walk",
+          baseWord: "walk",
+        },
+        {
+          id: "chapter-1-exercise-2",
+          order: 2,
+          type: "given_word_blank",
+          targetCategory: "grammar",
+          target: "There be",
+          sentenceId: "c1p1s2",
+          answer: "There was",
+          prompt: "there / be",
+          baseWord: "be",
+        },
+        {
+          id: "chapter-1-exercise-3",
+          order: 3,
+          type: "vocab_hint",
+          targetCategory: "vocab",
+          target: "Vocabulary",
+          sentenceId: "c1p2s1",
+          answer: "clue",
+          hint: "线索",
+          pattern: "c _ _ e",
+          letterCount: 4,
+        },
       ],
     },
   ],
@@ -86,6 +126,14 @@ const draft: LessonContentDraft = {
 describe("lesson content draft validation", () => {
   test("accepts a lesson_content_v1 draft", () => {
     expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
+  });
+
+  test("allows an empty closing vocabulary list when no hint exercise is generated", () => {
+    const withoutVocabulary = structuredClone(draft);
+    withoutVocabulary.closingReading.vocabularyTerms = [];
+    expect(validateLessonDraft(withoutVocabulary, storyOption)).toEqual(
+      withoutVocabulary,
+    );
   });
 
   test("rejects image-coupled lesson_draft_v1 content", () => {
@@ -102,9 +150,13 @@ describe("lesson content draft validation", () => {
 
   test("rejects exercises that are not represented in sentence segments", () => {
     const invalid = structuredClone(draft);
-    invalid.chapters[0].paragraphs[0].sentences[0].segments = [{ type: "text", text: "Summer walked into the forest with Ms. Lin." }];
+    invalid.chapters[0].paragraphs[0].sentences[0].segments = [
+      { type: "text", text: "Summer walked into the forest with Ms. Lin." },
+    ];
 
-    expect(() => validateLessonDraft(invalid, storyOption)).toThrow("第 1 章练习未嵌入正文：chapter-1-exercise-1");
+    expect(() => validateLessonDraft(invalid, storyOption)).toThrow(
+      "第 1 章练习未嵌入正文：chapter-1-exercise-1",
+    );
   });
 });
 
@@ -125,7 +177,11 @@ describe("lesson draft repository", () => {
         courseLessonDraft: {
           findUnique: async ({ where }) => {
             expect(where).toEqual({ courseId: "course-1" });
-            return { courseId: "course-1", sourceStoryOptionId: "option-1", content: draft };
+            return {
+              courseId: "course-1",
+              sourceStoryOptionId: "option-1",
+              content: draft,
+            };
           },
         },
       },
@@ -156,7 +212,11 @@ describe("lesson draft repository", () => {
             expect(where).toEqual({ courseId: "course-1" });
             expect(update.sourceStoryOptionId).toBe("option-1");
             expect(create.courseId).toBe("course-1");
-            return { courseId: "course-1", sourceStoryOptionId: "option-1", content: draft };
+            return {
+              courseId: "course-1",
+              sourceStoryOptionId: "option-1",
+              content: draft,
+            };
           },
         },
       },
