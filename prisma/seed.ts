@@ -48,8 +48,6 @@ const lessonDraftContent = {
       id: "chapter-1",
       sourceOutlineChapterIndex: 1,
       title: "The Tiny Garden",
-      wordTarget: { min: 90, max: 130 },
-      exerciseTarget: { verbBlankCount: 2, vocabularyHintCount: 1 },
       blocks: [
         { id: "block-1", order: 1, type: "text", text: "Summer walked into the garden and saw a tiny rabbit beside a blue flower." },
         { id: "block-2", order: 2, type: "exercise", exerciseId: "exercise-1", display: { kind: "verb_blank", placeholder: "________", prompt: "walk" } },

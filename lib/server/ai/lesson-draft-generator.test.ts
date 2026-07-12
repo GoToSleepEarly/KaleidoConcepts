@@ -2,37 +2,31 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { CourseBasicDetail, PersonProfile, StoryOption } from "@/lib/contracts/api";
 
-import {
-  assembleLessonDraftFromPlans,
-  buildExercisePlanPrompt,
-  buildStoryContentPrompt,
-  buildDeepSeekRequestBody,
-  generateLessonDraft,
-} from "./lesson-draft-generator";
+import { buildDeepSeekRequestBody, buildLessonContentPrompt, generateLessonDraft } from "./lesson-draft-generator";
+import type { AiLessonContentPlan } from "./lesson-content-compiler";
+import { renderChapterAnswerList, renderChapterReadingText } from "./lesson-content-compiler";
 import { validateLessonDraft } from "../repositories/lesson-drafts";
 
 const course: CourseBasicDetail = {
   id: "course-1",
-  title: "Forest Grammar Quest",
+  title: "Moonlight Scroll Lesson",
   teacherId: "teacher-1",
   studentIds: ["student-1"],
   englishLevel: "A1",
   durationMinutes: 45,
-  theme: "Magic Forest",
-  grammar: ["Past Simple"],
+  theme: "唐代诗歌博物馆",
+  grammar: ["Past Simple", "There be"],
   storyIdeaMode: "manual",
-  storyIdea: "The class finds a forest gate.",
+  storyIdea: "老师和学生在博物馆遇见李白，一起找回月光诗卷。",
   status: "draft",
 };
 
 const teacher: PersonProfile = {
   id: "teacher-1",
   role: "teacher",
-  name: "Ms. Lin",
-  gender: "female",
-  appearance: "kind teacher with black hair and round glasses",
+  name: "Ms. PAN",
+  appearance: "warm teacher with a secret mission connected to an old poem",
   interests: [],
-  notes: "Gentle guide.",
   createdAt: "2026-07-01T00:00:00.000Z",
   updatedAt: "2026-07-01T00:00:00.000Z",
 };
@@ -40,481 +34,158 @@ const teacher: PersonProfile = {
 const student: PersonProfile = {
   id: "student-1",
   role: "student",
-  name: "Summer",
-  chineseName: "夏天",
-  englishName: "Summer",
+  name: "You",
+  chineseName: "尤",
+  englishName: "You",
   age: 8,
   gender: "female",
-  appearance: "girl with black hair and a green dress",
-  interests: ["plants", "drawing"],
-  learningGoal: "Practice retelling story actions.",
+  appearance: "thoughtful student who notices small visual clues",
+  interests: ["poetry", "drawing", "moon stories"],
+  learningGoal: "practice describing what happened in a story",
   createdAt: "2026-07-01T00:00:00.000Z",
   updatedAt: "2026-07-01T00:00:00.000Z",
 };
 
 const storyOption: StoryOption = {
   id: "option-1",
-  title: "The Forest Gate",
-  logline: "The teacher and student enter a magical forest and solve a gentle mystery.",
+  variant: "enhanced",
+  title: "月光诗卷",
+  storyline: "老师和学生在唐代诗歌博物馆遇见李白，沿着月光线索找回缺失诗句，让诗卷重新亮起。",
   chapters: [
-    {
-      title: "The Gate Opens",
-      summary: "Ms. Lin and Summer enter the forest and find a glowing map.",
-      knowledgeHook: "Practice past simple actions inside the story.",
-    },
+    { title: "诗卷变暗", summary: "大家发现博物馆里的月光诗卷突然失去光亮。" },
   ],
-  teachingDesign: {
-    grammarIntegration: "Past actions drive the clues.",
-    studentFit: "Fits plant and drawing interests.",
-    teacherGuidance: "Teacher guides choices.",
-    difficultyFit: "Fits A1.",
-  },
 };
 
 const context = { course, teacher, students: [student], storyOption };
 
-function deepSeekResponse(content: unknown) {
-  return new Response(
-    JSON.stringify({
-      choices: [{ message: { content: JSON.stringify(content) } }],
-    }),
-    { status: 200, headers: { "Content-Type": "application/json" } },
-  );
-}
-
-function shotPlan(action: string) {
-  return {
-    characterIds: ["teacher-1", "student-1"],
-    location: "quiet forest gate",
-    action,
-    mood: "curious and safe",
-    scenePrompt: `${action} in a warm watercolor forest scene.`,
-    composition: "Wide 4:3 picture-book scene with both characters clearly visible.",
-    continuityNotes: "Keep character consistency.",
-  };
-}
-
-const storyPlan = {
-  title: "The Forest Gate",
-  visualStyle: {
-    artStyle: "warm watercolor picture book",
-    colorPalette: "soft greens and gold light",
-    consistencyPrompt: "Use a consistent watercolor picture-book style.",
-    studentAppealPrompt: "Make the forest feel cute, friendly, and full of tiny drawing details for an 8-year-old who loves plants and drawing.",
-  },
-  characters: [
-    {
-      id: "teacher-1",
-      name: "Ms. Lin",
-      role: "teacher" as const,
-      appearance: "kind teacher with black hair and round glasses",
-      outfit: "blue cardigan and white shirt",
-      consistencyPrompt: "Ms. Lin keeps the same glasses, hair, and cardigan.",
-      faceAndEyes: "warm oval face, gentle brown eyes behind round glasses",
-      hair: "short neat black hair",
-      signatureFeatures: ["round glasses", "blue cardigan"],
-      personalityVisualCue: "calm guiding smile",
-    },
-    {
-      id: "student-1",
-      name: "Summer",
-      role: "student" as const,
-      appearance: "girl with black hair and a green dress",
-      outfit: "green dress and yellow backpack",
-      consistencyPrompt: "Summer keeps the same hair, dress, and backpack.",
-      faceAndEyes: "round child face with big curious brown eyes",
-      hair: "black ponytail with a small leaf clip",
-      signatureFeatures: ["green dress", "yellow backpack", "leaf hair clip"],
-      personalityVisualCue: "curious plant-loving expression",
-    },
-  ],
+const aiPlan: AiLessonContentPlan = {
+  title: "The Moonlight Scroll",
   chapters: [
     {
-      title: "The Gate Opens",
+      title: "The Scroll Goes Dark",
       paragraphs: [
         {
-          text: "Yesterday morning, Ms. Lin walked toward the quiet forest gate with Summer beside her. Summer carried her sketchbook and looked at the silver leaves. Ms. Lin asked one calm question about the strange path, and Summer noticed a small arrow on the stone. They opened the door together and stepped into warm green light.",
-          shot: shotPlan("Ms. Lin and Summer discover the first arrow beside the gate."),
+          sentences: [
+            "MsPANTeacher and YouStudent visited the Tang Dynasty Poetry Museum.",
+            "There was a faint silver line under the moon mark.",
+            "YouStudent saw a small clue on the glass case.",
+          ],
         },
         {
-          text: "Inside the forest, the glowing map shone under a blue flower. Summer touched the page and found a hidden trail. Ms. Lin helped her read the marks, and they followed the trail across a tiny bridge. The clue pointed to a bright tree, so Summer shared her idea with a proud smile.",
-          shot: shotPlan("Summer studies the glowing map while Ms. Lin helps her choose the trail."),
+          sentences: [
+            "Ms. PAN felt that an exciting adventure was waiting for them.",
+            "The Moonlight Scroll stayed dark on the wall.",
+            "YouStudent followed the silver line with Ms. PAN.",
+          ],
         },
+      ],
+      exercises: [
+        { type: "given_word_blank", targetCategory: "grammar", target: "Past Simple", sentenceId: "c1p1s1", answer: "visited", prompt: "visit", baseWord: "visit" },
+        { type: "given_word_blank", targetCategory: "grammar", target: "There be", sentenceId: "c1p1s2", answer: "There was", prompt: "there / be", baseWord: "be" },
+        { type: "vocab_hint", targetCategory: "vocab", target: "Vocabulary", sentenceId: "c1p1s3", answer: "clue", hint: "线索" },
+        { type: "given_word_blank", targetCategory: "grammar", target: "Past Simple", sentenceId: "c1p2s1", answer: "felt", prompt: "feel", baseWord: "feel" },
       ],
     },
   ],
   closingReading: {
-    title: "After the Forest Gate",
-    text: "After the forest gate adventure, Summer remembered how each clue helped her speak in English. She described what she saw, what she did, and what changed in the forest. Ms. Lin helped her slow down and notice the important actions. The map, trail, and gate became useful story words. Summer felt proud because she solved the mystery step by step and could retell the journey with clear past tense verbs.",
+    title: "The Light Returns",
+    sentences: ["YouStudent remembered the moonlight clue.", "She helped the old scroll shine again."],
   },
 };
 
-const exercisePlan = {
-  chapters: [
-    {
-      chapterIndex: 1,
-      exercises: [
-        { type: "verb_blank" as const, paragraphIndex: 1 as const, answer: "walked", occurrenceText: "walked", sentence: "Yesterday morning, Ms. Lin walked toward the quiet forest gate with Summer beside her.", baseVerb: "walk" },
-        { type: "vocabulary_hint" as const, paragraphIndex: 1 as const, answer: "gate", occurrenceText: "gate", pattern: "g _ _ e" },
-        { type: "verb_blank" as const, paragraphIndex: 1 as const, answer: "carried", occurrenceText: "carried", baseVerb: "carry" },
-        { type: "verb_blank" as const, paragraphIndex: 1 as const, answer: "looked", occurrenceText: "looked", baseVerb: "look" },
-        { type: "verb_blank" as const, paragraphIndex: 1 as const, answer: "asked", occurrenceText: "asked", baseVerb: "ask" },
-        { type: "vocabulary_hint" as const, paragraphIndex: 2 as const, answer: "map", occurrenceText: "map", pattern: "m _ p" },
-        { type: "verb_blank" as const, paragraphIndex: 2 as const, answer: "touched", occurrenceText: "touched", baseVerb: "touch" },
-        { type: "vocabulary_hint" as const, paragraphIndex: 2 as const, answer: "trail", occurrenceText: "hidden trail", pattern: "t _ _ _ l" },
-        { type: "verb_blank" as const, paragraphIndex: 2 as const, answer: "helped", occurrenceText: "helped", baseVerb: "help" },
-        { type: "verb_blank" as const, paragraphIndex: 2 as const, answer: "followed", occurrenceText: "followed", baseVerb: "follow" },
-      ],
-    },
-  ],
-};
+function deepSeekResponse(content: unknown) {
+  return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
-describe("lesson draft two-stage assembly", () => {
-  test("assembles pure story text and exercise plan into a valid lesson draft", () => {
-    const draft = assembleLessonDraftFromPlans(storyPlan, exercisePlan, context);
+describe("lesson content prompt", () => {
+  test("asks for clean sentences and exercise anchors without image fields", () => {
+    const prompt = buildLessonContentPrompt(context);
 
-    expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
-    expect(draft.chapters[0].exercises).toHaveLength(10);
-    expect(draft.chapters[0].shots).toHaveLength(2);
-    expect(draft.closingReading.vocabularyTerms).toEqual(["gate", "map", "trail"]);
-
-    const rendered = draft.chapters[0].blocks
-      .map((block) => (block.type === "text" ? block.text : `[${draft.chapters[0].exercises.find((exercise) => exercise.id === block.exerciseId)?.answer}]`))
-      .join("");
-    expect(rendered).toContain("Ms. Lin [walked] toward the quiet forest [gate]");
-    expect(rendered).toContain("the glowing [map] shone");
-  });
-
-  test("preserves structured visual locks for image generation", () => {
-    const visualStoryPlan = structuredClone(storyPlan);
-    visualStoryPlan.chapters[0].paragraphs[0].shot = {
-      ...visualStoryPlan.chapters[0].paragraphs[0].shot,
-      focus: "Summer's surprised face and the tiny arrow carved into the stone gate",
-      keyObjects: ["silver forest gate", "tiny arrow", "Summer's sketchbook"],
-      spatialDetails: "gate on the right, river behind the characters, arrow low on the front stone",
-      studentAppeal: "add cute moss patterns and small leaf-shaped sparkles because Summer loves plants and drawing",
-    };
-
-    const draft = assembleLessonDraftFromPlans(visualStoryPlan, exercisePlan, context);
-
-    expect(draft.visualStyle.studentAppealPrompt).toContain("cute");
-    expect(draft.characters[1]).toMatchObject({
-      faceAndEyes: "round child face with big curious brown eyes",
-      hair: "black ponytail with a small leaf clip",
-      signatureFeatures: ["green dress", "yellow backpack", "leaf hair clip"],
-      personalityVisualCue: "curious plant-loving expression",
-    });
-    expect(draft.chapters[0].shots[0]).toMatchObject({
-      focus: "Summer's surprised face and the tiny arrow carved into the stone gate",
-      keyObjects: ["silver forest gate", "tiny arrow", "Summer's sketchbook"],
-      spatialDetails: "gate on the right, river behind the characters, arrow low on the front stone",
-      studentAppeal: "add cute moss patterns and small leaf-shaped sparkles because Summer loves plants and drawing",
-    });
-  });
-
-  test("rejects exercise occurrence text that is missing from the paragraph", () => {
-    const invalidPlan = structuredClone(exercisePlan);
-    invalidPlan.chapters[0].exercises[0].occurrenceText = "danced";
-    invalidPlan.chapters[0].exercises[0].answer = "danced";
-
-    expect(() => assembleLessonDraftFromPlans(storyPlan, invalidPlan, context)).toThrow('occurrenceText "danced" 在 sentence 中不存在');
-  });
-
-  test("uses sentenceId and occurrenceIndex to replace repeated text deterministically", () => {
-    const sentenceStory = structuredClone(storyPlan);
-    sentenceStory.chapters[0].paragraphs[0] = {
-      sentences: [
-        "Yesterday morning, Ms. Lin walked toward the quiet forest gate with Summer beside her.",
-        "Summer carried her sketchbook and looked at the silver leaves.",
-        "Ms. Lin asked one calm question about the strange path, and Summer noticed a small arrow on the stone.",
-        "They opened the door together and stepped into warm green light.",
-        "Ms. Lin looks at the map and says, \"This map has a big red X.\"",
-      ],
-      shot: shotPlan("Ms. Lin and Summer study the red X on the map."),
-    } as never;
-    const sentenceExercisePlan = structuredClone(exercisePlan);
-    sentenceExercisePlan.chapters[0].exercises[0] = {
-      type: "vocabulary_hint",
-      paragraphIndex: 1,
-      sentenceId: "c1p1s5",
-      answer: "map",
-      occurrenceText: "map",
-      occurrenceIndex: 2,
-      pattern: "m _ p",
-    } as never;
-    sentenceExercisePlan.chapters[0].exercises[5] = {
-      type: "vocabulary_hint",
-      paragraphIndex: 2,
-      answer: "flower",
-      occurrenceText: "flower",
-      pattern: "f _ _ _ r",
-    } as never;
-
-    const draft = assembleLessonDraftFromPlans(sentenceStory, sentenceExercisePlan, context);
-
-    expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
-    const rendered = draft.chapters[0].blocks
-      .map((block) => (block.type === "text" ? block.text : `[${draft.chapters[0].exercises.find((exercise) => exercise.id === block.exerciseId)?.answer}]`))
-      .join("");
-    expect(rendered).toContain('Ms. Lin looks at the map and says, "This [map] has a big red X."');
-  });
-
-  test("uses sentence locator when occurrence text appears multiple times in a paragraph", () => {
-    const repeatedStory = structuredClone(storyPlan);
-    repeatedStory.chapters[0].paragraphs[0].text = `${repeatedStory.chapters[0].paragraphs[0].text} The quiet forest gate opened again.`;
-    const locatedPlan = structuredClone(exercisePlan);
-    const vocabularyExercise = locatedPlan.chapters[0].exercises[1];
-    if (vocabularyExercise.type !== "vocabulary_hint") {
-      throw new Error("Expected vocabulary exercise");
-    }
-    vocabularyExercise.sentence = "Yesterday morning, Ms. Lin walked toward the quiet forest gate with Summer beside her.";
-
-    const draft = assembleLessonDraftFromPlans(repeatedStory, locatedPlan, context);
-
-    expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
-    const rendered = draft.chapters[0].blocks
-      .map((block) => (block.type === "text" ? block.text : `[${draft.chapters[0].exercises.find((exercise) => exercise.id === block.exerciseId)?.answer}]`))
-      .join("");
-    expect(rendered).toContain("quiet forest [gate] with Summer");
-    expect(rendered).toContain("The quiet forest gate opened again.");
-  });
-
-  test("falls back to the answer when AI occurrence text adds missing context", () => {
-    const contextDriftPlan = structuredClone(exercisePlan);
-    contextDriftPlan.chapters[0].exercises[0] = {
-      type: "verb_blank",
-      paragraphIndex: 1,
-      sentenceId: "c1p1s1",
-      answer: "walked",
-      occurrenceText: "has walked",
-      occurrenceIndex: 1,
-      baseVerb: "walk",
-    };
-
-    const draft = assembleLessonDraftFromPlans(storyPlan, contextDriftPlan, context);
-
-    expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
-    const rendered = draft.chapters[0].blocks
-      .map((block) => (block.type === "text" ? block.text : `[${draft.chapters[0].exercises.find((exercise) => exercise.id === block.exerciseId)?.answer}]`))
-      .join("");
-    expect(rendered).toContain("Ms. Lin [walked] toward the quiet forest [gate]");
-  });
-
-  test("falls back to paragraph-level unique text when AI sentenceId points to the wrong sentence", () => {
-    const sentenceStory = structuredClone(storyPlan);
-    sentenceStory.chapters[0].paragraphs[0] = {
-      sentences: [
-        "Yesterday morning, Ms. Lin walked toward the quiet forest gate with Summer beside her.",
-        "Summer carried her sketchbook and looked at the silver leaves.",
-        "Ms. Lin asked one calm question about the strange path, and Summer noticed a small arrow on the stone.",
-        "They opened the door together and stepped into warm green light.",
-      ],
-      shot: shotPlan("Ms. Lin and Summer discover the first arrow beside the gate."),
-    } as never;
-    const wrongSentencePlan = structuredClone(exercisePlan);
-    wrongSentencePlan.chapters[0].exercises[0] = {
-      type: "verb_blank",
-      paragraphIndex: 1,
-      sentenceId: "c1p1s2",
-      answer: "walked",
-      occurrenceText: "walked",
-      occurrenceIndex: 1,
-      baseVerb: "walk",
-    };
-
-    const draft = assembleLessonDraftFromPlans(sentenceStory, wrongSentencePlan, context);
-
-    expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
-    const rendered = draft.chapters[0].blocks
-      .map((block) => (block.type === "text" ? block.text : `[${draft.chapters[0].exercises.find((exercise) => exercise.id === block.exerciseId)?.answer}]`))
-      .join("");
-    expect(rendered).toContain("Ms. Lin [walked] toward the quiet forest [gate]");
-  });
-
-  test("rejects duplicate exercise answers in one chapter", () => {
-    const invalidPlan = structuredClone(exercisePlan);
-    invalidPlan.chapters[0].exercises[1] = { ...invalidPlan.chapters[0].exercises[1], answer: "walked", occurrenceText: "walked" };
-
-    expect(() => assembleLessonDraftFromPlans(storyPlan, invalidPlan, context)).toThrow("第 1 章练习计划无效：answer 在同章重复");
-  });
-
-  test("rejects fewer than 7 exercise plan items", () => {
-    const invalidPlan = structuredClone(exercisePlan);
-    invalidPlan.chapters[0].exercises = invalidPlan.chapters[0].exercises.slice(0, 6);
-
-    expect(() => assembleLessonDraftFromPlans(storyPlan, invalidPlan, context)).toThrow("第 1 章练习数量不足：需要 7-10 个，当前 6 个");
-  });
-});
-
-describe("lesson draft story content prompt", () => {
-  test("requires valid sentences arrays instead of sentence fields", () => {
-    const prompt = buildStoryContentPrompt(context);
-
-    expect(prompt).toContain('"sentences": ["Sentence 1.", "Sentence 2.", "Sentence 3."]');
-    expect(prompt).toContain('Do not use "sentence" as a field name');
-    expect(prompt).toContain("Every JSON object property must have a name followed by a colon");
-  });
-
-  test("sets explicit chapter and paragraph word-count targets", () => {
-    const prompt = buildStoryContentPrompt(context);
-
-    expect(prompt).toContain("Each chapter must contain 90-140 English words total");
-    expect(prompt).toContain("Each paragraph should contain 45-70 English words");
-  });
-
-  test("requires story sentences to include target grammar forms for later exercises", () => {
-    const prompt = buildStoryContentPrompt(context);
-
-    expect(prompt).toContain("Each chapter must include at least 8 concrete phrases that can later become grammar or vocabulary blanks");
-    expect(prompt).toContain("If the chapter knowledge hook names a tense, write several real sentences in that exact tense");
-    expect(prompt).toContain("Do not leave the exercise planner to invent tense forms later");
-  });
-});
-
-describe("lesson draft exercise plan prompt", () => {
-  test("requires answer and occurrence text to be copied from the target sentence", () => {
-    const prompt = buildExercisePlanPrompt(context, storyPlan);
-
-    expect(prompt).toContain("answer must be copied exactly from the target sentence");
-    expect(prompt).toContain("Do not change tense, aspect, spelling, or wording");
-    expect(prompt).toContain('"answer":"walked","occurrenceText":"walked"');
+    expect(prompt).toContain("Level: A1 (CEFR / Cambridge English)");
+    expect(prompt).toContain("Storyline: 老师和学生在唐代诗歌博物馆遇见李白");
+    expect(prompt).toContain("Teacher: MsPANTeacher");
+    expect(prompt).toContain("nameToUseInStory: YouStudent");
+    expect(prompt).not.toContain("nameToUseInStory: You\n");
+    expect(prompt).toContain("Do not write \"(1)\", \"________\", \"[V1]\"");
+    expect(prompt).toContain("exercise anchors");
+    expect(prompt).toContain("answers must be text-disjoint");
+    expect(prompt).toContain('"are invading" + "invading"');
+    expect(prompt).toContain("Do not use vocab_hint for a word that is inside a given_word_blank, choice_blank, or phrase_hint answer in the same sentence");
+    expect(prompt).toContain("Use choice_blank sparingly, mainly for Modals or clear meaning-based choices");
+    expect(prompt).toContain("Do not use choice_blank for ordinary verb tense changes if given_word_blank works better");
+    expect(prompt).toContain("Before final output, check every choice_blank");
+    expect(prompt).toContain("No image or lesson-plan fields");
+    expect(prompt).not.toContain("visualStyle");
+    expect(prompt).not.toContain("shots");
+    expect(prompt).not.toContain("scenePrompt");
   });
 });
 
 describe("lesson draft DeepSeek request", () => {
-  test("uses non-thinking mode by default for faster normal generation", () => {
-    const original = process.env.DEEPSEEK_THINKING;
-    delete process.env.DEEPSEEK_THINKING;
+  test("uses thinking mode with bounded output for content generation", () => {
+    const body = buildDeepSeekRequestBody([{ role: "user", content: "Generate content." }], 45);
 
-    try {
-      const body = buildDeepSeekRequestBody([{ role: "user", content: "Generate a lesson draft." }]);
-
-      expect(body).toMatchObject({
-        model: "deepseek-v4-flash",
-        thinking: { type: "disabled" },
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        max_tokens: 32000,
-      });
-      expect(body).not.toHaveProperty("reasoning_effort");
-    } finally {
-      if (original === undefined) {
-        delete process.env.DEEPSEEK_THINKING;
-      } else {
-        process.env.DEEPSEEK_THINKING = original;
-      }
-    }
+    expect(body).toMatchObject({
+      model: "deepseek-v4-pro",
+      thinking: { type: "enabled" },
+      reasoning_effort: "high",
+      response_format: { type: "json_object" },
+      max_tokens: 16000,
+    });
   });
 
-  test("enables thinking mode only through environment configuration", () => {
-    const original = process.env.DEEPSEEK_THINKING;
-    process.env.DEEPSEEK_THINKING = "enabled";
+  test("raises max_tokens for 60-minute content", () => {
+    const body = buildDeepSeekRequestBody([{ role: "user", content: "Generate content." }], 60);
 
-    try {
-      const body = buildDeepSeekRequestBody([{ role: "user", content: "Generate a lesson draft." }]);
-
-      expect(body).toMatchObject({
-        model: "deepseek-v4-flash",
-        thinking: { type: "enabled" },
-        reasoning_effort: "high",
-        response_format: { type: "json_object" },
-        max_tokens: 64000,
-      });
-      expect(body).not.toHaveProperty("temperature");
-    } finally {
-      if (original === undefined) {
-        delete process.env.DEEPSEEK_THINKING;
-      } else {
-        process.env.DEEPSEEK_THINKING = original;
-      }
-    }
+    expect(body.max_tokens).toBe(20000);
   });
 });
 
 describe("lesson draft generation", () => {
-  test("uses exactly two LLM calls on a valid generation", async () => {
-    const originalApiKey = process.env.DEEPSEEK_API_KEY;
-    process.env.DEEPSEEK_API_KEY = "test-key";
-    const fetchMock = vi.fn().mockResolvedValueOnce(deepSeekResponse(storyPlan)).mockResolvedValueOnce(deepSeekResponse(exercisePlan));
+  test("generates lesson_content_v1 and renders embedded exercise text", async () => {
+    vi.stubEnv("DEEPSEEK_API_KEY", "test-key");
+    const fetchMock = vi.fn(async () => deepSeekResponse(aiPlan));
     vi.stubGlobal("fetch", fetchMock);
 
-    try {
-      const draft = await generateLessonDraft(context);
+    const draft = await generateLessonDraft(context);
 
-      expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      const storyBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-      const exerciseBody = JSON.parse(fetchMock.mock.calls[1][1].body);
-      expect(storyBody.messages[1].content).toContain("Do not include exercise markers");
-      expect(exerciseBody.messages[1].content).toContain("occurrenceText must be copied exactly");
-    } finally {
-      if (originalApiKey === undefined) {
-        delete process.env.DEEPSEEK_API_KEY;
-      } else {
-        process.env.DEEPSEEK_API_KEY = originalApiKey;
-      }
-    }
+    expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
+    expect(draft.schemaVersion).toBe("lesson_content_v1");
+    expect(draft.castAliases).toEqual([
+      { alias: "MsPANTeacher", displayName: "Ms. PAN" },
+      { alias: "YouStudent", displayName: "You" },
+    ]);
+    expect(draft.chapters[0].paragraphs[0].sentences[0].segments).toContainEqual({ type: "exercise", exerciseId: "chapter-1-exercise-1" });
+    expect(renderChapterReadingText(draft.chapters[0])).toContain("MsPANTeacher and YouStudent (1) ________ (visit) the Tang Dynasty Poetry Museum.");
+    expect(renderChapterAnswerList(draft.chapters[0])).toEqual(["1. visited", "2. There was", "3. clue", "4. felt"]);
   });
 
-  test("retries exercise planning once after an invalid exercise plan", async () => {
-    const originalApiKey = process.env.DEEPSEEK_API_KEY;
-    process.env.DEEPSEEK_API_KEY = "test-key";
-    const invalidExercisePlan = structuredClone(exercisePlan);
-    invalidExercisePlan.chapters[0].exercises = invalidExercisePlan.chapters[0].exercises.slice(0, 6);
-    const fetchMock = vi.fn().mockResolvedValueOnce(deepSeekResponse(storyPlan)).mockResolvedValueOnce(deepSeekResponse(invalidExercisePlan)).mockResolvedValueOnce(deepSeekResponse(exercisePlan));
-    vi.stubGlobal("fetch", fetchMock);
+  test("logs raw AI output on validation failure without exposing raw output in the thrown message", async () => {
+    vi.stubEnv("DEEPSEEK_API_KEY", "test-key");
+    const badPlan = {
+      ...aiPlan,
+      chapters: [
+        {
+          ...aiPlan.chapters[0],
+          exercises: [{ type: "given_word_blank", targetCategory: "grammar", target: "Past Simple", sentenceId: "c1p1s1", answer: "missing", prompt: "miss", baseWord: "miss" }],
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => deepSeekResponse(badPlan)));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    try {
-      const draft = await generateLessonDraft(context);
-
-      expect(validateLessonDraft(draft, storyOption)).toEqual(draft);
-      expect(fetchMock).toHaveBeenCalledTimes(3);
-      const retryBody = JSON.parse(fetchMock.mock.calls[2][1].body);
-      expect(retryBody.messages[1].content).toContain("Previous exercise plan failed validation");
-      expect(retryBody.messages[1].content).toContain("第 1 章练习数量不足");
-    } finally {
-      if (originalApiKey === undefined) {
-        delete process.env.DEEPSEEK_API_KEY;
-      } else {
-        process.env.DEEPSEEK_API_KEY = originalApiKey;
-      }
-    }
-  });
-
-  test("reports invalid story JSON as a recoverable validation error", async () => {
-    const originalApiKey = process.env.DEEPSEEK_API_KEY;
-    process.env.DEEPSEEK_API_KEY = "test-key";
-    const fetchMock = vi.fn().mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                content:
-                  '{"title":"Broken","chapters":[{"title":"Chapter","paragraphs":[{"sentence":"One sentence.","Another standalone string"}]}]}',
-              },
-            },
-          ],
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
+    await expect(generateLessonDraft(context)).rejects.toThrow('answer "missing" found 0 times');
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Lesson draft AI output failed validation",
+      expect.objectContaining({ rawContent: JSON.stringify(badPlan) }),
     );
-    vi.stubGlobal("fetch", fetchMock);
-
-    try {
-      await expect(generateLessonDraft(context)).rejects.toThrow("AI 返回的故事内容 JSON 格式无效，请重试生成");
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-    } finally {
-      if (originalApiKey === undefined) {
-        delete process.env.DEEPSEEK_API_KEY;
-      } else {
-        process.env.DEEPSEEK_API_KEY = originalApiKey;
-      }
-    }
   });
 });

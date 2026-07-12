@@ -5,10 +5,8 @@ import type {
   CourseImageSlotType,
   CourseResourceImage,
   CourseResourcesResponse,
-  LessonBlock,
-  LessonChapter,
+  LessonContentChapter,
   LessonDraft,
-  LessonShot,
   ResourceProgress,
 } from "@/lib/contracts/api";
 
@@ -132,70 +130,26 @@ export function capImagePrompt(value: string, suffix = imagePromptSafetySuffix) 
   return `${cappedBody}${separator}${normalizedSuffix}`.trim();
 }
 
-function textFromBlocks(blocks: LessonBlock[], blockIds: string[]) {
-  const idSet = new Set(blockIds);
-  return blocks
-    .filter((block) => idSet.has(block.id))
-    .sort((a, b) => a.order - b.order)
-    .map((block) => {
-      if (block.type === "text") {
-        return block.text;
-      }
-
-      return block.display.kind === "verb_blank" ? `[blank: ${block.display.prompt}]` : `[word hint: ${block.display.pattern}]`;
-    })
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
+function textFromParagraph(chapter: LessonContentChapter, paragraphIndex: number) {
+  const paragraph = chapter.paragraphs[paragraphIndex];
+  return paragraph.sentences.map((sentence) => sentence.text).join(" ").replace(/\s+/g, " ").trim();
 }
 
-function characterLockText(draft: LessonDraft, shot: LessonShot) {
-  return draft.characters
-    .filter((character) => shot.characterIds.includes(character.id))
-    .map((character) =>
-      [
-        `${character.name} (${character.role})`,
-        `appearance: ${character.appearance}`,
-        `face/eyes: ${character.faceAndEyes ?? character.appearance}`,
-        `hair: ${character.hair ?? character.appearance}`,
-        `outfit: ${character.outfit}`,
-        `signature: ${(character.signatureFeatures ?? []).join(", ") || character.consistencyPrompt}`,
-        `visual cue: ${character.personalityVisualCue ?? "friendly child-friendly expression"}`,
-      ].join("; "),
-    )
-    .join("\n");
-}
-
-export function buildImagePrompt(draft: LessonDraft, chapter: LessonChapter, shot: LessonShot) {
-  const sourceText = compactText(textFromBlocks(chapter.blocks, shot.coveredBlockIds), 520);
+export function buildImagePrompt(_draft: LessonDraft, chapter: LessonContentChapter, paragraphIndex: number) {
+  const sourceText = compactText(textFromParagraph(chapter, paragraphIndex), 520);
 
   return capImagePrompt([
-    "STYLE LOCK:",
-    `cute, detailed cartoon picture-book illustration for children; rounded shapes; expressive eyes; warm soft lighting; clear focal action; ${draft.visualStyle.artStyle}.`,
-    `Palette: ${draft.visualStyle.colorPalette}.`,
-    `Consistency: ${draft.visualStyle.consistencyPrompt}`,
-    `Student appeal: ${draft.visualStyle.studentAppealPrompt ?? "friendly, playful, visually rich but not cluttered."}`,
-    "",
-    "CHARACTER LOCK:",
-    characterLockText(draft, shot),
-    "",
-    "SCENE LOCK:",
-    `Location: ${shot.location}.`,
-    `Spatial details: ${shot.spatialDetails ?? "keep important objects in stable, readable positions."}`,
-    `Continuity: ${shot.continuityNotes}`,
+    "STYLE:",
+    "cute, detailed cartoon picture-book illustration for children; rounded shapes; expressive eyes; warm soft lighting; clear focal action.",
     "",
     "TEXT ANCHOR:",
     sourceText,
     "",
-    "SHOT FOCUS:",
+    "SCENE:",
     `Chapter: ${chapter.title}.`,
-    `Story action: ${shot.action}`,
-    `Visual focus: ${shot.focus ?? shot.action}`,
-    `Key objects: ${(shot.keyObjects ?? []).join(", ") || "main story object"}`,
-    `Mood: ${shot.mood}.`,
-    `Scene: ${shot.scenePrompt}`,
-    `Composition: ${shot.composition}`,
-    `Student-friendly detail: ${shot.studentAppeal ?? "make the important story moment cute, clear, and engaging."}`,
+    `Story action: show the key moment from paragraph ${paragraphIndex + 1}.`,
+    "Visual focus: the teacher, students, main story object, and action described in the text.",
+    "Mood: warm, curious, child-friendly, safe.",
     "",
     "OUTPUT:",
     "4:3 wide picture-book image, 1024x768, main character and key object clearly readable, background supports the story and does not steal focus.",
@@ -218,22 +172,24 @@ export function hashImageSource(slot: Omit<PlannedImageSlot, "sourceHash"> | Pla
 
 export function deriveLessonShotImageSlots(courseId: string, draft: LessonDraft): PlannedImageSlot[] {
   return draft.chapters.flatMap((chapter) =>
-    chapter.shots.map((shot) => {
+    chapter.paragraphs.map((paragraph, paragraphIndex) => {
+      const shotOrder = (paragraphIndex + 1) as 1 | 2;
+      const sourceText = textFromParagraph(chapter, paragraphIndex);
       const base = {
         courseId,
         chapterId: chapter.id,
         chapterTitle: chapter.title,
-        shotId: shot.id,
-        shotOrder: shot.order,
-        slotId: shot.imageSlotId,
+        shotId: `${chapter.id}-shot-${shotOrder}`,
+        shotOrder,
+        slotId: `${chapter.id}-image-${shotOrder}`,
         slotType: "lesson_shot" as const,
-        slotIndex: shot.order,
-        prompt: buildImagePrompt(draft, chapter, shot),
-        action: shot.action,
-        scenePrompt: shot.scenePrompt,
-        sourceText: textFromBlocks(chapter.blocks, shot.coveredBlockIds),
-        focus: shot.focus ?? null,
-        keyObjects: shot.keyObjects ?? [],
+        slotIndex: (chapter.sourceOutlineChapterIndex - 1) * 2 + shotOrder,
+        prompt: buildImagePrompt(draft, chapter, paragraphIndex),
+        action: `Paragraph ${shotOrder} illustration`,
+        scenePrompt: sourceText,
+        sourceText,
+        focus: null,
+        keyObjects: [],
       };
 
       return {

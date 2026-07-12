@@ -167,8 +167,6 @@ export type CoursePreviewImage = {
   failureReason: string | null;
 };
 
-export type CoursePreviewBlock = LessonBlock;
-
 export type CoursePreviewExercise = LessonExercise;
 
 export type CoursePreviewPage =
@@ -187,7 +185,7 @@ export type CoursePreviewPage =
       shotOrder: 1 | 2;
       title: string;
       image: CoursePreviewImage;
-      blocks: CoursePreviewBlock[];
+      text: string;
       exercises: CoursePreviewExercise[];
     }
   | {
@@ -265,25 +263,19 @@ export type CourseBasicMutationResponse = {
   };
 };
 
+export type StoryOptionVariant = "faithful" | "enhanced" | "creative";
+
 export type StoryChapter = {
   title: string;
   summary: string;
-  knowledgeHook: string;
-};
-
-export type StoryTeachingDesign = {
-  grammarIntegration: string;
-  studentFit: string;
-  teacherGuidance: string;
-  difficultyFit: string;
 };
 
 export type StoryOption = {
   id: string;
+  variant: StoryOptionVariant;
   title: string;
-  logline: string;
+  storyline: string;
   chapters: StoryChapter[];
-  teachingDesign: StoryTeachingDesign;
 };
 
 export type StoryOptionsListResponse = {
@@ -291,122 +283,108 @@ export type StoryOptionsListResponse = {
   selectedOptionId: string | null;
 };
 
-export type LessonDraft = {
-  schemaVersion: "lesson_draft_v1";
+export type LessonDraft = LessonContentDraft;
+
+export type CastAlias = {
+  alias: string;
+  displayName: string;
+};
+
+export type LessonContentDraft = {
+  schemaVersion: "lesson_content_v1";
   sourceStoryOptionId: string;
   generationMode: "ai";
   title: string;
   language: "en";
-  visualStyle: LessonVisualStyle;
-  characters: LessonVisualCharacter[];
-  chapters: LessonChapter[];
+  castAliases: CastAlias[];
+  chapters: LessonContentChapter[];
   closingReading: LessonClosingReading;
 };
 
 export type LessonClosingReading = {
   title: string;
-  text: string;
+  sentences: string[];
   vocabularyTerms: string[];
 };
 
-export type LessonVisualStyle = {
-  artStyle: string;
-  colorPalette: string;
-  aspectRatio: "4:3";
-  consistencyPrompt: string;
-  studentAppealPrompt?: string;
-};
-
-export type LessonVisualCharacter = {
-  id: string;
-  name: string;
-  role: "teacher" | "student";
-  appearance: string;
-  outfit: string;
-  consistencyPrompt: string;
-  faceAndEyes?: string;
-  hair?: string;
-  signatureFeatures?: string[];
-  personalityVisualCue?: string;
-};
-
-export type LessonChapter = {
+export type LessonContentChapter = {
   id: string;
   sourceOutlineChapterIndex: number;
   title: string;
-  wordTarget: {
-    min: number;
-    max: number;
-  };
-  exerciseTarget: {
-    verbBlankCount: 7;
-    vocabularyHintCount: 3;
-  };
-  blocks: LessonBlock[];
+  paragraphs: LessonParagraph[];
   exercises: LessonExercise[];
-  shots: LessonShot[];
 };
 
-export type LessonBlock =
+export type LessonParagraph = {
+  id: string;
+  order: 1 | 2;
+  sentences: LessonSentence[];
+};
+
+export type LessonSentence = {
+  id: string;
+  text: string;
+  segments: LessonSegment[];
+};
+
+export type LessonSegment =
   | {
-      id: string;
-      order: number;
       type: "text";
       text: string;
     }
   | {
-      id: string;
-      order: number;
       type: "exercise";
       exerciseId: string;
-      display: LessonBlankDisplay;
     };
 
-export type LessonBlankDisplay =
-  | {
-      kind: "verb_blank";
-      placeholder: "________";
-      prompt: string;
-    }
-  | {
-      kind: "vocabulary_hint";
-      placeholder: "________";
-      pattern: string;
-      letterCount: number;
-    };
+export type LessonExerciseTargetCategory = "grammar" | "modal" | "vocab" | "verb_phrase";
 
 export type LessonExercise =
   | {
       id: string;
-      type: "verb_blank";
+      order: number;
+      type: "given_word_blank";
+      targetCategory: "grammar" | "modal" | "vocab";
+      target: string;
+      sentenceId: string;
       answer: string;
-      baseVerb: string;
+      prompt: string;
+      baseWord?: string;
     }
   | {
       id: string;
-      type: "vocabulary_hint";
+      order: number;
+      type: "choice_blank";
+      targetCategory: "grammar" | "modal" | "vocab";
+      target: string;
+      sentenceId: string;
       answer: string;
+      choices: string[];
+    }
+  | {
+      id: string;
+      order: number;
+      type: "vocab_hint";
+      targetCategory: "vocab";
+      target: "Vocabulary";
+      sentenceId: string;
+      answer: string;
+      hint: string;
       pattern: string;
       letterCount: number;
+    }
+  | {
+      id: string;
+      order: number;
+      type: "phrase_hint";
+      targetCategory: "verb_phrase";
+      target: "Verb Phrases";
+      sentenceId: string;
+      answer: string;
+      hint: string;
+      pattern: string;
+      letterCount: string;
     };
-
-export type LessonShot = {
-  id: string;
-  order: 1 | 2;
-  imageSlotId: string;
-  coveredBlockIds: string[];
-  characterIds: string[];
-  location: string;
-  action: string;
-  mood: string;
-  scenePrompt: string;
-  composition: string;
-  continuityNotes: string;
-  focus?: string;
-  keyObjects?: string[];
-  spatialDetails?: string;
-  studentAppeal?: string;
-};
 
 export type LessonDraftResponse = {
   draft: LessonDraft | null;

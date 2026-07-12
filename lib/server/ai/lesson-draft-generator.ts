@@ -1,14 +1,7 @@
-import type {
-  CourseBasicDetail,
-  LessonDraft,
-  LessonExercise,
-  LessonShot,
-  LessonVisualCharacter,
-  LessonVisualStyle,
-  PersonProfile,
-  StoryOption,
-} from "@/lib/contracts/api";
+import type { CourseBasicDetail, LessonDraft, PersonProfile, StoryOption } from "@/lib/contracts/api";
 import { LessonDraftValidationError, validateLessonDraft } from "@/lib/server/repositories/lesson-drafts";
+
+import { compileLessonContentDraft, type AiLessonContentPlan } from "./lesson-content-compiler";
 
 type LessonDraftGenerationContext = {
   course: CourseBasicDetail;
@@ -22,906 +15,219 @@ type ChatMessage = {
   content: string;
 };
 
-type DeepSeekThinkingMode = "enabled" | "disabled";
-
 type DeepSeekRequestBody = {
   model: string;
   messages: ChatMessage[];
   max_tokens: number;
   response_format: { type: "json_object" };
-  thinking: { type: DeepSeekThinkingMode };
-  reasoning_effort?: "high" | "max";
-  temperature?: number;
+  thinking: { type: "enabled" };
+  reasoning_effort: "high";
 };
 
-const chapterWordTarget = { min: 110, max: 130 };
-const minExercisesPerChapter = 7;
-const maxExercisesPerChapter = 10;
-
-type AiShotPlan = Omit<LessonShot, "id" | "order" | "imageSlotId" | "coveredBlockIds">;
-
-type AiStoryParagraphPlan = {
-  text?: string;
-  sentences?: string[];
-  shot: AiShotPlan;
+type ExercisePolicy = {
+  preferredExercisesPerChapter: number;
+  minExercisesPerChapter: number;
+  maxExercisesPerChapter: number;
+  minMainExercisesPerChapter: number;
+  maxHintExercisesPerChapter: number;
 };
 
-type AiStoryChapterPlan = {
-  title: string;
-  paragraphs: [AiStoryParagraphPlan, AiStoryParagraphPlan];
+const exercisePoliciesByDuration: Record<number, ExercisePolicy> = {
+  30: { preferredExercisesPerChapter: 6, minExercisesPerChapter: 5, maxExercisesPerChapter: 8, minMainExercisesPerChapter: 4, maxHintExercisesPerChapter: 3 },
+  45: { preferredExercisesPerChapter: 8, minExercisesPerChapter: 7, maxExercisesPerChapter: 9, minMainExercisesPerChapter: 5, maxHintExercisesPerChapter: 4 },
+  60: { preferredExercisesPerChapter: 9, minExercisesPerChapter: 8, maxExercisesPerChapter: 10, minMainExercisesPerChapter: 6, maxHintExercisesPerChapter: 4 },
 };
 
-type AiStoryContentPlan = {
-  title: string;
-  visualStyle: Omit<LessonVisualStyle, "aspectRatio"> & { aspectRatio?: "4:3" };
-  characters: LessonVisualCharacter[];
-  chapters: AiStoryChapterPlan[];
-  closingReading: {
-    title: string;
-    text: string;
-  };
-};
-
-type AiExercisePlan = {
-  chapters: AiExerciseChapterPlan[];
-};
-
-type AiExerciseChapterPlan = {
-  chapterIndex: number;
-  exercises: AiExercisePlanItem[];
-};
-
-type AiExercisePlanItem =
-  | {
-      type: "verb_blank";
-      paragraphIndex: 1 | 2;
-      sentenceId?: string;
-      answer: string;
-      occurrenceText: string;
-      occurrenceIndex?: number;
-      sentence?: string;
-      baseVerb: string;
-    }
-  | {
-      type: "vocabulary_hint";
-      paragraphIndex: 1 | 2;
-      sentenceId?: string;
-      answer: string;
-      occurrenceText: string;
-      occurrenceIndex?: number;
-      sentence?: string;
-      pattern: string;
-    };
-
-function personName(person: PersonProfile) {
-  return person.englishName || person.chineseName || person.name;
+function getExercisePolicy(durationMinutes: number) {
+  return exercisePoliciesByDuration[durationMinutes] ?? exercisePoliciesByDuration[45];
 }
 
-export function buildStoryContentPrompt(context: LessonDraftGenerationContext) {
+function chapterWordTarget(durationMinutes: number) {
+  if (durationMinutes === 30) {
+    return "about 110-150 English words";
+  }
+
+  if (durationMinutes === 60) {
+    return "about 150-210 English words";
+  }
+
+  return "about 120-160 English words";
+}
+
+function personName(person: PersonProfile) {
+  return person.englishName?.trim() || person.chineseName?.trim() || person.name.trim();
+}
+
+function personDescription(person: PersonProfile) {
+  return person.appearance?.trim() || person.notes?.trim() || "not provided";
+}
+
+function aliasBase(name: string) {
+  return name.replace(/[^A-Za-z0-9]/g, "") || "Person";
+}
+
+function castAliases(context: LessonDraftGenerationContext) {
+  const aliases = [{ alias: `${aliasBase(personName(context.teacher))}Teacher`, displayName: personName(context.teacher) }];
+  context.students.forEach((student, index) => {
+    aliases.push({ alias: `${aliasBase(personName(student))}Student${index + 1 > 1 ? index + 1 : ""}`, displayName: personName(student) });
+  });
+  return aliases;
+}
+
+function studentsBlock(students: PersonProfile[], aliases: Array<{ alias: string; displayName: string }>) {
+  return students
+    .map((student, index) =>
+      [
+        `- nameToUseInStory: ${aliases[index + 1].alias}`,
+        `  age: ${student.age ?? "unknown"}`,
+        `  interests: ${student.interests.join(" / ") || "not provided"}`,
+        `  appearance / notes: ${personDescription(student)}`,
+        `  learning goal: ${student.learningGoal ?? "not provided"}`,
+      ].join("\n"),
+    )
+    .join("\n\n");
+}
+
+function allowedTargets(context: LessonDraftGenerationContext) {
+  return Array.from(new Set([...context.course.grammar, "Vocabulary", "Verb Phrases"]));
+}
+
+export function buildLessonContentPrompt(context: LessonDraftGenerationContext) {
+  const policy = getExercisePolicy(context.course.durationMinutes);
+  const targets = allowedTargets(context);
+  const aliases = castAliases(context);
+
   return [
-    "Use the selected story outline as the fixed skeleton. Write pure student-facing English picture-book content and image shot semantics. Do not redesign the story.",
+    "请根据课程信息和中文故事大纲，生成完整英文互动阅读内容 JSON。",
     "",
-    "Course:",
-    `- Title: ${context.course.title}`,
-    `- English level: ${context.course.englishLevel}`,
-    `- Duration: ${context.course.durationMinutes} minutes`,
-    `- Theme/world setting: ${context.course.theme}`,
-    `- Grammar targets: ${context.course.grammar.join(", ")}`,
+    "这份 JSON 会被代码编译成学生阅读文本、老师答案列表，以及后续页面和图片生成需要的 clean text。",
+    "不要直接渲染挖空题；只输出 clean sentences 和 exercise anchors。",
     "",
-    "Selected story outline:",
-    `- id: ${context.storyOption.id}`,
-    `- title: ${context.storyOption.title}`,
-    `- logline: ${context.storyOption.logline}`,
-    "- chapters:",
-    context.storyOption.chapters
-      .map((chapter, index) => `  ${index + 1}. ${chapter.title}\n     story summary: ${chapter.summary}\n     grammar hook: ${chapter.knowledgeHook}`)
-      .join("\n"),
+    "## Course",
+    `Level: ${context.course.englishLevel} (CEFR / Cambridge English)`,
+    `Duration: ${context.course.durationMinutes} minutes`,
+    `Theme: ${context.course.theme}`,
+    `Learning targets: ${context.course.grammar.join(" / ")}`,
     "",
-    "Characters:",
-    `- teacher: id=${context.teacher.id}; name=${personName(context.teacher)}; appearance=${context.teacher.appearance ?? "not provided"}; notes=${context.teacher.notes ?? "none"}`,
-    context.students
-      .map(
-        (student) =>
-          `- student: id=${student.id}; name=${personName(student)}; age=${student.age ?? "unknown"}; appearance=${student.appearance ?? "not provided"}; interests=${student.interests.join(", ") || "not provided"}; learning goal=${student.learningGoal ?? "not provided"}; notes=${student.notes ?? "none"}`,
-      )
-      .join("\n"),
+    "## Cast",
+    `Teacher: ${aliases[0].alias} — ${personDescription(context.teacher)}`,
+    "Students:",
+    studentsBlock(context.students, aliases),
     "",
-    "Output requirements:",
-    "- Return strict minified JSON only. No Markdown. No explanation. No comments. No extra keys.",
-    "- Return a story content plan, not the final database LessonDraft.",
-    "- Do not include exercise markers. Do not include [verb:...] or [vocab:...].",
-    "- Each chapter must have exactly two paragraphs.",
-    "- Each chapter must contain 90-140 English words total across its two paragraphs.",
-    "- Each paragraph should contain 45-70 English words.",
-    "- Each paragraph.sentences must be an array of pure English story sentences, about 3-5 sentences per paragraph.",
-    "- The chapter story must visibly use the grammar targets and chapter grammar hook in natural story actions.",
-    "- Each chapter must include at least 8 concrete phrases that can later become grammar or vocabulary blanks.",
-    "- If the chapter knowledge hook names a tense, write several real sentences in that exact tense.",
-    "- Do not leave the exercise planner to invent tense forms later.",
-    "- Each paragraph has its own image shot semantics.",
-    "- visualStyle.studentAppealPrompt should describe a cute, detailed, student-friendly picture-book treatment based on the student age, interests, and story world.",
-    "- Each character must include stable faceAndEyes, hair, signatureFeatures, and personalityVisualCue fields for image consistency.",
-    "- Each shot must include focus, keyObjects, spatialDetails, and studentAppeal. These are semantic image instructions, not final model prompts.",
-    "- Shot focus must state the exact visual priority: main character, key object, and action. Avoid generic phrases like 'solving the challenge'.",
-    "- Shot spatialDetails must lock important object positions when a location repeats.",
-    "- shot.characterIds must reference global character ids only.",
-    "- closingReading.text must be English only, 80-120 words, no blanks, no exercises, no image prompt, and no final The End sentence.",
-    "- paragraph.sentences must be an array of strings.",
-    '- Correct paragraph sentence shape: "sentences": ["Sentence 1.", "Sentence 2.", "Sentence 3."].',
-    '- Do not use "sentence" as a field name.',
-    "- Do not write standalone string properties inside paragraph objects.",
-    "- Every JSON object property must have a name followed by a colon.",
+    "Name rules: Use cast aliases exactly as given. Do not split, translate, rename, or replace cast aliases. Do not use real display names in story sentences.",
     "",
-    "Required JSON example. Follow this shape exactly, with your own content:",
+    "## Story Outline",
+    `Title: ${context.storyOption.title}`,
+    `Storyline: ${context.storyOption.storyline}`,
+    "Chapters:",
+    context.storyOption.chapters.map((chapter, index) => `${index + 1}. ${chapter.title}: ${chapter.summary}`).join("\n"),
+    "",
+    "## Size",
+    `Generate exactly ${context.storyOption.chapters.length} chapters.`,
+    "Each chapter:",
+    "- exactly 2 paragraphs",
+    "- each paragraph 4-5 clean English sentences",
+    `- total length: ${chapterWordTarget(context.course.durationMinutes)}`,
+    `- exercises: ${policy.minExercisesPerChapter}-${policy.maxExercisesPerChapter} per chapter, target ${policy.preferredExercisesPerChapter}`,
+    `- at least ${policy.minMainExercisesPerChapter} given_word_blank or choice_blank exercises`,
+    `- no more than ${policy.maxHintExercisesPerChapter} vocab_hint + phrase_hint exercises total`,
+    "",
+    "## Teaching Requirements",
+    "- Follow the story outline and keep the whole story coherent.",
+    `- English must fit ${context.course.englishLevel} CEFR / Cambridge level.`,
+    "- Every exercise must include targetCategory and target.",
+    `- target must be exactly one of: ${targets.join(" / ")}`,
+    `- Across the whole lesson, cover every selected learning target at least once: ${context.course.grammar.join(" / ")}`,
+    "- Use exercise types:",
+    "  1. given_word_blank: Grammar / Modals / Vocab; prompt is shown in parentheses. Prefer this for most grammar tense exercises.",
+    "  2. choice_blank: mainly for Modals or clear meaning-based choices; 2-4 unique choices and one correct answer.",
+    "  3. vocab_hint: Vocabulary; Chinese hint only.",
+    "  4. phrase_hint: Verb Phrases; Chinese hint only.",
+    "- Use choice_blank sparingly, mainly for Modals or clear meaning-based choices.",
+    "- Do not use choice_blank for ordinary verb tense changes if given_word_blank works better.",
+    "- If you cannot provide 2-4 unique meaningful choices, use given_word_blank instead.",
+    "- If Verb Phrases is selected, include phrase_hint in each chapter when natural.",
+    "- Do not output order, exerciseId, pattern, letterCount, or label. Code will generate them.",
+    "- Exercises may be listed in any order. Code will sort them by reading position.",
+    "- If two exercises use the same sentenceId, their answers must be text-disjoint.",
+    "- Text-disjoint means the answers do not share any word or phrase.",
+    "- One answer must not contain the other answer.",
+    "- One answer must not be part of the other answer.",
+    "- Do not use vocab_hint for a word that is inside a given_word_blank, choice_blank, or phrase_hint answer in the same sentence.",
+    "- Do not use phrase_hint for a phrase that overlaps a given_word_blank or choice_blank answer in the same sentence.",
+    "- Bad same-sentence pairs: \"are invading\" + \"invading\"; \"was looking\" + \"looking\"; \"are blocking\" + \"blocking the way\"; \"give up\" + \"up\".",
+    "- If answers would overlap, keep only one exercise for that sentence and choose another sentence for the other exercise.",
+    "",
+    "## Sentence Rules",
+    "- Story sentences must be clean English.",
+    "- Do not write \"(1)\", \"________\", \"[V1]\", answer labels, Markdown, or HTML inside sentences.",
+    "- Every answer must be an exact substring of the referenced sentence.",
+    "",
+    "## SentenceId",
+    "Use c{chapter}p{paragraph}s{sentence}. Example: c1p2s3 = chapter 1, paragraph 2, sentence 3.",
+    "",
+    "## Output Schema",
     JSON.stringify(
       {
-        title: "Story Title",
-        visualStyle: {
-          artStyle: "cute detailed cartoon picture-book illustration",
-          colorPalette: "warm bright colors",
-          aspectRatio: "4:3",
-          consistencyPrompt: "Same art style across all images.",
-          studentAppealPrompt: "Cute, detailed, age-appropriate picture-book treatment based on student interests.",
-        },
-        characters: [
-          {
-            id: context.teacher.id,
-            name: "Character Name",
-            role: "teacher",
-            appearance: "stable appearance",
-            outfit: "stable outfit",
-            consistencyPrompt: "Keep face, hair, outfit, and key features stable.",
-            faceAndEyes: "stable face and eye description",
-            hair: "stable hair description",
-            signatureFeatures: ["feature 1", "feature 2"],
-            personalityVisualCue: "stable expression or pose cue",
-          },
-        ],
+        title: "English story title",
         chapters: [
           {
-            title: "Chapter Title",
-            paragraphs: [
-              {
-                sentences: ["Sentence 1.", "Sentence 2.", "Sentence 3."],
-                shot: {
-                  characterIds: [context.teacher.id],
-                  location: "specific repeated location",
-                  action: "specific visible action",
-                  mood: "clear mood",
-                  scenePrompt: "semantic scene description",
-                  composition: "4:3 composition with clear focal point",
-                  continuityNotes: "continuity details",
-                  focus: "main character, key object, and action",
-                  keyObjects: ["object 1", "object 2"],
-                  spatialDetails: "where important objects are placed",
-                  studentAppeal: "cute details linked to the student profile",
-                },
-              },
-              {
-                sentences: ["Sentence 1.", "Sentence 2.", "Sentence 3."],
-                shot: {
-                  characterIds: [context.teacher.id],
-                  location: "specific repeated location",
-                  action: "specific visible action",
-                  mood: "clear mood",
-                  scenePrompt: "semantic scene description",
-                  composition: "4:3 composition with clear focal point",
-                  continuityNotes: "continuity details",
-                  focus: "main character, key object, and action",
-                  keyObjects: ["object 1", "object 2"],
-                  spatialDetails: "where important objects are placed",
-                  studentAppeal: "cute details linked to the student profile",
-                },
-              },
+            title: "English chapter title",
+            paragraphs: [{ sentences: ["Clean English sentence."] }, { sentences: ["Clean English sentence."] }],
+            exercises: [
+              { type: "given_word_blank", targetCategory: "grammar", target: "Past Simple", sentenceId: "c1p1s1", answer: "left", prompt: "leave", baseWord: "leave" },
+              { type: "choice_blank", targetCategory: "modal", target: "Modals", sentenceId: "c1p1s2", answer: "mustn't", choices: ["mustn't", "shouldn't"] },
+              { type: "vocab_hint", targetCategory: "vocab", target: "Vocabulary", sentenceId: "c1p1s3", answer: "destiny", hint: "天命/使命" },
+              { type: "phrase_hint", targetCategory: "verb_phrase", target: "Verb Phrases", sentenceId: "c1p1s4", answer: "give up", hint: "放弃" },
             ],
           },
         ],
-        closingReading: {
-          title: "Closing Reading Title",
-          text: "80-120 English words.",
-        },
+        closingReading: { title: "Closing reading title", sentences: ["Clean English sentence."] },
       },
       null,
       2,
     ),
+    "",
+    "Final self-check silently:",
+    "- JSON only.",
+    "- No blanks or question numbers inside sentences.",
+    "- Every answer is copied from the referenced sentence and appears exactly once.",
+    "- Every selected learning target is covered.",
+    "- Before final output, check every choice_blank: choices length is 2-4, choices include answer, and choices have no duplicates.",
+    "- No image or lesson-plan fields.",
+    "",
+    "Now output JSON only.",
   ].join("\n");
 }
 
-export function buildExercisePlanPrompt(context: LessonDraftGenerationContext, storyPlan: AiStoryContentPlan, previousError?: string) {
-  return [
-    "Create an exercise plan from the provided story text. Do not rewrite story text. Return strict minified JSON only.",
-    "",
-    "Course grammar targets:",
-    context.course.grammar.join(", "),
-    "",
-    "Exercise rules:",
-    "- Each chapter must have 7-10 exercises; prefer 8-10 when possible.",
-    "- Use verb_blank for grammar practice and vocabulary_hint for important story words.",
-    "- Do not repeat answer within the same chapter.",
-    "- sentenceId must reference one of the provided sentence ids, such as c1p1s2.",
-    "- answer must be copied exactly from the target sentence.",
-    "- occurrenceText must be copied exactly from that sentence.",
-    "- occurrenceIndex selects which occurrence inside the sentence to replace; use 1 for the first occurrence, 2 for the second, and so on.",
-    "- Do not copy full sentences back into the exercise plan.",
-    "- answer must be contained inside occurrenceText.",
-    "- Do not change tense, aspect, spelling, or wording. If the sentence says 'blared', answer must be 'blared', not 'has blared'.",
-    "- For verb_blank, answer is the exact verb phrase already present in the sentence; baseVerb is the dictionary form.",
-    "- Code will do exact string replacement only, so do not rely on semantic matching.",
-    "",
-    "Story text by chapter:",
-    storyPlan.chapters
-      .map((chapter, chapterIndex) => {
-        const outline = context.storyOption.chapters[chapterIndex];
-        return [
-          `Chapter ${chapterIndex + 1}: ${chapter.title}`,
-          `Knowledge hook: ${outline?.knowledgeHook ?? "not provided"}`,
-          ...chapter.paragraphs.flatMap((paragraph, paragraphIndex) =>
-            paragraphSentences(paragraph, "").map((sentence, sentenceIndex) => `${sentenceId(chapterIndex, paragraphIndex + 1, sentenceIndex)}: ${sentence}`),
-          ),
-        ].join("\n");
-      })
-      .join("\n\n"),
-    "",
-    "Required JSON shape:",
-    '{"chapters":[{"chapterIndex":1,"exercises":[{"type":"verb_blank","paragraphIndex":1,"sentenceId":"c1p1s1","answer":"walked","occurrenceText":"walked","occurrenceIndex":1,"baseVerb":"walk"},{"type":"vocabulary_hint","paragraphIndex":1,"sentenceId":"c1p1s2","answer":"gate","occurrenceText":"gate","occurrenceIndex":1,"pattern":"g _ _ e"}]}]}',
-    previousError
-      ? [
-          "",
-          "Previous exercise plan failed validation:",
-          previousError,
-          "Fix only the exercise plan. Keep the story text unchanged. Choose answers, sentenceId, occurrenceText, and occurrenceIndex that pass exact string replacement.",
-        ].join("\n")
-      : "",
-  ].join("\n");
-}
-
-function mockLessonDraft(context: LessonDraftGenerationContext): LessonDraft {
-  const characters = [
-    {
-      id: context.teacher.id,
-      name: personName(context.teacher),
-      role: "teacher" as const,
-      appearance: context.teacher.appearance ?? "kind English teacher",
-      outfit: "blue cardigan, white shirt, simple classroom-friendly outfit",
-      consistencyPrompt: `${personName(context.teacher)} always has the same appearance and blue cardigan.`,
-      faceAndEyes: "kind adult face with warm attentive eyes",
-      hair: context.teacher.appearance ?? "neat teacher hairstyle",
-      signatureFeatures: ["blue cardigan"],
-      personalityVisualCue: "gentle guiding smile",
-    },
-    ...context.students.map((student) => ({
-      id: student.id,
-      name: personName(student),
-      role: "student" as const,
-      appearance: student.appearance ?? "young student",
-      outfit: student.gender === "male" ? "green hoodie and dark pants" : "yellow hoodie and jeans",
-      consistencyPrompt: `${personName(student)} always keeps the same hairstyle, outfit, and face shape.`,
-      faceAndEyes: "round child face with bright curious eyes",
-      hair: student.appearance ?? "consistent child hairstyle",
-      signatureFeatures: [student.gender === "male" ? "green hoodie" : "yellow hoodie", ...(student.interests.slice(0, 1).map((interest) => `${interest} themed detail`))],
-      personalityVisualCue: student.interests.length ? `curious expression inspired by ${student.interests.join(", ")}` : "curious classroom learner expression",
-    })),
-  ];
-
-  return {
-    schemaVersion: "lesson_draft_v1",
-    sourceStoryOptionId: context.storyOption.id,
-    generationMode: "ai",
-    title: context.storyOption.title,
-    language: "en",
-    visualStyle: {
-      artStyle: "warm children's storybook watercolor",
-      colorPalette: "soft blues, greens, and warm golden light",
-      aspectRatio: "4:3",
-      consistencyPrompt: "Use one consistent children's watercolor picture-book style across all images.",
-      studentAppealPrompt: "Cute detailed cartoon picture-book world with rounded shapes, expressive eyes, warm light, and small discoverable details for children.",
-    },
-    characters,
-    closingReading: {
-      title: `After ${context.storyOption.title}`,
-      text: "After the adventure, the teacher and students remembered how they moved through the story world together. They noticed clues, made choices, and used English to describe what happened. Each chapter helped them practice the target grammar inside real actions, not separate drills. The students became more confident because they solved problems as a team and listened to the teacher's guidance. When the journey ended, they could retell the important moments, name the useful words, and explain how small decisions changed the story step by step.",
-      vocabularyTerms: ["clue", "path", "brave"],
-    },
-    chapters: context.storyOption.chapters.map((chapter, chapterIndex) => {
-      const prefix = `chapter-${chapterIndex + 1}`;
-      const textParts = [
-        "Yesterday afternoon, the teacher and students ",
-        ` into ${context.course.theme} and noticed the first bright signal. The teacher `,
-        " calm questions while the students watched the road carefully. Everyone ",
-        " close because the strange air made each sound important. Summer ",
-        " a small mark near the gate, and Ethan ",
-        " the group toward a safer path. The students ",
-        " their ideas in English, and the teacher ",
-        " them to describe what happened before choosing the next step. A hidden ",
-        " glowed under a stone, so the group followed the narrow ",
-        ". The moment felt ",
-        ", but the teacher and students stayed together and finished the chapter challenge.",
-      ];
-      const blockItems: LessonDraft["chapters"][number]["blocks"] = [];
-      const verbPrompts = ["step", "ask", "stay", "notice", "guide", "share", "help"];
-      const vocabularyHints = [
-        { pattern: "c _ _ e", letterCount: 4 },
-        { pattern: "p _ _ h", letterCount: 4 },
-        { pattern: "b _ _ _ e", letterCount: 5 },
-      ];
-
-      textParts.forEach((part, index) => {
-        blockItems.push({ id: `${prefix}-block-${blockItems.length + 1}`, order: blockItems.length + 1, type: "text" as const, text: part });
-
-        if (index < 7) {
-          blockItems.push({
-            id: `${prefix}-block-${blockItems.length + 1}`,
-            order: blockItems.length + 1,
-            type: "exercise" as const,
-            exerciseId: `${prefix}-exercise-${index + 1}`,
-            display: { kind: "verb_blank" as const, placeholder: "________" as const, prompt: verbPrompts[index] },
-          });
-        } else if (index < 10) {
-          const hint = vocabularyHints[index - 7];
-          blockItems.push({
-            id: `${prefix}-block-${blockItems.length + 1}`,
-            order: blockItems.length + 1,
-            type: "exercise" as const,
-            exerciseId: `${prefix}-exercise-${index + 1}`,
-            display: { kind: "vocabulary_hint" as const, placeholder: "________" as const, pattern: hint.pattern, letterCount: hint.letterCount },
-          });
-        }
-      });
-      const blocks = blockItems;
-
-      return {
-        id: prefix,
-        sourceOutlineChapterIndex: chapterIndex + 1,
-        title: chapter.title,
-        wordTarget: { min: chapterWordTarget.min, max: chapterWordTarget.max },
-        exerciseTarget: { verbBlankCount: 7 as const, vocabularyHintCount: 3 as const },
-        blocks,
-        exercises: [
-          { id: `${prefix}-exercise-1`, type: "verb_blank" as const, answer: "stepped", baseVerb: "step" },
-          { id: `${prefix}-exercise-2`, type: "verb_blank" as const, answer: "asked", baseVerb: "ask" },
-          { id: `${prefix}-exercise-3`, type: "verb_blank" as const, answer: "stayed", baseVerb: "stay" },
-          { id: `${prefix}-exercise-4`, type: "verb_blank" as const, answer: "noticed", baseVerb: "notice" },
-          { id: `${prefix}-exercise-5`, type: "verb_blank" as const, answer: "guided", baseVerb: "guide" },
-          { id: `${prefix}-exercise-6`, type: "verb_blank" as const, answer: "shared", baseVerb: "share" },
-          { id: `${prefix}-exercise-7`, type: "verb_blank" as const, answer: "helped", baseVerb: "help" },
-          { id: `${prefix}-exercise-8`, type: "vocabulary_hint" as const, answer: "clue", pattern: "c _ _ e", letterCount: 4 },
-          { id: `${prefix}-exercise-9`, type: "vocabulary_hint" as const, answer: "path", pattern: "p _ _ h", letterCount: 4 },
-          { id: `${prefix}-exercise-10`, type: "vocabulary_hint" as const, answer: "brave", pattern: "b _ _ _ e", letterCount: 5 },
-        ],
-        shots: [
-          {
-            id: `${prefix}-shot-1`,
-            order: 1 as const,
-            imageSlotId: `${prefix}-image-1`,
-            coveredBlockIds: blocks.slice(0, 6).map((block) => block.id),
-            characterIds: characters.map((character) => character.id),
-            location: context.course.theme,
-            action: `The group begins: ${chapter.summary}`,
-            mood: "curious and warm",
-            scenePrompt: `A children's storybook scene in ${context.course.theme}, showing the teacher guiding the students as the chapter begins.`,
-            composition: "Wide 4:3 storybook illustration, characters grouped clearly in the foreground.",
-            continuityNotes: "Use the same visualStyle and global character appearances.",
-            focus: "students' faces and the first story clue",
-            keyObjects: ["first clue", context.course.theme],
-            spatialDetails: "main clue in the foreground, teacher beside the students, story world behind them",
-            studentAppeal: "add cute small details tied to the students' interests",
-          },
-          {
-            id: `${prefix}-shot-2`,
-            order: 2 as const,
-            imageSlotId: `${prefix}-image-2`,
-            coveredBlockIds: blocks.slice(6).map((block) => block.id),
-            characterIds: characters.map((character) => character.id),
-            location: context.course.theme,
-            action: `The group resolves the chapter challenge: ${chapter.summary}`,
-            mood: "hopeful and adventurous",
-            scenePrompt: `A children's storybook scene in ${context.course.theme}, showing the teacher and students solving the chapter challenge together.`,
-            composition: "Medium 4:3 storybook illustration with expressive faces and clear action.",
-            continuityNotes: "Use the same visualStyle and global character appearances.",
-            focus: "the student using the key clue to solve the chapter challenge",
-            keyObjects: ["key clue", "chapter challenge object"],
-            spatialDetails: "key clue near the student's hands, teacher slightly behind, challenge object clearly visible",
-            studentAppeal: "make the solution moment feel playful, bright, and rewarding",
-          },
-        ],
-      };
-    }),
-  };
-}
-
-function parseJsonObject(text: string, invalidMessage: string) {
+function parseJsonObject(text: string) {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
-  const jsonText = fenced ? fenced[1] : trimmed;
-
-  try {
-    return JSON.parse(jsonText) as unknown;
-  } catch {
-    try {
-      return JSON.parse(jsonText.replace(/,\s*([}\]])/g, "$1")) as unknown;
-    } catch {
-      throw new LessonDraftValidationError(invalidMessage);
-    }
-  }
+  return JSON.parse(fenced ? fenced[1] : trimmed) as unknown;
 }
 
-function uniqueNonEmpty(values: string[]) {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function nonEmptyString(value: unknown, fallback: string) {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-function stableCharacterPlans(plan: { characters?: LessonVisualCharacter[] }, context: LessonDraftGenerationContext): LessonVisualCharacter[] {
-  const sourceCharacters: LessonVisualCharacter[] = [
-    {
-      id: context.teacher.id,
-      role: "teacher" as const,
-      name: personName(context.teacher),
-      appearance: context.teacher.appearance ?? "kind English teacher",
-      outfit: "simple classroom-friendly outfit",
-      consistencyPrompt: `${personName(context.teacher)} keeps the same appearance in every image.`,
-    },
-    ...context.students.map((student) => ({
-      id: student.id,
-      role: "student" as const,
-      name: personName(student),
-      appearance: student.appearance ?? "young student",
-      outfit: student.gender === "male" ? "comfortable hoodie and pants" : "comfortable colorful outfit",
-      consistencyPrompt: `${personName(student)} keeps the same hairstyle, face, and outfit in every image.`,
-    })),
-  ];
-
-  const plannedById = new Map((Array.isArray(plan.characters) ? plan.characters : []).map((character) => [character.id, character]));
-
-  return sourceCharacters.map((fallback) => {
-    const planned = plannedById.get(fallback.id);
-
-    return {
-      id: fallback.id,
-      role: fallback.role,
-      name: nonEmptyString(planned?.name, fallback.name),
-      appearance: nonEmptyString(planned?.appearance, fallback.appearance),
-      outfit: nonEmptyString(planned?.outfit, fallback.outfit),
-      consistencyPrompt: nonEmptyString(planned?.consistencyPrompt, fallback.consistencyPrompt),
-      faceAndEyes: nonEmptyString(planned?.faceAndEyes, fallback.faceAndEyes ?? fallback.appearance),
-      hair: nonEmptyString(planned?.hair, fallback.hair ?? fallback.appearance),
-      signatureFeatures: Array.isArray(planned?.signatureFeatures) && planned.signatureFeatures.length ? planned.signatureFeatures.filter((item) => typeof item === "string" && item.trim()) : fallback.signatureFeatures,
-      personalityVisualCue: nonEmptyString(planned?.personalityVisualCue, fallback.personalityVisualCue ?? "friendly classroom expression"),
-    };
-  });
-}
-
-function vocabularyPattern(answer: string) {
-  const clean = answer.trim();
-
-  if (clean.length <= 2) {
-    return clean;
+function parseLessonContentPlan(value: unknown): AiLessonContentPlan {
+  if (typeof value !== "object" || value === null || !Array.isArray((value as AiLessonContentPlan).chapters)) {
+    throw new LessonDraftValidationError("AI 返回的阅读内容 JSON 格式无效，请重试生成");
   }
 
-  return `${clean[0]} ${Array.from({ length: Math.max(1, clean.length - 2) }, () => "_").join(" ")} ${clean[clean.length - 1]}`;
+  return value as AiLessonContentPlan;
 }
 
-function vocabularyLetterCount(answer: string) {
-  return answer.replace(/[^A-Za-z]/g, "").length || answer.trim().length;
-}
-
-function sanitizeShotPlan(
-  shot: AiShotPlan | undefined,
-  context: LessonDraftGenerationContext,
-  characters: LessonVisualCharacter[],
-  chapterTitle: string,
-  paragraphText: string,
-) {
-  const validCharacterIds = new Set(characters.map((character) => character.id));
-  const plannedCharacterIds = Array.isArray(shot?.characterIds) ? shot.characterIds.filter((id) => validCharacterIds.has(id)) : [];
-  const fallbackCharacterIds = characters.map((character) => character.id);
+export function buildDeepSeekRequestBody(messages: ChatMessage[], durationMinutes: number): DeepSeekRequestBody {
+  const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro";
 
   return {
-    characterIds: plannedCharacterIds.length ? plannedCharacterIds : fallbackCharacterIds,
-    location: nonEmptyString(shot?.location, context.course.theme),
-    action: nonEmptyString(shot?.action, `Characters act out ${chapterTitle}.`),
-    mood: nonEmptyString(shot?.mood, "curious and warm"),
-    scenePrompt: nonEmptyString(shot?.scenePrompt, `A children's picture-book scene for ${chapterTitle}: ${paragraphText.slice(0, 180)}`),
-    composition: nonEmptyString(shot?.composition, "4:3 picture-book composition with clear characters and story action."),
-    continuityNotes: nonEmptyString(shot?.continuityNotes, "Use the global visual style and character consistency prompts."),
-    focus: nonEmptyString(shot?.focus, nonEmptyString(shot?.action, `The main story action for ${chapterTitle}.`)),
-    keyObjects:
-      Array.isArray(shot?.keyObjects) && shot.keyObjects.some((item) => typeof item === "string" && item.trim())
-        ? shot.keyObjects.filter((item) => typeof item === "string" && item.trim())
-        : [nonEmptyString(shot?.location, context.course.theme), nonEmptyString(shot?.action, chapterTitle)],
-    spatialDetails: nonEmptyString(shot?.spatialDetails, "Keep the important story objects clearly placed around the main character."),
-    studentAppeal: nonEmptyString(shot?.studentAppeal, "Use cute, clear, child-friendly details that support the story action."),
+    model,
+    messages,
+    max_tokens: durationMinutes === 60 ? 20000 : 16000,
+    response_format: { type: "json_object" },
+    thinking: { type: "enabled" },
+    reasoning_effort: "high",
   };
 }
 
-function characterConsistencyText(characters: LessonVisualCharacter[], characterIds: string[]) {
-  const characterById = new Map(characters.map((character) => [character.id, character]));
-
-  return characterIds
-    .map((id) => characterById.get(id))
-    .filter((character): character is LessonVisualCharacter => Boolean(character))
-    .map((character) => `${character.name}: ${character.appearance}; outfit: ${character.outfit}.`)
-    .join(" ");
-}
-
-function withCharacterConsistency(shot: AiShotPlan, characters: LessonVisualCharacter[]) {
-  const consistency = characterConsistencyText(characters, shot.characterIds);
-
-  if (!consistency) {
-    return shot;
-  }
-
-  return {
-    ...shot,
-    scenePrompt: `${shot.scenePrompt} Character consistency: ${consistency}`,
-    continuityNotes: `${shot.continuityNotes} Keep character consistency: ${consistency}`,
-  };
-}
-
-function stripTheEnd(text: string) {
-  return text.replace(/\s*(?:the\s+end|the\s+end\.)\s*$/i, "").trim();
-}
-
-function parseStoryContentPlan(value: unknown): AiStoryContentPlan {
-  if (!isObject(value) || !Array.isArray(value.chapters)) {
-    throw new LessonDraftValidationError("AI story content plan is incomplete");
-  }
-
-  return value as AiStoryContentPlan;
-}
-
-function parseExercisePlan(value: unknown): AiExercisePlan {
-  if (!isObject(value) || !Array.isArray(value.chapters)) {
-    throw new LessonDraftValidationError("AI exercise plan is incomplete");
-  }
-
-  return value as AiExercisePlan;
-}
-
-function assertNoLegacyMarkers(text: string, chapterIndex: number) {
-  if (/\[(?:verb|vocab):/.test(text)) {
-    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章正文包含旧 marker，请重新生成纯正文`);
-  }
-}
-
-function sentenceId(chapterIndex: number, paragraphIndex: number, sentenceIndex: number) {
-  return `c${chapterIndex + 1}p${paragraphIndex}s${sentenceIndex + 1}`;
-}
-
-function paragraphSentences(paragraph: AiStoryParagraphPlan, fallback: string) {
-  if (Array.isArray(paragraph.sentences) && paragraph.sentences.length) {
-    return paragraph.sentences.map((sentence) => sentence.trim()).filter(Boolean);
-  }
-
-  return [nonEmptyString(paragraph.text, fallback)];
-}
-
-function findNthOccurrence(text: string, searchText: string, occurrenceIndex: number) {
-  let cursor = 0;
-  let found = -1;
-
-  for (let count = 1; count <= occurrenceIndex; count += 1) {
-    found = text.indexOf(searchText, cursor);
-    if (found < 0) {
-      return -1;
-    }
-    cursor = found + searchText.length;
-  }
-
-  return found;
-}
-
-function countOccurrences(text: string, searchText: string) {
-  if (!searchText) {
-    return 0;
-  }
-
-  let count = 0;
-  let cursor = 0;
-
-  while (cursor <= text.length) {
-    const index = text.indexOf(searchText, cursor);
-    if (index < 0) {
-      return count;
-    }
-    count += 1;
-    cursor = index + searchText.length;
-  }
-
-  return count;
-}
-
-function normalizeOccurrenceText(exercise: AiExercisePlanItem, occurrenceText: string) {
-  return { ...exercise, occurrenceText } as AiExercisePlanItem;
-}
-
-function findUniqueText(text: string, searchText: string, missingMessage: string, duplicateMessage: string) {
-  const first = text.indexOf(searchText);
-  if (first < 0) {
-    throw new LessonDraftValidationError(missingMessage);
-  }
-
-  const second = text.indexOf(searchText, first + searchText.length);
-  if (second >= 0) {
-    throw new LessonDraftValidationError(duplicateMessage);
-  }
-
-  return first;
-}
-
-function findExerciseOccurrence(text: string, sentences: string[], exercise: AiExercisePlanItem, chapterIndex: number, paragraphIndex: number) {
-  if (exercise.sentenceId) {
-    const expectedPrefix = `c${chapterIndex + 1}p${paragraphIndex}s`;
-    if (!exercise.sentenceId.startsWith(expectedPrefix)) {
-      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：sentenceId "${exercise.sentenceId}" 不属于第 ${paragraphIndex} 段`);
-    }
-
-    const sentenceNumber = Number(exercise.sentenceId.slice(expectedPrefix.length));
-    const sentence = sentences[sentenceNumber - 1];
-    if (!sentence) {
-      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：sentenceId "${exercise.sentenceId}" 不存在`);
-    }
-
-    const occurrenceIndex = exercise.occurrenceIndex ?? 1;
-    if (!Number.isInteger(occurrenceIndex) || occurrenceIndex < 1) {
-      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：occurrenceIndex 必须是正整数`);
-    }
-
-    let effectiveExercise = exercise;
-    let occurrenceInSentence = findNthOccurrence(sentence, exercise.occurrenceText, occurrenceIndex);
-    if (occurrenceInSentence < 0) {
-      const answerOccurrenceCount = countOccurrences(sentence, exercise.answer);
-      if (answerOccurrenceCount !== 1) {
-        if (countOccurrences(text, exercise.occurrenceText) === 1) {
-          return findUniqueText(
-            text,
-            exercise.occurrenceText,
-            `第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在第 ${paragraphIndex} 段中不存在`,
-            `第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在第 ${paragraphIndex} 段中出现多次，无法稳定替换`,
-          );
-        }
-        throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在 sentenceId "${exercise.sentenceId}" 中不存在第 ${occurrenceIndex} 次`);
-      }
-      effectiveExercise = normalizeOccurrenceText(exercise, exercise.answer);
-      occurrenceInSentence = findNthOccurrence(sentence, effectiveExercise.occurrenceText, 1);
-    }
-
-    const sentenceStart = findUniqueText(
-      text,
-      sentence,
-      `第 ${chapterIndex + 1} 章练习计划无效：sentenceId "${exercise.sentenceId}" 对应句子在第 ${paragraphIndex} 段中不存在`,
-      `第 ${chapterIndex + 1} 章练习计划无效：sentenceId "${exercise.sentenceId}" 对应句子在第 ${paragraphIndex} 段中出现多次`,
-    );
-
-    exercise.occurrenceText = effectiveExercise.occurrenceText;
-    exercise.occurrenceIndex = 1;
-
-    return sentenceStart + occurrenceInSentence;
-  }
-
-  if (!exercise.sentence) {
-    return findUniqueText(
-      text,
-      exercise.occurrenceText,
-      `第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在第 ${paragraphIndex} 段中不存在`,
-      `第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在第 ${paragraphIndex} 段中出现多次，无法稳定替换`,
-    );
-  }
-
-  const sentenceStart = findUniqueText(
-    text,
-    exercise.sentence,
-    `第 ${chapterIndex + 1} 章练习计划无效：sentence "${exercise.sentence}" 在第 ${paragraphIndex} 段中不存在`,
-    `第 ${chapterIndex + 1} 章练习计划无效：sentence "${exercise.sentence}" 在第 ${paragraphIndex} 段中出现多次，无法稳定替换`,
-  );
-  const occurrenceInSentence = findUniqueText(
-    exercise.sentence,
-    exercise.occurrenceText,
-    `第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在 sentence 中不存在`,
-    `第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${exercise.occurrenceText}" 在 sentence 中出现多次，无法稳定替换`,
-  );
-
-  return sentenceStart + occurrenceInSentence;
-}
-
-function validateExercisePlanItem(item: AiExercisePlanItem, chapterIndex: number) {
-  if (item.type !== "verb_blank" && item.type !== "vocabulary_hint") {
-    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：练习类型不支持`);
-  }
-
-  if (!Number.isInteger(item.paragraphIndex) || (item.paragraphIndex !== 1 && item.paragraphIndex !== 2)) {
-    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：paragraphIndex 必须是 1 或 2`);
-  }
-
-  if (!nonEmptyString(item.answer, "") || !nonEmptyString(item.occurrenceText, "")) {
-    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：answer 和 occurrenceText 不能为空`);
-  }
-
-  if (!item.occurrenceText.includes(item.answer)) {
-    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：occurrenceText "${item.occurrenceText}" 不包含 answer "${item.answer}"`);
-  }
-
-  if (item.type === "verb_blank" && !nonEmptyString(item.baseVerb, "")) {
-    throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：verb_blank 缺少 baseVerb`);
-  }
-}
-
-function assembleParagraphBlocks({
-  paragraphText,
-  sentences,
-  exercises,
-  chapterIndex,
-  paragraphIndex,
-  prefix,
-  blocks,
-  lessonExercises,
-}: {
-  paragraphText: string;
-  sentences: string[];
-  exercises: AiExercisePlanItem[];
-  chapterIndex: number;
-  paragraphIndex: 1 | 2;
-  prefix: string;
-  blocks: LessonDraft["chapters"][number]["blocks"];
-  lessonExercises: LessonExercise[];
-}) {
-  const sorted = exercises
-    .map((exercise) => {
-      validateExercisePlanItem(exercise, chapterIndex);
-      return { exercise, start: findExerciseOccurrence(paragraphText, sentences, exercise, chapterIndex, paragraphIndex) };
-    })
-    .sort((a, b) => a.start - b.start);
-
-  let cursor = 0;
-  const paragraphBlockIds: string[] = [];
-
-  for (const { exercise, start } of sorted) {
-    if (start < cursor) {
-      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：第 ${paragraphIndex} 段练习位置重叠`);
-    }
-
-    if (start > cursor) {
-      const textBlock = { id: `${prefix}-block-${blocks.length + 1}`, order: blocks.length + 1, type: "text" as const, text: paragraphText.slice(cursor, start) };
-      blocks.push(textBlock);
-      paragraphBlockIds.push(textBlock.id);
-    }
-
-    const exerciseId = `${prefix}-exercise-${lessonExercises.length + 1}`;
-    const lessonExercise: LessonExercise =
-      exercise.type === "verb_blank"
-        ? { id: exerciseId, type: "verb_blank", answer: exercise.answer, baseVerb: exercise.baseVerb }
-        : { id: exerciseId, type: "vocabulary_hint", answer: exercise.answer, pattern: exercise.pattern || vocabularyPattern(exercise.answer), letterCount: vocabularyLetterCount(exercise.answer) };
-    lessonExercises.push(lessonExercise);
-
-    const exerciseBlock = {
-      id: `${prefix}-block-${blocks.length + 1}`,
-      order: blocks.length + 1,
-      type: "exercise" as const,
-      exerciseId,
-      display:
-        lessonExercise.type === "verb_blank"
-          ? { kind: "verb_blank" as const, placeholder: "________" as const, prompt: lessonExercise.baseVerb }
-          : { kind: "vocabulary_hint" as const, placeholder: "________" as const, pattern: lessonExercise.pattern, letterCount: lessonExercise.letterCount },
-    };
-    blocks.push(exerciseBlock);
-    paragraphBlockIds.push(exerciseBlock.id);
-
-    cursor = start + exercise.occurrenceText.length;
-  }
-
-  if (cursor < paragraphText.length) {
-    const textBlock = { id: `${prefix}-block-${blocks.length + 1}`, order: blocks.length + 1, type: "text" as const, text: paragraphText.slice(cursor) };
-    blocks.push(textBlock);
-    paragraphBlockIds.push(textBlock.id);
-  }
-
-  return paragraphBlockIds;
-}
-
-export function assembleLessonDraftFromPlans(storyPlanInput: AiStoryContentPlan, exercisePlanInput: AiExercisePlan, context: LessonDraftGenerationContext): LessonDraft {
-  const storyPlan = parseStoryContentPlan(storyPlanInput);
-  const exercisePlan = parseExercisePlan(exercisePlanInput);
-  const characters = stableCharacterPlans(storyPlan, context);
-  const visualStyle = (isObject(storyPlan.visualStyle) ? storyPlan.visualStyle : {}) as Partial<AiStoryContentPlan["visualStyle"]>;
-  const exercisePlanByChapter = new Map(exercisePlan.chapters.map((chapter) => [chapter.chapterIndex, chapter]));
-
-  const chapters = context.storyOption.chapters.map((outlineChapter, chapterIndex) => {
-    const chapterPlan = storyPlan.chapters[chapterIndex];
-    const exerciseChapter = exercisePlanByChapter.get(chapterIndex + 1);
-    const prefix = `chapter-${chapterIndex + 1}`;
-    const rawParagraphs = Array.isArray(chapterPlan?.paragraphs) ? chapterPlan.paragraphs.slice(0, 2) : [];
-    const paragraphs = [0, 1].map((paragraphIndex) => {
-      const paragraph = rawParagraphs[paragraphIndex] ?? { text: outlineChapter.summary, shot: undefined };
-      const sentences = paragraphSentences(paragraph, outlineChapter.summary);
-      const text = sentences.join(" ");
-      assertNoLegacyMarkers(text, chapterIndex);
-      return {
-        text,
-        sentences,
-        shot: sanitizeShotPlan(paragraph?.shot, context, characters, chapterPlan?.title ?? outlineChapter.title, text),
-      };
-    }) as Array<AiStoryParagraphPlan & { text: string; sentences: string[] }> as [AiStoryParagraphPlan & { text: string; sentences: string[] }, AiStoryParagraphPlan & { text: string; sentences: string[] }];
-
-    if (!exerciseChapter) {
-      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划缺失`);
-    }
-
-    const answers = exerciseChapter.exercises.map((exercise) => exercise.answer.trim().toLowerCase());
-    if (new Set(answers).size !== answers.length) {
-      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习计划无效：answer 在同章重复`);
-    }
-
-    if (exerciseChapter.exercises.length < minExercisesPerChapter || exerciseChapter.exercises.length > maxExercisesPerChapter) {
-      throw new LessonDraftValidationError(`第 ${chapterIndex + 1} 章练习数量${exerciseChapter.exercises.length < minExercisesPerChapter ? "不足" : "过多"}：需要 7-10 个，当前 ${exerciseChapter.exercises.length} 个`);
-    }
-
-    const blocks: LessonDraft["chapters"][number]["blocks"] = [];
-    const lessonExercises: LessonExercise[] = [];
-    const paragraphBlockIds = paragraphs.map((paragraph, paragraphIndex) =>
-      assembleParagraphBlocks({
-        paragraphText: paragraph.text,
-        sentences: paragraph.sentences,
-        exercises: exerciseChapter.exercises.filter((exercise) => exercise.paragraphIndex === paragraphIndex + 1),
-        chapterIndex,
-        paragraphIndex: (paragraphIndex + 1) as 1 | 2,
-        prefix,
-        blocks,
-        lessonExercises,
-      }),
-    );
-
-    return {
-      id: prefix,
-      sourceOutlineChapterIndex: chapterIndex + 1,
-      title: nonEmptyString(chapterPlan?.title, outlineChapter.title),
-      wordTarget: { min: chapterWordTarget.min, max: chapterWordTarget.max },
-      exerciseTarget: { verbBlankCount: 7 as const, vocabularyHintCount: 3 as const },
-      blocks,
-      exercises: lessonExercises,
-      shots: paragraphs.map((paragraph, paragraphIndex) => ({
-        id: `${prefix}-shot-${paragraphIndex + 1}`,
-        order: (paragraphIndex + 1) as 1 | 2,
-        imageSlotId: `${prefix}-image-${paragraphIndex + 1}`,
-        coveredBlockIds: paragraphBlockIds[paragraphIndex],
-        ...withCharacterConsistency(paragraph.shot, characters),
-      })),
-    };
-  });
-
-  const draft: LessonDraft = {
-    schemaVersion: "lesson_draft_v1",
-    sourceStoryOptionId: context.storyOption.id,
-    generationMode: "ai",
-    title: nonEmptyString(storyPlan.title, context.storyOption.title),
-    language: "en",
-    visualStyle: {
-      artStyle: nonEmptyString(visualStyle.artStyle, "warm children's storybook watercolor"),
-      colorPalette: nonEmptyString(visualStyle.colorPalette, "soft greens, blues, and warm light"),
-      aspectRatio: "4:3",
-      consistencyPrompt: nonEmptyString(visualStyle.consistencyPrompt, "Use a consistent picture-book style across all images."),
-      studentAppealPrompt: nonEmptyString(visualStyle.studentAppealPrompt, "Cute detailed cartoon picture-book style with rounded shapes, expressive eyes, warm light, and clear story focus for children."),
-    },
-    characters,
-    chapters,
-    closingReading: {
-      title: nonEmptyString(storyPlan.closingReading?.title, `After ${context.storyOption.title}`),
-      text: stripTheEnd(nonEmptyString(storyPlan.closingReading?.text, "")),
-      vocabularyTerms: uniqueNonEmpty(
-        chapters.flatMap((chapter) => chapter.exercises.filter((exercise) => exercise.type === "vocabulary_hint").map((exercise) => exercise.answer)),
-      ).slice(0, 12),
-    },
-  };
-
-  return draft;
-}
-
-async function callDeepSeek(messages: ChatMessage[], thinkingOverride?: DeepSeekThinkingMode) {
+async function callDeepSeek(messages: ChatMessage[], durationMinutes: number) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   const baseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com";
 
@@ -935,92 +241,102 @@ async function callDeepSeek(messages: ChatMessage[], thinkingOverride?: DeepSeek
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(buildDeepSeekRequestBody(messages, thinkingOverride)),
+    body: JSON.stringify(buildDeepSeekRequestBody(messages, durationMinutes)),
   });
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw new Error(`DeepSeek 请求失败: status=${response.status}, body=${errorText.slice(0, 500)}`);
+    throw new Error("DeepSeek 请求失败");
   }
 
-  const data = (await response.json()) as { choices?: Array<{ finish_reason?: string; message?: { content?: string | null; reasoning_content?: string | null } }> };
+  const data = (await response.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
   const content = data.choices?.[0]?.message?.content;
 
   if (!content) {
-    throw new Error(`DeepSeek returned empty content: ${JSON.stringify(data).slice(0, 1000)}`);
+    throw new Error("DeepSeek 返回为空");
   }
 
   return content;
 }
 
-export function buildDeepSeekRequestBody(messages: ChatMessage[], thinkingOverride?: DeepSeekThinkingMode): DeepSeekRequestBody {
-  const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
-  const thinkingMode = thinkingOverride ?? (process.env.DEEPSEEK_THINKING === "enabled" ? "enabled" : "disabled");
-
-  if (thinkingMode === "disabled") {
-    return {
-      model,
-      messages,
-      max_tokens: 32000,
-      response_format: { type: "json_object" },
-      thinking: { type: "disabled" },
-      temperature: 0.2,
-    };
-  }
-
-  return {
-    model,
-    messages,
-    max_tokens: 64000,
-    response_format: { type: "json_object" },
-    thinking: { type: "enabled" },
-    reasoning_effort: "high",
-  };
+function mockLessonDraft(context: LessonDraftGenerationContext): LessonDraft {
+  const aliases = castAliases(context);
+  return compileLessonContentDraft(
+    {
+      title: context.storyOption.title,
+      chapters: context.storyOption.chapters.map((chapter, chapterIndex) => ({
+        title: chapter.title,
+        paragraphs: [
+          {
+            sentences: [
+              `Ms. PAN and the students visited ${context.course.theme}.`,
+              `There was a quiet clue near the story gate.`,
+              `The group followed the clue together.`,
+              `They found a warm answer at the end.`,
+            ],
+          },
+          {
+            sentences: [
+              `The teacher helped everyone read the story carefully.`,
+              `The students shared ideas and felt brave.`,
+              `There was a bright path back to class.`,
+              `They promised not to give up in chapter ${chapterIndex + 1}.`,
+            ],
+          },
+        ],
+        exercises: [
+          { type: "given_word_blank", targetCategory: "grammar", target: context.course.grammar[0] ?? "Past Simple", sentenceId: `c${chapterIndex + 1}p1s1`, answer: "visited", prompt: "visit", baseWord: "visit" },
+          { type: "given_word_blank", targetCategory: "grammar", target: "There be", sentenceId: `c${chapterIndex + 1}p1s2`, answer: "There was", prompt: "there / be", baseWord: "be" },
+          { type: "vocab_hint", targetCategory: "vocab", target: "Vocabulary", sentenceId: `c${chapterIndex + 1}p1s2`, answer: "clue", hint: "线索" },
+          { type: "phrase_hint", targetCategory: "verb_phrase", target: "Verb Phrases", sentenceId: `c${chapterIndex + 1}p2s4`, answer: "give up", hint: "放弃" },
+        ],
+      })),
+      closingReading: {
+        title: "After the Story",
+        sentences: ["The class remembered the story clues.", "They worked together and finished the adventure."],
+      },
+    },
+    context.storyOption,
+    context.course.grammar.filter((target) => target !== "There be"),
+    aliases,
+  );
 }
 
-export async function generateLessonDraft(context: LessonDraftGenerationContext) {
+export async function generateLessonDraft(context: LessonDraftGenerationContext): Promise<LessonDraft> {
   if (process.env.DEEPSEEK_API_KEY === "mock") {
     return validateLessonDraft(mockLessonDraft(context), context.storyOption);
   }
 
-  const storyMessages: ChatMessage[] = [
+  const messages: ChatMessage[] = [
     {
       role: "system",
-      content:
-        "You are an expert English picture-book content designer and structured JSON formatter. Return pure story content with no exercise markers. Return strict JSON only.",
+      content: [
+        "你是儿童 PBL 英语课程的英文互动阅读内容生成专家。",
+        "最终只输出严格 JSON，不要 Markdown、解释、注释或代码块。",
+        "核心规则：",
+        "- Story sentences 必须是 clean English，不要包含题号、空格线、Markdown 或 HTML。",
+        "- Exercises 单独放在 exercises 数组，用 sentenceId 引用句子。",
+        "- 每个 exercise.answer 必须是对应 sentence 的 exact substring。",
+        "- 每个 exercise 必须标注 target。",
+        "- 不生成图片、分镜、视觉风格、角色视觉描述、页面设计、教案或课堂流程。",
+        "- 请先内部思考和自检，最终只输出 JSON。",
+      ].join("\n"),
     },
     {
       role: "user",
-      content: buildStoryContentPrompt(context),
+      content: buildLessonContentPrompt(context),
     },
   ];
-  const storyPlan = parseStoryContentPlan(parseJsonObject(await callDeepSeek(storyMessages), "AI 返回的故事内容 JSON 格式无效，请重试生成"));
 
-  let previousExerciseError: string | undefined;
+  const content = await callDeepSeek(messages, context.course.durationMinutes);
 
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    const exerciseMessages: ChatMessage[] = [
-      {
-        role: "system",
-        content:
-          "You create precise exercise plans from existing text. Copy occurrenceText exactly and return strict JSON only.",
-      },
-      {
-        role: "user",
-        content: buildExercisePlanPrompt(context, storyPlan, previousExerciseError),
-      },
-    ];
-    const exercisePlan = parseExercisePlan(parseJsonObject(await callDeepSeek(exerciseMessages), "AI 返回的练习计划 JSON 格式无效，请重试生成"));
-
-    try {
-      return validateLessonDraft(assembleLessonDraftFromPlans(storyPlan, exercisePlan, context), context.storyOption);
-    } catch (error) {
-      if (!(error instanceof LessonDraftValidationError) || attempt === 2) {
-        throw error;
-      }
-      previousExerciseError = error.message;
-    }
+  try {
+    const plan = parseLessonContentPlan(parseJsonObject(content));
+    return validateLessonDraft(compileLessonContentDraft(plan, context.storyOption, context.course.grammar, castAliases(context)), context.storyOption);
+  } catch (error) {
+    console.error("Lesson draft AI output failed validation", {
+      error: error instanceof Error ? error.message : String(error),
+      rawContent: content,
+    });
+    throw error;
   }
-
-  throw new LessonDraftValidationError("AI 练习计划生成失败，请重试生成");
 }
