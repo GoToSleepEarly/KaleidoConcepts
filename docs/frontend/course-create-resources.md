@@ -1,348 +1,397 @@
-# 新建课程 Step 4：资源生成模块说明
+# 新建课程 Step 4：绘本资源生成优化方案
+
+## 文档状态
+
+- 状态：优化方案已确认，待开发
+- 优化原因：当前实现存在画面质量低、人物不一致、镜头没有突出正文重点、不同图片可能覆盖重复正文，以及 4:3 图片与 16:9 课件不匹配的问题。
+- 本文档替代旧版“直接按段落独立文生图”的方案，后续开发以本文为准。
 
 ## 模块目标
 
-本模块覆盖新建课程流程第四步：基于 Step 3 已确认的 `LessonDraft` 图片分镜，为每个 chapter shot 生成课程图片资产，并持久化图片状态和本地文件。
+Step 4 将 Step 3 已确认的课文转换为可用于 PPT 式授课的连续绘本图片。
 
-Step 4 是图片资源生成，不修改课文草稿内容，不生成预览页或 PDF。
+最终结果包括：
 
-## 输入边界
+- 1 张经过用户确认的视觉基准封面。
+- 每章固定 2 张正文插图。
+- 每张正文插图与唯一的原文范围建立可追踪映射。
+- 所有图片保持统一人物、环境和绘本风格。
+- Step 5 按“图片页 -> 对应文本 / 练习页”顺序播放。
 
-必须读取：
-- Step 3 `LessonDraft`
-- `LessonDraft.visualStyle`
-- `LessonDraft.characters`
-- `LessonDraft.chapters[].shots[]`
-- 已存在的 `course_images`
+Step 4 不修改课文、知识点或习题，不生成 Closing Reading 图片，不生成 PDF。
 
-对齐规则：
-- 每个 `LessonShot.imageSlotId` 对应一个图片槽。
-- 每个 chapter 仍固定 2 个 shot 图片。
-- 图片生成 prompt 来自 shot 语义、全局视觉风格和人物一致性描述。
-- Step 4 不创作新故事内容，只把 Step 3 的 `visualStyle`、`characters`、`shots` 和 covered blocks 正文编译成 HY-Image-V3.0 prompt。
-- `sourceHash` 由当前图片输入内容生成，包括 shot prompt、composition、continuityNotes、visualStyle 和相关 characters。
-- `sourceHash` 一致且状态为 `succeeded` 的图片可直接复用。
-- `sourceHash` 变化但已有成功图时，页面提示内容已变化，由用户选择沿用旧图或重新生成。
+## 根因与优化原则
 
-## 本期范围
+旧实现的问题不只是 prompt 不够详细，而是生成链路缺少稳定输入：
 
-生成：
-- 每章 2 张 shot 图片
-- 图片任务状态
-- 腾讯混元远端任务 id
-- 图片本地持久化文件
-- 图片公开访问路径
-- 失败原因
+1. Step 3 当前数据没有可靠的视觉风格和角色外貌结构，Step 4 实际只能使用通用绘本描述。
+2. 按段落机械生成图片，没有先选择最值得表现的故事瞬间。
+3. 每张图片独立文生图，没有共同参考图，人物一致性无法只靠文本保证。
+4. 图片与正文缺少句子级覆盖关系，无法证明两张图没有重复表达同一片段。
+5. 当前图片为 4:3，而课件画布为 16:9，只能留白或裁切。
 
-不生成：
-- 封面图
-- closing reading 图
-- HTML / PDF
-- 预览页
-- 用户手动新增图片槽
-- 成功图片的任意重生成
-- 多版本图片历史
+因此本次优化不继续堆叠通用 prompt，而是建立以下最小闭环：
 
-TODO：
-- 封面图 prompt 应由 Step 3 AI 生成，并在后续模块中接入封面图生成。
+1. 从现有课文和人物档案中生成可编辑的视觉设定。
+2. 将全部主要人物、主要背景和整体风格合成一张视觉基准封面。
+3. 用户确认封面后，封面作为所有正文插图的共同参考图。
+4. 先确定每张图覆盖的原文和主镜头，再生成图片。
+5. 保存结构化来源、参考图和 prompt 版本，使失败可恢复、成功可复用。
+
+## 用户流程
+
+### 阶段一：视觉基准封面
+
+页面首先根据 Step 3 课文和人物档案生成一份结构化视觉设定，展示：
+
+- 绘本风格
+- 色彩方案
+- 主要背景
+- 关键物件
+- 整体氛围
+- 封面构图
+- 每个主要人物的外貌、发型、服装、配饰、标志色
+
+用户可以修改上述视觉描述，但不能在 Step 4 修改：
+
+- 人物身份和角色别名
+- 课文正文
+- 故事情节
+- 知识点和习题
+
+用户点击“生成视觉封面”后创建封面任务。封面必须同时包含全部主要人物、主要背景和代表性的视觉世界，但不承担展示具体章节动作的职责。
+
+封面生成成功后，用户可以：
+
+- 确认封面并进入正文插图生成。
+- 修改局部视觉描述后重新生成封面。
+- 在生成失败后重试。
+
+未确认封面时，不允许生成章节图片。重新生成并确认新封面后，使用旧封面的章节图片全部标记为 `stale`，不自动消耗额度重生成。
+
+### 阶段二：章节插图
+
+每章固定生成 2 张图片，不按章节之外增加图片槽。
+
+每个图片槽在提交生图前必须明确：
+
+- `sourceParagraphId`：对应的正文段落。
+- `sourceSentenceIds`：该图覆盖的连续正文句子。
+- `heroMomentSentenceId`：最值得视觉化的核心句子。
+- `sourceExcerpt`：供用户核对的原文片段。
+- `focus`：画面要表达的单一核心动作或冲突。
+- `characters`：镜头中出现的人物。
+- `keyObjects`：推动情节的关键物件。
+- `composition`：景别、主体位置和视线关系。
+- `continuityNotes`：与上一张图必须延续的要素。
+
+覆盖规则：
+
+- 同一章两张图片的 `sourceSentenceIds` 不得重叠。
+- 每张图片只对应一个连续原文范围，不拼接无关句子。
+- 两张图按原文顺序排列。
+- 优先覆盖发生动作、变化、发现、冲突或情绪转折的句子，避免把静态说明当作主镜头。
+- 两张图不要求覆盖章节全部文字，但不得表现原文不存在的关键情节。
+- 页面始终展示每张图对应的原文，用户可以直接判断重复或错配。
+
+## 一致性策略
+
+不单独生成角色设定图。已确认的视觉基准封面同时承担：
+
+- 课程封面
+- 角色外貌参考
+- 主要背景参考
+- 绘本风格和色彩参考
+
+章节图片生成时使用：
+
+- 必选参考图：已确认的视觉基准封面。
+- 可选参考图：上一张已成功的章节图片，用于延续同一场景、服装和关键物件。
+- 结构化文字约束：只补充当前镜头动作、构图和连续性要求，不重复发明人物外貌。
+
+参考图只复用已持久化的成功图片。参考图失效或本地文件不存在时不得静默降级为独立文生图，应返回可重试错误，防止生成风格漂移的图片。
+
+## 图片规格与画质
+
+封面和全部章节图片使用同一规格：
+
+- 比例：16:9 横版。
+- 请求尺寸：`1280x720`。
+- 用途：PPT 式全幅图片页。
+- 展示：全幅铺满，不拉伸、不裁切、不再使用 4:3 居中容器。
+- 构图安全区：人物、动作和关键物件放在画面中间约 80% 区域。
+- 生成目标：精美儿童绘本插画，主体清晰，背景有层次，细节丰富但不堆砌无关元素。
+- 不请求 `1920x1080` 或更高尺寸；`1280x720` 已满足课堂投影，并控制生成、下载、存储和页面加载成本。
+
+远端图片下载成功后：
+
+- 转码为 WebP，默认质量 `88`。
+- 单张文件目标约 `300-700 KB`，这是性能目标，不作为生成成功的硬性校验。
+- 不为达到体积目标牺牲明显画质，也不因轻微超出目标阻断课程生成。
+- 本地持久化路径使用 `.webp`，Step 5 和 PDF 只读取本地 `publicUrl`。
+- MVP 不额外长期保存供应商原图；若转码失败，任务保持失败并允许重试。
+
+## 纯画面约束
+
+封面和章节图片都必须是纯画面，不把课程名称绘制进图片。Prompt 必须明确禁止：
+
+- 标题、正文、字幕
+- 字母、数字和可读符号
+- 对话框和气泡
+- 标识牌、书本页面、屏幕 UI 等容易生成文字的区域
+- Logo 和水印
+
+腾讯混元请求固定使用：
+
+- `logo_add: 0`
+- `revise: 0`
+
+如情节必须出现书本、路牌或屏幕，使用无文字图形、色块或抽象符号代替。MVP 不增加 OCR 自动拦截；用户可在封面确认和图片预览中发现问题并重试。
+
+## Prompt 编译
+
+最终 prompt 由代码按固定顺序编译，不由页面拼接自由文本：
+
+1. `OUTPUT SPEC`：16:9、1280x720、全幅 PPT 绘本图片、纯画面。
+2. `VISUAL LOCK`：已确认的风格、色彩、背景和氛围。
+3. `CHARACTER LOCK`：当前镜头人物的已确认外貌描述。
+4. `REFERENCE RULE`：保持参考封面中的脸型、发型、服装、配色和世界观。
+5. `TEXT ANCHOR`：该图唯一对应的原文片段。
+6. `HERO MOMENT`：当前镜头的单一核心动作。
+7. `COMPOSITION`：景别、主体位置、视线和安全区。
+8. `CONTINUITY`：与上一镜头保持一致的内容。
+9. `NEGATIVE CONSTRAINTS`：禁止文字、水印、额外人物、重复肢体和与原文冲突的动作。
+
+`sourceHash` 至少包含：
+
+- 图片规格和 prompt 编译版本
+- 当前视觉设定版本
+- 已确认封面图片 id 和 `sourceHash`
+- `sourceParagraphId`、`sourceSentenceIds`、`heroMomentSentenceId`
+- `focus`、`characters`、`keyObjects`、`composition`、`continuityNotes`
+- 使用的上一镜头参考图 id 和 `sourceHash`
+
+输入未变化且图片状态为 `succeeded` 时直接复用，不重复消耗 AI 成本。
 
 ## 页面行为
 
-入口：
-- `/courses/:id/create/resources`
+入口：`/courses/:id/create/resources`
 
-加载时：
-- 调用 `GET /api/courses/:id/resources`
-- 展示所有 chapter shot 图片槽
-- 不自动创建生成任务，不自动消耗腾讯额度
-- 若有 `generating` / `pending` / `submitting` 图片，页面每 2-3 秒轮询
+页面按以下顺序展示：
 
-页面展示：
-- 总进度：成功数 / 总数、生成中数、失败数、内容已变化数
-- 按章节分组的图片列表
-- 每张图片显示：
-  - 章节标题
-  - shot order
-  - 对应正文片段
-  - 画面重点 / 关键物件
-  - 最终生图提示词（默认折叠）
-  - 当前状态
-  - 图片预览或占位
-  - 失败原因
-  - 内容已变化提示
+1. 视觉设定编辑区。
+2. 视觉基准封面及确认状态。
+3. 按章节分组的图片槽和总进度。
+
+每张章节图片显示：
+
+- 章节标题和镜头顺序
+- 对应正文片段
+- 核心镜头、人物和关键物件
+- 最终 prompt，默认折叠
+- 当前状态和失败原因
+- 图片预览
+- 内容或参考图已变化提示
+
+页面不在首次加载时自动创建图片任务，避免未经用户确认产生费用。有活动任务时每 2-3 秒轮询。
 
 主要操作：
-- 点击“生成全部缺失图片”调用 `POST /api/courses/:id/resources/generate`
-- 失败图片可点击重试
-- 内容已变化图片可选择：
-  - 沿用旧图
-  - 重新生成
-- 成功且未过期图片只展示，不提供任意重生成
 
-状态文案：
-- `missing`：未生成
-- `pending`：排队中
-- `submitting`：提交中
-- `generating`：生成中
-- `succeeded`：已完成
-- `failed`：生成失败
-- `stale`：草稿内容已变化
+- 保存视觉设定
+- 生成 / 重试视觉封面
+- 确认视觉封面
+- 生成全部缺失的章节图片
+- 重试失败图片
+- 对 `stale` 图片选择沿用旧图或重新生成
 
-## API 合同
-
-### `GET /api/courses/:id/resources`
-
-行为：
-- 读取课程、LessonDraft 和 `course_images`
-- 计算当前所有 shot 图片槽
-- 标记缺失图片和内容已变化图片
-- 推进图片队列：
-  - 查询 `generating` 图片的腾讯任务状态
-  - 成功后下载图片到本地持久化目录
-  - 失败后记录失败原因
-  - 有空位时提交下一个 `pending` 图片任务
-- 返回最新图片状态和进度
-
-响应：
-
-```ts
-{
-  progress: {
-    total: number;
-    succeeded: number;
-    generating: number;
-    failed: number;
-    missing: number;
-    stale: number;
-  };
-  images: CourseResourceImage[];
-}
-```
-
-失败：
-- `400 { message: "请先生成课文草稿" }`
-- `404 { message: "课程不存在" }`
-- `500 { message: "资源状态加载失败" }`
-
-### `POST /api/courses/:id/resources/generate`
-
-行为：
-- 读取 LessonDraft 中所有 shot 图片槽
-- 为缺失图片创建 `pending` 记录
-- 不覆盖已成功图片
-- 不自动重生成 stale 图片
-- 将课程状态更新为 `building_resources`
-
-响应：
-
-```ts
-{
-  progress: ResourceProgress;
-  images: CourseResourceImage[];
-}
-```
-
-失败：
-- `400 { message: "请先生成课文草稿" }`
-- `400 { message: "没有需要生成的图片" }`
-- `404 { message: "课程不存在" }`
-- `500 { message: "资源生成任务创建失败" }`
-
-### `POST /api/courses/:id/resources/images/:imageId/retry`
-
-行为：
-- 仅允许 `failed` 图片，或 `sourceHash` 已过期的成功图片
-- 重新写入当前 prompt 和 `sourceHash`
-- 清空旧的远端任务字段、失败原因和本地路径
-- 状态置为 `pending`
-- 将课程状态更新为 `building_resources`
-
-响应：
-
-```ts
-{
-  image: CourseResourceImage;
-}
-```
-
-失败：
-- `400 { message: "当前图片状态不能重试" }`
-- `404 { message: "图片不存在" }`
-- `500 { message: "图片重试失败" }`
-
-### `POST /api/courses/:id/resources/images/:imageId/keep`
-
-行为：
-- 仅允许已有成功图片且当前 `sourceHash` 已变化
-- 将图片 `sourceHash` 更新为当前 hash
-- 保留原本地图片文件
-
-响应：
-
-```ts
-{
-  image: CourseResourceImage;
-}
-```
-
-失败：
-- `400 { message: "当前图片不能沿用旧图" }`
-- `404 { message: "图片不存在" }`
-- `500 { message: "沿用旧图失败" }`
+成功且未过期的图片不提供无条件重生成，避免误操作重复计费。若图片质量不合格但输入未变化，用户可主动选择“标记不满意并重新生成”，该操作必须二次确认并明确会再次产生 AI 费用。
 
 ## 数据结构
 
-新增 Prisma 表 `CourseImage`。
+图片仍统一保存在 `course_images`，不得把图片 URL、prompt 或状态写回 `structured_lesson`。
+
+建议扩展：
 
 ```ts
-type CourseImageStatus = "pending" | "submitting" | "generating" | "succeeded" | "failed";
-type CourseImageSlotType = "lesson_shot";
-type CourseImageProvider = "tencent_hunyuan";
+type CourseImageSlotType = "visual_cover" | "lesson_shot";
+
+type CourseVisualProfile = {
+  style: string;
+  palette: string;
+  mainSetting: string;
+  keyObjects: string[];
+  mood: string;
+  coverComposition: string;
+  characters: Array<{
+    profileId: string;
+    alias: string;
+    appearance: string;
+    hairstyle: string;
+    clothing: string;
+    accessories: string[];
+    signatureColor: string;
+  }>;
+  version: number;
+  confirmedCoverImageId: string | null;
+};
 
 type CourseResourceImage = {
   id: string;
   courseId: string;
-  chapterId: string;
-  shotId: string;
+  chapterId: string | null;
   slotId: string;
   slotType: CourseImageSlotType;
   slotIndex: number;
+  sourceParagraphId: string | null;
+  sourceSentenceIds: string[];
+  heroMomentSentenceId: string | null;
+  sourceExcerpt: string;
+  focus: string | null;
+  characters: string[];
+  keyObjects: string[];
+  composition: string | null;
+  continuityNotes: string | null;
   prompt: string;
+  promptVersion: string;
+  referenceImageIds: string[];
+  width: 1280;
+  height: 720;
+  format: "webp";
   sourceHash: string;
   currentSourceHash: string;
   stale: boolean;
-  status: CourseImageStatus | "missing";
-  provider: CourseImageProvider;
+  status: "missing" | "pending" | "submitting" | "generating" | "succeeded" | "failed";
+  provider: "tencent_hunyuan";
   providerTaskId: string | null;
   providerImageUrl: string | null;
   publicUrl: string | null;
   failureReason: string | null;
-  sourceText: string;
-  focus: string | null;
-  keyObjects: string[];
-  createdAt: string;
-  updatedAt: string;
 };
 ```
 
-Prisma 字段：
-- `id`
-- `courseId`
-- `chapterId`
-- `shotId`
-- `slotId`
-- `slotType`
-- `slotIndex`
-- `prompt`
-- `sourceHash`
-- `status`
-- `provider`
-- `providerTaskId`
-- `providerImageUrl`
-- `storagePath`
-- `publicUrl`
-- `failureReason`
-- `createdAt`
-- `updatedAt`
+`CourseVisualProfile` 必须持久化，具体采用独立表还是课程 JSON 字段由开发时结合现有 Prisma 模型决定，但必须走 Prisma migration，且不能放进 `structured_lesson`。
 
-约束：
+`course_images` 继续保持：
+
 - `@@unique([courseId, slotId])`
 - `@@index([courseId, status])`
-- `CourseImage.courseId` 级联删除
+- 课程删除时级联删除记录
+- 本地图片文件在删除记录后同步清理
 
-本期不新增 `course_image_jobs`。每张图片就是一个当前任务；后续如果需要保留多版本和历史任务，再拆 job 表。
+MVP 不新增 Worker、MQ 或图片历史表。每个图片槽只保存当前任务和当前成功资产。
+
+## API 与状态流
+
+### `GET /api/courses/:id/resources`
+
+返回视觉设定、封面确认状态、章节镜头规划、所有图片状态和总进度，并轻量推进已有远端任务。不得在 GET 中创建新的付费任务。
+
+### `PUT /api/courses/:id/resources/visual-profile`
+
+保存用户可编辑的视觉设定。视觉设定变化后：
+
+- 当前已确认封面取消确认并标记 `stale`。
+- 依赖该封面的章节图片标记 `stale`。
+- 保留旧图片文件，等待用户决定，不自动重新生成。
+
+### `POST /api/courses/:id/resources/cover/generate`
+
+创建或重试视觉封面任务。已有未变化的成功封面时不重复提交；主动重生成需要费用确认。
+
+### `POST /api/courses/:id/resources/cover/confirm`
+
+只允许确认 `succeeded` 且未过期的封面。确认后记录 `confirmedCoverImageId`，随后才允许创建章节图片任务。
+
+### `POST /api/courses/:id/resources/generate`
+
+前置条件：
+
+- 课文草稿存在。
+- 视觉设定存在。
+- 封面已确认且未过期。
+- 每章正好有 2 个合法且不重叠的镜头规划。
+
+只为缺失图片创建 `pending` 记录，不覆盖成功图片，不自动重生成 `stale` 图片。
+
+### `POST /api/courses/:id/resources/images/:imageId/retry`
+
+仅重试 `failed` 图片，或经用户确认后重生成 `stale` / 不满意的成功图片。重试前重新编译 prompt、参考图和 `sourceHash`。
+
+### `POST /api/courses/:id/resources/images/:imageId/keep`
+
+允许用户沿用已有成功图片。沿用只更新当前 `sourceHash`，保留本地文件；页面必须提示该图片可能与新封面或新正文不完全一致。
 
 ## 腾讯混元适配
 
-供应商：
-- 腾讯混元 HY-Image-V3.0
+供应商：腾讯混元 HY-Image-V3.0。
 
-调用方式：
-- `POST https://tokenhub.tencentmaas.com/v1/api/image/submit` 提交文生图任务，保存腾讯远端 task id
-- `POST https://tokenhub.tencentmaas.com/v1/api/image/query` 轮询查询任务状态
-- 成功后下载腾讯返回的图片 URL
-- 图片保存到 `STORAGE_DIR/course-images/:courseId/:imageId.png`
-- 课程页面使用本地 `publicUrl`，不依赖腾讯远端 URL
+请求参数：
 
-Prompt 编译：
-- `STYLE LOCK`：可爱、卡通、细致、儿童绘本风、色彩和学生吸引点。
-- `CHARACTER LOCK`：角色外貌、眼睛、发型、衣服、标志物和视觉气质。
-- `SCENE LOCK`：地点、空间物件、位置关系和连续性要求。
-- `TEXT ANCHOR`：该图覆盖的英文正文片段。
-- `SHOT FOCUS`：当前图的故事动作、画面重点、关键物件、情绪和构图。
-- `OUTPUT`：4:3 横版、主体清晰、背景服务故事、禁止文字水印。
+- `size: "1280:720"`，具体字段格式按当前 SDK / API 合同适配。
+- 章节图片通过 `images` 传入已确认封面，必要时再传上一张章节图片。
+- `logo_add: 0`
+- `revise: 0`
+- 支持时保存并复用稳定 `seed`；重试不满意图片时生成新 seed。
 
-默认规格：
-- 4:3
-- 1024x768
+提交后保存远端 task id，轮询成功后立即下载到部署代码目录之外的持久化路径，转码为 WebP，并使用本地 `publicUrl`。不得依赖供应商临时 URL 作为课程资产地址。
 
-环境变量：
-- `TENCENTCLOUD_SECRET_ID`
-- `TENCENTCLOUD_SECRET_KEY`
-- `TENCENTCLOUD_REGION`
-- `TENCENT_HUNYUAN_API_KEY`
-- `TENCENT_HUNYUAN_IMAGE_MODEL=hy-image-v3.0`
-- `STORAGE_DIR`
+## 队列与失败恢复
 
-实现模块建议：
-- `lib/server/ai/tencent-hunyuan-image.ts`
-- `lib/server/storage/course-images.ts`
-- `lib/server/repositories/course-images.ts`
+MVP 保持 Next.js 单体内的轮询推进，不引入 Worker、MQ 或 WebSocket。
 
-## 队列推进策略
+状态：
 
-MVP 不引入 Worker、MQ、WebSocket 或定时任务。
+- `pending`：等待提交。
+- `submitting`：正在创建远端任务。
+- `generating`：已有远端 task id，等待结果。
+- `succeeded`：本地 WebP 文件已保存。
+- `failed`：提交、生成、下载或转码失败，可重试。
+- `stale`：不是数据库任务状态，而是当前输入 hash 与成功图片 hash 不一致。
 
-`GET /api/courses/:id/resources` 负责轻量推进队列：
-1. 查询当前课程所有 `generating` 图片。
-2. 对每个 `generating` 图片查询腾讯任务状态。
-3. 成功则下载本地图片并标记 `succeeded`。
-4. 失败则标记 `failed` 并记录 `failureReason`。
-5. 如果没有活跃提交，选择一个 `pending` 图片提交腾讯任务。
-6. 根据最新图片状态更新课程状态。
+失败恢复要求：
 
-由于腾讯默认并发较低，本期按单课程单活跃任务推进。页面轮询时可以持续生成，刷新页面后仍可恢复。
+- 远端生成成功但下载或转码失败时，保留 `providerImageUrl` 和失败原因，重试优先恢复下载，不重复提交生图任务。
+- 页面刷新后根据数据库状态继续轮询，不丢失已提交任务。
+- 单张图片失败不删除其他成功图片。
+- 只有全部必需图片成功且无未处理 `stale` 图片时，课程才进入 `ready`。
+- 存在活动任务时课程为 `building_resources`；没有活动任务但存在失败时为 `build_failed`。
 
-## 失败恢复
+## Step 5 联调边界
 
-图片状态恢复：
-- `pending`：等待轮询提交
-- `submitting`：提交腾讯任务中；提交失败转 `failed`
-- `generating`：已有腾讯 task id；轮询查询结果
-- `succeeded`：已有本地图片，可用于后续预览和 PDF
-- `failed`：展示失败原因，可重试
+Step 5 每个镜头固定生成两页：
 
-下载失败：
-- 不标记成功
-- 保留 `providerImageUrl`
-- 记录 `failureReason`
-- 允许重试
+1. 16:9 全幅图片页。
+2. 该图片对应的文本 / 练习页。
 
-内容变化：
-- 不自动生成新图
-- 页面展示 `stale`
-- 用户可选择沿用旧图或重新生成
+Step 5 必须按 `sourceSentenceIds` 读取对应文本，不再推断图片属于哪一段。旧的 4:3 图片框需替换为 16:9 全幅容器；课程标题由 Step 5 页面组件叠加，不写进封面图片。
 
-课程状态：
-- 开始创建图片任务后更新为 `building_resources`
-- 全部图片成功后更新为 `ready`
-- 存在失败且没有活跃任务时更新为 `build_failed`
-- 存在 pending / submitting / generating 时保持 `building_resources`
+## 验收标准
 
-## 校验规则
+- Step 4 首次进入不自动产生图片费用。
+- 用户能编辑视觉设定、生成并确认一张包含全部主要人物和主要背景的纯画面封面。
+- 未确认封面时不能生成章节图片。
+- 每章正好 2 张章节图片，且两张图片的来源句子不重叠、顺序与正文一致。
+- 页面能看到每张图片对应的原文和核心镜头。
+- 所有章节图片以已确认封面作为参考图；连续场景可追加上一张成功图片作为参考。
+- 人物外貌、服装、主要背景和整体风格在同一课程中保持明显一致。
+- 图片不出现标题、字幕、字母、数字、对话框、Logo 或水印。
+- 封面和章节图片均为 1280x720、16:9，持久化为 WebP，Step 5 全幅展示无拉伸和裁切。
+- 成功且输入未变化的图片可复用，不重复消耗 AI 成本。
+- 修改视觉设定或确认新封面后，依赖的旧图片标记过期但不自动重生成。
+- 提交、生成、下载和转码任一阶段失败后都能从数据库状态恢复并单张重试。
 
-- 课程必须存在。
-- 课程必须已有 `LessonDraft`。
-- 每个 LessonDraft chapter 必须有 2 个 shots。
-- 每个 shot 必须有非空 `imageSlotId`、`scenePrompt`、`composition`、`continuityNotes`。
-- 只能为 `lesson_shot` 槽创建图片。
-- 不允许在成功且未过期图片上随意重生成。
-- 不允许把腾讯远端 URL 当作长期课程图片地址。
-- `structured_lesson` 和 `lesson_draft` 不保存图片 URL、prompt 或状态。
+## 开发顺序
 
-## 实现状态
+1. 增加视觉设定、封面槽、镜头来源映射和参考图字段，创建 Prisma migration。
+2. 先写镜头不重叠、封面确认门禁、source hash、任务恢复和图片复用测试。
+3. 实现视觉设定与镜头规划编译。
+4. 扩展腾讯混元参考图、16:9、无水印和关闭 revise 参数。
+5. 实现 WebP 转码和持久化失败恢复。
+6. 同步实现 Step 4 前端和 API。
+7. 修改 Step 5 为 16:9 全幅图片页并按来源句子配对文本页。
+8. 使用真实数据库和真实图片任务完成端到端验收。
 
-- 状态：已实现，待用户验收
-- 实现提交：`c42c059`
-- 验证命令：`pnpm prisma:generate`、`pnpm test lib/server/repositories/course-images.test.ts lib/server/ai/tencent-hunyuan-image.test.ts lib/server/storage/course-images.test.ts`、`pnpm test`、`pnpm lint`、`pnpm build`
-- 验证结果：通过。新增 Step 4 资源生成页面、`course_images` 持久化表、腾讯混元异步任务适配、本地图片保存、缺失图片生成、失败重试、stale 图片沿用 / 重新生成和轮询推进队列。
+## 实现记录
+
+- 当前实现提交：`c42c059`，对应旧版独立文生图流程。
+- 本文档优化尚未实现，开发完成后补充实现提交号、migration、验证命令和真实生成验收结果。
