@@ -1,4 +1,9 @@
-import type { LessonContentChapter, LessonContentDraft, LessonExercise, StoryOption } from "@/lib/contracts/api";
+import type {
+  LessonContentChapter,
+  LessonContentDraft,
+  LessonExercise,
+  StoryOption,
+} from "@/lib/contracts/api";
 
 export type AiLessonContentPlan = {
   title: string;
@@ -6,106 +11,61 @@ export type AiLessonContentPlan = {
   closingReading: AiClosingReading;
 };
 
-type AiLessonChapter = {
+export type AiLessonChapter = {
   title: string;
   paragraphs: [AiParagraph, AiParagraph];
-  exercises: AiExerciseAnchor[];
 };
 
-type AiParagraph = {
-  sentences: string[];
+export type AiParagraph = {
+  sentences: AiSentence[];
 };
 
-type AiExerciseAnchor = AiGivenWordBlankAnchor | AiChoiceBlankAnchor | AiVocabHintAnchor | AiPhraseHintAnchor;
+export type AiSentence = {
+  parts: AiSentencePart[];
+};
 
 type AiExerciseBase = {
-  sentenceId: string;
   answer: string;
   target: string;
-  occurrence?: number;
 };
 
-type AiGivenWordBlankAnchor = AiExerciseBase & {
-  type: "given_word_blank";
-  targetCategory: "grammar" | "modal" | "vocab";
-  prompt: string;
-  baseWord?: string;
-};
+export type AiSentencePart =
+  | { type: "text"; text: string }
+  | (AiExerciseBase & {
+      type: "given_word_blank";
+      prompt: string;
+      baseWord?: string;
+    })
+  | (AiExerciseBase & {
+      type: "choice_blank";
+      choices: string[];
+    })
+  | {
+      type: "vocab_hint";
+      answer: string;
+      hint: string;
+    }
+  | {
+      type: "phrase_hint";
+      answer: string;
+      hint: string;
+    };
 
-type AiChoiceBlankAnchor = AiExerciseBase & {
-  type: "choice_blank";
-  targetCategory: "grammar" | "modal" | "vocab";
-  choices: string[];
-};
-
-type AiVocabHintAnchor = AiExerciseBase & {
-  type: "vocab_hint";
-  targetCategory: "vocab";
-  target: "Vocabulary";
-  hint: string;
-};
-
-type AiPhraseHintAnchor = AiExerciseBase & {
-  type: "phrase_hint";
-  targetCategory: "verb_phrase";
-  target: "Verb Phrases";
-  hint: string;
-};
-
-type AiClosingReading = {
+export type AiClosingReading = {
   title: string;
   sentences: string[];
 };
 
-type PositionedExercise = {
-  anchor: AiExerciseAnchor;
-  sentenceText: string;
-  paragraphIndex: number;
-  sentenceIndex: number;
-  answerStart: number;
-};
-
-function sentenceId(chapterIndex: number, paragraphIndex: number, sentenceIndex: number) {
+function sentenceId(
+  chapterIndex: number,
+  paragraphIndex: number,
+  sentenceIndex: number,
+) {
   return `c${chapterIndex + 1}p${paragraphIndex + 1}s${sentenceIndex + 1}`;
 }
 
 function exerciseId(chapterIndex: number, exerciseIndex: number) {
   return `chapter-${chapterIndex + 1}-exercise-${exerciseIndex + 1}`;
-}
-
-function parseSentenceId(value: string) {
-  const match = /^c(\d+)p(\d+)s(\d+)$/.exec(value);
-  if (!match) {
-    throw new Error(`Invalid sentenceId ${value}`);
-  }
-
-  return {
-    chapterIndex: Number(match[1]) - 1,
-    paragraphIndex: Number(match[2]) - 1,
-    sentenceIndex: Number(match[3]) - 1,
-  };
-}
-
-function regexEscape(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function findAnswerPositions(text: string, answer: string) {
-  if (!answer) {
-    return [];
-  }
-
-  if (/^[A-Za-z]+$/.test(answer)) {
-    return Array.from(text.matchAll(new RegExp(`\\b${regexEscape(answer)}\\b`, "g"))).map((match) => match.index ?? -1).filter((index) => index >= 0);
-  }
-
-  const positions: number[] = [];
-  let index = text.indexOf(answer);
-  while (index >= 0) {
-    positions.push(index);
-    index = text.indexOf(answer, index + answer.length);
-  }
-  return positions;
 }
 
 function answerLetters(answer: string) {
@@ -114,28 +74,17 @@ function answerLetters(answer: string) {
 
 function wordPattern(word: string) {
   const letters = Array.from(word.replace(/[^A-Za-z]/g, ""));
-
-  if (letters.length === 0) {
-    return word;
-  }
-
-  if (letters.length === 1) {
-    return letters[0];
-  }
-
-  if (letters.length === 2) {
-    return [letters[0], "_"].join(" ");
-  }
-
-  return [letters[0], ...Array.from({ length: letters.length - 2 }, () => "_"), letters[letters.length - 1]].join(" ");
+  if (letters.length <= 1) return letters[0] ?? word;
+  if (letters.length === 2) return `${letters[0]} _`;
+  return [
+    letters[0],
+    ...Array.from({ length: letters.length - 2 }, () => "_"),
+    letters.at(-1),
+  ].join(" ");
 }
 
 function hintPattern(answer: string) {
-  return answer
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(wordPattern)
-    .join(" ");
+  return answer.split(/\s+/).filter(Boolean).map(wordPattern).join(" ");
 }
 
 function hintLetterCount(answer: string) {
@@ -143,169 +92,126 @@ function hintLetterCount(answer: string) {
     .split(/\s+/)
     .filter(Boolean)
     .map((word) => answerLetters(word).length || word.length);
-
-  if (counts.length <= 1) {
-    return counts[0] ?? answer.trim().length;
-  }
-
-  return counts.join("+");
+  return counts.length <= 1
+    ? (counts[0] ?? answer.trim().length)
+    : counts.join("+");
 }
 
-function overlapDetail(exercise: { item: LessonExercise }) {
-  return `#${exercise.item.order} "${exercise.item.answer}" (${exercise.item.target})`;
+function normalizeAnswer(answer: string) {
+  return answer.trim().replace(/\s+/g, " ").toLocaleLowerCase("en");
 }
 
-function compileSentenceSegments(sentenceIdValue: string, text: string, exercises: Array<{ item: LessonExercise; answerStart: number }>) {
-  if (!exercises.length) {
-    return [{ type: "text" as const, text }];
+function exercisePart(sentence: AiSentence, id: string) {
+  const exercises = sentence.parts.filter(
+    (part): part is Exclude<AiSentencePart, { type: "text" }> =>
+      part.type !== "text",
+  );
+  if (exercises.length > 1) {
+    throw new Error(`${id} has ${exercises.length} exercise parts; max 1`);
   }
-
-  const sorted = exercises.slice().sort((left, right) => left.answerStart - right.answerStart);
-  const segments: Array<{ type: "text"; text: string } | { type: "exercise"; exerciseId: string }> = [];
-  let cursor = 0;
-
-  for (const exercise of sorted) {
-    if (exercise.answerStart < cursor) {
-      const previous = sorted[sorted.indexOf(exercise) - 1];
-      const details = previous ? `${overlapDetail(previous)}; ${overlapDetail(exercise)}` : overlapDetail(exercise);
-      throw new Error(`Exercise answers overlap in ${sentenceIdValue}. Sentence: "${text}" Overlapping answers: ${details}`);
-    }
-
-    if (exercise.answerStart > cursor) {
-      segments.push({ type: "text", text: text.slice(cursor, exercise.answerStart) });
-    }
-    segments.push({ type: "exercise", exerciseId: exercise.item.id });
-    cursor = exercise.answerStart + exercise.item.answer.length;
-  }
-
-  if (cursor < text.length) {
-    segments.push({ type: "text", text: text.slice(cursor) });
-  }
-
-  return segments;
+  return exercises[0];
 }
 
-function validateAnchor(anchor: AiExerciseAnchor) {
-  if (anchor.type === "choice_blank") {
-    const uniqueChoices = new Set(anchor.choices);
-    if (!Array.isArray(anchor.choices) || anchor.choices.length < 2 || anchor.choices.length > 4 || uniqueChoices.size !== anchor.choices.length) {
+function sentenceText(sentence: AiSentence) {
+  return sentence.parts
+    .map((part) => (part.type === "text" ? part.text : part.answer))
+    .join("");
+}
+
+function validateExercisePart(
+  part: Exclude<AiSentencePart, { type: "text" }>,
+  id: string,
+) {
+  if (!part.answer || part.answer !== part.answer.trim()) {
+    throw new Error(
+      `${id} exercise answer must be non-empty without surrounding whitespace`,
+    );
+  }
+
+  if (part.type === "choice_blank") {
+    const choices = new Set(part.choices);
+    if (
+      part.choices.length < 2 ||
+      part.choices.length > 4 ||
+      choices.size !== part.choices.length
+    ) {
       throw new Error("choice_blank choices must contain 2-4 unique options");
     }
-    if (!uniqueChoices.has(anchor.answer)) {
+    if (!choices.has(part.answer))
       throw new Error("choice_blank choices must include answer");
-    }
-  }
-
-  if (anchor.type === "vocab_hint" && (anchor.targetCategory !== "vocab" || anchor.target !== "Vocabulary")) {
-    throw new Error("vocab_hint must use targetCategory vocab and target Vocabulary");
-  }
-
-  if (anchor.type === "phrase_hint" && (anchor.targetCategory !== "verb_phrase" || anchor.target !== "Verb Phrases")) {
-    throw new Error("phrase_hint must use targetCategory verb_phrase and target Verb Phrases");
   }
 }
 
-function compileExercise(positioned: PositionedExercise, chapterIndex: number, exerciseIndex: number): LessonExercise {
-  const { anchor } = positioned;
-  validateAnchor(anchor);
+function targetCategory(target: string): "grammar" | "modal" | "vocab" {
+  if (target === "Modals") return "modal";
+  if (target === "Vocabulary") return "vocab";
+  return "grammar";
+}
 
-  const id = exerciseId(chapterIndex, exerciseIndex);
-  const order = exerciseIndex + 1;
-
-  if (anchor.type === "given_word_blank") {
+function compileExercise(
+  part: Exclude<AiSentencePart, { type: "text" }>,
+  chapterIndex: number,
+  sentenceIdValue: string,
+  order: number,
+): LessonExercise {
+  const common = {
+    id: exerciseId(chapterIndex, order - 1),
+    order,
+    sentenceId: sentenceIdValue,
+    answer: part.answer,
+  };
+  if (part.type === "given_word_blank")
     return {
-      id,
-      order,
-      type: "given_word_blank",
-      targetCategory: anchor.targetCategory,
-      target: anchor.target,
-      sentenceId: anchor.sentenceId,
-      answer: anchor.answer,
-      prompt: anchor.prompt,
-      baseWord: anchor.baseWord,
+      ...common,
+      type: part.type,
+      targetCategory: targetCategory(part.target),
+      target: part.target,
+      prompt: part.prompt,
+      baseWord: part.baseWord,
     };
-  }
-
-  if (anchor.type === "choice_blank") {
+  if (part.type === "choice_blank")
     return {
-      id,
-      order,
-      type: "choice_blank",
-      targetCategory: anchor.targetCategory,
-      target: anchor.target,
-      sentenceId: anchor.sentenceId,
-      answer: anchor.answer,
-      choices: anchor.choices,
+      ...common,
+      type: part.type,
+      targetCategory: targetCategory(part.target),
+      target: part.target,
+      choices: part.choices,
     };
-  }
-
-  if (anchor.type === "vocab_hint") {
+  if (part.type === "vocab_hint")
     return {
-      id,
-      order,
-      type: "vocab_hint",
+      ...common,
+      type: part.type,
       targetCategory: "vocab",
       target: "Vocabulary",
-      sentenceId: anchor.sentenceId,
-      answer: anchor.answer,
-      hint: anchor.hint,
-      pattern: hintPattern(anchor.answer),
-      letterCount: Number(hintLetterCount(anchor.answer)),
+      hint: part.hint,
+      pattern: hintPattern(part.answer),
+      letterCount: Number(hintLetterCount(part.answer)),
     };
-  }
-
   return {
-    id,
-    order,
-    type: "phrase_hint",
+    ...common,
+    type: part.type,
     targetCategory: "verb_phrase",
     target: "Verb Phrases",
-    sentenceId: anchor.sentenceId,
-    answer: anchor.answer,
-    hint: anchor.hint,
-    pattern: hintPattern(anchor.answer),
-    letterCount: String(hintLetterCount(anchor.answer)),
+    hint: part.hint,
+    pattern: hintPattern(part.answer),
+    letterCount: String(hintLetterCount(part.answer)),
   };
 }
 
-function positionedExercises(chapter: AiLessonChapter, chapterIndex: number) {
-  return chapter.exercises
-    .map((anchor, anchorIndex): PositionedExercise => {
-      const parsed = parseSentenceId(anchor.sentenceId);
-      if (parsed.chapterIndex !== chapterIndex) {
-        throw new Error(`Exercise ${anchorIndex + 1} references wrong chapter sentenceId ${anchor.sentenceId}`);
-      }
-
-      const sentenceText = chapter.paragraphs[parsed.paragraphIndex]?.sentences[parsed.sentenceIndex];
-      if (!sentenceText) {
-        throw new Error(`Exercise ${anchorIndex + 1} references missing sentenceId ${anchor.sentenceId}`);
-      }
-
-      const positions = findAnswerPositions(sentenceText, anchor.answer);
-      if (positions.length === 0) {
-        throw new Error(`Exercise ${anchorIndex + 1} answer "${anchor.answer}" found 0 times in ${anchor.sentenceId}. Sentence: "${sentenceText}"`);
-      }
-
-      if (positions.length > 1 && !anchor.occurrence) {
-        throw new Error(
-          `Exercise ${anchorIndex + 1} answer "${anchor.answer}" found ${positions.length} times in ${anchor.sentenceId}. Sentence: "${sentenceText}" If you intended one occurrence, set occurrence.`,
-        );
-      }
-
-      const occurrence = anchor.occurrence ?? 1;
-      if (occurrence < 1 || occurrence > positions.length) {
-        throw new Error(`Exercise ${anchorIndex + 1} occurrence ${occurrence} is out of range for answer "${anchor.answer}" in ${anchor.sentenceId}. Sentence: "${sentenceText}"`);
-      }
-
-      return {
-        anchor,
-        sentenceText,
-        paragraphIndex: parsed.paragraphIndex,
-        sentenceIndex: parsed.sentenceIndex,
-        answerStart: positions[occurrence - 1],
-      };
-    })
-    .sort((left, right) => left.paragraphIndex - right.paragraphIndex || left.sentenceIndex - right.sentenceIndex || left.answerStart - right.answerStart);
+function validateTargetCoverage(
+  chapters: LessonContentChapter[],
+  requiredTargets: string[],
+) {
+  const coveredTargets = new Set(
+    chapters.flatMap((chapter) =>
+      chapter.exercises.map((exercise) => exercise.target),
+    ),
+  );
+  const missingTargets = requiredTargets.filter(
+    (target) => !coveredTargets.has(target),
+  );
+  if (missingTargets.length)
+    throw new Error(`知识点未覆盖：${missingTargets.join(" / ")}`);
 }
 
 function deriveClosingVocabularyTerms(chapters: LessonContentChapter[]) {
@@ -313,67 +219,84 @@ function deriveClosingVocabularyTerms(chapters: LessonContentChapter[]) {
     new Set(
       chapters
         .flatMap((chapter) => chapter.exercises)
-        .filter((exercise) => exercise.type === "vocab_hint" || exercise.type === "phrase_hint")
+        .filter(
+          (exercise) =>
+            exercise.type === "vocab_hint" || exercise.type === "phrase_hint",
+        )
         .map((exercise) => exercise.answer.trim())
         .filter(Boolean),
     ),
   ).slice(0, 8);
 }
 
-function validateTargetCoverage(chapters: LessonContentChapter[], requiredTargets: string[]) {
-  const coveredTargets = new Set(chapters.flatMap((chapter) => chapter.exercises.map((exercise) => exercise.target)));
-  const missingTargets = requiredTargets.filter((target) => !coveredTargets.has(target));
+export function compileLessonContentDraft(
+  plan: AiLessonContentPlan,
+  storyOption: StoryOption,
+  requiredTargets: string[] = [],
+  castAliases: LessonContentDraft["castAliases"] = [],
+): LessonContentDraft {
+  if (plan.chapters.length !== storyOption.chapters.length)
+    throw new Error(
+      "Lesson content chapter count does not match selected story outline",
+    );
 
-  if (missingTargets.length) {
-    throw new Error(`知识点未覆盖：${missingTargets.join(" / ")}`);
-  }
-}
+  const chapters = plan.chapters.map(
+    (chapter, chapterIndex): LessonContentChapter => {
+      const exerciseParts = chapter.paragraphs.flatMap(
+        (paragraph, paragraphIndex) =>
+          paragraph.sentences.flatMap((sentence, sentenceIndex) => {
+            const id = sentenceId(chapterIndex, paragraphIndex, sentenceIndex);
+            const part = exercisePart(sentence, id);
+            if (!part) return [];
+            validateExercisePart(part, id);
+            return [{ id, part }];
+          }),
+      );
 
-export function compileLessonContentDraft(plan: AiLessonContentPlan, storyOption: StoryOption, requiredTargets: string[] = [], castAliases: LessonContentDraft["castAliases"] = []): LessonContentDraft {
-  if (plan.chapters.length !== storyOption.chapters.length) {
-    throw new Error("Lesson content chapter count does not match selected story outline");
-  }
-
-  const chapters = plan.chapters.map((chapter, chapterIndex): LessonContentChapter => {
-    const sortedPositioned = positionedExercises(chapter, chapterIndex);
-    const exercises = sortedPositioned.map((positioned, exerciseIndex) => compileExercise(positioned, chapterIndex, exerciseIndex));
-    const exercisesBySentenceId = new Map<string, Array<{ item: LessonExercise; answerStart: number }>>();
-    exercises.forEach((exercise, index) => {
-      const positioned = sortedPositioned[index];
-      const group = exercisesBySentenceId.get(exercise.sentenceId) ?? [];
-      group.push({ item: exercise, answerStart: positioned.answerStart });
-      exercisesBySentenceId.set(exercise.sentenceId, group);
-    });
-
-    for (const [id, group] of exercisesBySentenceId) {
-      if (group.length > 2) {
-        const sentenceText = sortedPositioned.find((positioned) => positioned.anchor.sentenceId === id)?.sentenceText ?? "";
-        throw new Error(`${id} has ${group.length} exercises; max 2. Sentence: "${sentenceText}"`);
+      const normalizedAnswers = new Set<string>();
+      for (const { id, part } of exerciseParts) {
+        const normalized = normalizeAnswer(part.answer);
+        if (normalizedAnswers.has(normalized))
+          throw new Error(
+            `Chapter ${chapterIndex + 1} repeats exercise answer "${part.answer}" at ${id}`,
+          );
+        normalizedAnswers.add(normalized);
       }
-    }
 
-    return {
-      id: `chapter-${chapterIndex + 1}`,
-      sourceOutlineChapterIndex: chapterIndex + 1,
-      title: chapter.title,
-      paragraphs: chapter.paragraphs.map((paragraph, paragraphIndex) => ({
-        id: `chapter-${chapterIndex + 1}-paragraph-${paragraphIndex + 1}`,
-        order: (paragraphIndex + 1) as 1 | 2,
-        sentences: paragraph.sentences.map((text, sentenceIndex) => {
-          const id = sentenceId(chapterIndex, paragraphIndex, sentenceIndex);
-          return {
-            id,
-            text,
-            segments: compileSentenceSegments(id, text, exercisesBySentenceId.get(id) ?? []),
-          };
-        }),
-      })),
-      exercises,
-    };
-  });
+      const exercises = exerciseParts.map(({ id, part }, index) =>
+        compileExercise(part, chapterIndex, id, index + 1),
+      );
+      const exerciseBySentence = new Map(
+        exercises.map((exercise) => [exercise.sentenceId, exercise]),
+      );
+
+      return {
+        id: `chapter-${chapterIndex + 1}`,
+        sourceOutlineChapterIndex: chapterIndex + 1,
+        title: chapter.title,
+        paragraphs: chapter.paragraphs.map((paragraph, paragraphIndex) => ({
+          id: `chapter-${chapterIndex + 1}-paragraph-${paragraphIndex + 1}`,
+          order: (paragraphIndex + 1) as 1 | 2,
+          sentences: paragraph.sentences.map((sentence, sentenceIndex) => {
+            const id = sentenceId(chapterIndex, paragraphIndex, sentenceIndex);
+            const exercise = exerciseBySentence.get(id);
+            return {
+              id,
+              text: sentenceText(sentence),
+              segments: sentence.parts.map((part) =>
+                part.type === "text"
+                  ? { type: "text" as const, text: part.text }
+                  : { type: "exercise" as const, exerciseId: exercise!.id },
+              ),
+            };
+          }),
+        })),
+        exercises,
+      };
+    },
+  );
 
   validateTargetCoverage(chapters, requiredTargets);
-
   return {
     schemaVersion: "lesson_content_v1",
     sourceStoryOptionId: storyOption.id,
@@ -390,51 +313,45 @@ export function compileLessonContentDraft(plan: AiLessonContentPlan, storyOption
   };
 }
 
-function labelForExercise(exercise: LessonExercise, labelCounters: { vocab: number; phrase: number }) {
-  if (exercise.type === "vocab_hint") {
-    labelCounters.vocab += 1;
-    return `V${labelCounters.vocab}`;
-  }
-
-  if (exercise.type === "phrase_hint") {
-    labelCounters.phrase += 1;
-    return `P${labelCounters.phrase}`;
-  }
-
+function labelForExercise(
+  exercise: LessonExercise,
+  counters: { vocab: number; phrase: number },
+) {
+  if (exercise.type === "vocab_hint") return `V${++counters.vocab}`;
+  if (exercise.type === "phrase_hint") return `P${++counters.phrase}`;
   return "";
 }
 
-function renderExercise(exercise: LessonExercise, labelCounters: { vocab: number; phrase: number }) {
-  if (exercise.type === "given_word_blank") {
+function renderExercise(
+  exercise: LessonExercise,
+  counters: { vocab: number; phrase: number },
+) {
+  if (exercise.type === "given_word_blank")
     return `(${exercise.order}) ________ (${exercise.prompt})`;
-  }
-
-  if (exercise.type === "choice_blank") {
+  if (exercise.type === "choice_blank")
     return `(${exercise.order}) ________ (${exercise.choices.join(" / ")})`;
-  }
-
-  const label = labelForExercise(exercise, labelCounters);
-  const letterText = typeof exercise.letterCount === "number" ? `${exercise.letterCount}` : exercise.letterCount;
-  return `(${exercise.order}) [${label}: ${exercise.pattern} (提示：${exercise.hint}，${letterText}个字母)]`;
+  const label = labelForExercise(exercise, counters);
+  return `(${exercise.order}) [${label}: ${exercise.pattern} (提示：${exercise.hint}，${exercise.letterCount}个字母)]`;
 }
 
 export function renderChapterReadingText(chapter: LessonContentChapter) {
-  const exerciseById = new Map(chapter.exercises.map((exercise) => [exercise.id, exercise]));
-  const labelCounters = { vocab: 0, phrase: 0 };
-
+  const exerciseById = new Map(
+    chapter.exercises.map((exercise) => [exercise.id, exercise]),
+  );
+  const counters = { vocab: 0, phrase: 0 };
   return chapter.paragraphs
     .map((paragraph) =>
       paragraph.sentences
         .map((sentence) =>
           sentence.segments
-            .map((segment) => {
-              if (segment.type === "text") {
-                return segment.text;
-              }
-
-              const exercise = exerciseById.get(segment.exerciseId);
-              return exercise ? renderExercise(exercise, labelCounters) : "";
-            })
+            .map((segment) =>
+              segment.type === "text"
+                ? segment.text
+                : renderExercise(
+                    exerciseById.get(segment.exerciseId)!,
+                    counters,
+                  ),
+            )
             .join(""),
         )
         .join(" "),
@@ -443,5 +360,7 @@ export function renderChapterReadingText(chapter: LessonContentChapter) {
 }
 
 export function renderChapterAnswerList(chapter: LessonContentChapter) {
-  return chapter.exercises.map((exercise) => `${exercise.order}. ${exercise.answer}`);
+  return chapter.exercises.map(
+    (exercise) => `${exercise.order}. ${exercise.answer}`,
+  );
 }

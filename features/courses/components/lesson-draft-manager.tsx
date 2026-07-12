@@ -2,28 +2,58 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowLeft, BookOpen, CheckCircle2, Loader2, Save, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  CheckCircle2,
+  Loader2,
+  Save,
+  Sparkles,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
-import type { LessonContentChapter, LessonDraft, LessonExercise, LessonSentence } from "@/lib/contracts/api";
+import type {
+  LessonContentChapter,
+  LessonDraft,
+  LessonExercise,
+  LessonSentence,
+} from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
 const closingViewId = "__closing__";
 
-const estimatedTotalMs = 120_000;
+const estimatedTotalMs = 300_000;
 const generationStages = [
-  { label: "规划英文阅读结构", note: "读取故事大纲、人物信息和 CEFR 等级要求。", untilMs: 20_000 },
-  { label: "生成故事正文与互动题", note: "DeepSeek 正在一次性生成 clean sentences 和 exercise anchors。", untilMs: 95_000 },
-  { label: "校验题目锚点", note: "系统校验答案是否来自对应句子，并编译成嵌入式题目。", untilMs: 112_000 },
-  { label: "保存阅读草稿", note: "写入可预览的英文互动阅读草稿。", untilMs: estimatedTotalMs },
+  {
+    label: "规划英文阅读结构",
+    note: "读取故事大纲、人物信息和 CEFR 等级要求。",
+    untilMs: 45_000,
+  },
+  {
+    label: "生成故事正文与互动题",
+    note: "DeepSeek 正在生成完整故事、句子片段和多种练习题。",
+    untilMs: 260_000,
+  },
+  {
+    label: "校验课文与题目",
+    note: "系统正在校验章节长度、知识点和练习结构。",
+    untilMs: 285_000,
+  },
+  {
+    label: "保存阅读草稿",
+    note: "写入可预览的英文互动阅读草稿。",
+    untilMs: estimatedTotalMs,
+  },
 ] as const;
 
 function formatElapsed(ms: number) {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return minutes > 0 ? `${minutes} 分 ${String(seconds).padStart(2, "0")} 秒` : `${seconds} 秒`;
+  return minutes > 0
+    ? `${minutes} 分 ${String(seconds).padStart(2, "0")} 秒`
+    : `${seconds} 秒`;
 }
 
 export function LessonDraftManager({ courseId }: { courseId: string }) {
@@ -36,7 +66,10 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const activeChapter = draft?.chapters.find((chapter) => chapter.id === activeChapterId) ?? draft?.chapters[0] ?? null;
+  const activeChapter =
+    draft?.chapters.find((chapter) => chapter.id === activeChapterId) ??
+    draft?.chapters[0] ??
+    null;
   const isClosingActive = activeChapterId === closingViewId;
 
   useEffect(() => {
@@ -63,7 +96,9 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
         const response = await fetch(`/api/courses/${courseId}/lesson-draft`);
 
         if (!response.ok) {
-          const data = (await response.json().catch(() => null)) as { message?: string } | null;
+          const data = (await response.json().catch(() => null)) as {
+            message?: string;
+          } | null;
           throw new Error(data?.message ?? "阅读草稿加载失败");
         }
 
@@ -75,7 +110,9 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
         }
       } catch (loadError) {
         if (isActive) {
-          setError(loadError instanceof Error ? loadError.message : "阅读草稿加载失败");
+          setError(
+            loadError instanceof Error ? loadError.message : "阅读草稿加载失败",
+          );
         }
       } finally {
         if (isActive) {
@@ -98,12 +135,17 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
     setMessage("");
 
     try {
-      const response = await fetch(`/api/courses/${courseId}/lesson-draft/generate`, {
-        method: "POST",
-      });
+      const response = await fetch(
+        `/api/courses/${courseId}/lesson-draft/generate`,
+        {
+          method: "POST",
+        },
+      );
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { message?: string } | null;
+        const data = (await response.json().catch(() => null)) as {
+          message?: string;
+        } | null;
         throw new Error(data?.message ?? "阅读草稿生成失败");
       }
 
@@ -112,7 +154,11 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
       setActiveChapterId(data.draft.chapters[0]?.id ?? "");
       setMessage("英文互动阅读草稿已生成。");
     } catch (generateError) {
-      setError(generateError instanceof Error ? generateError.message : "阅读草稿生成失败");
+      setError(
+        generateError instanceof Error
+          ? generateError.message
+          : "阅读草稿生成失败",
+      );
     } finally {
       setIsGenerating(false);
     }
@@ -135,7 +181,9 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
       });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { message?: string } | null;
+        const data = (await response.json().catch(() => null)) as {
+          message?: string;
+        } | null;
         throw new Error(data?.message ?? "阅读草稿保存失败");
       }
 
@@ -143,7 +191,9 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
       setDraft(data.draft);
       setMessage("阅读草稿已保存。");
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "阅读草稿保存失败");
+      setError(
+        saveError instanceof Error ? saveError.message : "阅读草稿保存失败",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -165,33 +215,68 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
               返回故事大纲
             </Link>
           </Button>
-          <h2 className="text-xl font-semibold tracking-tight text-slate-950">英文互动阅读草稿</h2>
-          <p className="mt-2 text-sm text-slate-500">检查带题阅读文本和答案。图片将在资源生成步骤根据最终正文自动生成。</p>
+          <h2 className="text-xl font-semibold tracking-tight text-slate-950">
+            英文互动阅读草稿
+          </h2>
+          <p className="mt-2 text-sm text-slate-500">
+            检查带题阅读文本和答案。图片将在资源生成步骤根据最终正文自动生成。
+          </p>
         </div>
         {draft ? (
           <div className="flex flex-wrap gap-2">
-            <Button className="bg-violet-600 text-white hover:bg-violet-700" disabled={isSaving} onClick={saveDraft} type="button">
-              {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            <Button
+              className="bg-violet-600 text-white hover:bg-violet-700"
+              disabled={isSaving}
+              onClick={saveDraft}
+              type="button"
+            >
+              {isSaving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )}
               保存草稿
             </Button>
-            <Button asChild className="bg-slate-950 text-white hover:bg-slate-800">
-              <Link href={`/courses/${courseId}/create/resources`}>进入资源生成</Link>
+            <Button
+              asChild
+              className="bg-slate-950 text-white hover:bg-slate-800"
+            >
+              <Link href={`/courses/${courseId}/create/resources`}>
+                进入资源生成
+              </Link>
             </Button>
           </div>
         ) : null}
       </div>
 
-      {error ? <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div> : null}
-      {message ? <div className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
+      {error ? (
+        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
+          {error}
+        </div>
+      ) : null}
+      {message ? (
+        <div className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {message}
+        </div>
+      ) : null}
 
       {!draft ? (
         isGenerating ? (
           <GenerationPanel elapsedMs={elapsedMs} />
         ) : (
           <section className="rounded-lg border border-[#E5E7EB] bg-white p-8 text-center shadow-sm">
-            <h3 className="text-lg font-semibold text-slate-950">生成英文互动阅读草稿</h3>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">系统会基于选中的中文故事大纲，生成英文正文、嵌入式练习题和答案。预计需要 1-2 分钟。</p>
-            <Button className="mt-6 bg-violet-600 text-white hover:bg-violet-700" onClick={generateDraft} type="button">
+            <h3 className="text-lg font-semibold text-slate-950">
+              生成英文互动阅读草稿
+            </h3>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
+              系统会基于选中的中文故事大纲，生成英文正文、嵌入式练习题和答案。预计需要约
+              5 分钟。
+            </p>
+            <Button
+              className="mt-6 bg-violet-600 text-white hover:bg-violet-700"
+              onClick={generateDraft}
+              type="button"
+            >
               <Sparkles className="size-4" />
               生成阅读草稿
             </Button>
@@ -199,18 +284,34 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
         )
       ) : (
         <div className="grid gap-5 xl:grid-cols-[220px_1fr_300px]">
-          <ChapterNav activeChapterId={activeChapterId} draft={draft} onSelect={setActiveChapterId} />
+          <ChapterNav
+            activeChapterId={activeChapterId}
+            draft={draft}
+            onSelect={setActiveChapterId}
+          />
           <section className="min-h-[560px] rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm">
-            {isClosingActive ? <ClosingReadingPanel draft={draft} /> : activeChapter ? <ReadingPanel castAliases={draft.castAliases} chapter={activeChapter} /> : null}
+            {isClosingActive ? (
+              <ClosingReadingPanel draft={draft} />
+            ) : activeChapter ? (
+              <ReadingPanel
+                castAliases={draft.castAliases}
+                chapter={activeChapter}
+              />
+            ) : null}
           </section>
           <aside className="space-y-4">
-            {isClosingActive ? <NoExercisePanel /> : activeChapter ? <AnswerPanel chapter={activeChapter} /> : null}
+            {isClosingActive ? (
+              <NoExercisePanel />
+            ) : activeChapter ? (
+              <AnswerPanel chapter={activeChapter} />
+            ) : null}
             <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
               <div className="mb-2 flex items-center gap-2 font-semibold text-slate-900">
                 <CheckCircle2 className="size-4 text-emerald-600" />
                 图片生成说明
               </div>
-              图片将在下一步根据 clean text 自动生成。本页不再维护图片提示，避免图片和正文编辑脱节。
+              图片将在下一步根据 clean text
+              自动生成。本页不再维护图片提示，避免图片和正文编辑脱节。
             </section>
           </aside>
         </div>
@@ -219,42 +320,66 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
   );
 }
 
-function ChapterNav({ draft, activeChapterId, onSelect }: { draft: LessonDraft; activeChapterId: string; onSelect: (chapterId: string) => void }) {
+function ChapterNav({
+  draft,
+  activeChapterId,
+  onSelect,
+}: {
+  draft: LessonDraft;
+  activeChapterId: string;
+  onSelect: (chapterId: string) => void;
+}) {
   return (
     <nav className="rounded-2xl border border-[#E5E7EB] bg-white p-3 shadow-sm">
-      <div className="px-2 pb-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">章节</div>
+      <div className="px-2 pb-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+        章节
+      </div>
       <div className="space-y-2">
         {draft.chapters.map((chapter, index) => (
           <button
             className={cn(
               "w-full rounded-xl px-3 py-3 text-left transition duration-200",
-              activeChapterId === chapter.id ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200" : "text-slate-600 hover:bg-slate-50",
+              activeChapterId === chapter.id
+                ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
+                : "text-slate-600 hover:bg-slate-50",
             )}
             key={chapter.id}
             onClick={() => onSelect(chapter.id)}
             type="button"
           >
             <div className="text-xs font-semibold">Chapter {index + 1}</div>
-            <div className="mt-1 line-clamp-2 text-sm font-medium">{chapter.title}</div>
+            <div className="mt-1 line-clamp-2 text-sm font-medium">
+              {chapter.title}
+            </div>
           </button>
         ))}
         <button
           className={cn(
             "w-full rounded-xl px-3 py-3 text-left transition duration-200",
-            activeChapterId === closingViewId ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200" : "text-slate-600 hover:bg-slate-50",
+            activeChapterId === closingViewId
+              ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
+              : "text-slate-600 hover:bg-slate-50",
           )}
           onClick={() => onSelect(closingViewId)}
           type="button"
         >
           <div className="text-xs font-semibold">Closing</div>
-          <div className="mt-1 line-clamp-2 text-sm font-medium">{draft.closingReading.title}</div>
+          <div className="mt-1 line-clamp-2 text-sm font-medium">
+            {draft.closingReading.title}
+          </div>
         </button>
       </div>
     </nav>
   );
 }
 
-function ReadingPanel({ chapter, castAliases }: { chapter: LessonContentChapter; castAliases: LessonDraft["castAliases"] }) {
+function ReadingPanel({
+  chapter,
+  castAliases,
+}: {
+  chapter: LessonContentChapter;
+  castAliases: LessonDraft["castAliases"];
+}) {
   return (
     <article>
       <div className="mb-6 flex items-center gap-3">
@@ -262,26 +387,43 @@ function ReadingPanel({ chapter, castAliases }: { chapter: LessonContentChapter;
           <BookOpen className="size-5" />
         </span>
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.08em] text-violet-700">Reading Text</div>
-          <h3 className="text-2xl font-semibold leading-9 text-slate-950">{chapter.title}</h3>
+          <div className="text-xs font-semibold uppercase tracking-[0.08em] text-violet-700">
+            Reading Text
+          </div>
+          <h3 className="text-2xl font-semibold leading-9 text-slate-950">
+            {chapter.title}
+          </h3>
         </div>
       </div>
       <div className="space-y-6 text-[17px] leading-9 text-slate-800">
         {chapter.paragraphs.map((paragraph) => (
-          <p key={paragraph.id}>{paragraph.sentences.map((sentence) => renderSentence(sentence, chapter.exercises, castAliases))}</p>
+          <p key={paragraph.id}>
+            {paragraph.sentences.map((sentence) =>
+              renderSentence(sentence, chapter.exercises, castAliases),
+            )}
+          </p>
         ))}
       </div>
     </article>
   );
 }
 
-function renderCastText(text: string, castAliases: LessonDraft["castAliases"], keyPrefix: string) {
+function renderCastText(
+  text: string,
+  castAliases: LessonDraft["castAliases"],
+  keyPrefix: string,
+) {
   if (!castAliases.length) {
     return <span>{text}</span>;
   }
 
-  const aliases = castAliases.slice().sort((left, right) => right.alias.length - left.alias.length);
-  const pattern = new RegExp(`\\b(${aliases.map((item) => item.alias.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")).join("|")})\\b`, "g");
+  const aliases = castAliases
+    .slice()
+    .sort((left, right) => right.alias.length - left.alias.length);
+  const pattern = new RegExp(
+    `\\b(${aliases.map((item) => item.alias.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")).join("|")})\\b`,
+    "g",
+  );
   const parts: Array<string | { alias: string; displayName: string }> = [];
   let cursor = 0;
 
@@ -291,7 +433,12 @@ function renderCastText(text: string, castAliases: LessonDraft["castAliases"], k
       parts.push(text.slice(cursor, index));
     }
     const alias = match[0];
-    parts.push(castAliases.find((item) => item.alias === alias) ?? { alias, displayName: alias });
+    parts.push(
+      castAliases.find((item) => item.alias === alias) ?? {
+        alias,
+        displayName: alias,
+      },
+    );
     cursor = index + alias.length;
   }
 
@@ -305,15 +452,43 @@ function renderCastText(text: string, castAliases: LessonDraft["castAliases"], k
         typeof part === "string" ? (
           <span key={`${keyPrefix}-${index}`}>{part}</span>
         ) : (
-          <strong className="font-extrabold text-slate-950" key={`${keyPrefix}-${index}`}>{part.displayName}</strong>
+          <strong
+            className="font-extrabold text-slate-950"
+            key={`${keyPrefix}-${index}`}
+          >
+            {part.displayName}
+          </strong>
         ),
       )}
     </>
   );
 }
 
-function renderSentence(sentence: LessonSentence, exercises: LessonExercise[], castAliases: LessonDraft["castAliases"]) {
-  const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]));
+export function replaceCastAliases(
+  text: string,
+  castAliases: LessonDraft["castAliases"],
+) {
+  return castAliases
+    .slice()
+    .sort((left, right) => right.alias.length - left.alias.length)
+    .reduce(
+      (result, item) =>
+        result.replace(
+          new RegExp(item.alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+          () => item.displayName,
+        ),
+      text,
+    );
+}
+
+function renderSentence(
+  sentence: LessonSentence,
+  exercises: LessonExercise[],
+  castAliases: LessonDraft["castAliases"],
+) {
+  const exerciseById = new Map(
+    exercises.map((exercise) => [exercise.id, exercise]),
+  );
   const labelOrderById = new Map<string, string>();
   let vocabCount = 0;
   let phraseCount = 0;
@@ -331,7 +506,15 @@ function renderSentence(sentence: LessonSentence, exercises: LessonExercise[], c
     <span className="mr-1" key={sentence.id}>
       {sentence.segments.map((segment, index) => {
         if (segment.type === "text") {
-          return <span key={`${sentence.id}-${index}`}>{renderCastText(segment.text, castAliases, `${sentence.id}-${index}`)}</span>;
+          return (
+            <span key={`${sentence.id}-${index}`}>
+              {renderCastText(
+                segment.text,
+                castAliases,
+                `${sentence.id}-${index}`,
+              )}
+            </span>
+          );
         }
 
         const exercise = exerciseById.get(segment.exerciseId);
@@ -339,13 +522,25 @@ function renderSentence(sentence: LessonSentence, exercises: LessonExercise[], c
           return null;
         }
 
-        return <InlineExercise exercise={exercise} key={`${sentence.id}-${index}`} label={labelOrderById.get(exercise.id)} />;
+        return (
+          <InlineExercise
+            exercise={exercise}
+            key={`${sentence.id}-${index}`}
+            label={labelOrderById.get(exercise.id)}
+          />
+        );
       })}{" "}
     </span>
   );
 }
 
-function InlineExercise({ exercise, label }: { exercise: LessonExercise; label?: string }) {
+function InlineExercise({
+  exercise,
+  label,
+}: {
+  exercise: LessonExercise;
+  label?: string;
+}) {
   if (exercise.type === "given_word_blank") {
     return (
       <span className="mx-1 inline-flex items-center gap-1 rounded-md bg-violet-50 px-2 py-0.5 align-baseline font-medium text-violet-700 ring-1 ring-violet-100">
@@ -369,8 +564,12 @@ function InlineExercise({ exercise, label }: { exercise: LessonExercise; label?:
   return (
     <span className="mx-1 inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 align-baseline font-medium text-amber-700 ring-1 ring-amber-100">
       <span>({exercise.order})</span>
-      <span>[{label}: {exercise.pattern}</span>
-      <span>提示：{exercise.hint}，{exercise.letterCount}个字母]</span>
+      <span>
+        [{label}: {exercise.pattern}
+      </span>
+      <span>
+        提示：{exercise.hint}，{exercise.letterCount}个字母]
+      </span>
     </span>
   );
 }
@@ -395,16 +594,29 @@ function AnswerPanel({ chapter }: { chapter: LessonContentChapter }) {
   return (
     <section className="rounded-2xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
       <div className="mb-4">
-        <div className="text-xs font-semibold uppercase tracking-[0.08em] text-violet-700">Answers</div>
-        <h3 className="mt-1 text-base font-semibold text-slate-950">本章答案</h3>
+        <div className="text-xs font-semibold uppercase tracking-[0.08em] text-violet-700">
+          Answers
+        </div>
+        <h3 className="mt-1 text-base font-semibold text-slate-950">
+          本章答案
+        </h3>
       </div>
       <ol className="space-y-2">
         {chapter.exercises.map((exercise) => (
-          <li className="flex items-start gap-3 rounded-xl bg-slate-50 px-3 py-2" key={exercise.id}>
-            <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-slate-600 ring-1 ring-slate-200">{exercise.order}</span>
+          <li
+            className="flex items-start gap-3 rounded-xl bg-slate-50 px-3 py-2"
+            key={exercise.id}
+          >
+            <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+              {exercise.order}
+            </span>
             <div>
-              <div className="font-semibold text-slate-950">{exercise.answer}</div>
-              <div className="mt-0.5 text-xs text-slate-500">{exerciseTypeLabel(exercise)}</div>
+              <div className="font-semibold text-slate-950">
+                {exercise.answer}
+              </div>
+              <div className="mt-0.5 text-xs text-slate-500">
+                {exerciseTypeLabel(exercise)}
+              </div>
             </div>
           </li>
         ))}
@@ -416,12 +628,26 @@ function AnswerPanel({ chapter }: { chapter: LessonContentChapter }) {
 function ClosingReadingPanel({ draft }: { draft: LessonDraft }) {
   return (
     <article>
-      <div className="mb-6 text-xs font-semibold uppercase tracking-[0.08em] text-violet-700">Closing Reading</div>
-      <h3 className="text-2xl font-semibold leading-9 text-slate-950">{draft.closingReading.title}</h3>
-      <p className="mt-5 text-[17px] leading-9 text-slate-800">{draft.closingReading.sentences.join(" ")}</p>
+      <div className="mb-6 text-xs font-semibold uppercase tracking-[0.08em] text-violet-700">
+        Closing Reading
+      </div>
+      <h3 className="text-2xl font-semibold leading-9 text-slate-950">
+        {replaceCastAliases(draft.closingReading.title, draft.castAliases)}
+      </h3>
+      <p className="mt-5 text-[17px] leading-9 text-slate-800">
+        {replaceCastAliases(
+          draft.closingReading.sentences.join(" "),
+          draft.castAliases,
+        )}
+      </p>
       <div className="mt-6 flex flex-wrap gap-2">
         {draft.closingReading.vocabularyTerms.map((term) => (
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600" key={term}>{term}</span>
+          <span
+            className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600"
+            key={term}
+          >
+            {term}
+          </span>
         ))}
       </div>
     </article>
@@ -431,7 +657,9 @@ function ClosingReadingPanel({ draft }: { draft: LessonDraft }) {
 function NoExercisePanel() {
   return (
     <section className="rounded-2xl border border-[#E5E7EB] bg-white p-5 text-sm text-slate-500 shadow-sm">
-      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-violet-700">Answers</div>
+      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-violet-700">
+        Answers
+      </div>
       <p className="mt-2">Closing reading 不包含练习题。</p>
     </section>
   );
@@ -450,33 +678,57 @@ function StatusPanel({ label, progress }: { label: string; progress: number }) {
 }
 
 function GenerationPanel({ elapsedMs }: { elapsedMs: number }) {
-  const activeStage = generationStages.find((stage) => elapsedMs <= stage.untilMs) ?? generationStages[generationStages.length - 1];
-  const progress = Math.min(96, Math.max(6, Math.round((elapsedMs / estimatedTotalMs) * 100)));
+  const activeStage =
+    generationStages.find((stage) => elapsedMs <= stage.untilMs) ??
+    generationStages[generationStages.length - 1];
+  const progress = Math.min(
+    96,
+    Math.max(6, Math.round((elapsedMs / estimatedTotalMs) * 100)),
+  );
 
   return (
     <section className="rounded-lg border border-[#E5E7EB] bg-white p-8 shadow-sm">
       <div className="mx-auto max-w-2xl">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-violet-700">AI 正在生成，预计 1-2 分钟</p>
-            <h3 className="mt-1 text-lg font-semibold text-slate-950">{activeStage.label}</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-500">{activeStage.note}</p>
+            <p className="text-sm font-medium text-violet-700">
+              AI 正在生成，预计约 5 分钟
+            </p>
+            <h3 className="mt-1 text-lg font-semibold text-slate-950">
+              {activeStage.label}
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              {activeStage.note}
+            </p>
           </div>
           <div className="flex size-11 items-center justify-center rounded-full bg-violet-50 text-violet-700">
             <Sparkles className="size-5" />
           </div>
         </div>
         <ProgressBar className="mt-6" progress={progress} />
-        <div className="mt-3 text-xs text-slate-500">已等待 {formatElapsed(elapsedMs)}</div>
+        <div className="mt-3 text-xs text-slate-500">
+          已等待 {formatElapsed(elapsedMs)}
+        </div>
       </div>
     </section>
   );
 }
 
-function ProgressBar({ progress, className }: { progress: number; className?: string }) {
+function ProgressBar({
+  progress,
+  className,
+}: {
+  progress: number;
+  className?: string;
+}) {
   return (
-    <div className={cn("h-2 overflow-hidden rounded-full bg-slate-100", className)}>
-      <div className="h-full rounded-full bg-violet-600 transition-all duration-700 ease-out" style={{ width: `${progress}%` }} />
+    <div
+      className={cn("h-2 overflow-hidden rounded-full bg-slate-100", className)}
+    >
+      <div
+        className="h-full rounded-full bg-violet-600 transition-all duration-700 ease-out"
+        style={{ width: `${progress}%` }}
+      />
     </div>
   );
 }
