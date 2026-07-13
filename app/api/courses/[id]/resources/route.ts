@@ -6,12 +6,20 @@ import {
   CourseImageNotFoundError,
   CourseImagePrerequisiteError,
   getCourseResourcesAndAdvance,
+  type CourseImageQueueDeps,
 } from "@/lib/server/repositories/course-images";
 import { downloadCourseImage } from "@/lib/server/storage/course-images";
 
-function queueDeps() {
+// The image client validates config (API key) at construction. Build it lazily so simply reading Step 4 status
+// never fails when the key is missing or the provider is misconfigured; only actual submit/query touches it.
+function queueDeps(): CourseImageQueueDeps {
+  let client: ReturnType<typeof createQuickRouterImageClient> | null = null;
+  const getClient = () => (client ??= createQuickRouterImageClient());
   return {
-    provider: createQuickRouterImageClient(),
+    provider: {
+      submit: (input) => getClient().submit(input),
+      query: () => getClient().query(),
+    },
     download: downloadCourseImage,
   };
 }

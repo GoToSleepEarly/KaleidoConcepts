@@ -47,11 +47,11 @@ describe("QuickRouter GPT-image-2 client", () => {
       model: "gpt-image-2",
       n: 1,
       size: "1536x1024",
-      quality: "medium",
+      quality: "low",
       format: "webp",
     });
     expect(body.prompt).toContain("A warm classroom illustration");
-    expect(body.prompt.length).toBeLessThanOrEqual(1000);
+    expect(body.prompt.length).toBeLessThanOrEqual(1200);
   });
 
   it("surfaces QuickRouter API errors", async () => {
@@ -73,7 +73,7 @@ describe("QuickRouter GPT-image-2 client", () => {
 
   it("allows image quality to be overridden from the environment", async () => {
     process.env.QUICKROUTER_API_KEY = "secret";
-    process.env.QUICKROUTER_IMAGE_QUALITY = "low";
+    process.env.QUICKROUTER_IMAGE_QUALITY = "high";
 
     vi.stubGlobal(
       "fetch",
@@ -89,6 +89,6 @@ describe("QuickRouter GPT-image-2 client", () => {
 
     const request = vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit;
     const body = JSON.parse(request.body as string) as { quality: string };
-    expect(body.quality).toBe("low");
+    expect(body.quality).toBe("high");
   });
 });

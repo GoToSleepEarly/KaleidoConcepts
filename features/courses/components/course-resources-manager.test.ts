@@ -16,8 +16,6 @@ function image(overrides: Partial<CourseResourceImage>): CourseResourceImage {
     slotType: "visual_cover",
     slotIndex: 0,
     sourceParagraphId: null,
-    sourceSentenceIds: [],
-    heroMomentSentenceId: null,
     sourceExcerpt: "",
     prompt: "",
     sourceHash: null,
@@ -52,6 +50,19 @@ function response(overrides: Partial<CourseResourcesResponse>): CourseResourcesR
   };
 }
 
+const resourcePlan: CourseResourcesResponse["plan"] = {
+  schemaVersion: "course_resource_plan_v1",
+  coverBrief: {
+    description: "cover",
+    characters: ["SummerStudent"],
+    setting: "forest",
+    storyElements: ["gate"],
+    imagePrompt: "GPT Image 2 prompt: Horizontal 16:9 cover.",
+  },
+  shots: [],
+  version: 1,
+};
+
 describe("course resource UI state", () => {
   test("splits cover image from chapter images", () => {
     const cover = image({ slotType: "visual_cover", slotId: "visual-cover" });
@@ -65,15 +76,25 @@ describe("course resource UI state", () => {
 
   test("uses a linear stage model instead of exposing old task states", () => {
     expect(getResourceStage(response({ plan: null }))).toBe("needs_plan");
-    expect(getResourceStage(response({ plan: { confirmedCoverImageId: null } as CourseResourcesResponse["plan"] }))).toBe("needs_cover");
+    expect(getResourceStage(response({ plan: resourcePlan }))).toBe("needs_cover");
     expect(
       getResourceStage(
         response({
-          plan: { confirmedCoverImageId: null } as CourseResourcesResponse["plan"],
+          plan: resourcePlan,
           images: [image({ slotType: "visual_cover", status: "succeeded", id: "cover-1" })],
         }),
       ),
-    ).toBe("needs_cover_confirmation");
-    expect(getResourceStage(response({ plan: { confirmedCoverImageId: "cover-1" } as CourseResourcesResponse["plan"] }))).toBe("needs_chapter_images");
+    ).toBe("needs_chapter_images");
+    expect(
+      getResourceStage(
+        response({
+          plan: resourcePlan,
+          images: [
+            image({ slotType: "visual_cover", status: "succeeded", id: "cover-1" }),
+            image({ slotType: "lesson_shot", status: "succeeded", id: "shot-1", slotId: "chapter-1-shot-1" }),
+          ],
+        }),
+      ),
+    ).toBe("ready");
   });
 });

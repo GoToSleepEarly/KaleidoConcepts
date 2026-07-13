@@ -5,6 +5,9 @@ import type { CourseResourcePlan, LessonDraft } from "@/lib/contracts/api";
 import {
   advanceCourseImageQueue,
   assertResourcePlanValid,
+  createCoverImage,
+  CourseImageInvalidStateError,
+  createMissingCourseImages,
   deriveResourceImageSlots,
   summarizeResourceProgress,
   type CourseImageRecord,
@@ -54,27 +57,13 @@ const draft: LessonDraft = {
 function plan(overrides: Partial<CourseResourcePlan> = {}): CourseResourcePlan {
   return {
     schemaVersion: "course_resource_plan_v1",
-    visualProfile: {
-      style: "hand-drawn comic picture-book style",
-      palette: "warm green and silver",
-      world: "a glowing forest classroom world",
-      mood: "curious and safe",
-      characters: [
-        {
-          alias: "SummerStudent",
-          appearance: "an eight-year-old student with bright eyes",
-          hairstyle: "short black hair",
-          clothing: "yellow raincoat",
-          accessories: ["green backpack"],
-          signatureColor: "yellow",
-        },
-      ],
-    },
     coverBrief: {
       description: "Summer stands with the class at the glowing forest gate.",
       characters: ["SummerStudent"],
       setting: "glowing forest gate",
       storyElements: ["silver gate", "river trail"],
+      imagePrompt:
+        "Horizontal 16:9 hand-drawn children's picture-book cover. SummerStudent is an eight-year-old student with bright eyes, short black hair, a yellow raincoat, and a green backpack, standing at a glowing silver forest gate near a river trail. Warm green and silver palette, soft watercolor texture, no readable text.",
     },
     shots: [
       {
@@ -82,32 +71,31 @@ function plan(overrides: Partial<CourseResourcePlan> = {}): CourseResourcePlan {
         shotId: "chapter-1-shot-1",
         shotOrder: 1,
         sourceParagraphId: "chapter-1-paragraph-1",
-        sourceSentenceIds: ["c1s1", "c1s2"],
-        heroMomentSentenceId: "c1s2",
         sourceExcerpt: "Summer walked into the forest. A silver gate shone near the river.",
         focus: "Summer discovers the silver gate.",
         characters: ["SummerStudent"],
         keyObjects: ["silver gate"],
         composition: "wide classroom storybook scene with Summer centered",
         continuityNotes: "Keep Summer's yellow raincoat and green backpack.",
+        imagePrompt:
+          "Horizontal 16:9 hand-drawn children's picture-book illustration. SummerStudent is an eight-year-old student with bright eyes, short black hair, a yellow raincoat, and a green backpack, walking into the glowing forest as a silver gate shines near the river. Warm green and silver palette, soft watercolor texture, no readable text.",
       },
       {
         chapterId: "chapter-1",
         shotId: "chapter-1-shot-2",
         shotOrder: 2,
         sourceParagraphId: "chapter-1-paragraph-2",
-        sourceSentenceIds: ["c1s3", "c1s4"],
-        heroMomentSentenceId: "c1s3",
         sourceExcerpt: "Summer found a clue under the gate. The class followed the safe trail.",
         focus: "Summer picks up the clue.",
         characters: ["SummerStudent"],
         keyObjects: ["clue", "safe trail"],
         composition: "medium shot with the clue in the safe center area",
         continuityNotes: "Continue the forest gate scene.",
+        imagePrompt:
+          "Horizontal 16:9 hand-drawn children's picture-book illustration. SummerStudent is the same eight-year-old student with bright eyes, short black hair, a yellow raincoat, and a green backpack, picking up a small clue under the silver gate while the safe forest trail continues behind. Warm green and silver palette, no readable text.",
       },
     ],
     version: 1,
-    confirmedCoverImageId: null,
     ...overrides,
   };
 }
@@ -117,20 +105,32 @@ describe("resource plan validation", () => {
     expect(assertResourcePlanValid(plan(), draft)).toEqual(plan());
   });
 
-  test("rejects overlapping source sentence ids inside a chapter", () => {
+  test("rejects shots that are not bound to the matching paragraph order", () => {
     const invalid = plan({
       shots: [
         plan().shots[0],
         {
           ...plan().shots[1],
           sourceParagraphId: "chapter-1-paragraph-1",
-          sourceSentenceIds: ["c1s2"],
-          heroMomentSentenceId: "c1s2",
         },
       ],
     });
 
-    expect(() => assertResourcePlanValid(invalid, draft)).toThrow("第 1 章分镜来源句子重复");
+    expect(() => assertResourcePlanValid(invalid, draft)).toThrow("第 1 章分镜必须按段落顺序绑定");
+  });
+
+  test("rejects shots that do not cover the assigned paragraph text", () => {
+    const invalid = plan({
+      shots: [
+        {
+          ...plan().shots[0],
+          sourceExcerpt: "Summer walked into the forest.",
+        },
+        plan().shots[1],
+      ],
+    });
+
+    expect(() => assertResourcePlanValid(invalid, draft)).toThrow("第 1 章分镜必须覆盖对应段落全文");
   });
 });
 
@@ -144,8 +144,6 @@ function imageRecord(overrides: Partial<CourseImageRecord> = {}): CourseImageRec
     slotType: "visual_cover",
     slotIndex: 0,
     sourceParagraphId: null,
-    sourceSentenceIds: [],
-    heroMomentSentenceId: null,
     sourceExcerpt: "cover",
     prompt: "cover prompt",
     promptVersion: "step4-gpt-image-2-v1",
@@ -173,7 +171,7 @@ describe("resource image queue", () => {
     const record = imageRecord();
     const db = {
       course: {
-        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan(), confirmedCoverImageId: null } }),
+        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
       },
       courseImage: {
         findMany: async () => [record],
@@ -207,7 +205,7 @@ describe("resource image queue", () => {
     const record = imageRecord();
     const db = {
       course: {
-        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan(), confirmedCoverImageId: null } }),
+        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
       },
       courseImage: {
         findMany: async () => [record],
@@ -239,7 +237,7 @@ describe("resource image queue", () => {
     const record = imageRecord();
     const db = {
       course: {
-        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan(), confirmedCoverImageId: null } }),
+        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
       },
       courseImage: {
         findMany: async () => [record],
@@ -269,6 +267,168 @@ describe("resource image queue", () => {
       publicUrl: "/api/course-images/course-1/image-1.webp",
     });
   });
+
+  test("keeps the remote url when a synchronous submit succeeds but the download fails", async () => {
+    const updates: Array<Partial<CourseImageRecord>> = [];
+    const record = imageRecord();
+    let submitCount = 0;
+    const db = {
+      course: {
+        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
+      },
+      courseImage: {
+        findMany: async () => [record],
+        updateMany: async ({ data }: { data: Partial<CourseImageRecord> }) => {
+          Object.assign(record, data);
+          return { count: 1 };
+        },
+        update: async ({ data }: { data: Partial<CourseImageRecord> }) => {
+          updates.push(data);
+          Object.assign(record, data);
+          return record;
+        },
+      },
+    } as unknown as CourseImagesDb;
+
+    await advanceCourseImageQueue(db, "course-1", {
+      provider: {
+        submit: async () => {
+          submitCount += 1;
+          return { imageUrl: "https://example.com/image.webp" };
+        },
+        query: async () => ({ status: "failed" as const, imageUrl: null, failureReason: "unused" }),
+      },
+      download: async () => {
+        throw new Error("disk full");
+      },
+    });
+
+    expect(submitCount).toBe(1);
+    expect(updates.at(-1)).toMatchObject({
+      status: "failed",
+      providerImageUrl: "https://example.com/image.webp",
+    });
+    expect(String(updates.at(-1)?.failureReason)).toContain("下载失败");
+  });
+
+  test("recovers a kept remote url by downloading without paying for a new generation", async () => {
+    const updates: Array<Partial<CourseImageRecord>> = [];
+    const record = imageRecord({ status: "pending", providerImageUrl: "https://example.com/kept.webp" });
+    let submitCount = 0;
+    const db = {
+      course: {
+        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
+      },
+      courseImage: {
+        findMany: async () => [record],
+        updateMany: async ({ data }: { data: Partial<CourseImageRecord> }) => {
+          Object.assign(record, data);
+          return { count: 1 };
+        },
+        update: async ({ data }: { data: Partial<CourseImageRecord> }) => {
+          updates.push(data);
+          Object.assign(record, data);
+          return record;
+        },
+      },
+    } as unknown as CourseImagesDb;
+
+    await advanceCourseImageQueue(db, "course-1", {
+      provider: {
+        submit: async () => {
+          submitCount += 1;
+          return { imageUrl: "https://example.com/new.webp" };
+        },
+        query: async () => ({ status: "failed" as const, imageUrl: null, failureReason: "unused" }),
+      },
+      download: async ({ sourceUrl }) => ({ storagePath: `/tmp/${sourceUrl}`, publicUrl: "/api/course-images/course-1/image-1.webp" }),
+    });
+
+    expect(submitCount).toBe(0);
+    expect(updates.at(-1)).toMatchObject({
+      status: "succeeded",
+      providerImageUrl: "https://example.com/kept.webp",
+      publicUrl: "/api/course-images/course-1/image-1.webp",
+    });
+  });
+
+  test("releases a stuck submitting record after the timeout so it can be retried", async () => {
+    const updates: Array<Partial<CourseImageRecord>> = [];
+    const record = imageRecord({
+      status: "submitting",
+      updatedAt: new Date(Date.now() - 20 * 60 * 1000),
+    });
+    let submitCount = 0;
+    const db = {
+      course: {
+        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
+      },
+      courseImage: {
+        findMany: async () => [record],
+        updateMany: async ({ data }: { data: Partial<CourseImageRecord> }) => {
+          Object.assign(record, data);
+          return { count: 1 };
+        },
+        update: async ({ data }: { data: Partial<CourseImageRecord> }) => {
+          updates.push(data);
+          Object.assign(record, data);
+          return record;
+        },
+      },
+    } as unknown as CourseImagesDb;
+
+    await advanceCourseImageQueue(db, "course-1", {
+      provider: {
+        submit: async () => {
+          submitCount += 1;
+          return { imageUrl: "https://example.com/image.webp" };
+        },
+        query: async () => ({ status: "failed" as const, imageUrl: null, failureReason: "unused" }),
+      },
+      download: async () => ({ storagePath: "/tmp/image.webp", publicUrl: "/api/course-images/course-1/image-1.webp" }),
+    });
+
+    expect(submitCount).toBe(0);
+    expect(updates[0]).toMatchObject({ status: "failed", providerTaskId: null });
+    expect(record.status).toBe("failed");
+  });
+
+  test("keeps a slow synchronous submitting record active within the timeout window", async () => {
+    const updates: Array<Partial<CourseImageRecord>> = [];
+    const record = imageRecord({
+      status: "submitting",
+      updatedAt: new Date(Date.now() - 10 * 60 * 1000),
+    });
+    const db = {
+      course: {
+        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
+      },
+      courseImage: {
+        findMany: async () => [record],
+        updateMany: async ({ data }: { data: Partial<CourseImageRecord> }) => {
+          updates.push(data);
+          Object.assign(record, data);
+          return { count: 1 };
+        },
+        update: async ({ data }: { data: Partial<CourseImageRecord> }) => {
+          updates.push(data);
+          Object.assign(record, data);
+          return record;
+        },
+      },
+    } as unknown as CourseImagesDb;
+
+    await advanceCourseImageQueue(db, "course-1", {
+      provider: {
+        submit: async () => ({ imageUrl: "https://example.com/image.webp" }),
+        query: async () => ({ status: "failed" as const, imageUrl: null, failureReason: "unused" }),
+      },
+      download: async () => ({ storagePath: "/tmp/image.webp", publicUrl: "/api/course-images/course-1/image-1.webp" }),
+    });
+
+    expect(updates).toEqual([]);
+    expect(record.status).toBe("submitting");
+  });
 });
 
 describe("resource image slot derivation", () => {
@@ -278,24 +438,23 @@ describe("resource image slot derivation", () => {
     expect(slots.map((slot) => slot.slotType)).toEqual(["visual_cover", "lesson_shot", "lesson_shot"]);
     expect(slots[0].width).toBe(1280);
     expect(slots[0].height).toBe(720);
-    expect(slots[0].prompt).toContain("warm Japanese animation film feeling");
-    expect(slots[0].prompt.length).toBeLessThanOrEqual(1000);
-    expect(slots[1].sourceSentenceIds).toEqual(["c1s1", "c1s2"]);
-    expect(slots[2].referenceSlotIds).toContain("visual-cover");
+    expect(slots[0].prompt).toContain("Horizontal 16:9");
+    expect(slots[0].prompt.length).toBeLessThanOrEqual(1200);
+    expect(slots[1].sourceParagraphId).toBe("chapter-1-paragraph-1");
+    expect(slots[1].sourceText).toBe("Summer walked into the forest. A silver gate shone near the river.");
+    expect(slots[2].referenceSlotIds).toEqual([]);
   });
 
-  test("locks generated image prompts to the named cast only", () => {
+  test("uses self-contained image prompts from the resource plan", () => {
     const slots = deriveResourceImageSlots("course-1", draft, plan());
 
-    expect(slots[0].prompt).toContain("EXACT CAST ONLY");
-    expect(slots[0].prompt).toContain("Do not add any extra students");
-    expect(slots[0].prompt).toContain("Story poster key art");
-    expect(slots[1].prompt).toContain("EXACT CAST ONLY");
-    expect(slots[1].prompt).toContain("Do not add any extra students");
-    expect(slots[1].prompt).not.toContain("classroom slide");
+    expect(slots[0].prompt).toContain("standing at a glowing silver forest gate");
+    expect(slots[1].prompt).toContain("walking into the glowing forest");
+    expect(slots[1].prompt).toContain("Pure image only");
+    expect(slots[1].prompt).not.toContain("EXACT CAST ONLY");
   });
 
-  test("marks chapter images missing until a fresh cover is confirmed", () => {
+  test("marks all planned images missing before paid image tasks are created", () => {
     const slots = deriveResourceImageSlots("course-1", draft, plan());
     const images = slots.map((slot) => ({
       ...slot,
@@ -309,6 +468,7 @@ describe("resource image slot derivation", () => {
       providerImageUrl: null,
       publicUrl: null,
       failureReason: null,
+      referenceImageIds: slot.referenceSlotIds,
       createdAt: null,
       updatedAt: null,
     }));
@@ -318,5 +478,209 @@ describe("resource image slot derivation", () => {
       missing: 3,
       succeeded: 0,
     });
+  });
+});
+
+describe("chapter image task creation", () => {
+  const secondChapterDraft: LessonDraft = {
+    ...draft,
+    chapters: [
+      ...draft.chapters,
+      {
+        id: "chapter-2",
+        sourceOutlineChapterIndex: 2,
+        title: "The River Clue",
+        paragraphs: [
+          {
+            id: "chapter-2-paragraph-1",
+            order: 1,
+            sentences: [
+              { id: "c2s1", text: "Summer crossed the quiet river.", segments: [{ type: "text", text: "Summer crossed the quiet river." }] },
+            ],
+          },
+          {
+            id: "chapter-2-paragraph-2",
+            order: 2,
+            sentences: [
+              { id: "c2s2", text: "A blue stone pointed to the next path.", segments: [{ type: "text", text: "A blue stone pointed to the next path." }] },
+            ],
+          },
+        ],
+        exercises: [],
+      },
+    ],
+  };
+
+  function twoChapterPlan(): CourseResourcePlan {
+    return plan({
+      shots: [
+        ...plan().shots,
+        {
+          chapterId: "chapter-2",
+          shotId: "chapter-2-shot-1",
+          shotOrder: 1,
+          sourceParagraphId: "chapter-2-paragraph-1",
+          sourceExcerpt: "Summer crossed the quiet river.",
+          focus: "Summer crosses the quiet river.",
+          characters: ["SummerStudent"],
+          keyObjects: ["river"],
+          composition: "wide river crossing scene",
+          continuityNotes: "Keep the warm forest world.",
+          imagePrompt: "Self-contained image2 prompt for chapter 2 shot 1.",
+        } as CourseResourcePlan["shots"][number],
+        {
+          chapterId: "chapter-2",
+          shotId: "chapter-2-shot-2",
+          shotOrder: 2,
+          sourceParagraphId: "chapter-2-paragraph-2",
+          sourceExcerpt: "A blue stone pointed to the next path.",
+          focus: "The blue stone points to the next path.",
+          characters: ["SummerStudent"],
+          keyObjects: ["blue stone"],
+          composition: "medium safe-center scene with the stone visible",
+          continuityNotes: "Keep the warm forest world.",
+          imagePrompt: "Self-contained image2 prompt for chapter 2 shot 2.",
+        } as CourseResourcePlan["shots"][number],
+      ],
+    });
+  }
+
+  test("creates pending image tasks only for the requested chapter without requiring cover confirmation", async () => {
+    let created: Array<{ chapterId: string | null; slotId: string }> = [];
+    const db = {
+      course: {
+        findUnique: async () => ({
+          id: "course-1",
+          status: "draft",
+          lessonDraft: { content: secondChapterDraft },
+          resourcePlan: { plan: twoChapterPlan() },
+        }),
+        update: async () => ({}),
+      },
+      courseImage: {
+        findMany: async () => [],
+        createMany: async ({ data }: { data: Array<{ chapterId: string | null; slotId: string }> }) => {
+          created = data;
+          return { count: data.length };
+        },
+      },
+    } as unknown as CourseImagesDb;
+
+    await createMissingCourseImages(db, "course-1", { scope: "chapter", chapterId: "chapter-2" });
+
+    expect(created.map((item) => item.slotId)).toEqual(["chapter-2-shot-1", "chapter-2-shot-2"]);
+    expect(created.every((item) => item.chapterId === "chapter-2")).toBe(true);
+  });
+
+  test("creates a pending image task only for the requested slot", async () => {
+    let created: Array<{ chapterId: string | null; slotId: string }> = [];
+    const db = {
+      course: {
+        findUnique: async () => ({
+          id: "course-1",
+          status: "draft",
+          lessonDraft: { content: secondChapterDraft },
+          resourcePlan: { plan: twoChapterPlan() },
+        }),
+        update: async () => ({}),
+      },
+      courseImage: {
+        findMany: async () => [],
+        createMany: async ({ data }: { data: Array<{ chapterId: string | null; slotId: string }> }) => {
+          created = data;
+          return { count: data.length };
+        },
+      },
+    } as unknown as CourseImagesDb;
+
+    await createMissingCourseImages(db, "course-1", { scope: "slot", slotId: "chapter-2-shot-1" });
+
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({ chapterId: "chapter-2", slotId: "chapter-2-shot-1" });
+  });
+
+  test("creates all missing image tasks when requested", async () => {
+    let created: Array<{ slotId: string }> = [];
+    const db = {
+      course: {
+        findUnique: async () => ({
+          id: "course-1",
+          status: "draft",
+          lessonDraft: { content: secondChapterDraft },
+          resourcePlan: { plan: twoChapterPlan() },
+        }),
+        update: async () => ({}),
+      },
+      courseImage: {
+        findMany: async () => [imageRecord({ slotId: "visual-cover", slotType: "visual_cover", status: "succeeded" })],
+        createMany: async ({ data }: { data: Array<{ slotId: string }> }) => {
+          created = data;
+          return { count: data.length };
+        },
+      },
+    } as unknown as CourseImagesDb;
+
+    await createMissingCourseImages(db, "course-1", { scope: "all" });
+
+    expect(created.map((item) => item.slotId)).toEqual([
+      "chapter-1-shot-1",
+      "chapter-1-shot-2",
+      "chapter-2-shot-1",
+      "chapter-2-shot-2",
+    ]);
+  });
+});
+
+describe("cover image regeneration guard", () => {
+  function coverDb(record: CourseImageRecord, onWrite: () => void) {
+    return {
+      course: {
+        findUnique: async () => ({
+          id: "course-1",
+          status: "draft",
+          lessonDraft: { content: draft },
+          resourcePlan: { plan: plan() },
+        }),
+        update: async () => {
+          onWrite();
+          return {};
+        },
+      },
+      courseImage: {
+        findMany: async () => [record],
+        update: async () => {
+          onWrite();
+          return record;
+        },
+        createMany: async () => {
+          onWrite();
+          return { count: 1 };
+        },
+      },
+    } as unknown as CourseImagesDb;
+  }
+
+  for (const status of ["pending", "submitting", "generating"] as const) {
+    test(`rejects regenerating the cover while it is ${status} instead of resubmitting`, async () => {
+      let wrote = false;
+      const record = imageRecord({ status });
+      const db = coverDb(record, () => {
+        wrote = true;
+      });
+
+      await expect(createCoverImage(db, "course-1")).rejects.toBeInstanceOf(CourseImageInvalidStateError);
+      expect(wrote).toBe(false);
+    });
+  }
+
+  test("allows regenerating the cover after it failed", async () => {
+    let wrote = false;
+    const record = imageRecord({ status: "failed" });
+    const db = coverDb(record, () => {
+      wrote = true;
+    });
+
+    await createCoverImage(db, "course-1");
+    expect(wrote).toBe(true);
   });
 });

@@ -9,7 +9,6 @@ const course: CourseBasicDetail = {
   title: "Forest Gate",
   teacherId: "teacher-1",
   studentIds: ["student-1"],
-  age: 8,
   englishLevel: "A1",
   durationMinutes: 30,
   theme: "forest gate",
@@ -91,27 +90,13 @@ describe("course resource plan parsing", () => {
   test("accepts a complete course_resource_plan_v1 payload", () => {
     const result = parseCourseResourcePlan({
       schemaVersion: "course_resource_plan_v1",
-      visualProfile: {
-        style: "hand-drawn comic picture-book style",
-        palette: "warm green and silver",
-        world: "glowing forest classroom",
-        mood: "curious",
-        characters: [
-          {
-            alias: "SummerStudent",
-            appearance: "bright eyes",
-            hairstyle: "short black hair",
-            clothing: "yellow raincoat",
-            accessories: ["green backpack"],
-            signatureColor: "yellow",
-          },
-        ],
-      },
       coverBrief: {
         description: "Summer and the class stand by the glowing gate.",
         characters: ["SummerStudent"],
         setting: "forest gate",
         storyElements: ["silver gate"],
+        imagePrompt:
+          "Horizontal 16:9 hand-drawn children's picture-book cover. SummerStudent is an eight-year-old child with short black hair, bright eyes, a yellow raincoat, and a green backpack, standing beside a glowing silver forest gate near a river. No readable text.",
       },
       shots: [
         {
@@ -119,51 +104,82 @@ describe("course resource plan parsing", () => {
           shotId: "chapter-1-shot-1",
           shotOrder: 1,
           sourceParagraphId: "chapter-1-paragraph-1",
-          sourceSentenceIds: ["c1s1", "c1s2"],
-          heroMomentSentenceId: "c1s2",
           sourceExcerpt: "Summer walked into the forest. A silver gate shone near the river.",
           focus: "Summer sees the gate.",
           characters: ["SummerStudent"],
           keyObjects: ["silver gate"],
           composition: "wide safe-center shot",
           continuityNotes: "Keep the same outfit.",
+          imagePrompt:
+            "Horizontal 16:9 hand-drawn children's picture-book illustration. SummerStudent is an eight-year-old child with short black hair, bright eyes, a yellow raincoat, and a green backpack, walking into a glowing forest near a silver gate by the river. No readable text.",
         },
         {
           chapterId: "chapter-1",
           shotId: "chapter-1-shot-2",
           shotOrder: 2,
           sourceParagraphId: "chapter-1-paragraph-2",
-          sourceSentenceIds: ["c1s3"],
-          heroMomentSentenceId: "c1s3",
           sourceExcerpt: "Summer found a clue under the gate.",
           focus: "Summer finds the clue.",
           characters: ["SummerStudent"],
           keyObjects: ["clue"],
           composition: "medium safe-center shot",
           continuityNotes: "Continue the forest scene.",
+          imagePrompt:
+            "Horizontal 16:9 hand-drawn children's picture-book illustration. SummerStudent is the same child with short black hair, bright eyes, a yellow raincoat, and a green backpack, crouching near the silver gate to find a small clue. No readable text.",
         },
       ],
     });
 
     expect(result.schemaVersion).toBe("course_resource_plan_v1");
     expect(result.version).toBe(1);
-    expect(result.confirmedCoverImageId).toBeNull();
+    expect(result.coverBrief.imagePrompt).toContain("Horizontal 16:9");
+    expect(result.shots[0].imagePrompt).toContain("yellow raincoat");
   });
 
-  test("mock mode creates two shots per chapter with hand-drawn comic style", async () => {
-    const result = await generateCourseResourcePlan({ course, teacher, students: [student], storyOption, draft, previousVisualProfile: null });
+  test("rejects resource plans without self-contained image prompts", () => {
+    expect(() =>
+      parseCourseResourcePlan({
+        schemaVersion: "course_resource_plan_v1",
+        coverBrief: {
+          description: "Summer and the class stand by the glowing gate.",
+          characters: ["SummerStudent"],
+          setting: "forest gate",
+          storyElements: ["silver gate"],
+        },
+        shots: [
+          {
+            chapterId: "chapter-1",
+            shotId: "chapter-1-shot-1",
+            shotOrder: 1,
+            sourceParagraphId: "chapter-1-paragraph-1",
+            sourceExcerpt: "Summer walked into the forest. A silver gate shone near the river.",
+            focus: "Summer sees the gate.",
+            characters: ["SummerStudent"],
+            keyObjects: ["silver gate"],
+            composition: "wide safe-center shot",
+            continuityNotes: "Keep the same outfit.",
+          },
+        ],
+      }),
+    ).toThrow("imagePrompt");
+  });
 
-    expect(result.visualProfile.style).toContain("hand-drawn comic");
+  test("mock mode creates one shot per paragraph", async () => {
+    const result = await generateCourseResourcePlan({ course, teacher, students: [student], storyOption, draft });
+
     expect(result.shots).toHaveLength(2);
     expect(result.shots.map((shot) => shot.shotOrder)).toEqual([1, 2]);
+    expect(result.shots.map((shot) => shot.sourceParagraphId)).toEqual(["chapter-1-paragraph-1", "chapter-1-paragraph-2"]);
   });
 
   test("asks the AI to create memorable story-poster cover art with no extra people", () => {
-    const prompt = buildCourseResourcePlanPrompt({ course, teacher, students: [student], storyOption, draft, previousVisualProfile: null });
+    const prompt = buildCourseResourcePlanPrompt({ course, teacher, students: [student], storyOption, draft });
 
     expect(prompt).toContain("story poster");
     expect(prompt).toContain("memorable central visual hook");
     expect(prompt).toContain("Do not add extra students");
     expect(prompt).toContain("Only use cast aliases");
+    expect(prompt).toContain("shotOrder 1 must use paragraph 1");
+    expect(prompt).toContain("shotOrder 2 must use paragraph 2");
   });
 });

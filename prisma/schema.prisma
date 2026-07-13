@@ -91,7 +91,6 @@ model CourseResourcePlan {
   courseId              String   @id
   plan                  Json
   version               Int      @default(1)
-  confirmedCoverImageId String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
   course                Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -106,8 +105,6 @@ model CourseImage {
   slotType         CourseImageSlotType
   slotIndex        Int
   sourceParagraphId String?
-  sourceSentenceIds Json              @default("[]")
-  heroMomentSentenceId String?
   sourceExcerpt    String             @default("")
   prompt           String
   promptVersion    String             @default("step4-resource-plan-v1")

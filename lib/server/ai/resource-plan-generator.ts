@@ -3,7 +3,6 @@ import { z } from "zod";
 import type {
   CourseBasicDetail,
   CourseResourcePlan,
-  CourseVisualProfile,
   LessonDraft,
   PersonProfile,
   StoryOption,
@@ -19,44 +18,20 @@ export type ResourcePlanGenerationContext = {
   students: PersonProfile[];
   storyOption: StoryOption;
   draft: LessonDraft;
-  previousVisualProfile: CourseVisualProfile | null;
 };
 
 const nonEmpty = z.string().trim().min(1);
 
-const visualProfileSchema = z
-  .object({
-    style: nonEmpty,
-    palette: nonEmpty,
-    world: nonEmpty,
-    mood: nonEmpty,
-    characters: z
-      .array(
-        z
-          .object({
-            alias: nonEmpty,
-            appearance: nonEmpty,
-            hairstyle: nonEmpty,
-            clothing: nonEmpty,
-            accessories: z.array(nonEmpty),
-            signatureColor: nonEmpty,
-          })
-          .strict(),
-      )
-      .min(1),
-  })
-  .strict();
-
 const resourcePlanSchema = z
   .object({
     schemaVersion: z.literal("course_resource_plan_v1"),
-    visualProfile: visualProfileSchema,
     coverBrief: z
       .object({
         description: nonEmpty,
         characters: z.array(nonEmpty).min(1),
         setting: nonEmpty,
         storyElements: z.array(nonEmpty).min(1),
+        imagePrompt: nonEmpty.max(1600),
       })
       .strict(),
     shots: z
@@ -67,14 +42,13 @@ const resourcePlanSchema = z
             shotId: nonEmpty,
             shotOrder: z.union([z.literal(1), z.literal(2)]),
             sourceParagraphId: nonEmpty,
-            sourceSentenceIds: z.array(nonEmpty).min(1),
-            heroMomentSentenceId: nonEmpty,
             sourceExcerpt: nonEmpty,
             focus: nonEmpty,
             characters: z.array(nonEmpty).min(1),
             keyObjects: z.array(nonEmpty),
             composition: nonEmpty,
             continuityNotes: nonEmpty,
+            imagePrompt: nonEmpty.max(1600),
           })
           .strict(),
       )
@@ -97,7 +71,6 @@ export function parseCourseResourcePlan(value: unknown): CourseResourcePlan {
   return {
     ...result.data,
     version: 1,
-    confirmedCoverImageId: null,
   };
 }
 
@@ -122,15 +95,16 @@ function sentenceLines(draft: LessonDraft) {
 }
 
 export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationContext) {
-  const previous = context.previousVisualProfile
-    ? `\nTeacher-edited visual profile to preserve and refine:\n${JSON.stringify(context.previousVisualProfile, null, 2)}\n`
-    : "";
-
   return [
-    "Create one resource plan for a children's English picture-book lesson as strict JSON.",
-    "The default visual direction is hand-drawn comic picture-book style. Do not switch to 3D, photorealistic, oil painting, cyberpunk, or cinematic realism unless the teacher-edited profile explicitly says so.",
-    "The plan must create the global visual profile, one cover brief, and exactly 2 non-overlapping lesson shots per chapter.",
-    "Teachers only edit the visual profile. Cover brief and shots must stay consistent with that same visual profile.",
+    "Create one GPT-image-2 resource plan for a children's English picture-book lesson as strict JSON.",
+    "Read the full lesson first, then directly write self-contained prompts specifically for GPT Image 2 for the cover and every lesson shot.",
+    "The default art direction is hand-drawn comic picture-book style. Do not switch to 3D, photorealistic, oil painting, cyberpunk, or cinematic realism.",
+    "The plan must create one cover brief and exactly 2 lesson shots per chapter.",
+    "Each chapter has exactly 2 paragraphs. Create shotOrder 1 for paragraph 1 and shotOrder 2 for paragraph 2.",
+    "Each shot's sourceParagraphId must be its assigned paragraph id, and sourceExcerpt must be that full paragraph text.",
+    "Every coverBrief.imagePrompt and shots[].imagePrompt must be a complete GPT Image 2 prompt that the image model can use by itself without seeing any other context.",
+    "Each imagePrompt must repeat the concrete appearance of visible characters and the concrete story setting enough to avoid obvious inconsistencies.",
+    "Do not force the same clothing if the story clearly changes the character's situation; describe the current scene's clothing and props specifically.",
     "The cover brief must describe story poster key art with a memorable central visual hook, not a generic class group portrait.",
     "Only use cast aliases from the lesson for all characters. Do not add extra students, classmates, teachers, parents, crowds, background people, or unnamed humans.",
     "",
@@ -143,46 +117,32 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
     `Storyline: ${context.storyOption.storyline}`,
     "Story chapters:",
     context.storyOption.chapters.map((chapter, index) => `${index + 1}. ${chapter.title}: ${chapter.summary}`).join("\n"),
-    previous,
     "Clean lesson sentences with stable ids:",
     sentenceLines(context.draft),
     "",
     "Rules:",
-    "- Only use cast aliases from the lesson when naming characters in visualProfile.characters, coverBrief.characters, and shots.characters.",
+    "- Only use cast aliases from the lesson when naming characters in coverBrief.characters and shots.characters.",
     "- Do not add extra students, classmates, teachers, parents, crowds, background people, or unnamed humans.",
-    "- Output exactly two shots for each chapter, shotOrder 1 then 2.",
-    "- Each shot must use continuous sourceSentenceIds from one paragraph only.",
-    "- The two shots in the same chapter must not share sentence ids.",
-    "- sourceExcerpt must be the exact clean text for sourceSentenceIds joined with spaces.",
-    "- Cover brief must use the same characters, world, palette, and representative story elements from the shot plan.",
+    "- Output exactly two shots for each chapter: shotOrder 1 must use paragraph 1, shotOrder 2 must use paragraph 2.",
+    "- Each shot must use the paragraph id assigned by shotOrder: shotOrder 1 uses paragraph 1, shotOrder 2 uses paragraph 2.",
+    "- sourceExcerpt must be the exact clean text of that full paragraph, with all paragraph sentences joined by spaces.",
+    "- Cover brief must use the same characters, story world, visual style, and representative story elements from the shot plan.",
     "- Cover brief description must include one memorable central visual hook built from the main character, teacher/student cast, setting, and key story object.",
-    "- Do not include readable text, letters, numbers, signs, speech bubbles, logos, or watermarks in any visual description.",
+    "- imagePrompt must be concrete and visual, ideally 900-1200 characters, never over 1600 characters.",
+    '- Each imagePrompt must explicitly identify itself as a GPT Image 2 prompt and start with "GPT Image 2 prompt: Horizontal 16:9 ...".',
+    "- Each imagePrompt must include: current visible characters, concrete appearance/clothing/props, concrete background, story action, composition, style, mood, and safety constraints.",
+    "- Do not include readable text, letters, numbers, signs, speech bubbles, logos, or watermarks in any visual description or imagePrompt.",
     "",
     "Return JSON only with this shape:",
     JSON.stringify(
       {
         schemaVersion: "course_resource_plan_v1",
-        visualProfile: {
-          style: "hand-drawn comic picture-book style...",
-          palette: "color scheme...",
-          world: "main setting/world...",
-          mood: "overall mood...",
-          characters: [
-            {
-              alias: "AliasFromLesson",
-              appearance: "appearance...",
-              hairstyle: "hair...",
-              clothing: "clothing...",
-              accessories: ["item"],
-              signatureColor: "color",
-            },
-          ],
-        },
         coverBrief: {
           description: "pure image cover reference description...",
           characters: ["AliasFromLesson"],
           setting: "setting...",
           storyElements: ["object"],
+          imagePrompt: "GPT Image 2 prompt: Horizontal 16:9 children's picture-book cover with concrete character appearance, setting, story hook, style, and no readable text...",
         },
         shots: [
           {
@@ -190,14 +150,13 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
             shotId: "chapter-1-shot-1",
             shotOrder: 1,
             sourceParagraphId: "chapter-1-paragraph-1",
-            sourceSentenceIds: ["sentence-id"],
-            heroMomentSentenceId: "sentence-id",
             sourceExcerpt: "exact clean text...",
             focus: "single visual action...",
             characters: ["AliasFromLesson"],
             keyObjects: ["object"],
             composition: "shot size and subject placement...",
             continuityNotes: "what must stay consistent...",
+            imagePrompt: "GPT Image 2 prompt: Horizontal 16:9 children's picture-book illustration with concrete visible character appearance, scene-specific clothing, setting, action, composition, style, and no readable text...",
           },
         ],
       },
@@ -207,32 +166,44 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
   ].join("\n");
 }
 
-function buildDeepSeekRequestBody(messages: ChatMessage[]) {
+function buildQuickRouterResponsesRequestBody(messages: ChatMessage[]) {
   return {
-    model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro",
-    messages,
-    max_tokens: 24000,
+    model: process.env.QUICKROUTER_RESPONSES_MODEL ?? "gpt-5.5",
+    input: messages,
+    max_output_tokens: 24000,
     response_format: { type: "json_object" },
-    thinking: { type: process.env.DEEPSEEK_THINKING === "disabled" ? "disabled" : "enabled" },
     temperature: 0.2,
   };
 }
 
-async function callDeepSeek(messages: ChatMessage[]) {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  const baseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com";
+type QuickRouterResponsesData = {
+  choices?: Array<{ message?: { content?: string | null } }>;
+  output?: Array<{ content?: Array<{ text?: string; type?: string }> }>;
+  error?: { message?: string };
+  message?: string;
+};
+
+async function callQuickRouterResponses(messages: ChatMessage[]) {
+  const apiKey = process.env.QUICKROUTER_API_KEY;
   if (!apiKey) throw new Error("AI 服务未配置");
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+  const response = await fetch("https://api.quickrouter.ai/v1/responses", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(buildDeepSeekRequestBody(messages)),
+    body: JSON.stringify(buildQuickRouterResponsesRequestBody(messages)),
   });
-  if (!response.ok) throw new Error(`DeepSeek 请求失败：HTTP ${response.status}`);
-  const data = (await response.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
-  const content = data.choices?.[0]?.message?.content;
+  const data = (await response.json().catch(() => ({}))) as QuickRouterResponsesData;
+  if (!response.ok) throw new Error(data.error?.message || data.message || `QuickRouter Responses 请求失败：HTTP ${response.status}`);
+  const content =
+    data.choices?.[0]?.message?.content ??
+    data.output
+      ?.flatMap((item) => item.content ?? [])
+      .map((item) => item.text)
+      .filter(Boolean)
+      .join("\n");
   if (!content) throw new Error("AI 未返回资源方案，请重试生成");
   return content;
 }
@@ -245,51 +216,40 @@ function mockResourcePlan(context: ResourcePlanGenerationContext): CourseResourc
       shotId: `${chapter.id}-shot-${index + 1}`,
       shotOrder: (index + 1) as 1 | 2,
       sourceParagraphId: paragraph.id,
-      sourceSentenceIds: paragraph.sentences.map((sentence) => sentence.id),
-      heroMomentSentenceId: paragraph.sentences[paragraph.sentences.length - 1]?.id ?? paragraph.sentences[0].id,
       sourceExcerpt: paragraph.sentences.map((sentence) => sentence.text).join(" "),
       focus: index === 0 ? "The characters discover the story world." : "The characters act on the clue.",
       characters: [firstAlias],
       keyObjects: [context.course.theme],
       composition: "clear hand-drawn comic scene with the action centered in the safe area",
       continuityNotes: "Keep the same character clothing, colors, and story world from the cover.",
+      imagePrompt: `GPT Image 2 prompt: Horizontal 16:9 hand-drawn children's picture-book illustration. ${firstAlias} appears as the same friendly child story character with a bright classroom adventure outfit and small backpack. ${
+        index === 0 ? "Show the character discovering the story world." : "Show the character acting on the clue."
+      } The scene is set in a ${context.course.theme} story world with warm colors, clean expressive linework, soft watercolor texture, safe centered composition, and no readable text, letters, numbers, speech bubbles, logos, or watermarks.`,
     })),
   );
 
   return {
     schemaVersion: "course_resource_plan_v1",
-    visualProfile: {
-      style: "hand-drawn comic picture-book style with clean linework",
-      palette: `warm colors inspired by ${context.course.theme}`,
-      world: `${context.course.theme} story world`,
-      mood: "curious, safe, and lively",
-      characters: context.draft.castAliases.map((alias) => ({
-        alias: alias.alias,
-        appearance: `${alias.displayName} as a friendly children's story character`,
-        hairstyle: "simple readable hairstyle",
-        clothing: "bright classroom adventure outfit",
-        accessories: ["small backpack"],
-        signatureColor: "warm yellow",
-      })),
-    },
     coverBrief: {
       description: `All main characters stand together in the ${context.course.theme} story world, showing the visual style for the whole course.`,
       characters: context.draft.castAliases.map((alias) => alias.alias),
       setting: `${context.course.theme} story world`,
       storyElements: [context.course.theme],
+      imagePrompt: `GPT Image 2 prompt: Horizontal 16:9 hand-drawn children's picture-book cover. ${context.draft.castAliases
+        .map((alias) => `${alias.alias} appears as a friendly child story character in a bright classroom adventure outfit`)
+        .join(", ")}. They stand in a ${context.course.theme} story world with a clear central story hook, warm colors, clean expressive linework, soft watercolor texture, and no readable text, letters, numbers, speech bubbles, logos, or watermarks.`,
     },
     shots,
     version: 1,
-    confirmedCoverImageId: null,
   };
 }
 
 export async function generateCourseResourcePlan(context: ResourcePlanGenerationContext) {
-  if (process.env.DEEPSEEK_API_KEY === "mock" || !process.env.DEEPSEEK_API_KEY) {
+  if (process.env.QUICKROUTER_API_KEY === "mock" || !process.env.QUICKROUTER_API_KEY) {
     return assertResourcePlanValid(mockResourcePlan(context), context.draft);
   }
 
-  const content = await callDeepSeek([
+  const content = await callQuickRouterResponses([
     { role: "system", content: "You create stable visual resource plans for children's picture-book lesson images. Return strict JSON only." },
     { role: "user", content: buildCourseResourcePlanPrompt(context) },
   ]);

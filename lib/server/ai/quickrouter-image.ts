@@ -43,7 +43,7 @@ function getConfig(): QuickRouterConfig {
 }
 
 function imageQuality(value: string | undefined): QuickRouterConfig["quality"] {
-  return value === "low" || value === "medium" || value === "high" ? value : "medium";
+  return value === "low" || value === "medium" || value === "high" ? value : "low";
 }
 
 async function readResponseJson(response: Response): Promise<QuickRouterImageResponse> {
