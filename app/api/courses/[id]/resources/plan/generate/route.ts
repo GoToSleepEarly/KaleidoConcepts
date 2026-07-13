@@ -33,7 +33,6 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       ...context,
       storyOption: option,
       draft,
-      previousVisualProfile: null,
     });
     const result = await saveCourseResourcePlan(db, id, plan);
     return NextResponse.json(result, { status: 201 });

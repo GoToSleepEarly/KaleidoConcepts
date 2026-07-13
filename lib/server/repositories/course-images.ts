@@ -6,12 +6,15 @@ import type {
   CourseResourcePlan,
   CourseResourceImage,
   CourseResourcesResponse,
-  LessonContentChapter,
   LessonDraft,
   ResourceProgress,
 } from "@/lib/contracts/api";
 
 export type CourseImageStatus = "pending" | "submitting" | "generating" | "succeeded" | "failed";
+
+// A record in any of these statuses already has (or is about to have) an in-flight paid generation, so a new
+// generate/regenerate request must not reset it, because doing so would submit a second time and double the AI cost.
+const activeImageStatuses: ReadonlySet<CourseImageStatus> = new Set(["pending", "submitting", "generating"]);
 
 export type CourseImageRecord = {
   id: string;
@@ -22,8 +25,6 @@ export type CourseImageRecord = {
   slotType: CourseImageSlotType;
   slotIndex: number;
   sourceParagraphId: string | null;
-  sourceSentenceIds: string[];
-  heroMomentSentenceId: string | null;
   sourceExcerpt: string;
   prompt: string;
   promptVersion: string;
@@ -51,7 +52,6 @@ type CourseWithDraft = {
   } | null;
   resourcePlan?: {
     plan: CourseResourcePlan;
-    confirmedCoverImageId: string | null;
   } | null;
 };
 
@@ -77,8 +77,6 @@ export type CourseImagesDb = {
         slotType: CourseImageSlotType;
         slotIndex: number;
         sourceParagraphId: string | null;
-        sourceSentenceIds: string[];
-        heroMomentSentenceId: string | null;
         sourceExcerpt: string;
         prompt: string;
         promptVersion: string;
@@ -99,13 +97,13 @@ export type CourseImagesDb = {
   courseResourcePlan?: {
     upsert: (query: {
       where: { courseId: string };
-      create: { courseId: string; plan: CourseResourcePlan; version: number; confirmedCoverImageId: string | null };
-      update: { plan: CourseResourcePlan; version: number; confirmedCoverImageId: string | null };
-    }) => Promise<{ courseId: string; plan: CourseResourcePlan; version: number; confirmedCoverImageId: string | null }>;
+      create: { courseId: string; plan: CourseResourcePlan; version: number };
+      update: { plan: CourseResourcePlan; version: number };
+    }) => Promise<{ courseId: string; plan: CourseResourcePlan; version: number }>;
     update: (query: {
       where: { courseId: string };
-      data: { plan?: CourseResourcePlan; version?: number; confirmedCoverImageId?: string | null };
-    }) => Promise<{ courseId: string; plan: CourseResourcePlan; version: number; confirmedCoverImageId: string | null }>;
+      data: { plan?: CourseResourcePlan; version?: number };
+    }) => Promise<{ courseId: string; plan: CourseResourcePlan; version: number }>;
   };
 };
 
@@ -119,8 +117,6 @@ export type PlannedImageSlot = {
   slotType: CourseImageSlotType;
   slotIndex: number;
   sourceParagraphId: string | null;
-  sourceSentenceIds: string[];
-  heroMomentSentenceId: string | null;
   sourceExcerpt: string;
   prompt: string;
   sourceHash: string;
@@ -134,9 +130,12 @@ export type PlannedImageSlot = {
   height: 720;
 };
 
-export const maxImagePromptLength = 1000;
-const gptImage2StyleLock =
-  "Hand-drawn children's comic picture-book illustration, warm Japanese animation film feeling, clean expressive linework, soft watercolor-and-gouache texture, warm golden light, natural childlike expressions.";
+export type CourseImageGenerationScope =
+  | { scope: "slot"; slotId: string }
+  | { scope: "chapter"; chapterId: string }
+  | { scope: "all" };
+
+export const maxImagePromptLength = 1200;
 const imagePromptSafetySuffix = "Pure image only. No title, captions, subtitles, readable text, letters, numbers, speech bubbles, logo, or watermark.";
 const promptVersion = "step4-gpt-image-2-v1";
 
@@ -176,33 +175,6 @@ export function capImagePrompt(value: string, suffix = imagePromptSafetySuffix) 
   return `${cappedBody}${separator}${normalizedSuffix}`.trim();
 }
 
-function textFromParagraph(chapter: LessonContentChapter, paragraphIndex: number) {
-  const paragraph = chapter.paragraphs[paragraphIndex];
-  return paragraph.sentences.map((sentence) => sentence.text).join(" ").replace(/\s+/g, " ").trim();
-}
-
-export function buildImagePrompt(_draft: LessonDraft, chapter: LessonContentChapter, paragraphIndex: number) {
-  const sourceText = compactText(textFromParagraph(chapter, paragraphIndex), 520);
-
-  return capImagePrompt([
-    "STYLE:",
-    gptImage2StyleLock,
-    "",
-    "TEXT ANCHOR:",
-    sourceText,
-    "",
-    "SCENE:",
-    `Chapter: ${chapter.title}.`,
-    `Story action: show the key moment from paragraph ${paragraphIndex + 1}.`,
-    "Visual focus: the teacher, students, main story object, and action described in the text.",
-    "Mood: warm, curious, child-friendly, safe.",
-    "",
-    "OUTPUT:",
-    "Horizontal classroom slide illustration, rich but readable, main character and key object clearly readable, background supports the story and does not steal focus.",
-    imagePromptSafetySuffix,
-  ].join("\n"));
-}
-
 export function hashImageSource(slot: Omit<PlannedImageSlot, "sourceHash"> | PlannedImageSlot) {
   return createHash("sha256")
     .update(
@@ -212,7 +184,8 @@ export function hashImageSource(slot: Omit<PlannedImageSlot, "sourceHash"> | Pla
         shotId: slot.shotId,
         slotId: slot.slotId,
         slotType: slot.slotType,
-        sourceSentenceIds: slot.sourceSentenceIds,
+        sourceParagraphId: slot.sourceParagraphId,
+        sourceExcerpt: slot.sourceExcerpt,
         prompt: slot.prompt,
         referenceSlotIds: slot.referenceSlotIds,
       }),
@@ -220,16 +193,8 @@ export function hashImageSource(slot: Omit<PlannedImageSlot, "sourceHash"> | Pla
     .digest("hex");
 }
 
-function sentenceMap(draft: LessonDraft) {
-  const map = new Map<string, { chapterId: string; paragraphId: string; text: string }>();
-  draft.chapters.forEach((chapter) =>
-    chapter.paragraphs.forEach((paragraph) =>
-      paragraph.sentences.forEach((sentence) => {
-        map.set(sentence.id, { chapterId: chapter.id, paragraphId: paragraph.id, text: sentence.text });
-      }),
-    ),
-  );
-  return map;
+function paragraphText(paragraph: LessonDraft["chapters"][number]["paragraphs"][number]) {
+  return paragraph.sentences.map((sentence) => sentence.text).join(" ").replace(/\s+/g, " ").trim();
 }
 
 export function assertResourcePlanValid(plan: CourseResourcePlan, draft: LessonDraft): CourseResourcePlan {
@@ -237,7 +202,6 @@ export function assertResourcePlanValid(plan: CourseResourcePlan, draft: LessonD
     throw new CourseImagePrerequisiteError("资源方案格式无效");
   }
 
-  const sentences = sentenceMap(draft);
   const chapterIds = new Set(draft.chapters.map((chapter) => chapter.id));
 
   draft.chapters.forEach((chapter, chapterIndex) => {
@@ -249,107 +213,23 @@ export function assertResourcePlanValid(plan: CourseResourcePlan, draft: LessonD
       throw new CourseImagePrerequisiteError(`第 ${chapterIndex + 1} 章必须有 2 张分镜`);
     }
 
-    const used = new Set<string>();
     chapterShots.forEach((shot) => {
       if (!chapterIds.has(shot.chapterId)) {
         throw new CourseImagePrerequisiteError("资源方案章节不存在");
       }
 
-      if (!shot.sourceSentenceIds.length) {
-        throw new CourseImagePrerequisiteError(`第 ${chapterIndex + 1} 章分镜缺少来源句子`);
+      const paragraph = chapter.paragraphs[shot.shotOrder - 1];
+      if (!paragraph || shot.sourceParagraphId !== paragraph.id) {
+        throw new CourseImagePrerequisiteError(`第 ${chapterIndex + 1} 章分镜必须按段落顺序绑定`);
       }
 
-      shot.sourceSentenceIds.forEach((sentenceId) => {
-        const sentence = sentences.get(sentenceId);
-        if (!sentence || sentence.chapterId !== chapter.id || sentence.paragraphId !== shot.sourceParagraphId) {
-          throw new CourseImagePrerequisiteError(`第 ${chapterIndex + 1} 章分镜来源句子无效`);
-        }
-        if (used.has(sentenceId)) {
-          throw new CourseImagePrerequisiteError(`第 ${chapterIndex + 1} 章分镜来源句子重复`);
-        }
-        used.add(sentenceId);
-      });
-
-      if (!shot.sourceSentenceIds.includes(shot.heroMomentSentenceId)) {
-        throw new CourseImagePrerequisiteError(`第 ${chapterIndex + 1} 章核心句子不在分镜范围内`);
+      if (shot.sourceExcerpt.replace(/\s+/g, " ").trim() !== paragraphText(paragraph)) {
+        throw new CourseImagePrerequisiteError(`第 ${chapterIndex + 1} 章分镜必须覆盖对应段落全文`);
       }
     });
   });
 
   return plan;
-}
-
-function visualProfilePrompt(plan: CourseResourcePlan) {
-  return [
-    `Style: ${plan.visualProfile.style}.`,
-    `Palette: ${plan.visualProfile.palette}.`,
-    `World: ${plan.visualProfile.world}.`,
-    `Mood: ${plan.visualProfile.mood}.`,
-    "Named cast:",
-    plan.visualProfile.characters
-      .map(
-        (character) =>
-          `${character.alias}: ${compactText(`${character.appearance}; ${character.hairstyle}; ${character.clothing}; ${character.signatureColor}`, 160)}.`,
-      )
-      .join("\n"),
-  ].join("\n");
-}
-
-function castLockPrompt(plan: CourseResourcePlan, aliases: string[]) {
-  const cast = aliases.length ? aliases.join(", ") : plan.visualProfile.characters.map((character) => character.alias).join(", ");
-  return [
-    "EXACT CAST ONLY:",
-    `Show only these named characters: ${cast}.`,
-    "Do not add any extra students, classmates, teachers, parents, crowd, background people, or unnamed humans.",
-  ].join("\n");
-}
-
-function outputSpecPrompt() {
-  return [
-    "OUTPUT:",
-    gptImage2StyleLock,
-    "Horizontal full-bleed children's storybook image. Keep main characters, action, and key objects inside the central safe area.",
-    imagePromptSafetySuffix,
-  ].join("\n");
-}
-
-function buildCoverPrompt(plan: CourseResourcePlan) {
-  return capImagePrompt([
-    castLockPrompt(plan, plan.coverBrief.characters),
-    "",
-    "COVER GOAL:",
-    "Story poster key art with a memorable central visual hook, not a generic group portrait. Make the main story object and setting instantly recognizable.",
-    "",
-    "COVER BRIEF:",
-    compactText(plan.coverBrief.description, 180),
-    `Setting: ${compactText(plan.coverBrief.setting, 90)}.`,
-    `Story elements: ${compactText(plan.coverBrief.storyElements.join(", "), 90)}.`,
-    "",
-    "VISUAL DIRECTION:",
-    visualProfilePrompt(plan),
-    "",
-    outputSpecPrompt(),
-  ].join("\n"));
-}
-
-function buildShotPrompt(plan: CourseResourcePlan, shot: CourseResourcePlan["shots"][number]) {
-  return capImagePrompt([
-    castLockPrompt(plan, shot.characters),
-    "",
-    "SCENE GOAL:",
-    `Show: ${compactText(shot.focus, 140)}.`,
-    `Key objects: ${compactText(shot.keyObjects.join(", "), 90)}.`,
-    `Composition: ${compactText(shot.composition, 120)}.`,
-    "",
-    "TEXT:",
-    compactText(shot.sourceExcerpt, 170),
-    "",
-    "VISUAL DIRECTION:",
-    visualProfilePrompt(plan),
-    "",
-    outputSpecPrompt(),
-    "Do not add events that are not in the text.",
-  ].join("\n"));
 }
 
 export function deriveResourceImageSlots(courseId: string, draft: LessonDraft, plan: CourseResourcePlan): PlannedImageSlot[] {
@@ -364,10 +244,8 @@ export function deriveResourceImageSlots(courseId: string, draft: LessonDraft, p
     slotType: "visual_cover",
     slotIndex: 0,
     sourceParagraphId: null,
-    sourceSentenceIds: [],
-    heroMomentSentenceId: null,
     sourceExcerpt: plan.coverBrief.description,
-    prompt: buildCoverPrompt(plan),
+    prompt: capImagePrompt(plan.coverBrief.imagePrompt),
     action: "视觉基准封面",
     scenePrompt: plan.coverBrief.description,
     sourceText: plan.coverBrief.description,
@@ -398,16 +276,14 @@ export function deriveResourceImageSlots(courseId: string, draft: LessonDraft, p
         slotType: "lesson_shot",
         slotIndex: ((chapter?.sourceOutlineChapterIndex ?? 1) - 1) * 2 + shot.shotOrder,
         sourceParagraphId: shot.sourceParagraphId,
-        sourceSentenceIds: shot.sourceSentenceIds,
-        heroMomentSentenceId: shot.heroMomentSentenceId,
         sourceExcerpt: shot.sourceExcerpt,
-        prompt: buildShotPrompt(plan, shot),
+        prompt: capImagePrompt(shot.imagePrompt),
         action: shot.focus,
         scenePrompt: shot.sourceExcerpt,
         sourceText: shot.sourceExcerpt,
         focus: shot.focus,
         keyObjects: shot.keyObjects,
-        referenceSlotIds: ["visual-cover"],
+        referenceSlotIds: [],
         width: 1280,
         height: 720,
       };
@@ -415,43 +291,6 @@ export function deriveResourceImageSlots(courseId: string, draft: LessonDraft, p
     });
 
   return [cover, ...shots];
-}
-
-export function deriveLessonShotImageSlots(courseId: string, draft: LessonDraft): PlannedImageSlot[] {
-  return draft.chapters.flatMap((chapter) =>
-    chapter.paragraphs.map((paragraph, paragraphIndex) => {
-      const shotOrder = (paragraphIndex + 1) as 1 | 2;
-      const sourceText = textFromParagraph(chapter, paragraphIndex);
-      const base = {
-        courseId,
-        chapterId: chapter.id,
-        chapterTitle: chapter.title,
-        shotId: `${chapter.id}-shot-${shotOrder}`,
-        shotOrder,
-        slotId: `${chapter.id}-image-${shotOrder}`,
-        slotType: "lesson_shot" as const,
-        slotIndex: (chapter.sourceOutlineChapterIndex - 1) * 2 + shotOrder,
-        sourceParagraphId: paragraph.id,
-        sourceSentenceIds: paragraph.sentences.map((sentence) => sentence.id),
-        heroMomentSentenceId: paragraph.sentences[0]?.id ?? null,
-        sourceExcerpt: sourceText,
-        prompt: buildImagePrompt(draft, chapter, paragraphIndex),
-        action: `Paragraph ${shotOrder} illustration`,
-        scenePrompt: sourceText,
-        sourceText,
-        focus: null,
-        keyObjects: [],
-        referenceSlotIds: [],
-        width: 1280 as const,
-        height: 720 as const,
-      };
-
-      return {
-        ...base,
-        sourceHash: hashImageSource(base),
-      };
-    }),
-  );
 }
 
 export function mergeImageSlotsWithRecords(slots: PlannedImageSlot[], records: CourseImageRecord[]): CourseResourceImage[] {
@@ -462,7 +301,7 @@ export function mergeImageSlotsWithRecords(slots: PlannedImageSlot[], records: C
       return {
         id: null,
         courseId: slot.courseId,
-        chapterId: slot.chapterId ?? "",
+        chapterId: slot.chapterId,
         chapterTitle: slot.chapterTitle,
         shotId: slot.shotId,
         shotOrder: slot.shotOrder,
@@ -470,8 +309,6 @@ export function mergeImageSlotsWithRecords(slots: PlannedImageSlot[], records: C
         slotType: slot.slotType,
         slotIndex: slot.slotIndex,
         sourceParagraphId: slot.sourceParagraphId,
-        sourceSentenceIds: slot.sourceSentenceIds,
-        heroMomentSentenceId: slot.heroMomentSentenceId,
         sourceExcerpt: slot.sourceExcerpt,
         prompt: slot.prompt,
         sourceHash: null,
@@ -499,7 +336,7 @@ export function mergeImageSlotsWithRecords(slots: PlannedImageSlot[], records: C
     return {
       id: record.id,
       courseId: record.courseId,
-      chapterId: slot.chapterId ?? "",
+      chapterId: slot.chapterId,
       chapterTitle: slot.chapterTitle,
       shotId: slot.shotId,
       shotOrder: slot.shotOrder,
@@ -507,8 +344,6 @@ export function mergeImageSlotsWithRecords(slots: PlannedImageSlot[], records: C
       slotType: slot.slotType,
       slotIndex: slot.slotIndex,
       sourceParagraphId: slot.sourceParagraphId,
-      sourceSentenceIds: slot.sourceSentenceIds,
-      heroMomentSentenceId: slot.heroMomentSentenceId,
       sourceExcerpt: slot.sourceExcerpt,
       prompt: slot.prompt,
       sourceHash: record.sourceHash,
@@ -626,22 +461,60 @@ async function refreshCourseStatus(db: CourseImagesDb, courseId: string, images:
 
 export async function getCourseResources(db: CourseImagesDb, courseId: string): Promise<CourseResourcesResponse> {
   const { draft, plan } = await getCourseDraftOrThrow(db, courseId);
-  const slots = plan ? deriveResourceImageSlots(courseId, draft, plan) : deriveLessonShotImageSlots(courseId, draft);
+  const slots = plan ? deriveResourceImageSlots(courseId, draft, plan) : [];
   const records = await listRecords(db, courseId);
   const images = mergeImageSlotsWithRecords(slots, records);
   await refreshCourseStatus(db, courseId, images);
   return toResourcesResponse(images, plan);
 }
 
-export async function createMissingCourseImages(db: CourseImagesDb, courseId: string): Promise<CourseResourcesResponse> {
+function imageCreateData(slot: PlannedImageSlot) {
+  return {
+    courseId: slot.courseId,
+    chapterId: slot.chapterId,
+    shotId: slot.shotId,
+    slotId: slot.slotId,
+    slotType: slot.slotType,
+    slotIndex: slot.slotIndex,
+    sourceParagraphId: slot.sourceParagraphId,
+    sourceExcerpt: slot.sourceExcerpt,
+    prompt: slot.prompt,
+    promptVersion,
+    referenceImageIds: slot.referenceSlotIds,
+    width: slot.width,
+    height: slot.height,
+    format: "webp" as const,
+    sourceHash: slot.sourceHash,
+    status: "pending" as const,
+    provider: "tencent_hunyuan" as const,
+  };
+}
+
+function selectGenerationSlots(slots: PlannedImageSlot[], draft: LessonDraft, request: CourseImageGenerationScope) {
+  if (request.scope === "all") {
+    return slots;
+  }
+
+  if (request.scope === "slot") {
+    const slot = slots.find((item) => item.slotId === request.slotId);
+    if (!slot) {
+      throw new CourseImagePrerequisiteError("图片槽不存在");
+    }
+    return [slot];
+  }
+
+  if (!draft.chapters.some((chapter) => chapter.id === request.chapterId)) {
+    throw new CourseImagePrerequisiteError("章节不存在");
+  }
+  return slots.filter((slot) => slot.slotType === "lesson_shot" && slot.chapterId === request.chapterId);
+}
+
+export async function createMissingCourseImages(db: CourseImagesDb, courseId: string, request: CourseImageGenerationScope): Promise<CourseResourcesResponse> {
   const { draft, plan } = await getCourseDraftOrThrow(db, courseId);
   if (!plan) {
     throw new CourseImagePrerequisiteError("请先生成资源方案");
   }
-  if (!plan.confirmedCoverImageId) {
-    throw new CourseImageInvalidStateError("请先确认视觉封面");
-  }
-  const slots = deriveResourceImageSlots(courseId, draft, plan).filter((slot) => slot.slotType === "lesson_shot");
+  const slots = selectGenerationSlots(deriveResourceImageSlots(courseId, draft, plan), draft, request);
   const records = await listRecords(db, courseId);
   const existingSlotIds = new Set(records.map((record) => record.slotId));
   const missing = slots.filter((slot) => !existingSlotIds.has(slot.slotId));
@@ -651,27 +524,7 @@ export async function createMissingCourseImages(db: CourseImagesDb, courseId: st
   }
 
   await db.courseImage.createMany({
-    data: missing.map((slot) => ({
-      courseId: slot.courseId,
-      chapterId: slot.chapterId,
-        shotId: slot.shotId,
-        slotId: slot.slotId,
-        slotType: slot.slotType,
-        slotIndex: slot.slotIndex,
-        sourceParagraphId: slot.sourceParagraphId,
-        sourceSentenceIds: slot.sourceSentenceIds,
-        heroMomentSentenceId: slot.heroMomentSentenceId,
-        sourceExcerpt: slot.sourceExcerpt,
-        prompt: slot.prompt,
-        promptVersion,
-        referenceImageIds: slot.referenceSlotIds,
-        width: slot.width,
-        height: slot.height,
-        format: "webp",
-        sourceHash: slot.sourceHash,
-        status: "pending",
-        provider: "tencent_hunyuan",
-    })),
+    data: missing.map(imageCreateData),
     skipDuplicates: true,
   });
 
@@ -684,11 +537,11 @@ export async function saveCourseResourcePlan(db: CourseImagesDb, courseId: strin
     throw new CourseImagePrerequisiteError("资源方案存储未配置");
   }
   const { draft } = await getCourseDraftOrThrow(db, courseId);
-  const validPlan = assertResourcePlanValid({ ...plan, confirmedCoverImageId: null, version: plan.version || 1 }, draft);
+  const validPlan = assertResourcePlanValid({ ...plan, version: plan.version || 1 }, draft);
   await db.courseResourcePlan.upsert({
     where: { courseId },
-    create: { courseId, plan: validPlan, version: validPlan.version, confirmedCoverImageId: null },
-    update: { plan: validPlan, version: validPlan.version, confirmedCoverImageId: null },
+    create: { courseId, plan: validPlan, version: validPlan.version },
+    update: { plan: validPlan, version: validPlan.version },
   });
   return getCourseResources(db, courseId);
 }
@@ -706,28 +559,15 @@ export async function createCoverImage(db: CourseImagesDb, courseId: string): Pr
     throw new CourseImageInvalidStateError("已有可确认的视觉封面");
   }
 
+  if (existing && activeImageStatuses.has(existing.status)) {
+    throw new CourseImageInvalidStateError("封面正在生成中，请稍候");
+  }
+
   if (existing) {
     await db.courseImage.update({
       where: { id: existing.id },
       data: {
-        chapterId: cover.chapterId,
-        shotId: cover.shotId,
-        slotId: cover.slotId,
-        slotType: cover.slotType,
-        slotIndex: cover.slotIndex,
-        sourceParagraphId: cover.sourceParagraphId,
-        sourceSentenceIds: cover.sourceSentenceIds,
-        heroMomentSentenceId: cover.heroMomentSentenceId,
-        sourceExcerpt: cover.sourceExcerpt,
-        prompt: cover.prompt,
-        promptVersion,
-        referenceImageIds: cover.referenceSlotIds,
-        width: cover.width,
-        height: cover.height,
-        format: "webp",
-        sourceHash: cover.sourceHash,
-        status: "pending",
-        provider: "tencent_hunyuan",
+        ...imageCreateData(cover),
         providerTaskId: null,
         providerImageUrl: null,
         storagePath: null,
@@ -737,29 +577,7 @@ export async function createCoverImage(db: CourseImagesDb, courseId: string): Pr
     });
   } else {
     await db.courseImage.createMany({
-      data: [
-        {
-          courseId: cover.courseId,
-          chapterId: cover.chapterId,
-          shotId: cover.shotId,
-          slotId: cover.slotId,
-          slotType: cover.slotType,
-          slotIndex: cover.slotIndex,
-          sourceParagraphId: cover.sourceParagraphId,
-          sourceSentenceIds: cover.sourceSentenceIds,
-          heroMomentSentenceId: cover.heroMomentSentenceId,
-          sourceExcerpt: cover.sourceExcerpt,
-          prompt: cover.prompt,
-          promptVersion,
-          referenceImageIds: cover.referenceSlotIds,
-          width: cover.width,
-          height: cover.height,
-          format: "webp",
-          sourceHash: cover.sourceHash,
-          status: "pending",
-          provider: "tencent_hunyuan",
-        },
-      ],
+      data: [imageCreateData(cover)],
       skipDuplicates: true,
     });
   }
@@ -768,36 +586,18 @@ export async function createCoverImage(db: CourseImagesDb, courseId: string): Pr
   return getCourseResources(db, courseId);
 }
 
-export async function confirmCoverImage(db: CourseImagesDb, courseId: string, imageId: string): Promise<CourseResourcesResponse> {
-  if (!db.courseResourcePlan) {
-    throw new CourseImagePrerequisiteError("资源方案存储未配置");
-  }
+export async function retryCourseImage(db: CourseImagesDb, courseId: string, imageId: string) {
   const { draft, plan } = await getCourseDraftOrThrow(db, courseId);
   if (!plan) {
     throw new CourseImagePrerequisiteError("请先生成资源方案");
   }
-  const record = await db.courseImage.findFirst({ where: { id: imageId, courseId } });
-  const cover = deriveResourceImageSlots(courseId, draft, plan)[0];
-  if (!record || record.slotType !== "visual_cover" || record.status !== "succeeded" || record.sourceHash !== cover.sourceHash) {
-    throw new CourseImageInvalidStateError("只能确认已完成且未过期的视觉封面");
-  }
-  const updatedPlan = { ...plan, confirmedCoverImageId: imageId };
-  await db.courseResourcePlan.update({
-    where: { courseId },
-    data: { plan: updatedPlan, confirmedCoverImageId: imageId },
-  });
-  return getCourseResources(db, courseId);
-}
-
-export async function retryCourseImage(db: CourseImagesDb, courseId: string, imageId: string) {
-  const { draft, plan } = await getCourseDraftOrThrow(db, courseId);
   const record = await db.courseImage.findFirst({ where: { id: imageId, courseId } });
 
   if (!record) {
     throw new CourseImageNotFoundError("图片不存在");
   }
 
-  const slot = findSlot(plan ? deriveResourceImageSlots(courseId, draft, plan) : deriveLessonShotImageSlots(courseId, draft), record);
+  const slot = findSlot(deriveResourceImageSlots(courseId, draft, plan), record);
 
   if (!slot) {
     throw new CourseImageInvalidStateError("当前图片状态不能重试");
@@ -808,6 +608,10 @@ export async function retryCourseImage(db: CourseImagesDb, courseId: string, ima
     throw new CourseImageInvalidStateError("当前图片状态不能重试");
   }
 
+  // If the remote image already generated for the same inputs and only the download failed, keep the URL so the
+  // queue recovers the download instead of paying for a new generation. Any input change drops it and regenerates.
+  const recoveryUrl = record.sourceHash === slot.sourceHash ? recoverableRemoteUrl(record.providerImageUrl) : null;
+
   const updated = await db.courseImage.update({
     where: { id: imageId },
     data: {
@@ -817,8 +621,6 @@ export async function retryCourseImage(db: CourseImagesDb, courseId: string, ima
       slotType: slot.slotType,
       slotIndex: slot.slotIndex,
       sourceParagraphId: slot.sourceParagraphId,
-      sourceSentenceIds: slot.sourceSentenceIds,
-      heroMomentSentenceId: slot.heroMomentSentenceId,
       sourceExcerpt: slot.sourceExcerpt,
       prompt: slot.prompt,
       promptVersion,
@@ -830,7 +632,7 @@ export async function retryCourseImage(db: CourseImagesDb, courseId: string, ima
       status: "pending",
       provider: "tencent_hunyuan",
       providerTaskId: null,
-      providerImageUrl: null,
+      providerImageUrl: recoveryUrl,
       storagePath: null,
       publicUrl: null,
       failureReason: null,
@@ -845,13 +647,16 @@ export async function retryCourseImage(db: CourseImagesDb, courseId: string, ima
 
 export async function keepStaleCourseImage(db: CourseImagesDb, courseId: string, imageId: string) {
   const { draft, plan } = await getCourseDraftOrThrow(db, courseId);
+  if (!plan) {
+    throw new CourseImagePrerequisiteError("请先生成资源方案");
+  }
   const record = await db.courseImage.findFirst({ where: { id: imageId, courseId } });
 
   if (!record) {
     throw new CourseImageNotFoundError("图片不存在");
   }
 
-  const slot = findSlot(plan ? deriveResourceImageSlots(courseId, draft, plan) : deriveLessonShotImageSlots(courseId, draft), record);
+  const slot = findSlot(deriveResourceImageSlots(courseId, draft, plan), record);
   const isStaleSucceeded = slot && record.status === "succeeded" && record.sourceHash !== slot.sourceHash;
 
   if (!slot || !isStaleSucceeded) {
@@ -892,10 +697,32 @@ function providerImageUrlForStorage(imageUrl: string) {
   return imageUrl.startsWith("data:") ? null : imageUrl;
 }
 
+// A remote provider URL that can still be re-downloaded (data: URLs are one-shot and cannot be recovered).
+function recoverableRemoteUrl(imageUrl: string | null) {
+  return imageUrl && !imageUrl.startsWith("data:") ? imageUrl : null;
+}
+
+// A synchronous submit holds the record in `submitting` while the request is in flight. GPT-image-2 can take
+// several minutes, so the timeout must be much longer than the normal 1-3 minute generation window. If the
+// request really dies (refresh, dev reload, process restart), this eventually releases the record to retry.
+const submittingTimeoutMs = Number(process.env.IMAGE_SUBMITTING_TIMEOUT_MS ?? 900000);
+
 export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: string, deps: CourseImageQueueDeps) {
   const { draft, plan } = await getCourseDraftOrThrow(db, courseId);
-  const slots = plan ? deriveResourceImageSlots(courseId, draft, plan) : deriveLessonShotImageSlots(courseId, draft);
+  const slots = plan ? deriveResourceImageSlots(courseId, draft, plan) : [];
   const records = await listRecords(db, courseId);
+
+  const now = Date.now();
+  const stuckSubmitting = records.filter(
+    (image) => image.status === "submitting" && now - image.updatedAt.getTime() > submittingTimeoutMs,
+  );
+  for (const image of stuckSubmitting) {
+    await db.courseImage.update({
+      where: { id: image.id },
+      data: { status: "failed", providerTaskId: null, failureReason: "图片提交超时未完成，请重试" },
+    });
+  }
+
   const active = records.filter((image) => image.status === "generating");
 
   for (const image of active) {
@@ -907,6 +734,7 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
       continue;
     }
 
+    let remoteImageUrl: string | null = null;
     try {
       const remote = await deps.provider.query({ taskId: image.providerTaskId });
 
@@ -922,6 +750,7 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
         continue;
       }
 
+      remoteImageUrl = remote.imageUrl;
       const local = await deps.download({ sourceUrl: remote.imageUrl, courseId, imageId: image.id });
       await db.courseImage.update({
         where: { id: image.id },
@@ -934,19 +763,21 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
         },
       });
     } catch (error) {
+      // Keep the remote URL so a retry can recover the download without paying for a new generation.
+      const recoverable = recoverableRemoteUrl(remoteImageUrl) ?? image.providerImageUrl;
       await db.courseImage.update({
         where: { id: image.id },
         data: {
           status: "failed",
-          providerImageUrl: image.providerImageUrl,
-          failureReason: errorMessage(error),
+          providerImageUrl: recoverable,
+          failureReason: recoverable ? `图片已生成但下载失败，可重试恢复：${errorMessage(error)}` : errorMessage(error),
         },
       });
     }
   }
 
   const refreshed = await listRecords(db, courseId);
-  const stillActive = refreshed.some((image) => image.status === "generating");
+  const stillActive = refreshed.some((image) => image.status === "generating" || image.status === "submitting");
 
   if (stillActive) {
     return;
@@ -961,6 +792,9 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
   const pendingSlot = findSlot(slots, pending);
   const prompt = pendingSlot?.prompt ?? pending.prompt;
   const sourceHash = pendingSlot?.sourceHash ?? pending.sourceHash;
+  // A pending record only carries a provider URL after a retry chose to recover a previously generated image,
+  // so here it always means "remote already generated, only the download needs to be redone".
+  const recoveryUrl = recoverableRemoteUrl(pending.providerImageUrl);
 
   try {
     const claimed = await db.courseImage.updateMany({
@@ -970,6 +804,7 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
         prompt,
         sourceHash,
         providerTaskId: null,
+        providerImageUrl: recoveryUrl,
         failureReason: null,
       },
     });
@@ -978,9 +813,8 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
       return;
     }
 
-    const submitted = await deps.provider.submit({ prompt, width: 1280, height: 720 });
-    if (submitted.imageUrl) {
-      const local = await deps.download({ sourceUrl: submitted.imageUrl, courseId, imageId: pending.id });
+    if (recoveryUrl) {
+      const local = await deps.download({ sourceUrl: recoveryUrl, courseId, imageId: pending.id });
       await db.courseImage.update({
         where: { id: pending.id },
         data: {
@@ -988,12 +822,49 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
           prompt,
           sourceHash,
           providerTaskId: null,
-          providerImageUrl: providerImageUrlForStorage(submitted.imageUrl),
+          providerImageUrl: recoveryUrl,
           storagePath: local.storagePath,
           publicUrl: local.publicUrl,
           failureReason: null,
         },
       });
+      return;
+    }
+
+    const submitted = await deps.provider.submit({ prompt, width: 1280, height: 720 });
+    if (submitted.imageUrl) {
+      const remoteUrl = providerImageUrlForStorage(submitted.imageUrl);
+      try {
+        const local = await deps.download({ sourceUrl: submitted.imageUrl, courseId, imageId: pending.id });
+        await db.courseImage.update({
+          where: { id: pending.id },
+          data: {
+            status: "succeeded",
+            prompt,
+            sourceHash,
+            providerTaskId: null,
+            providerImageUrl: remoteUrl,
+            storagePath: local.storagePath,
+            publicUrl: local.publicUrl,
+            failureReason: null,
+          },
+        });
+      } catch (downloadError) {
+        // Remote generation already succeeded; keep the URL so retry recovers the download for free.
+        await db.courseImage.update({
+          where: { id: pending.id },
+          data: {
+            status: "failed",
+            prompt,
+            sourceHash,
+            providerTaskId: null,
+            providerImageUrl: remoteUrl,
+            failureReason: remoteUrl
+              ? `图片已生成但下载失败，可重试恢复：${errorMessage(downloadError)}`
+              : errorMessage(downloadError),
+          },
+        });
+      }
       return;
     }
 
@@ -1020,6 +891,11 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
 }
 
 export async function getCourseResourcesAndAdvance(db: CourseImagesDb, courseId: string, deps: CourseImageQueueDeps) {
-  await advanceCourseImageQueue(db, courseId, deps);
+  try {
+    await advanceCourseImageQueue(db, courseId, deps);
+  } catch (error) {
+    // Reading Step 4 status must never fail because advancing the paid image queue failed.
+    console.error("Advancing course image queue failed", error);
+  }
   return getCourseResources(db, courseId);
 }

@@ -104,48 +104,31 @@ export type ResourceImageStatus = "missing" | "pending" | "submitting" | "genera
 export type CourseImageSlotType = "visual_cover" | "lesson_shot";
 export type CourseImageProvider = "tencent_hunyuan";
 
-export type CourseVisualProfile = {
-  style: string;
-  palette: string;
-  world: string;
-  mood: string;
-  characters: Array<{
-    alias: string;
-    appearance: string;
-    hairstyle: string;
-    clothing: string;
-    accessories: string[];
-    signatureColor: string;
-  }>;
-};
-
 export type CourseResourcePlanShot = {
   chapterId: string;
   shotId: string;
   shotOrder: 1 | 2;
   sourceParagraphId: string;
-  sourceSentenceIds: string[];
-  heroMomentSentenceId: string;
   sourceExcerpt: string;
   focus: string;
   characters: string[];
   keyObjects: string[];
   composition: string;
   continuityNotes: string;
+  imagePrompt: string;
 };
 
 export type CourseResourcePlan = {
   schemaVersion: "course_resource_plan_v1";
-  visualProfile: CourseVisualProfile;
   coverBrief: {
     description: string;
     characters: string[];
     setting: string;
     storyElements: string[];
+    imagePrompt: string;
   };
   shots: CourseResourcePlanShot[];
   version: number;
-  confirmedCoverImageId: string | null;
 };
 
 export type ResourceProgress = {
@@ -160,7 +143,7 @@ export type ResourceProgress = {
 export type CourseResourceImage = {
   id: string | null;
   courseId: string;
-  chapterId: string;
+  chapterId: string | null;
   chapterTitle: string;
   shotId: string;
   shotOrder: 1 | 2;
@@ -168,8 +151,6 @@ export type CourseResourceImage = {
   slotType: CourseImageSlotType;
   slotIndex: number;
   sourceParagraphId: string | null;
-  sourceSentenceIds: string[];
-  heroMomentSentenceId: string | null;
   sourceExcerpt: string;
   prompt: string;
   sourceHash: string | null;

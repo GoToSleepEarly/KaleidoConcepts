@@ -6,7 +6,6 @@ import type {
   LessonDraft,
 } from "@/lib/contracts/api";
 import {
-  deriveLessonShotImageSlots,
   deriveResourceImageSlots,
   mergeImageSlotsWithRecords,
   summarizeResourceProgress,
@@ -90,27 +89,21 @@ function toCoursePreviewCourse(course: CourseWithPreviewData): CoursePreviewCour
   };
 }
 
-function textForSentenceIds(chapter: LessonDraft["chapters"][number], sentenceIds: string[]) {
-  const byId = new Map(chapter.paragraphs.flatMap((paragraph) => paragraph.sentences.map((sentence) => [sentence.id, sentence.text] as const)));
-  return sentenceIds.map((sentenceId) => byId.get(sentenceId)).filter(Boolean).join(" ");
+function paragraphForShot(chapter: LessonDraft["chapters"][number], sourceParagraphId: string) {
+  return chapter.paragraphs.find((paragraph) => paragraph.id === sourceParagraphId) ?? null;
 }
 
-function exercisesForSentenceIds(chapter: LessonDraft["chapters"][number], sentenceIds: string[]) {
-  const sentenceSet = new Set(sentenceIds);
+function textForParagraph(paragraph: LessonDraft["chapters"][number]["paragraphs"][number] | null) {
+  return paragraph?.sentences.map((sentence) => sentence.text).join(" ") ?? "";
+}
+
+function exercisesForParagraph(chapter: LessonDraft["chapters"][number], paragraph: LessonDraft["chapters"][number]["paragraphs"][number] | null) {
+  const sentenceSet = new Set(paragraph?.sentences.map((sentence) => sentence.id) ?? []);
   return chapter.exercises.filter((exercise) => sentenceSet.has(exercise.sentenceId));
 }
 
-function paragraphText(chapter: LessonDraft["chapters"][number], paragraphIndex: number) {
-  return chapter.paragraphs[paragraphIndex]?.sentences.map((sentence) => sentence.text).join(" ") ?? "";
-}
-
-function paragraphExercises(chapter: LessonDraft["chapters"][number], paragraphIndex: number) {
-  const sentenceIds = new Set(chapter.paragraphs[paragraphIndex]?.sentences.map((sentence) => sentence.id) ?? []);
-  return chapter.exercises.filter((exercise) => sentenceIds.has(exercise.sentenceId));
-}
-
 export function toPreviewPages(courseId: string, draft: LessonDraft, records: CourseImageRecord[], plan: CourseResourcePlan | null = null): CoursePreviewPage[] {
-  const slots = plan ? deriveResourceImageSlots(courseId, draft, plan) : deriveLessonShotImageSlots(courseId, draft);
+  const slots = plan ? deriveResourceImageSlots(courseId, draft, plan) : [];
   const images = mergeImageSlotsWithRecords(slots, records);
   const pages: CoursePreviewPage[] = [{ id: "cover", type: "cover", title: draft.title }];
   if (plan) {
@@ -124,6 +117,7 @@ export function toPreviewPages(courseId: string, draft: LessonDraft, records: Co
       if (!chapter) {
         return;
       }
+      const paragraph = paragraphForShot(chapter, shot.sourceParagraphId);
       const image = images.find((item) => item.slotId === shot.shotId);
       pages.push({
         id: shot.shotId,
@@ -140,8 +134,8 @@ export function toPreviewPages(courseId: string, draft: LessonDraft, records: Co
           stale: image?.stale ?? false,
           failureReason: image?.failureReason ?? null,
         },
-        text: textForSentenceIds(chapter, shot.sourceSentenceIds),
-        exercises: exercisesForSentenceIds(chapter, shot.sourceSentenceIds),
+        text: textForParagraph(paragraph),
+        exercises: exercisesForParagraph(chapter, paragraph),
       });
     });
     pages.push({
@@ -153,34 +147,6 @@ export function toPreviewPages(courseId: string, draft: LessonDraft, records: Co
     });
     return pages;
   }
-
-  draft.chapters.forEach((chapter, chapterIndex) => {
-    chapter.paragraphs.forEach((paragraph, paragraphIndex) => {
-      const shotOrder = (paragraphIndex + 1) as 1 | 2;
-      const shotId = `${chapter.id}-shot-${shotOrder}`;
-      const slotId = `${chapter.id}-image-${shotOrder}`;
-      const image = images.find((item) => item.slotId === slotId);
-
-      pages.push({
-        id: `${chapter.id}-${paragraph.id}`,
-        type: "lesson_shot",
-        chapterId: chapter.id,
-        chapterTitle: chapter.title,
-        chapterIndex: chapterIndex + 1,
-        shotId,
-        shotOrder,
-        title: `${chapter.title} · Page ${shotOrder}`,
-        image: {
-          status: image?.status ?? "missing",
-          publicUrl: image?.publicUrl ?? null,
-          stale: image?.stale ?? false,
-          failureReason: image?.failureReason ?? null,
-        },
-        text: paragraphText(chapter, paragraphIndex),
-        exercises: paragraphExercises(chapter, paragraphIndex),
-      });
-    });
-  });
 
   pages.push({
     id: "closing-reading",
@@ -219,7 +185,7 @@ export async function getCoursePreview(db: CoursePreviewDb, courseId: string): P
     where: { courseId },
     orderBy: [{ slotIndex: "asc" }, { createdAt: "asc" }],
   });
-  const slots = course.resourcePlan ? deriveResourceImageSlots(courseId, course.lessonDraft.content, course.resourcePlan.plan) : deriveLessonShotImageSlots(courseId, course.lessonDraft.content);
+  const slots = course.resourcePlan ? deriveResourceImageSlots(courseId, course.lessonDraft.content, course.resourcePlan.plan) : [];
   const images = mergeImageSlotsWithRecords(slots, records);
 
   return {
