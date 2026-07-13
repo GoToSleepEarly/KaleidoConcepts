@@ -11,13 +11,13 @@ function getStorageDir() {
 }
 
 function isSafeSegment(value: string) {
-  return /^[a-zA-Z0-9_-]+(?:\.png)?$/.test(value);
+  return /^[a-zA-Z0-9_-]+(?:\.(?:png|webp))?$/.test(value);
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ courseId: string; imageFile: string }> }) {
   const { courseId, imageFile } = await params;
 
-  if (!isSafeSegment(courseId) || !isSafeSegment(imageFile) || !imageFile.endsWith(".png")) {
+  if (!isSafeSegment(courseId) || !isSafeSegment(imageFile) || (!imageFile.endsWith(".png") && !imageFile.endsWith(".webp"))) {
     return NextResponse.json({ message: "图片路径无效" }, { status: 400 });
   }
 
@@ -32,7 +32,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ cou
     const image = await readFile(filePath);
     return new Response(image, {
       headers: {
-        "Content-Type": "image/png",
+        "Content-Type": imageFile.endsWith(".webp") ? "image/webp" : "image/png",
         "Cache-Control": "private, max-age=3600",
       },
     });

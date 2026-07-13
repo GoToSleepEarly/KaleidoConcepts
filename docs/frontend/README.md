@@ -40,7 +40,7 @@
 | 新建课程 Step 1 | `docs/frontend/course-create-basic.md` | 已实现，待用户验收 | - |
 | 故事方案 Step 2 | `docs/frontend/course-create-story-options.md` | 二期重构方案已对齐，待实现 | - |
 | 绘本内容草稿 Step 3 | `docs/frontend/course-create-lesson-draft.md` | 二期质量重构方案已对齐，待实现 | - |
-| 资源生成 Step 4 | `docs/frontend/course-create-resources.md` | 已确认，待开发 | - |
+| 资源生成 Step 4 | `docs/frontend/course-create-resources.md` | MVP 资源方案流程已实现，待真实生成验收 | - |
 | 课程预览 Step 5 | `docs/frontend/course-preview-and-pdf.md` | 已实现，待用户验收 | - |
 | PDF 预览 / 导出 | `docs/frontend/course-preview-and-pdf.md` | 已实现，待用户验收 | - |
 | API 与数据合同 | 待创建 | 随模块同步维护 | - |
