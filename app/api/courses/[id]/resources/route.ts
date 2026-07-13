@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createTencentHunyuanImageClient } from "@/lib/server/ai/tencent-hunyuan-image";
+import { createQuickRouterImageClient } from "@/lib/server/ai/quickrouter-image";
 import { getDb } from "@/lib/server/db";
 import {
   CourseImageNotFoundError,
@@ -11,7 +11,7 @@ import { downloadCourseImage } from "@/lib/server/storage/course-images";
 
 function queueDeps() {
   return {
-    provider: createTencentHunyuanImageClient(),
+    provider: createQuickRouterImageClient(),
     download: downloadCourseImage,
   };
 }

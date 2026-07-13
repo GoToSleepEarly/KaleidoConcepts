@@ -1,4 +1,5 @@
 import type {
+  CourseResourcePlan,
   CoursePreviewCourse,
   CoursePreviewPage,
   CoursePreviewResponse,
@@ -6,6 +7,7 @@ import type {
 } from "@/lib/contracts/api";
 import {
   deriveLessonShotImageSlots,
+  deriveResourceImageSlots,
   mergeImageSlotsWithRecords,
   summarizeResourceProgress,
   type CourseImageRecord,
@@ -29,6 +31,9 @@ type CourseWithPreviewData = {
   lessonDraft: {
     content: LessonDraft;
   } | null;
+  resourcePlan: {
+    plan: CourseResourcePlan;
+  } | null;
 };
 
 export type CoursePreviewDb = {
@@ -42,6 +47,7 @@ export type CoursePreviewDb = {
           };
         };
         lessonDraft: true;
+        resourcePlan: true;
       };
     }) => Promise<CourseWithPreviewData | null>;
   };
@@ -84,6 +90,16 @@ function toCoursePreviewCourse(course: CourseWithPreviewData): CoursePreviewCour
   };
 }
 
+function textForSentenceIds(chapter: LessonDraft["chapters"][number], sentenceIds: string[]) {
+  const byId = new Map(chapter.paragraphs.flatMap((paragraph) => paragraph.sentences.map((sentence) => [sentence.id, sentence.text] as const)));
+  return sentenceIds.map((sentenceId) => byId.get(sentenceId)).filter(Boolean).join(" ");
+}
+
+function exercisesForSentenceIds(chapter: LessonDraft["chapters"][number], sentenceIds: string[]) {
+  const sentenceSet = new Set(sentenceIds);
+  return chapter.exercises.filter((exercise) => sentenceSet.has(exercise.sentenceId));
+}
+
 function paragraphText(chapter: LessonDraft["chapters"][number], paragraphIndex: number) {
   return chapter.paragraphs[paragraphIndex]?.sentences.map((sentence) => sentence.text).join(" ") ?? "";
 }
@@ -93,9 +109,51 @@ function paragraphExercises(chapter: LessonDraft["chapters"][number], paragraphI
   return chapter.exercises.filter((exercise) => sentenceIds.has(exercise.sentenceId));
 }
 
-export function toPreviewPages(courseId: string, draft: LessonDraft, records: CourseImageRecord[]): CoursePreviewPage[] {
-  const images = mergeImageSlotsWithRecords(deriveLessonShotImageSlots(courseId, draft), records);
+export function toPreviewPages(courseId: string, draft: LessonDraft, records: CourseImageRecord[], plan: CourseResourcePlan | null = null): CoursePreviewPage[] {
+  const slots = plan ? deriveResourceImageSlots(courseId, draft, plan) : deriveLessonShotImageSlots(courseId, draft);
+  const images = mergeImageSlotsWithRecords(slots, records);
   const pages: CoursePreviewPage[] = [{ id: "cover", type: "cover", title: draft.title }];
+  if (plan) {
+    const shots = plan.shots.slice().sort((left, right) => {
+      const leftChapter = draft.chapters.find((chapter) => chapter.id === left.chapterId)?.sourceOutlineChapterIndex ?? 0;
+      const rightChapter = draft.chapters.find((chapter) => chapter.id === right.chapterId)?.sourceOutlineChapterIndex ?? 0;
+      return leftChapter - rightChapter || left.shotOrder - right.shotOrder;
+    });
+    shots.forEach((shot) => {
+      const chapter = draft.chapters.find((item) => item.id === shot.chapterId);
+      if (!chapter) {
+        return;
+      }
+      const image = images.find((item) => item.slotId === shot.shotId);
+      pages.push({
+        id: shot.shotId,
+        type: "lesson_shot",
+        chapterId: chapter.id,
+        chapterTitle: chapter.title,
+        chapterIndex: chapter.sourceOutlineChapterIndex,
+        shotId: shot.shotId,
+        shotOrder: shot.shotOrder,
+        title: `${chapter.title} · Page ${shot.shotOrder}`,
+        image: {
+          status: image?.status ?? "missing",
+          publicUrl: image?.publicUrl ?? null,
+          stale: image?.stale ?? false,
+          failureReason: image?.failureReason ?? null,
+        },
+        text: textForSentenceIds(chapter, shot.sourceSentenceIds),
+        exercises: exercisesForSentenceIds(chapter, shot.sourceSentenceIds),
+      });
+    });
+    pages.push({
+      id: "closing-reading",
+      type: "closing_reading",
+      title: draft.closingReading.title,
+      text: draft.closingReading.sentences.join(" "),
+      vocabularyTerms: draft.closingReading.vocabularyTerms,
+    });
+    return pages;
+  }
+
   draft.chapters.forEach((chapter, chapterIndex) => {
     chapter.paragraphs.forEach((paragraph, paragraphIndex) => {
       const shotOrder = (paragraphIndex + 1) as 1 | 2;
@@ -145,6 +203,7 @@ export async function getCoursePreview(db: CoursePreviewDb, courseId: string): P
         },
       },
       lessonDraft: true,
+      resourcePlan: true,
     },
   });
 
@@ -160,12 +219,12 @@ export async function getCoursePreview(db: CoursePreviewDb, courseId: string): P
     where: { courseId },
     orderBy: [{ slotIndex: "asc" }, { createdAt: "asc" }],
   });
-  const slots = deriveLessonShotImageSlots(courseId, course.lessonDraft.content);
+  const slots = course.resourcePlan ? deriveResourceImageSlots(courseId, course.lessonDraft.content, course.resourcePlan.plan) : deriveLessonShotImageSlots(courseId, course.lessonDraft.content);
   const images = mergeImageSlotsWithRecords(slots, records);
 
   return {
     course: toCoursePreviewCourse(course),
     resourceProgress: summarizeResourceProgress(images),
-    pages: toPreviewPages(courseId, course.lessonDraft.content, records),
+    pages: toPreviewPages(courseId, course.lessonDraft.content, records, course.resourcePlan?.plan ?? null),
   };
 }

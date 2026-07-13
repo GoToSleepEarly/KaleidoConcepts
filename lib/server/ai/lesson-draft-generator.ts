@@ -423,7 +423,7 @@ async function callDeepSeek(
     usage?: { completion_tokens?: number; total_tokens?: number };
   };
   const choice = data.choices?.[0];
-  if (choice.finish_reason === "length")
+  if (choice?.finish_reason === "length")
     throw new LessonDraftValidationError(
       "AI 输出达到长度上限，系统已提高长课程额度，请重试生成",
     );

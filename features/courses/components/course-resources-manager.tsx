@@ -8,17 +8,40 @@ import { CourseCreateSteps } from "@/features/courses/components/course-create-s
 import type { CourseResourceImage, CourseResourcesResponse } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
-const statusLabels: Record<CourseResourceImage["status"], string> = {
-  missing: "未生成",
-  pending: "排队中",
-  submitting: "提交中",
-  generating: "生成中",
-  succeeded: "已完成",
-  failed: "生成失败",
-};
+type ResourceStage = "needs_plan" | "needs_cover" | "needs_cover_confirmation" | "needs_chapter_images" | "ready";
+
+const activeStatuses = new Set<CourseResourceImage["status"]>(["pending", "submitting", "generating"]);
+
+export function splitResourceImages(images: CourseResourceImage[]) {
+  return {
+    cover: images.find((image) => image.slotType === "visual_cover") ?? null,
+    chapterImages: images.filter((image) => image.slotType === "lesson_shot"),
+  };
+}
+
+export function getResourceStage(data: CourseResourcesResponse): ResourceStage {
+  if (!data.plan) {
+    return "needs_plan";
+  }
+
+  const { cover, chapterImages } = splitResourceImages(data.images);
+  if (data.plan.confirmedCoverImageId) {
+    const hasUnfinishedChapterImage = chapterImages.some((image) => image.status !== "succeeded" || image.stale);
+    return hasUnfinishedChapterImage || chapterImages.length === 0 ? "needs_chapter_images" : "ready";
+  }
+
+  if (!cover) {
+    return "needs_cover";
+  }
+
+  if (!data.plan.confirmedCoverImageId) {
+    return cover.status === "succeeded" && !cover.stale ? "needs_cover_confirmation" : "needs_cover";
+  }
+  return "ready";
+}
 
 function shouldPoll(data: CourseResourcesResponse | null) {
-  return Boolean(data?.images.some((image) => image.status === "pending" || image.status === "submitting" || image.status === "generating"));
+  return Boolean(data?.images.some((image) => activeStatuses.has(image.status)));
 }
 
 async function readJson(response: Response) {
@@ -31,48 +54,306 @@ async function readJson(response: Response) {
   return data;
 }
 
-function ProgressSummary({ data }: { data: CourseResourcesResponse }) {
-  const { progress } = data;
-  const percent = progress.total > 0 ? Math.round((progress.succeeded / progress.total) * 100) : 0;
+function statusText(image: CourseResourceImage | null) {
+  if (!image) {
+    return "未生成";
+  }
+  if (image.stale) {
+    return "需更新";
+  }
+  if (image.status === "succeeded") {
+    return "已完成";
+  }
+  if (activeStatuses.has(image.status)) {
+    return "生成中";
+  }
+  if (image.status === "failed") {
+    return "失败";
+  }
+  return "未生成";
+}
+
+function StageHeader({ data, busy, onAction }: { data: CourseResourcesResponse | null; busy: boolean; onAction: (path: string) => void }) {
+  const stage = data ? getResourceStage(data) : "needs_plan";
+  const { cover, chapterImages } = data ? splitResourceImages(data.images) : { cover: null, chapterImages: [] };
+  const done = chapterImages.filter((image) => image.status === "succeeded" && !image.stale).length;
+  const total = chapterImages.length;
+
+  const action =
+    stage === "needs_plan"
+      ? { label: "生成资源方案", path: "plan/generate", icon: WandSparkles }
+      : stage === "needs_cover"
+        ? { label: cover?.status === "failed" ? "重试视觉封面" : "生成视觉封面", path: "cover/generate", icon: ImageIcon }
+        : stage === "needs_chapter_images"
+          ? { label: "生成章节插图", path: "generate", icon: WandSparkles }
+          : null;
+  const ActionIcon = action?.icon;
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-violet-700">Step 4</p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-950">资源生成</h1>
-        </div>
-        <div className="text-right">
-          <p className="text-3xl font-semibold text-slate-950">{percent}%</p>
-          <p className="text-sm text-slate-500">
-            {progress.succeeded} / {progress.total} 张完成
+          <h1 className="mt-1 text-2xl font-semibold text-slate-950">绘本资源</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            先生成统一视觉方案，用封面确认风格和人物形象；确认后再批量生成章节插图。
           </p>
         </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={data ? "#" : "#"}
+            className="hidden"
+            aria-hidden="true"
+            tabIndex={-1}
+          />
+          {action && ActionIcon ? (
+            <button
+              type="button"
+              disabled={busy || (stage === "needs_chapter_images" && !data?.plan?.confirmedCoverImageId)}
+              onClick={() => onAction(action.path)}
+              className="inline-flex min-h-10 items-center gap-2 rounded-md bg-violet-600 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <ActionIcon className="size-4" />}
+              {action.label}
+            </button>
+          ) : null}
+          {data?.plan ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onAction("plan/generate")}
+              className="inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-300 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCcw className="size-4" />
+              重新生成方案
+            </button>
+          ) : null}
+        </div>
       </div>
-      <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
-        <div className="h-full rounded-full bg-violet-600 transition-all" style={{ width: `${percent}%` }} />
-      </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-5">
-        <Stat label="生成中" value={progress.generating} />
-        <Stat label="失败" value={progress.failed} />
-        <Stat label="未生成" value={progress.missing} />
-        <Stat label="内容变化" value={progress.stale} />
-        <Stat label="总数" value={progress.total} />
+
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <StagePill active={stage === "needs_plan"} done={Boolean(data?.plan)} label="资源方案" value={data?.plan ? "已生成" : "待生成"} />
+        <StagePill
+          active={stage === "needs_cover" || stage === "needs_cover_confirmation"}
+          done={Boolean(data?.plan?.confirmedCoverImageId)}
+          label="视觉封面"
+          value={data?.plan?.confirmedCoverImageId ? "已确认" : statusText(cover)}
+        />
+        <StagePill
+          active={stage === "needs_chapter_images"}
+          done={stage === "ready"}
+          label="章节插图"
+          value={total ? `${done}/${total} 张完成` : data?.plan?.confirmedCoverImageId ? "待生成" : "待封面确认"}
+        />
       </div>
     </section>
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function StagePill({ label, value, active, done }: { label: string; value: string; active: boolean; done: boolean }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-slate-950">{value}</p>
+    <div
+      className={cn(
+        "rounded-lg border px-4 py-3",
+        active && "border-violet-200 bg-violet-50",
+        done && "border-emerald-200 bg-emerald-50",
+        !active && !done && "border-slate-200 bg-slate-50",
+      )}
+    >
+      <p className={cn("text-xs font-medium", active ? "text-violet-700" : done ? "text-emerald-700" : "text-slate-500")}>{label}</p>
+      <p className="mt-1 text-sm font-semibold text-slate-950">{value}</p>
     </div>
   );
 }
 
-function ImageCard({
+function VisualPlanSummary({ data }: { data: CourseResourcesResponse }) {
+  if (!data.plan) {
+    return (
+      <section className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center">
+        <WandSparkles className="mx-auto size-8 text-slate-400" />
+        <h2 className="mt-3 text-base font-semibold text-slate-950">还没有资源方案</h2>
+        <p className="mt-2 text-sm text-slate-600">生成后会得到统一风格、色彩和人物形象，并自动规划每章两张插图。</p>
+      </section>
+    );
+  }
+
+  const profile = data.plan.visualProfile;
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">视觉方向</h2>
+          <p className="mt-1 text-sm text-slate-600">只用于快速检查整体方向；最终以封面效果为准。</p>
+        </div>
+        {data.plan.confirmedCoverImageId ? (
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">封面已确认</span>
+        ) : null}
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <SummaryItem label="风格" value={profile.style} />
+        <SummaryItem label="色彩" value={profile.palette} />
+        <SummaryItem label="世界观" value={profile.world} />
+        <SummaryItem label="氛围" value={profile.mood} />
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {profile.characters.map((character) => (
+          <span key={character.alias} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700">
+            {character.alias}: {character.clothing} / {character.signatureColor}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SummaryItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p className="mt-1 text-sm leading-6 text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function CoverPanel({
+  cover,
+  confirmed,
+  busy,
+  onGenerate,
+  onConfirm,
+}: {
+  cover: CourseResourceImage | null;
+  confirmed: boolean;
+  busy: boolean;
+  onGenerate: () => void;
+  onConfirm: (image: CourseResourceImage) => void;
+}) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">视觉封面</h2>
+          <p className="mt-1 text-sm text-slate-600">检查人物、色彩、整体画风。确认后章节图会以它作为参考。</p>
+        </div>
+        <StatusBadge image={cover} confirmed={confirmed} />
+      </div>
+      <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+        <div className="aspect-video">
+          {cover?.publicUrl ? (
+            <div className="h-full bg-cover bg-center" style={{ backgroundImage: `url(${cover.publicUrl})` }} />
+          ) : (
+            <div className="flex h-full items-center justify-center text-slate-400">
+              <ImageIcon className="size-10" />
+            </div>
+          )}
+        </div>
+      </div>
+      {cover?.failureReason ? <p className="mt-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{cover.failureReason}</p> : null}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onGenerate}
+          className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCcw className="size-4" />}
+          {cover ? "重新生成封面" : "生成封面"}
+        </button>
+        {cover?.id && cover.status === "succeeded" && !cover.stale && !confirmed ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onConfirm(cover)}
+            className="inline-flex min-h-9 items-center gap-2 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <CheckCircle2 className="size-4" />
+            确认封面
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function StatusBadge({ image, confirmed }: { image: CourseResourceImage | null; confirmed?: boolean }) {
+  const active = image ? activeStatuses.has(image.status) : false;
+  const label = confirmed ? "已确认" : statusText(image);
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium",
+        confirmed || (image?.status === "succeeded" && !image.stale) ? "bg-emerald-50 text-emerald-700" : null,
+        image?.status === "failed" && "bg-rose-50 text-rose-700",
+        (!image || image.status === "missing") && "bg-slate-100 text-slate-600",
+        image?.stale && "bg-amber-50 text-amber-700",
+        active && "bg-blue-50 text-blue-700",
+      )}
+    >
+      {active ? <Loader2 className="size-3 animate-spin" /> : image?.status === "failed" ? <AlertCircle className="size-3" /> : null}
+      {label}
+    </span>
+  );
+}
+
+function ChapterImagesPanel({
+  images,
+  busy,
+  enabled,
+  onGenerate,
+  onRetry,
+  onKeep,
+}: {
+  images: CourseResourceImage[];
+  busy: boolean;
+  enabled: boolean;
+  onGenerate: () => void;
+  onRetry: (image: CourseResourceImage) => void;
+  onKeep: (image: CourseResourceImage) => void;
+}) {
+  const grouped = new Map<string, CourseResourceImage[]>();
+  images.forEach((image) => {
+    const current = grouped.get(image.chapterTitle) ?? [];
+    current.push(image);
+    grouped.set(image.chapterTitle, current);
+  });
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">章节插图</h2>
+          <p className="mt-1 text-sm text-slate-600">每章两张图，只显示对应原文和生成结果。</p>
+        </div>
+        <button
+          type="button"
+          disabled={busy || !enabled}
+          onClick={onGenerate}
+          className="inline-flex min-h-9 items-center gap-2 rounded-md bg-violet-600 px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <WandSparkles className="size-4" />}
+          生成章节插图
+        </button>
+      </div>
+
+      {!enabled ? <p className="mt-4 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">确认视觉封面后才能生成章节插图。</p> : null}
+
+      <div className="mt-4 space-y-5">
+        {Array.from(grouped.entries()).map(([chapterTitle, chapterImages]) => (
+          <div key={chapterTitle}>
+            <h3 className="text-sm font-semibold text-slate-950">{chapterTitle}</h3>
+            <div className="mt-3 grid gap-4 lg:grid-cols-2">
+              {chapterImages.map((image) => (
+                <ChapterImageCard key={image.slotId} image={image} busy={busy} onRetry={onRetry} onKeep={onKeep} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ChapterImageCard({
   image,
   busy,
   onRetry,
@@ -87,46 +368,30 @@ function ImageCard({
   const canKeep = Boolean(image.id && image.stale && image.status === "succeeded");
 
   return (
-    <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="aspect-[4/3] bg-slate-100">
+    <article className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+      <div className="aspect-video bg-slate-100">
         {image.publicUrl ? (
           <div className="h-full bg-cover bg-center" style={{ backgroundImage: `url(${image.publicUrl})` }} />
         ) : (
           <div className="flex h-full items-center justify-center text-slate-400">
-            <ImageIcon className="size-10" />
+            <ImageIcon className="size-8" />
           </div>
         )}
       </div>
       <div className="space-y-3 p-4">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium text-slate-500">
-              {image.chapterTitle} · Shot {image.shotOrder}
-            </p>
-            <h3 className="mt-1 line-clamp-2 text-sm font-semibold text-slate-950">{image.action}</h3>
-          </div>
+          <p className="text-sm font-semibold text-slate-950">第 {image.shotOrder} 张</p>
           <StatusBadge image={image} />
         </div>
-        <InfoBlock label="对应正文" value={image.sourceText} />
-        <div className="grid gap-2 md:grid-cols-2">
-          <InfoBlock label="画面重点" value={image.focus || image.action} />
-          <InfoBlock label="关键物件" value={image.keyObjects.length ? image.keyObjects.join(" / ") : image.scenePrompt} />
-        </div>
-        <details className="rounded-md border border-slate-200 bg-slate-50 p-3">
-          <summary className="cursor-pointer text-xs font-semibold text-slate-700">查看最终生图提示词</summary>
-          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-slate-600">{image.prompt}</pre>
-        </details>
+        <p className="line-clamp-3 text-sm leading-6 text-slate-700">{image.sourceText}</p>
         {image.failureReason ? <p className="rounded-md bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">{image.failureReason}</p> : null}
-        {image.stale ? (
-          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">课文分镜内容已变化，可沿用旧图或重新生成。</p>
-        ) : null}
         <div className="flex flex-wrap gap-2">
           {canRetry ? (
             <button
               type="button"
               disabled={busy}
               onClick={() => onRetry(image)}
-              className="inline-flex min-h-9 items-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RefreshCcw className="size-4" />
               重新生成
@@ -137,7 +402,7 @@ function ImageCard({
               type="button"
               disabled={busy}
               onClick={() => onKeep(image)}
-              className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <CheckCircle2 className="size-4" />
               沿用旧图
@@ -146,35 +411,6 @@ function ImageCard({
         </div>
       </div>
     </article>
-  );
-}
-
-function InfoBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-      <p className="text-xs font-semibold text-slate-500">{label}</p>
-      <p className="mt-1 line-clamp-4 text-xs leading-5 text-slate-700">{value}</p>
-    </div>
-  );
-}
-
-function StatusBadge({ image }: { image: CourseResourceImage }) {
-  const active = image.status === "pending" || image.status === "submitting" || image.status === "generating";
-
-  return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium",
-        image.status === "succeeded" && !image.stale && "bg-emerald-50 text-emerald-700",
-        image.status === "failed" && "bg-rose-50 text-rose-700",
-        image.status === "missing" && "bg-slate-100 text-slate-600",
-        image.stale && "bg-amber-50 text-amber-700",
-        active && "bg-blue-50 text-blue-700",
-      )}
-    >
-      {active ? <Loader2 className="size-3 animate-spin" /> : image.status === "failed" ? <AlertCircle className="size-3" /> : null}
-      {image.stale ? "内容变化" : statusLabels[image.status]}
-    </span>
   );
 }
 
@@ -229,20 +465,15 @@ export function CourseResourcesManager({ courseId }: { courseId: string }) {
     return () => window.clearInterval(timer);
   }, [data, load]);
 
-  const grouped = useMemo(() => {
-    const groups = new Map<string, CourseResourceImage[]>();
-    data?.images.forEach((image) => {
-      const current = groups.get(image.chapterTitle) ?? [];
-      current.push(image);
-      groups.set(image.chapterTitle, current);
-    });
-    return Array.from(groups.entries());
-  }, [data]);
+  const { cover, chapterImages } = useMemo(() => splitResourceImages(data?.images ?? []), [data]);
+  const confirmedCover = Boolean(data?.plan?.confirmedCoverImageId);
 
   async function mutate(path: string) {
     setBusy(true);
     try {
-      const result = (await readJson(await fetch(path, { method: "POST" }))) as CourseResourcesResponse | { image: CourseResourceImage };
+      const result = (await readJson(await fetch(`/api/courses/${courseId}/resources/${path}`, { method: "POST" }))) as
+        | CourseResourcesResponse
+        | { image: CourseResourceImage };
       if ("images" in result) {
         setData(result);
       } else {
@@ -258,55 +489,46 @@ export function CourseResourcesManager({ courseId }: { courseId: string }) {
 
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-8">
-      <div className="mx-auto max-w-7xl space-y-6">
+      <div className="mx-auto max-w-6xl space-y-6">
         <CourseCreateSteps currentStep={4} courseId={courseId} />
 
-        {data ? <ProgressSummary data={data} /> : null}
-
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div>
-            <p className="text-sm font-semibold text-slate-950">图片任务</p>
-            <p className="mt-1 text-sm text-slate-500">进入页面不会自动消耗额度，点击后只创建缺失图片任务。</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href={`/courses/${courseId}/create/preview`}
-              className="inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-300 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              查看课程预览
-            </Link>
-            <button
-              type="button"
-              disabled={busy || !data || data.progress.missing === 0}
-              onClick={() => void mutate(`/api/courses/${courseId}/resources/generate`)}
-              className="inline-flex min-h-10 items-center gap-2 rounded-md bg-violet-600 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {busy ? <Loader2 className="size-4 animate-spin" /> : <WandSparkles className="size-4" />}
-              生成全部缺失图片
-            </button>
-          </div>
-        </div>
+        <StageHeader data={data} busy={busy} onAction={(path) => void mutate(path)} />
 
         {error ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
 
-        <div className="space-y-6">
-          {grouped.map(([chapterTitle, images]) => (
-            <section key={chapterTitle} className="space-y-3">
-              <h2 className="text-lg font-semibold text-slate-950">{chapterTitle}</h2>
-              <div className="grid gap-4 lg:grid-cols-2">
-                {images.map((image) => (
-                  <ImageCard
-                    key={image.slotId}
-                    image={image}
-                    busy={busy}
-                    onRetry={(item) => item.id && void mutate(`/api/courses/${courseId}/resources/images/${item.id}/retry`)}
-                    onKeep={(item) => item.id && void mutate(`/api/courses/${courseId}/resources/images/${item.id}/keep`)}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+        {data ? <VisualPlanSummary data={data} /> : null}
+
+        {data?.plan ? (
+          <CoverPanel
+            cover={cover}
+            confirmed={confirmedCover}
+            busy={busy}
+            onGenerate={() => void mutate("cover/generate")}
+            onConfirm={(image) => image.id && void mutate(`cover/${image.id}/confirm`)}
+          />
+        ) : null}
+
+        {data?.plan ? (
+          <ChapterImagesPanel
+            images={chapterImages}
+            busy={busy}
+            enabled={confirmedCover}
+            onGenerate={() => void mutate("generate")}
+            onRetry={(image) => image.id && void mutate(`images/${image.id}/retry`)}
+            onKeep={(image) => image.id && void mutate(`images/${image.id}/keep`)}
+          />
+        ) : null}
+
+        {data?.plan?.confirmedCoverImageId ? (
+          <div className="flex justify-end">
+            <Link
+              href={`/courses/${courseId}/create/preview`}
+              className="inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              查看课程预览
+            </Link>
+          </div>
+        ) : null}
       </div>
     </main>
   );

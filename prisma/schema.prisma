@@ -50,6 +50,7 @@ model Course {
   people          CoursePerson[]
   storyOptions    CourseStoryOption[]
   lessonDraft     CourseLessonDraft?
+  resourcePlan    CourseResourcePlan?
   images          CourseImage[]
 }
 
@@ -86,15 +87,34 @@ model CourseLessonDraft {
   course              Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
 
+model CourseResourcePlan {
+  courseId              String   @id
+  plan                  Json
+  version               Int      @default(1)
+  confirmedCoverImageId String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  course                Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
 model CourseImage {
   id               String              @id @default(cuid())
   courseId         String
-  chapterId        String
+  chapterId        String?
   shotId           String
   slotId           String
   slotType         CourseImageSlotType
   slotIndex        Int
+  sourceParagraphId String?
+  sourceSentenceIds Json              @default("[]")
+  heroMomentSentenceId String?
+  sourceExcerpt    String             @default("")
   prompt           String
+  promptVersion    String             @default("step4-resource-plan-v1")
+  referenceImageIds Json              @default("[]")
+  width            Int                @default(1280)
+  height           Int                @default(720)
+  format           String             @default("webp")
   sourceHash       String
   status           CourseImageStatus
   provider         CourseImageProvider
@@ -151,6 +171,7 @@ enum CourseImageStatus {
 }
 
 enum CourseImageSlotType {
+  visual_cover
   lesson_shot
 }
 

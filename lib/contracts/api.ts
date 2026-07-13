@@ -101,8 +101,52 @@ export type CourseImage = {
 };
 
 export type ResourceImageStatus = "missing" | "pending" | "submitting" | "generating" | "succeeded" | "failed";
-export type CourseImageSlotType = "lesson_shot";
+export type CourseImageSlotType = "visual_cover" | "lesson_shot";
 export type CourseImageProvider = "tencent_hunyuan";
+
+export type CourseVisualProfile = {
+  style: string;
+  palette: string;
+  world: string;
+  mood: string;
+  characters: Array<{
+    alias: string;
+    appearance: string;
+    hairstyle: string;
+    clothing: string;
+    accessories: string[];
+    signatureColor: string;
+  }>;
+};
+
+export type CourseResourcePlanShot = {
+  chapterId: string;
+  shotId: string;
+  shotOrder: 1 | 2;
+  sourceParagraphId: string;
+  sourceSentenceIds: string[];
+  heroMomentSentenceId: string;
+  sourceExcerpt: string;
+  focus: string;
+  characters: string[];
+  keyObjects: string[];
+  composition: string;
+  continuityNotes: string;
+};
+
+export type CourseResourcePlan = {
+  schemaVersion: "course_resource_plan_v1";
+  visualProfile: CourseVisualProfile;
+  coverBrief: {
+    description: string;
+    characters: string[];
+    setting: string;
+    storyElements: string[];
+  };
+  shots: CourseResourcePlanShot[];
+  version: number;
+  confirmedCoverImageId: string | null;
+};
 
 export type ResourceProgress = {
   total: number;
@@ -123,6 +167,10 @@ export type CourseResourceImage = {
   slotId: string;
   slotType: CourseImageSlotType;
   slotIndex: number;
+  sourceParagraphId: string | null;
+  sourceSentenceIds: string[];
+  heroMomentSentenceId: string | null;
+  sourceExcerpt: string;
   prompt: string;
   sourceHash: string | null;
   currentSourceHash: string;
@@ -138,11 +186,15 @@ export type CourseResourceImage = {
   sourceText: string;
   focus: string | null;
   keyObjects: string[];
+  referenceImageIds: string[];
+  width: 1280;
+  height: 720;
   createdAt: string | null;
   updatedAt: string | null;
 };
 
 export type CourseResourcesResponse = {
+  plan: CourseResourcePlan | null;
   progress: ResourceProgress;
   images: CourseResourceImage[];
 };
