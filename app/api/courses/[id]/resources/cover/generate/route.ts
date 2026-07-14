@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { createImageGenerationDeps } from "@/lib/server/ai/image-generation-deps";
 import { getDb } from "@/lib/server/db";
 import {
   CourseImageInvalidStateError,
@@ -12,7 +13,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
 
   try {
-    const result = await createCoverImage(getDb(), id);
+    const result = await createCoverImage(getDb(), id, createImageGenerationDeps());
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof CourseImageNotFoundError) {

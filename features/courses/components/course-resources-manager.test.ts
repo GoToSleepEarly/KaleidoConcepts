@@ -54,8 +54,6 @@ const resourcePlan: CourseResourcesResponse["plan"] = {
   schemaVersion: "course_resource_plan_v1",
   coverBrief: {
     description: "cover",
-    characters: ["SummerStudent"],
-    setting: "forest",
     storyElements: ["gate"],
     imagePrompt: "GPT Image 2 prompt: Horizontal 16:9 cover.",
   },

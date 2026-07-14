@@ -53,7 +53,7 @@ describe("people repository", () => {
     ]);
   });
 
-  test("creates a teacher profile with appearance and without student-only fields", async () => {
+  test("creates a teacher profile aligned with student fields and derived display name", async () => {
     const teacher = await createPerson(
       {
         person: {
@@ -61,15 +61,15 @@ describe("people repository", () => {
             expect(data).toEqual({
               role: "teacher",
               name: "Ms. Lin",
-              chineseName: null,
-              englishName: null,
-              age: null,
+              chineseName: "林老师",
+              englishName: "Ms. Lin",
+              age: 30,
               gender: "female",
               appearance: "黑色长发，圆框眼镜",
               interests: [],
               learningGoal: null,
               notes: "课堂氛围温柔",
-              avatarUrl: "/mock-assets/teacher-default.png",
+              avatarUrl: null,
             });
 
             return {
@@ -83,7 +83,9 @@ describe("people repository", () => {
       },
       {
         role: "teacher",
-        name: "Ms. Lin",
+        chineseName: "林老师",
+        englishName: "Ms. Lin",
+        age: 30,
         gender: "female",
         appearance: "黑色长发，圆框眼镜",
         notes: "课堂氛围温柔",
@@ -92,39 +94,13 @@ describe("people repository", () => {
 
     expect(teacher.role).toBe("teacher");
     expect(teacher.name).toBe("Ms. Lin");
+    expect(teacher.chineseName).toBe("林老师");
+    expect(teacher.age).toBe(30);
     expect(teacher.appearance).toBe("黑色长发，圆框眼镜");
-    expect(teacher.avatarUrl).toBe("/mock-assets/teacher-default.png");
+    expect(teacher.avatarUrl).toBeUndefined();
   });
 
-  test("creates a male teacher profile with the male default avatar", async () => {
-    const teacher = await createPerson(
-      {
-        person: {
-          create: async ({ data }) => {
-            expect(data.avatarUrl).toBe("/mock-assets/teacher-male-default.png");
-
-            return {
-              id: "teacher-male-1",
-              ...data,
-              createdAt: new Date("2026-07-01T10:00:00.000Z"),
-              updatedAt: new Date("2026-07-01T10:00:00.000Z"),
-            };
-          },
-        },
-      },
-      {
-        role: "teacher",
-        name: "Mr. Chen",
-        gender: "male",
-        appearance: "短发，圆框眼镜",
-        notes: "课堂节奏清晰",
-      },
-    );
-
-    expect(teacher.avatarUrl).toBe("/mock-assets/teacher-male-default.png");
-  });
-
-  test("creates a student profile with default avatar and derived display name", async () => {
+  test("creates a student profile without a default avatar and derived display name", async () => {
     const student = await createPerson(
       {
         person: {
@@ -138,7 +114,7 @@ describe("people repository", () => {
               gender: "male",
               appearance: "短发，喜欢穿蓝色外套",
               interests: ["森林"],
-              avatarUrl: "/mock-assets/student-boy.png",
+              avatarUrl: null,
             });
 
             return {
@@ -165,7 +141,7 @@ describe("people repository", () => {
 
     expect(student.name).toBe("Tom");
     expect(student.appearance).toBe("短发，喜欢穿蓝色外套");
-    expect(student.avatarUrl).toBe("/mock-assets/student-boy.png");
+    expect(student.avatarUrl).toBeUndefined();
   });
 
   test("updates a person without changing the role", async () => {
@@ -177,6 +153,10 @@ describe("people repository", () => {
             expect(data).toMatchObject({
               role: "teacher",
               name: "Ms. Lin",
+              chineseName: "林老师",
+              englishName: "Ms. Lin",
+              age: 32,
+              gender: "female",
               appearance: "浅色针织衫",
             });
 
@@ -184,9 +164,9 @@ describe("people repository", () => {
               id: "teacher-1",
               role: "teacher",
               name: "Ms. Lin",
-              chineseName: null,
-              englishName: null,
-              age: null,
+              chineseName: "林老师",
+              englishName: "Ms. Lin",
+              age: 32,
               gender: "female",
               appearance: "浅色针织衫",
               interests: [],
@@ -202,7 +182,9 @@ describe("people repository", () => {
       "teacher-1",
       {
         role: "teacher",
-        name: "Ms. Lin",
+        chineseName: "林老师",
+        englishName: "Ms. Lin",
+        age: 32,
         gender: "female",
         appearance: "浅色针织衫",
         notes: "",

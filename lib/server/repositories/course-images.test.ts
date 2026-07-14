@@ -3,13 +3,15 @@ import { describe, expect, test } from "vitest";
 import type { CourseResourcePlan, LessonDraft } from "@/lib/contracts/api";
 
 import {
-  advanceCourseImageQueue,
   assertResourcePlanValid,
   createCoverImage,
   CourseImageInvalidStateError,
   createMissingCourseImages,
   deriveResourceImageSlots,
+  generateCourseImage,
+  getCourseResources,
   summarizeResourceProgress,
+  type CourseImageGenerationDeps,
   type CourseImageRecord,
   type CourseImagesDb,
 } from "./course-images";
@@ -59,8 +61,6 @@ function plan(overrides: Partial<CourseResourcePlan> = {}): CourseResourcePlan {
     schemaVersion: "course_resource_plan_v1",
     coverBrief: {
       description: "Summer stands with the class at the glowing forest gate.",
-      characters: ["SummerStudent"],
-      setting: "glowing forest gate",
       storyElements: ["silver gate", "river trail"],
       imagePrompt:
         "Horizontal 16:9 hand-drawn children's picture-book cover. SummerStudent is an eight-year-old student with bright eyes, short black hair, a yellow raincoat, and a green backpack, standing at a glowing silver forest gate near a river trail. Warm green and silver palette, soft watercolor texture, no readable text.",
@@ -71,12 +71,8 @@ function plan(overrides: Partial<CourseResourcePlan> = {}): CourseResourcePlan {
         shotId: "chapter-1-shot-1",
         shotOrder: 1,
         sourceParagraphId: "chapter-1-paragraph-1",
-        sourceExcerpt: "Summer walked into the forest. A silver gate shone near the river.",
         focus: "Summer discovers the silver gate.",
-        characters: ["SummerStudent"],
         keyObjects: ["silver gate"],
-        composition: "wide classroom storybook scene with Summer centered",
-        continuityNotes: "Keep Summer's yellow raincoat and green backpack.",
         imagePrompt:
           "Horizontal 16:9 hand-drawn children's picture-book illustration. SummerStudent is an eight-year-old student with bright eyes, short black hair, a yellow raincoat, and a green backpack, walking into the glowing forest as a silver gate shines near the river. Warm green and silver palette, soft watercolor texture, no readable text.",
       },
@@ -85,12 +81,8 @@ function plan(overrides: Partial<CourseResourcePlan> = {}): CourseResourcePlan {
         shotId: "chapter-1-shot-2",
         shotOrder: 2,
         sourceParagraphId: "chapter-1-paragraph-2",
-        sourceExcerpt: "Summer found a clue under the gate. The class followed the safe trail.",
         focus: "Summer picks up the clue.",
-        characters: ["SummerStudent"],
         keyObjects: ["clue", "safe trail"],
-        composition: "medium shot with the clue in the safe center area",
-        continuityNotes: "Continue the forest gate scene.",
         imagePrompt:
           "Horizontal 16:9 hand-drawn children's picture-book illustration. SummerStudent is the same eight-year-old student with bright eyes, short black hair, a yellow raincoat, and a green backpack, picking up a small clue under the silver gate while the safe forest trail continues behind. Warm green and silver palette, no readable text.",
       },
@@ -117,20 +109,6 @@ describe("resource plan validation", () => {
     });
 
     expect(() => assertResourcePlanValid(invalid, draft)).toThrow("第 1 章分镜必须按段落顺序绑定");
-  });
-
-  test("rejects shots that do not cover the assigned paragraph text", () => {
-    const invalid = plan({
-      shots: [
-        {
-          ...plan().shots[0],
-          sourceExcerpt: "Summer walked into the forest.",
-        },
-        plan().shots[1],
-      ],
-    });
-
-    expect(() => assertResourcePlanValid(invalid, draft)).toThrow("第 1 章分镜必须覆盖对应段落全文");
   });
 });
 
@@ -165,16 +143,21 @@ function imageRecord(overrides: Partial<CourseImageRecord> = {}): CourseImageRec
   };
 }
 
-describe("resource image queue", () => {
+function coverSlot() {
+  return deriveResourceImageSlots("course-1", draft, plan())[0];
+}
+
+const stubDeps: CourseImageGenerationDeps = {
+  provider: { submit: async () => ({ imageUrl: "https://example.com/image.webp" }) },
+  download: async () => ({ storagePath: "/tmp/image.webp", publicUrl: "/api/course-images/course-1/image-1.webp" }),
+};
+
+describe("synchronous image generation", () => {
   test("claims a pending image as submitting before calling the synchronous image provider", async () => {
     const updates: Array<Partial<CourseImageRecord>> = [];
     const record = imageRecord();
     const db = {
-      course: {
-        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
-      },
       courseImage: {
-        findMany: async () => [record],
         updateMany: async ({ data }: { data: Partial<CourseImageRecord> }) => {
           updates.push(data);
           Object.assign(record, data);
@@ -187,15 +170,12 @@ describe("resource image queue", () => {
         },
       },
     } as unknown as CourseImagesDb;
-    const provider = {
-      submit: async () => ({ imageUrl: "https://example.com/image.webp" }),
-      query: async () => ({ status: "failed" as const, imageUrl: null, failureReason: "unused" }),
+    const deps: CourseImageGenerationDeps = {
+      provider: { submit: async () => ({ imageUrl: "https://example.com/image.webp" }) },
+      download: async () => ({ storagePath: "/tmp/image.webp", publicUrl: "/api/course-images/course-1/image-1.webp" }),
     };
 
-    await advanceCourseImageQueue(db, "course-1", {
-      provider,
-      download: async () => ({ storagePath: "/tmp/image.webp", publicUrl: "/api/course-images/course-1/image-1.webp" }),
-    });
+    await generateCourseImage(db, "course-1", record, coverSlot(), deps);
 
     expect(updates[0]).toMatchObject({ status: "submitting" });
     expect(updates.at(-1)).toMatchObject({ status: "succeeded", publicUrl: "/api/course-images/course-1/image-1.webp" });
@@ -204,11 +184,7 @@ describe("resource image queue", () => {
   test("does not call the image provider when another request already claimed the pending image", async () => {
     const record = imageRecord();
     const db = {
-      course: {
-        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
-      },
       courseImage: {
-        findMany: async () => [record],
         updateMany: async () => ({ count: 0 }),
         update: async ({ data }: { data: Partial<CourseImageRecord> }) => {
           Object.assign(record, data);
@@ -218,13 +194,12 @@ describe("resource image queue", () => {
     } as unknown as CourseImagesDb;
     let submitCount = 0;
 
-    await advanceCourseImageQueue(db, "course-1", {
+    await generateCourseImage(db, "course-1", record, coverSlot(), {
       provider: {
         submit: async () => {
           submitCount += 1;
           return { imageUrl: "https://example.com/image.webp" };
         },
-        query: async () => ({ status: "failed" as const, imageUrl: null, failureReason: "unused" }),
       },
       download: async () => ({ storagePath: "/tmp/image.webp", publicUrl: "/api/course-images/course-1/image-1.webp" }),
     });
@@ -236,11 +211,7 @@ describe("resource image queue", () => {
     const updates: Array<Partial<CourseImageRecord>> = [];
     const record = imageRecord();
     const db = {
-      course: {
-        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
-      },
       courseImage: {
-        findMany: async () => [record],
         updateMany: async ({ data }: { data: Partial<CourseImageRecord> }) => {
           Object.assign(record, data);
           return { count: 1 };
@@ -253,11 +224,8 @@ describe("resource image queue", () => {
       },
     } as unknown as CourseImagesDb;
 
-    await advanceCourseImageQueue(db, "course-1", {
-      provider: {
-        submit: async () => ({ imageUrl: "data:image/webp;base64,abc" }),
-        query: async () => ({ status: "failed" as const, imageUrl: null, failureReason: "unused" }),
-      },
+    await generateCourseImage(db, "course-1", record, coverSlot(), {
+      provider: { submit: async () => ({ imageUrl: "data:image/webp;base64,abc" }) },
       download: async () => ({ storagePath: "/tmp/image.webp", publicUrl: "/api/course-images/course-1/image-1.webp" }),
     });
 
@@ -273,11 +241,7 @@ describe("resource image queue", () => {
     const record = imageRecord();
     let submitCount = 0;
     const db = {
-      course: {
-        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
-      },
       courseImage: {
-        findMany: async () => [record],
         updateMany: async ({ data }: { data: Partial<CourseImageRecord> }) => {
           Object.assign(record, data);
           return { count: 1 };
@@ -290,13 +254,12 @@ describe("resource image queue", () => {
       },
     } as unknown as CourseImagesDb;
 
-    await advanceCourseImageQueue(db, "course-1", {
+    await generateCourseImage(db, "course-1", record, coverSlot(), {
       provider: {
         submit: async () => {
           submitCount += 1;
           return { imageUrl: "https://example.com/image.webp" };
         },
-        query: async () => ({ status: "failed" as const, imageUrl: null, failureReason: "unused" }),
       },
       download: async () => {
         throw new Error("disk full");
@@ -316,11 +279,7 @@ describe("resource image queue", () => {
     const record = imageRecord({ status: "pending", providerImageUrl: "https://example.com/kept.webp" });
     let submitCount = 0;
     const db = {
-      course: {
-        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
-      },
       courseImage: {
-        findMany: async () => [record],
         updateMany: async ({ data }: { data: Partial<CourseImageRecord> }) => {
           Object.assign(record, data);
           return { count: 1 };
@@ -333,15 +292,14 @@ describe("resource image queue", () => {
       },
     } as unknown as CourseImagesDb;
 
-    await advanceCourseImageQueue(db, "course-1", {
+    await generateCourseImage(db, "course-1", record, coverSlot(), {
       provider: {
         submit: async () => {
           submitCount += 1;
           return { imageUrl: "https://example.com/new.webp" };
         },
-        query: async () => ({ status: "failed" as const, imageUrl: null, failureReason: "unused" }),
       },
-      download: async ({ sourceUrl }) => ({ storagePath: `/tmp/${sourceUrl}`, publicUrl: "/api/course-images/course-1/image-1.webp" }),
+      download: async ({ sourceUrl }: { sourceUrl: string }) => ({ storagePath: `/tmp/${sourceUrl}`, publicUrl: "/api/course-images/course-1/image-1.webp" }),
     });
 
     expect(submitCount).toBe(0);
@@ -351,82 +309,44 @@ describe("resource image queue", () => {
       publicUrl: "/api/course-images/course-1/image-1.webp",
     });
   });
+});
+
+describe("stuck image recovery on read", () => {
+  function readOnlyDb(record: CourseImageRecord) {
+    return {
+      course: {
+        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
+        update: async () => ({}),
+      },
+      courseImage: {
+        findMany: async () => [record],
+        update: async ({ data }: { data: Partial<CourseImageRecord> }) => {
+          Object.assign(record, data);
+          return record;
+        },
+      },
+    } as unknown as CourseImagesDb;
+  }
 
   test("releases a stuck submitting record after the timeout so it can be retried", async () => {
-    const updates: Array<Partial<CourseImageRecord>> = [];
     const record = imageRecord({
       status: "submitting",
       updatedAt: new Date(Date.now() - 20 * 60 * 1000),
     });
-    let submitCount = 0;
-    const db = {
-      course: {
-        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
-      },
-      courseImage: {
-        findMany: async () => [record],
-        updateMany: async ({ data }: { data: Partial<CourseImageRecord> }) => {
-          Object.assign(record, data);
-          return { count: 1 };
-        },
-        update: async ({ data }: { data: Partial<CourseImageRecord> }) => {
-          updates.push(data);
-          Object.assign(record, data);
-          return record;
-        },
-      },
-    } as unknown as CourseImagesDb;
 
-    await advanceCourseImageQueue(db, "course-1", {
-      provider: {
-        submit: async () => {
-          submitCount += 1;
-          return { imageUrl: "https://example.com/image.webp" };
-        },
-        query: async () => ({ status: "failed" as const, imageUrl: null, failureReason: "unused" }),
-      },
-      download: async () => ({ storagePath: "/tmp/image.webp", publicUrl: "/api/course-images/course-1/image-1.webp" }),
-    });
+    await getCourseResources(readOnlyDb(record), "course-1");
 
-    expect(submitCount).toBe(0);
-    expect(updates[0]).toMatchObject({ status: "failed", providerTaskId: null });
     expect(record.status).toBe("failed");
   });
 
-  test("keeps a slow synchronous submitting record active within the timeout window", async () => {
-    const updates: Array<Partial<CourseImageRecord>> = [];
+  test("keeps a slow submitting record active within the timeout window", async () => {
     const record = imageRecord({
       status: "submitting",
       updatedAt: new Date(Date.now() - 10 * 60 * 1000),
     });
-    const db = {
-      course: {
-        findUnique: async () => ({ id: "course-1", status: "draft", lessonDraft: { content: draft }, resourcePlan: { plan: plan() } }),
-      },
-      courseImage: {
-        findMany: async () => [record],
-        updateMany: async ({ data }: { data: Partial<CourseImageRecord> }) => {
-          updates.push(data);
-          Object.assign(record, data);
-          return { count: 1 };
-        },
-        update: async ({ data }: { data: Partial<CourseImageRecord> }) => {
-          updates.push(data);
-          Object.assign(record, data);
-          return record;
-        },
-      },
-    } as unknown as CourseImagesDb;
 
-    await advanceCourseImageQueue(db, "course-1", {
-      provider: {
-        submit: async () => ({ imageUrl: "https://example.com/image.webp" }),
-        query: async () => ({ status: "failed" as const, imageUrl: null, failureReason: "unused" }),
-      },
-      download: async () => ({ storagePath: "/tmp/image.webp", publicUrl: "/api/course-images/course-1/image-1.webp" }),
-    });
+    await getCourseResources(readOnlyDb(record), "course-1");
 
-    expect(updates).toEqual([]);
     expect(record.status).toBe("submitting");
   });
 });
@@ -520,12 +440,8 @@ describe("chapter image task creation", () => {
           shotId: "chapter-2-shot-1",
           shotOrder: 1,
           sourceParagraphId: "chapter-2-paragraph-1",
-          sourceExcerpt: "Summer crossed the quiet river.",
           focus: "Summer crosses the quiet river.",
-          characters: ["SummerStudent"],
           keyObjects: ["river"],
-          composition: "wide river crossing scene",
-          continuityNotes: "Keep the warm forest world.",
           imagePrompt: "Self-contained image2 prompt for chapter 2 shot 1.",
         } as CourseResourcePlan["shots"][number],
         {
@@ -533,12 +449,8 @@ describe("chapter image task creation", () => {
           shotId: "chapter-2-shot-2",
           shotOrder: 2,
           sourceParagraphId: "chapter-2-paragraph-2",
-          sourceExcerpt: "A blue stone pointed to the next path.",
           focus: "The blue stone points to the next path.",
-          characters: ["SummerStudent"],
           keyObjects: ["blue stone"],
-          composition: "medium safe-center scene with the stone visible",
-          continuityNotes: "Keep the warm forest world.",
           imagePrompt: "Self-contained image2 prompt for chapter 2 shot 2.",
         } as CourseResourcePlan["shots"][number],
       ],
@@ -566,7 +478,7 @@ describe("chapter image task creation", () => {
       },
     } as unknown as CourseImagesDb;
 
-    await createMissingCourseImages(db, "course-1", { scope: "chapter", chapterId: "chapter-2" });
+    await createMissingCourseImages(db, "course-1", { scope: "chapter", chapterId: "chapter-2" }, stubDeps);
 
     expect(created.map((item) => item.slotId)).toEqual(["chapter-2-shot-1", "chapter-2-shot-2"]);
     expect(created.every((item) => item.chapterId === "chapter-2")).toBe(true);
@@ -593,7 +505,7 @@ describe("chapter image task creation", () => {
       },
     } as unknown as CourseImagesDb;
 
-    await createMissingCourseImages(db, "course-1", { scope: "slot", slotId: "chapter-2-shot-1" });
+    await createMissingCourseImages(db, "course-1", { scope: "slot", slotId: "chapter-2-shot-1" }, stubDeps);
 
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({ chapterId: "chapter-2", slotId: "chapter-2-shot-1" });
@@ -620,7 +532,7 @@ describe("chapter image task creation", () => {
       },
     } as unknown as CourseImagesDb;
 
-    await createMissingCourseImages(db, "course-1", { scope: "all" });
+    await createMissingCourseImages(db, "course-1", { scope: "all" }, stubDeps);
 
     expect(created.map((item) => item.slotId)).toEqual([
       "chapter-1-shot-1",
@@ -668,7 +580,7 @@ describe("cover image regeneration guard", () => {
         wrote = true;
       });
 
-      await expect(createCoverImage(db, "course-1")).rejects.toBeInstanceOf(CourseImageInvalidStateError);
+      await expect(createCoverImage(db, "course-1", stubDeps)).rejects.toBeInstanceOf(CourseImageInvalidStateError);
       expect(wrote).toBe(false);
     });
   }
@@ -680,7 +592,7 @@ describe("cover image regeneration guard", () => {
       wrote = true;
     });
 
-    await createCoverImage(db, "course-1");
+    await createCoverImage(db, "course-1", stubDeps);
     expect(wrote).toBe(true);
   });
 });

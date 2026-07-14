@@ -10,6 +10,9 @@ type PrismaClientLike = {
     upsert: (query: unknown) => Promise<{ id: string }>;
     updateMany: (query: unknown) => Promise<unknown>;
   };
+  presetOption: {
+    upsert: (query: unknown) => Promise<unknown>;
+  };
   course: {
     upsert: (query: unknown) => Promise<unknown>;
   };
@@ -95,6 +98,64 @@ const lessonDraftContent = {
   },
 };
 
+const themePresets = [
+  "魔法世界",
+  "宇宙冒险",
+  "海底世界",
+  "恐龙时代",
+  "森林探险",
+  "未来城市",
+  "童话王国",
+  "西游记",
+  "三国演义",
+  "校园生活",
+  "动物乐园",
+  "美食之旅",
+  "运动比赛",
+  "博物馆奇妙夜",
+  "环游世界",
+  "神秘岛屿",
+  "机器人世界",
+  "农场生活",
+  "冰雪王国",
+  "超级英雄",
+];
+
+const grammarPresetGroups = [
+  {
+    category: "时态",
+    labels: ["Present Simple", "Present Continuous", "Past Simple", "Past Continuous", "Future (will / be going to)", "Present Perfect"],
+  },
+  {
+    category: "词类",
+    labels: [
+      "Singular / Plural Nouns",
+      "Countable / Uncountable",
+      "Subject Pronouns",
+      "Possessive",
+      "Object Pronouns",
+      "Articles (a / an / the)",
+      "Comparatives",
+      "Superlatives",
+      "Adverbs of Frequency",
+      "Prepositions of Place",
+      "Prepositions of Time",
+    ],
+  },
+  {
+    category: "句型",
+    labels: ["There be", "Have got", "Wh- Questions", "Yes/No Questions", "Imperatives"],
+  },
+  {
+    category: "情态动词",
+    labels: ["Can / Could", "Must / Have to", "Should"],
+  },
+  {
+    category: "限定词与量词",
+    labels: ["Some / Any", "Much / Many / A lot of", "This / That / These / Those"],
+  },
+];
+
 async function main() {
   const teacher = await prisma.user.upsert({
     where: { username: "teacher" },
@@ -106,36 +167,26 @@ async function main() {
     where: { id: "person-teacher-lin" },
     update: {
       name: "Ms. Lin",
+      chineseName: "林老师",
+      englishName: "Ms. Lin",
+      age: 30,
       gender: "female",
       appearance: "黑色长发，圆框眼镜，穿浅色针织衫，亲切自然。",
       interests: [],
       notes: "默认教师形象，用于教案和插图生成。",
-      avatarUrl: "/mock-assets/teacher-default.png",
     },
     create: {
       id: "person-teacher-lin",
       role: "teacher",
       name: "Ms. Lin",
+      chineseName: "林老师",
+      englishName: "Ms. Lin",
+      age: 30,
       gender: "female",
       appearance: "黑色长发，圆框眼镜，穿浅色针织衫，亲切自然。",
       interests: [],
       notes: "默认教师形象，用于教案和插图生成。",
-      avatarUrl: "/mock-assets/teacher-default.png",
     },
-  });
-
-  await prisma.person.updateMany({
-    where: {
-      role: "teacher",
-      gender: "male",
-      OR: [{ avatarUrl: null }, { avatarUrl: "/mock-assets/teacher-default.png" }],
-    },
-    data: { avatarUrl: "/mock-assets/teacher-male-default.png" },
-  });
-
-  await prisma.person.updateMany({
-    where: { role: "teacher", avatarUrl: null },
-    data: { avatarUrl: "/mock-assets/teacher-default.png" },
   });
 
   const summer = await prisma.person.upsert({
@@ -155,7 +206,6 @@ async function main() {
       interests: ["植物", "冒险", "绘画", "小动物"],
       learningGoal: "希望在故事阅读中练习完整句表达，并愿意主动复述关键情节。",
       notes: "喜欢明亮、温暖、有探索感的故事场景。",
-      avatarUrl: "/mock-assets/student-girl.png",
     },
   });
 
@@ -176,7 +226,6 @@ async function main() {
       interests: ["恐龙", "机器人", "森林"],
       learningGoal: "通过互动绘本增加开口次数，练习描述角色动作。",
       notes: "更容易被任务型挑战吸引。",
-      avatarUrl: "/mock-assets/student-boy.png",
     },
   });
 
@@ -186,6 +235,35 @@ async function main() {
     where: { role: "student", appearance: null },
     data: { appearance: "待补充外貌描述。" },
   });
+
+  await prisma.person.updateMany({
+    where: {
+      avatarUrl: {
+        in: ["/mock-assets/teacher-default.png", "/mock-assets/teacher-male-default.png", "/mock-assets/student-girl.png", "/mock-assets/student-boy.png"],
+      },
+    },
+    data: { avatarUrl: null },
+  });
+
+  for (const [index, label] of themePresets.entries()) {
+    await prisma.presetOption.upsert({
+      where: { kind_label: { kind: "theme", label } },
+      update: { sortOrder: index },
+      create: { kind: "theme", label, sortOrder: index },
+    });
+  }
+
+  let grammarSortOrder = 0;
+  for (const group of grammarPresetGroups) {
+    for (const label of group.labels) {
+      await prisma.presetOption.upsert({
+        where: { kind_label: { kind: "grammar", label } },
+        update: { category: group.category, sortOrder: grammarSortOrder },
+        create: { kind: "grammar", label, category: group.category, sortOrder: grammarSortOrder },
+      });
+      grammarSortOrder += 1;
+    }
+  }
 
   await prisma.course.upsert({
     where: { id: "course-rabbit" },

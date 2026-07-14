@@ -1,16 +1,15 @@
 "use client";
 
 import { FormEvent, MouseEvent, useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import { Edit3, Plus, UserRound, X } from "lucide-react";
 
+import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import type { Gender, PersonInput, PersonProfile, PersonRole } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
 type PersonFormState = {
   role: PersonRole;
-  name: string;
   chineseName: string;
   englishName: string;
   age: string;
@@ -23,7 +22,6 @@ type PersonFormState = {
 
 const emptyForm: PersonFormState = {
   role: "student",
-  name: "",
   chineseName: "",
   englishName: "",
   age: "",
@@ -46,7 +44,6 @@ function toFormState(person?: PersonProfile): PersonFormState {
 
   return {
     role: person.role,
-    name: person.name,
     chineseName: person.chineseName ?? "",
     englishName: person.englishName ?? "",
     age: person.age ? String(person.age) : "",
@@ -62,8 +59,10 @@ function toPersonPayload(form: PersonFormState): PersonInput {
   if (form.role === "teacher") {
     return {
       role: "teacher",
-      name: form.name.trim(),
-      gender: form.gender || undefined,
+      chineseName: form.chineseName.trim(),
+      englishName: form.englishName.trim(),
+      age: Number(form.age),
+      gender: (form.gender || "female") as Gender,
       appearance: form.appearance.trim(),
       notes: form.notes.trim(),
     };
@@ -83,18 +82,19 @@ function toPersonPayload(form: PersonFormState): PersonInput {
 }
 
 function hasRequiredFields(form: PersonFormState) {
-  if (form.role === "teacher") {
-    return Boolean(form.name.trim());
-  }
-
-  return Boolean(
+  const sharedRequired = Boolean(
     form.chineseName.trim() &&
       form.englishName.trim() &&
       form.age.trim() &&
       Number.isFinite(Number(form.age)) &&
-      form.gender &&
-      form.appearance.trim(),
+      form.gender,
   );
+
+  if (form.role === "teacher") {
+    return sharedRequired;
+  }
+
+  return Boolean(sharedRequired && form.appearance.trim());
 }
 
 export function PeopleManager() {
@@ -213,7 +213,7 @@ export function PeopleManager() {
     event.preventDefault();
 
     if (!hasRequiredFields(form)) {
-      setError(form.role === "teacher" ? "请填写教师名称" : "请填写中文名、英文名、年龄、性别和外貌描述");
+      setError(form.role === "teacher" ? "请填写中文名、英文名、年龄和性别" : "请填写中文名、英文名、年龄、性别和外貌描述");
       return;
     }
 
@@ -327,8 +327,10 @@ export function PeopleManager() {
 
                 {form.role === "teacher" ? (
                   <>
-                    <TextField label="名称" onChange={(value) => setForm((current) => ({ ...current, name: value }))} required value={form.name} />
-                    <GenderSelector optional onChange={(gender) => setForm((current) => ({ ...current, gender }))} value={form.gender} />
+                    <TextField label="中文名" onChange={(value) => setForm((current) => ({ ...current, chineseName: value }))} required value={form.chineseName} />
+                    <TextField label="英文名" onChange={(value) => setForm((current) => ({ ...current, englishName: value }))} required value={form.englishName} />
+                    <TextField label="年龄" onChange={(value) => setForm((current) => ({ ...current, age: value }))} required type="number" value={form.age} />
+                    <GenderSelector onChange={(gender) => setForm((current) => ({ ...current, gender }))} value={form.gender} />
                     <TextAreaField label="外貌描述" onChange={(value) => setForm((current) => ({ ...current, appearance: value }))} value={form.appearance} />
                     <TextAreaField label="备注" onChange={(value) => setForm((current) => ({ ...current, notes: value }))} value={form.notes} />
                   </>
@@ -381,20 +383,19 @@ function PersonCard({ person, onEdit }: { person: PersonProfile; onEdit: (person
     >
       <div className="mb-5 flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
-          {person.avatarUrl ? (
-            <Image alt="" className="size-14 rounded-full object-cover ring-4 ring-slate-50" height={56} src={person.avatarUrl} width={56} />
-          ) : (
-            <div className="flex size-14 items-center justify-center rounded-full bg-violet-50 text-violet-700 ring-4 ring-slate-50">
-              <UserRound className="size-6" />
-            </div>
-          )}
+          <PersonAvatar
+            avatarUrl={person.avatarUrl}
+            gender={person.gender}
+            name={person.chineseName ?? person.name}
+            seed={person.id}
+          />
           <div>
             <div className="mb-1 inline-flex h-6 items-center rounded-full bg-slate-100 px-2 text-xs font-medium text-slate-600">
               {person.role === "teacher" ? "教师" : "学生"}
             </div>
-            <h2 className="text-lg font-semibold text-slate-950">{person.role === "teacher" ? person.name : person.chineseName}</h2>
-            <p className="text-sm text-slate-500">{person.role === "teacher" ? person.gender ? genderCopy(person.gender) : "未填写性别" : person.englishName}</p>
-            {person.role === "student" ? <p className="mt-1 text-xs text-slate-500">{person.age} 岁 · {genderCopy(person.gender)}</p> : null}
+            <h2 className="text-lg font-semibold text-slate-950">{person.chineseName ?? person.name}</h2>
+            <p className="text-sm text-slate-500">{person.englishName ?? person.name}</p>
+            <p className="mt-1 text-xs text-slate-500">{person.age ? `${person.age} 岁 · ` : ""}{genderCopy(person.gender)}</p>
           </div>
         </div>
         <button
