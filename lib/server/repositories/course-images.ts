@@ -222,10 +222,6 @@ export function assertResourcePlanValid(plan: CourseResourcePlan, draft: LessonD
       if (!paragraph || shot.sourceParagraphId !== paragraph.id) {
         throw new CourseImagePrerequisiteError(`第 ${chapterIndex + 1} 章分镜必须按段落顺序绑定`);
       }
-
-      if (shot.sourceExcerpt.replace(/\s+/g, " ").trim() !== paragraphText(paragraph)) {
-        throw new CourseImagePrerequisiteError(`第 ${chapterIndex + 1} 章分镜必须覆盖对应段落全文`);
-      }
     });
   });
 
@@ -266,6 +262,8 @@ export function deriveResourceImageSlots(courseId: string, draft: LessonDraft, p
     })
     .map((shot) => {
       const chapter = draft.chapters.find((item) => item.id === shot.chapterId);
+      const paragraph = chapter?.paragraphs.find((item) => item.id === shot.sourceParagraphId);
+      const excerpt = paragraph ? paragraphText(paragraph) : "";
       const base: Omit<PlannedImageSlot, "sourceHash"> = {
         courseId,
         chapterId: shot.chapterId,
@@ -276,11 +274,11 @@ export function deriveResourceImageSlots(courseId: string, draft: LessonDraft, p
         slotType: "lesson_shot",
         slotIndex: ((chapter?.sourceOutlineChapterIndex ?? 1) - 1) * 2 + shot.shotOrder,
         sourceParagraphId: shot.sourceParagraphId,
-        sourceExcerpt: shot.sourceExcerpt,
+        sourceExcerpt: excerpt,
         prompt: capImagePrompt(shot.imagePrompt),
         action: shot.focus,
-        scenePrompt: shot.sourceExcerpt,
-        sourceText: shot.sourceExcerpt,
+        scenePrompt: excerpt,
+        sourceText: excerpt,
         focus: shot.focus,
         keyObjects: shot.keyObjects,
         referenceSlotIds: [],
@@ -462,7 +460,7 @@ async function refreshCourseStatus(db: CourseImagesDb, courseId: string, images:
 export async function getCourseResources(db: CourseImagesDb, courseId: string): Promise<CourseResourcesResponse> {
   const { draft, plan } = await getCourseDraftOrThrow(db, courseId);
   const slots = plan ? deriveResourceImageSlots(courseId, draft, plan) : [];
-  const records = await listRecords(db, courseId);
+  const records = await recoverStuckImages(db, courseId, await listRecords(db, courseId));
   const images = mergeImageSlotsWithRecords(slots, records);
   await refreshCourseStatus(db, courseId, images);
   return toResourcesResponse(images, plan);
@@ -509,7 +507,12 @@ function selectGenerationSlots(slots: PlannedImageSlot[], draft: LessonDraft, re
   return slots.filter((slot) => slot.slotType === "lesson_shot" && slot.chapterId === request.chapterId);
 }
 
-export async function createMissingCourseImages(db: CourseImagesDb, courseId: string, request: CourseImageGenerationScope): Promise<CourseResourcesResponse> {
+export async function createMissingCourseImages(
+  db: CourseImagesDb,
+  courseId: string,
+  request: CourseImageGenerationScope,
+  deps: CourseImageGenerationDeps,
+): Promise<CourseResourcesResponse> {
   const { draft, plan } = await getCourseDraftOrThrow(db, courseId);
   if (!plan) {
     throw new CourseImagePrerequisiteError("请先生成资源方案");
@@ -529,6 +532,31 @@ export async function createMissingCourseImages(db: CourseImagesDb, courseId: st
   });
 
   await db.course.update({ where: { id: courseId }, data: { status: "building_resources" } });
+
+  // Generate every pending slot in scope inside this request, concurrently. The claim guard inside
+  // generateCourseImage prevents a second paid submit if another request is already handling the same slot.
+  const scopedSlotIds = new Set(slots.map((slot) => slot.slotId));
+  const slotById = new Map(slots.map((slot) => [slot.slotId, slot]));
+  const toGenerate = (await listRecords(db, courseId)).filter(
+    (record) => scopedSlotIds.has(record.slotId) && record.status === "pending",
+  );
+  const startedAt = Date.now();
+  console.info(`[img-gen] start concurrent batch course=${courseId} count=${toGenerate.length}`);
+  await Promise.all(
+    toGenerate.map(async (record) => {
+      const slot = slotById.get(record.slotId);
+      if (!slot) return;
+      const t0 = Date.now();
+      try {
+        await generateCourseImage(db, courseId, record, slot, deps);
+        console.info(`[img-gen] slot=${slot.slotId} done in ${Date.now() - t0}ms`);
+      } catch (err) {
+        console.info(`[img-gen] slot=${slot.slotId} error in ${Date.now() - t0}ms: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }),
+  );
+  console.info(`[img-gen] batch finished course=${courseId} total=${Date.now() - startedAt}ms`);
+
   return getCourseResources(db, courseId);
 }
 
@@ -546,7 +574,7 @@ export async function saveCourseResourcePlan(db: CourseImagesDb, courseId: strin
   return getCourseResources(db, courseId);
 }
 
-export async function createCoverImage(db: CourseImagesDb, courseId: string): Promise<CourseResourcesResponse> {
+export async function createCoverImage(db: CourseImagesDb, courseId: string, deps: CourseImageGenerationDeps): Promise<CourseResourcesResponse> {
   const { draft, plan } = await getCourseDraftOrThrow(db, courseId);
   if (!plan) {
     throw new CourseImagePrerequisiteError("请先生成资源方案");
@@ -583,10 +611,16 @@ export async function createCoverImage(db: CourseImagesDb, courseId: string): Pr
   }
 
   await db.course.update({ where: { id: courseId }, data: { status: "building_resources" } });
+
+  const pendingCover = (await listRecords(db, courseId)).find((record) => record.slotId === cover.slotId);
+  if (pendingCover && pendingCover.status === "pending") {
+    await generateCourseImage(db, courseId, pendingCover, cover, deps);
+  }
+
   return getCourseResources(db, courseId);
 }
 
-export async function retryCourseImage(db: CourseImagesDb, courseId: string, imageId: string) {
+export async function retryCourseImage(db: CourseImagesDb, courseId: string, imageId: string, deps: CourseImageGenerationDeps) {
   const { draft, plan } = await getCourseDraftOrThrow(db, courseId);
   if (!plan) {
     throw new CourseImagePrerequisiteError("请先生成资源方案");
@@ -609,10 +643,10 @@ export async function retryCourseImage(db: CourseImagesDb, courseId: string, ima
   }
 
   // If the remote image already generated for the same inputs and only the download failed, keep the URL so the
-  // queue recovers the download instead of paying for a new generation. Any input change drops it and regenerates.
+  // generation recovers the download instead of paying for a new generation. Any input change drops it and regenerates.
   const recoveryUrl = record.sourceHash === slot.sourceHash ? recoverableRemoteUrl(record.providerImageUrl) : null;
 
-  const updated = await db.courseImage.update({
+  const reset = await db.courseImage.update({
     where: { id: imageId },
     data: {
       chapterId: slot.chapterId,
@@ -640,6 +674,10 @@ export async function retryCourseImage(db: CourseImagesDb, courseId: string, ima
   });
 
   await db.course.update({ where: { id: courseId }, data: { status: "building_resources" } });
+
+  await generateCourseImage(db, courseId, reset, slot, deps);
+
+  const updated = (await db.courseImage.findFirst({ where: { id: imageId, courseId } })) ?? reset;
   return {
     image: mergeImageSlotsWithRecords([slot], [updated])[0],
   };
@@ -677,14 +715,11 @@ export async function keepStaleCourseImage(db: CourseImagesDb, courseId: string,
   };
 }
 
-export type CourseImageQueueDeps = {
+// QuickRouter GPT-image-2 is a synchronous provider: one submit call returns the finished image (URL or base64),
+// so there is no task id to poll. Generation therefore runs inside the request that triggers it, not a background queue.
+export type CourseImageGenerationDeps = {
   provider: {
-    submit: (input: { prompt: string; width: 1280; height: 720; referenceImageUrls?: string[] }) => Promise<{ taskId?: string; imageUrl?: string }>;
-    query: (input: { taskId: string }) => Promise<
-      | { status: "generating"; imageUrl: null; failureReason: null }
-      | { status: "succeeded"; imageUrl: string; failureReason: null }
-      | { status: "failed"; imageUrl: null; failureReason: string }
-    >;
+    submit: (input: { prompt: string; width: 1280; height: 720 }) => Promise<{ imageUrl?: string }>;
   };
   download: (input: { sourceUrl: string; courseId: string; imageId: string }) => Promise<{ storagePath: string; publicUrl: string }>;
 };
@@ -702,121 +737,49 @@ function recoverableRemoteUrl(imageUrl: string | null) {
   return imageUrl && !imageUrl.startsWith("data:") ? imageUrl : null;
 }
 
-// A synchronous submit holds the record in `submitting` while the request is in flight. GPT-image-2 can take
-// several minutes, so the timeout must be much longer than the normal 1-3 minute generation window. If the
-// request really dies (refresh, dev reload, process restart), this eventually releases the record to retry.
+// Generation runs synchronously in the request, so a record only stays `submitting` while a submit is genuinely in
+// flight. A generation that dies with the process (server restart, dev reload, closed tab) can strand a record in
+// `submitting`; after this timeout a read releases it to `failed` so the UI can retry. Keep it well above the
+// provider generation timeout so a slow-but-alive submit is never killed. `generating` is a legacy state that only
+// exists on old rows and is treated the same way here.
 const submittingTimeoutMs = Number(process.env.IMAGE_SUBMITTING_TIMEOUT_MS ?? 900000);
 
-export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: string, deps: CourseImageQueueDeps) {
-  const { draft, plan } = await getCourseDraftOrThrow(db, courseId);
-  const slots = plan ? deriveResourceImageSlots(courseId, draft, plan) : [];
-  const records = await listRecords(db, courseId);
+// Runs one paid generation for a single slot inside the caller's request. The record must already be `pending`;
+// the claim below flips it to `submitting` with an optimistic guard so a concurrent request can never submit a
+// second (paid) generation for the same slot. A recovery URL means the remote image already exists and only the
+// download failed, so it is re-downloaded for free instead of paying again.
+export async function generateCourseImage(
+  db: CourseImagesDb,
+  courseId: string,
+  record: CourseImageRecord,
+  slot: PlannedImageSlot,
+  deps: CourseImageGenerationDeps,
+): Promise<void> {
+  const prompt = slot.prompt;
+  const sourceHash = slot.sourceHash;
+  const recoveryUrl = recoverableRemoteUrl(record.providerImageUrl);
 
-  const now = Date.now();
-  const stuckSubmitting = records.filter(
-    (image) => image.status === "submitting" && now - image.updatedAt.getTime() > submittingTimeoutMs,
-  );
-  for (const image of stuckSubmitting) {
-    await db.courseImage.update({
-      where: { id: image.id },
-      data: { status: "failed", providerTaskId: null, failureReason: "图片提交超时未完成，请重试" },
-    });
-  }
+  const claimed = await db.courseImage.updateMany({
+    where: { id: record.id, status: "pending" },
+    data: {
+      status: "submitting",
+      prompt,
+      sourceHash,
+      providerTaskId: null,
+      providerImageUrl: recoveryUrl,
+      failureReason: null,
+    },
+  });
 
-  const active = records.filter((image) => image.status === "generating");
-
-  for (const image of active) {
-    if (!image.providerTaskId) {
-      await db.courseImage.update({
-        where: { id: image.id },
-        data: { status: "failed", failureReason: "图片任务 ID 缺失" },
-      });
-      continue;
-    }
-
-    let remoteImageUrl: string | null = null;
-    try {
-      const remote = await deps.provider.query({ taskId: image.providerTaskId });
-
-      if (remote.status === "generating") {
-        continue;
-      }
-
-      if (remote.status === "failed") {
-        await db.courseImage.update({
-          where: { id: image.id },
-          data: { status: "failed", failureReason: remote.failureReason },
-        });
-        continue;
-      }
-
-      remoteImageUrl = remote.imageUrl;
-      const local = await deps.download({ sourceUrl: remote.imageUrl, courseId, imageId: image.id });
-      await db.courseImage.update({
-        where: { id: image.id },
-        data: {
-          status: "succeeded",
-          providerImageUrl: providerImageUrlForStorage(remote.imageUrl),
-          storagePath: local.storagePath,
-          publicUrl: local.publicUrl,
-          failureReason: null,
-        },
-      });
-    } catch (error) {
-      // Keep the remote URL so a retry can recover the download without paying for a new generation.
-      const recoverable = recoverableRemoteUrl(remoteImageUrl) ?? image.providerImageUrl;
-      await db.courseImage.update({
-        where: { id: image.id },
-        data: {
-          status: "failed",
-          providerImageUrl: recoverable,
-          failureReason: recoverable ? `图片已生成但下载失败，可重试恢复：${errorMessage(error)}` : errorMessage(error),
-        },
-      });
-    }
-  }
-
-  const refreshed = await listRecords(db, courseId);
-  const stillActive = refreshed.some((image) => image.status === "generating" || image.status === "submitting");
-
-  if (stillActive) {
+  if (claimed.count === 0) {
     return;
   }
-
-  const pending = refreshed.find((image) => image.status === "pending");
-
-  if (!pending) {
-    return;
-  }
-
-  const pendingSlot = findSlot(slots, pending);
-  const prompt = pendingSlot?.prompt ?? pending.prompt;
-  const sourceHash = pendingSlot?.sourceHash ?? pending.sourceHash;
-  // A pending record only carries a provider URL after a retry chose to recover a previously generated image,
-  // so here it always means "remote already generated, only the download needs to be redone".
-  const recoveryUrl = recoverableRemoteUrl(pending.providerImageUrl);
 
   try {
-    const claimed = await db.courseImage.updateMany({
-      where: { id: pending.id, status: "pending" },
-      data: {
-        status: "submitting",
-        prompt,
-        sourceHash,
-        providerTaskId: null,
-        providerImageUrl: recoveryUrl,
-        failureReason: null,
-      },
-    });
-
-    if (claimed.count === 0) {
-      return;
-    }
-
     if (recoveryUrl) {
-      const local = await deps.download({ sourceUrl: recoveryUrl, courseId, imageId: pending.id });
+      const local = await deps.download({ sourceUrl: recoveryUrl, courseId, imageId: record.id });
       await db.courseImage.update({
-        where: { id: pending.id },
+        where: { id: record.id },
         data: {
           status: "succeeded",
           prompt,
@@ -832,70 +795,76 @@ export async function advanceCourseImageQueue(db: CourseImagesDb, courseId: stri
     }
 
     const submitted = await deps.provider.submit({ prompt, width: 1280, height: 720 });
-    if (submitted.imageUrl) {
-      const remoteUrl = providerImageUrlForStorage(submitted.imageUrl);
-      try {
-        const local = await deps.download({ sourceUrl: submitted.imageUrl, courseId, imageId: pending.id });
-        await db.courseImage.update({
-          where: { id: pending.id },
-          data: {
-            status: "succeeded",
-            prompt,
-            sourceHash,
-            providerTaskId: null,
-            providerImageUrl: remoteUrl,
-            storagePath: local.storagePath,
-            publicUrl: local.publicUrl,
-            failureReason: null,
-          },
-        });
-      } catch (downloadError) {
-        // Remote generation already succeeded; keep the URL so retry recovers the download for free.
-        await db.courseImage.update({
-          where: { id: pending.id },
-          data: {
-            status: "failed",
-            prompt,
-            sourceHash,
-            providerTaskId: null,
-            providerImageUrl: remoteUrl,
-            failureReason: remoteUrl
-              ? `图片已生成但下载失败，可重试恢复：${errorMessage(downloadError)}`
-              : errorMessage(downloadError),
-          },
-        });
-      }
-      return;
+    if (!submitted.imageUrl) {
+      throw new Error("图片服务未返回图片");
     }
 
-    if (!submitted.taskId) {
-      throw new Error("图片服务未返回任务 ID 或图片 URL");
+    const remoteUrl = providerImageUrlForStorage(submitted.imageUrl);
+    try {
+      const local = await deps.download({ sourceUrl: submitted.imageUrl, courseId, imageId: record.id });
+      await db.courseImage.update({
+        where: { id: record.id },
+        data: {
+          status: "succeeded",
+          prompt,
+          sourceHash,
+          providerTaskId: null,
+          providerImageUrl: remoteUrl,
+          storagePath: local.storagePath,
+          publicUrl: local.publicUrl,
+          failureReason: null,
+        },
+      });
+    } catch (downloadError) {
+      // Remote generation already succeeded; keep the URL so a retry recovers the download for free.
+      await db.courseImage.update({
+        where: { id: record.id },
+        data: {
+          status: "failed",
+          prompt,
+          sourceHash,
+          providerTaskId: null,
+          providerImageUrl: remoteUrl,
+          failureReason: remoteUrl
+            ? `图片已生成但下载失败，可重试恢复：${errorMessage(downloadError)}`
+            : errorMessage(downloadError),
+        },
+      });
     }
-
-    await db.courseImage.update({
-      where: { id: pending.id },
-      data: {
-        status: "generating",
-        prompt,
-        sourceHash,
-        providerTaskId: submitted.taskId,
-        failureReason: null,
-      },
-    });
   } catch (error) {
     await db.courseImage.update({
-      where: { id: pending.id },
+      where: { id: record.id },
       data: { status: "failed", providerTaskId: null, failureReason: errorMessage(error) },
     });
   }
 }
 
-export async function getCourseResourcesAndAdvance(db: CourseImagesDb, courseId: string, deps: CourseImageQueueDeps) {
-  try {
-    await advanceCourseImageQueue(db, courseId, deps);
-  } catch (error) {
-    // Reading Step 4 status must never fail because advancing the paid image queue failed.
-    console.error("Advancing course image queue failed", error);
+// GET is read-only, but abandoned `submitting`/`generating` records left by a dead generation would otherwise show
+// "生成中" forever. This reclaims them to `failed` (no paid work) so the UI can offer a retry.
+async function recoverStuckImages(db: CourseImagesDb, courseId: string, records: CourseImageRecord[]) {
+  const now = Date.now();
+  const stuck = records.filter(
+    (image) =>
+      (image.status === "submitting" || image.status === "generating") &&
+      now - image.updatedAt.getTime() > submittingTimeoutMs,
+  );
+
+  if (stuck.length === 0) {
+    return records;
   }
-  return getCourseResources(db, courseId);
+
+  for (const image of stuck) {
+    const recoverable = recoverableRemoteUrl(image.providerImageUrl);
+    await db.courseImage.update({
+      where: { id: image.id },
+      data: {
+        status: "failed",
+        providerTaskId: null,
+        providerImageUrl: recoverable,
+        failureReason: recoverable ? "图片已生成但未完成下载，请重试恢复" : "图片生成超时未完成，请重试",
+      },
+    });
+  }
+
+  return listRecords(db, courseId);
 }

@@ -67,7 +67,7 @@ describe("course image storage", () => {
       imageId: "image-large",
     });
 
-    expect(await readFile(result.storagePath)).toEqual(bytes);
+    expect((await readFile(result.storagePath)).equals(bytes)).toBe(true);
     expect(result.publicUrl).toBe("/api/course-images/course-1/image-large.webp");
   });
 
@@ -89,5 +89,46 @@ describe("course image storage", () => {
         imageId: "image-1",
       }),
     ).rejects.toThrow("图片下载失败：403");
+  });
+
+  it("passes an AbortSignal timeout when downloading a remote image", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => new Uint8Array([1]).buffer,
+      })),
+    );
+
+    await downloadCourseImage({
+      sourceUrl: "https://example.com/image.png",
+      storageDir: root,
+      courseId: "course-1",
+      imageId: "image-1",
+    });
+
+    const init = vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("throws a timeout error when the download aborts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        const error = new Error("aborted");
+        error.name = "TimeoutError";
+        throw error;
+      }),
+    );
+
+    await expect(
+      downloadCourseImage({
+        sourceUrl: "https://example.com/image.png",
+        storageDir: root,
+        courseId: "course-1",
+        imageId: "image-1",
+      }),
+    ).rejects.toThrow("图片下载超时");
   });
 });

@@ -2,10 +2,28 @@ import type { StructuredLesson } from "@/lib/lesson/types";
 
 export type Gender = "male" | "female";
 export type EnglishLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
-export type CourseStatus = "draft" | "building_resources" | "ready" | "build_failed";
+export type CourseStatus = "draft" | "building_resources" | "ready" | "build_failed" | "published";
 export type CourseCreateStep = "basic" | "story_options" | "lesson_draft" | "resources" | "preview";
 export type PersonRole = "teacher" | "student";
 export type StoryIdeaMode = "manual" | "ai";
+
+export type PresetKind = "theme" | "grammar";
+
+export type PresetOption = {
+  id: string;
+  kind: PresetKind;
+  label: string;
+  category?: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PresetOptionInput = {
+  kind: PresetKind;
+  label: string;
+  category?: string;
+};
 
 export type PersonProfile = {
   id: string;
@@ -27,8 +45,10 @@ export type PersonProfile = {
 export type PersonInput =
   | {
       role: "teacher";
-      name: string;
-      gender?: Gender;
+      chineseName: string;
+      englishName: string;
+      age: number;
+      gender: Gender;
       appearance?: string;
       notes?: string;
       avatarUrl?: string;
@@ -109,12 +129,8 @@ export type CourseResourcePlanShot = {
   shotId: string;
   shotOrder: 1 | 2;
   sourceParagraphId: string;
-  sourceExcerpt: string;
   focus: string;
-  characters: string[];
   keyObjects: string[];
-  composition: string;
-  continuityNotes: string;
   imagePrompt: string;
 };
 
@@ -122,8 +138,6 @@ export type CourseResourcePlan = {
   schemaVersion: "course_resource_plan_v1";
   coverBrief: {
     description: string;
-    characters: string[];
-    setting: string;
     storyElements: string[];
     imagePrompt: string;
   };
@@ -180,17 +194,6 @@ export type CourseResourcesResponse = {
   images: CourseResourceImage[];
 };
 
-export type CoursePreviewCourse = {
-  id: string;
-  title: string;
-  teacherName: string | null;
-  studentNames: string[];
-  englishLevel: EnglishLevel;
-  durationMinutes: number;
-  theme: string;
-  grammar: string[];
-};
-
 export type CoursePreviewResourceProgress = ResourceProgress;
 
 export type CoursePreviewImage = {
@@ -200,39 +203,133 @@ export type CoursePreviewImage = {
   failureReason: string | null;
 };
 
-export type CoursePreviewExercise = LessonExercise;
+export type CoursePreviewCourse = {
+  id: string;
+  title: string;
+  status: CourseStatus;
+  teacherName: string | null;
+  studentNames: string[];
+};
+
+export type CoursePresentationConfig = {
+  coverTheme: string;
+  coverTitleFontSize: number;
+  chapterTheme: string;
+  slideOverrides: Record<string, SlideTextOverride>;
+};
+
+export type SlideTextOverride = {
+  textBox?: { opacity?: number; fontSize?: number };
+};
+
+export type TextBoxStyle = {
+  opacity: number;
+  fontSize: number;
+};
+
+export type CoursePreviewExerciseInline = {
+  id: string;
+  order: number;
+  type: "given_word_blank" | "choice_blank" | "pattern_blank";
+  answer: string;
+  prompt: string;
+  choices?: string[];
+  pattern?: string;
+  letterCount?: string | number;
+  hint?: string;
+  colorClass: "violet" | "blue" | "amber";
+};
+
+export type CoursePreviewSegment =
+  | { type: "text"; text: string }
+  | { type: "exercise"; exercise: CoursePreviewExerciseInline };
+
+export type CoursePreviewSentence = {
+  id: string;
+  segments: CoursePreviewSegment[];
+};
+
+export type CoursePreviewParagraph = {
+  id: string;
+  sentences: CoursePreviewSentence[];
+};
 
 export type CoursePreviewPage =
   | {
       id: string;
-      type: "cover";
-      title: string;
-    }
-  | {
-      id: string;
-      type: "lesson_shot";
-      chapterId: string;
-      chapterTitle: string;
-      chapterIndex: number;
-      shotId: string;
-      shotOrder: 1 | 2;
-      title: string;
+      type: "cover_pure";
       image: CoursePreviewImage;
-      text: string;
-      exercises: CoursePreviewExercise[];
+      editable: boolean;
     }
   | {
       id: string;
-      type: "closing_reading";
+      type: "cover_title";
+      image: CoursePreviewImage;
       title: string;
-      text: string;
-      vocabularyTerms: string[];
+      teacherName: string | null;
+      studentNames: string[];
+      editable: boolean;
+    }
+  | {
+      id: string;
+      type: "chapter_divider";
+      chapterIndex: number;
+      chapterTitleEn: string;
+      editable: boolean;
+    }
+  | {
+      id: string;
+      type: "shot_image";
+      chapterId: string;
+      chapterIndex: number;
+      shotOrder: 1 | 2;
+      image: CoursePreviewImage;
+      editable: boolean;
+    }
+  | {
+      id: string;
+      type: "shot_text";
+      chapterId: string;
+      chapterIndex: number;
+      shotOrder: 1 | 2;
+      image: CoursePreviewImage;
+      paragraphs: CoursePreviewParagraph[];
+      textBox: TextBoxStyle;
+      editable: boolean;
+    }
+  | {
+      id: string;
+      type: "closing_image";
+      image: CoursePreviewImage;
+      editable: boolean;
+    }
+  | {
+      id: string;
+      type: "closing_text";
+      image: CoursePreviewImage;
+      title: string;
+      paragraphs: CoursePreviewParagraph[];
+      textBox: TextBoxStyle;
+      editable: boolean;
     };
 
 export type CoursePreviewResponse = {
   course: CoursePreviewCourse;
+  presentation: CoursePresentationConfig;
   resourceProgress: CoursePreviewResourceProgress;
+  canEdit: boolean;
   pages: CoursePreviewPage[];
+};
+
+export type CoursePresentationUpdate = {
+  coverTheme: string;
+  coverTitleFontSize: number;
+  chapterTheme: string;
+  slideOverrides: Record<string, SlideTextOverride>;
+};
+
+export type PublishCourseResponse = {
+  redirectUrl: string;
 };
 
 export type BuildProgress = {

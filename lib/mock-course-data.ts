@@ -1,6 +1,5 @@
 import type { CourseDetail, CourseImage, StoryPlan, StudentProfile } from "@/lib/contracts/api";
 import type { StructuredLesson } from "@/lib/lesson/types";
-import { defaultStudentAvatars } from "@/lib/mock/assets";
 
 export const mockStudents: StudentProfile[] = [
   {
@@ -14,7 +13,7 @@ export const mockStudents: StudentProfile[] = [
     interests: ["植物", "冒险", "绘画", "小动物"],
     learningGoal: "希望在故事阅读中练习完整句表达，并愿意主动复述关键情节。",
     notes: "喜欢明亮、温暖、有探索感的故事场景。",
-    avatarUrl: defaultStudentAvatars.female,
+    avatarUrl: "",
     createdAt: "2026-07-01T09:00:00.000Z",
     updatedAt: "2026-07-01T09:00:00.000Z",
   },
@@ -29,7 +28,7 @@ export const mockStudents: StudentProfile[] = [
     interests: ["恐龙", "机器人", "森林"],
     learningGoal: "通过互动绘本增加开口次数，练习描述角色动作。",
     notes: "更容易被任务型挑战吸引。",
-    avatarUrl: defaultStudentAvatars.male,
+    avatarUrl: "",
     createdAt: "2026-07-01T09:05:00.000Z",
     updatedAt: "2026-07-01T09:05:00.000Z",
   },
@@ -44,7 +43,7 @@ export const mockStudents: StudentProfile[] = [
     interests: ["花园", "音乐", "朋友"],
     learningGoal: "积累故事主题词汇，练习用英语表达感受。",
     notes: "偏好柔和、富有想象力的绘本主题。",
-    avatarUrl: defaultStudentAvatars.female,
+    avatarUrl: "",
     createdAt: "2026-07-01T09:10:00.000Z",
     updatedAt: "2026-07-01T09:10:00.000Z",
   },

@@ -11,15 +11,17 @@ import { cn } from "@/lib/utils";
 const statusCopy: Record<CourseStatus, string> = {
   draft: "草稿",
   building_resources: "生成资源中",
-  ready: "已完成",
+  ready: "待发布",
   build_failed: "生成失败",
+  published: "已发布",
 };
 
 const statusStyle: Record<CourseStatus, string> = {
   draft: "bg-slate-100 text-slate-600",
   building_resources: "bg-blue-50 text-blue-700",
-  ready: "bg-emerald-50 text-emerald-700",
+  ready: "bg-amber-50 text-amber-700",
   build_failed: "bg-red-50 text-red-700",
+  published: "bg-emerald-50 text-emerald-700",
 };
 
 function formatDate(value: string) {

@@ -9,8 +9,10 @@ const genderSchema = z.enum(["male", "female"]);
 const personInputSchema = z.discriminatedUnion("role", [
   z.object({
     role: z.literal("teacher"),
-    name: z.string().trim().min(1),
-    gender: genderSchema.optional(),
+    chineseName: z.string().trim().min(1),
+    englishName: z.string().trim().min(1),
+    age: z.number().int(),
+    gender: genderSchema,
     appearance: z.string().optional(),
     notes: z.string().optional(),
     avatarUrl: z.string().optional(),

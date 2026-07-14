@@ -43,6 +43,13 @@ function decodeDataUrl(value: string) {
   return Buffer.from(value.slice(markerIndex + marker.length), "base64");
 }
 
+const DEFAULT_DOWNLOAD_TIMEOUT_MS = 60000;
+
+function resolveDownloadTimeoutMs() {
+  const parsed = Number(process.env.IMAGE_DOWNLOAD_TIMEOUT_MS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_DOWNLOAD_TIMEOUT_MS;
+}
+
 export async function downloadCourseImage(input: CourseImageDownloadInput) {
   const dataUrl = decodeDataUrl(input.sourceUrl);
   if (dataUrl) {
@@ -52,7 +59,17 @@ export async function downloadCourseImage(input: CourseImageDownloadInput) {
     return target;
   }
 
-  const response = await fetch(input.sourceUrl);
+  let response: Response;
+  try {
+    response = await fetch(input.sourceUrl, {
+      signal: AbortSignal.timeout(resolveDownloadTimeoutMs()),
+    });
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new Error(`图片下载超时（${resolveDownloadTimeoutMs()}ms）`, { cause: error });
+    }
+    throw error;
+  }
 
   if (!response.ok) {
     throw new Error(`图片下载失败：${response.status}`);
@@ -60,7 +77,8 @@ export async function downloadCourseImage(input: CourseImageDownloadInput) {
 
   const target = buildCourseImageStorageTarget(input);
   await mkdir(path.dirname(target.storagePath), { recursive: true });
-  await writeFile(target.storagePath, Buffer.from(await response.arrayBuffer()));
+  const buffer = Buffer.from(await response.arrayBuffer());
+  await writeFile(target.storagePath, buffer);
 
   return target;
 }

@@ -51,6 +51,7 @@ model Course {
   storyOptions    CourseStoryOption[]
   lessonDraft     CourseLessonDraft?
   resourcePlan    CourseResourcePlan?
+  presentation    CoursePresentation?
   images          CourseImage[]
 }
 
@@ -96,6 +97,17 @@ model CourseResourcePlan {
   course                Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
 
+model CoursePresentation {
+  courseId          String  @id
+  coverTheme        String  @default("dark")
+  coverTitleFontSize Float  @default(1.0)
+  chapterTheme      String  @default("blue-purple")
+  slideOverrides    Json    @default("{}")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  course            Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
 model CourseImage {
   id               String              @id @default(cuid())
   courseId         String
@@ -128,6 +140,25 @@ model CourseImage {
   @@index([courseId, status])
 }
 
+model PresetOption {
+  id         String           @id @default(cuid())
+  kind       PresetOptionKind
+  label      String
+  category   String?
+  sortOrder  Int              @default(0)
+  archivedAt DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@unique([kind, label])
+  @@index([kind, archivedAt])
+}
+
+enum PresetOptionKind {
+  theme
+  grammar
+}
+
 enum PersonRole {
   student
   teacher
@@ -157,6 +188,7 @@ enum CourseStatus {
   building_resources
   ready
   build_failed
+  published
 }
 
 enum CourseImageStatus {

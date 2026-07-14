@@ -92,8 +92,6 @@ describe("course resource plan parsing", () => {
       schemaVersion: "course_resource_plan_v1",
       coverBrief: {
         description: "Summer and the class stand by the glowing gate.",
-        characters: ["SummerStudent"],
-        setting: "forest gate",
         storyElements: ["silver gate"],
         imagePrompt:
           "Horizontal 16:9 hand-drawn children's picture-book cover. SummerStudent is an eight-year-old child with short black hair, bright eyes, a yellow raincoat, and a green backpack, standing beside a glowing silver forest gate near a river. No readable text.",
@@ -104,12 +102,8 @@ describe("course resource plan parsing", () => {
           shotId: "chapter-1-shot-1",
           shotOrder: 1,
           sourceParagraphId: "chapter-1-paragraph-1",
-          sourceExcerpt: "Summer walked into the forest. A silver gate shone near the river.",
           focus: "Summer sees the gate.",
-          characters: ["SummerStudent"],
           keyObjects: ["silver gate"],
-          composition: "wide safe-center shot",
-          continuityNotes: "Keep the same outfit.",
           imagePrompt:
             "Horizontal 16:9 hand-drawn children's picture-book illustration. SummerStudent is an eight-year-old child with short black hair, bright eyes, a yellow raincoat, and a green backpack, walking into a glowing forest near a silver gate by the river. No readable text.",
         },
@@ -118,12 +112,8 @@ describe("course resource plan parsing", () => {
           shotId: "chapter-1-shot-2",
           shotOrder: 2,
           sourceParagraphId: "chapter-1-paragraph-2",
-          sourceExcerpt: "Summer found a clue under the gate.",
           focus: "Summer finds the clue.",
-          characters: ["SummerStudent"],
           keyObjects: ["clue"],
-          composition: "medium safe-center shot",
-          continuityNotes: "Continue the forest scene.",
           imagePrompt:
             "Horizontal 16:9 hand-drawn children's picture-book illustration. SummerStudent is the same child with short black hair, bright eyes, a yellow raincoat, and a green backpack, crouching near the silver gate to find a small clue. No readable text.",
         },
@@ -142,8 +132,6 @@ describe("course resource plan parsing", () => {
         schemaVersion: "course_resource_plan_v1",
         coverBrief: {
           description: "Summer and the class stand by the glowing gate.",
-          characters: ["SummerStudent"],
-          setting: "forest gate",
           storyElements: ["silver gate"],
         },
         shots: [
@@ -152,12 +140,8 @@ describe("course resource plan parsing", () => {
             shotId: "chapter-1-shot-1",
             shotOrder: 1,
             sourceParagraphId: "chapter-1-paragraph-1",
-            sourceExcerpt: "Summer walked into the forest. A silver gate shone near the river.",
             focus: "Summer sees the gate.",
-            characters: ["SummerStudent"],
             keyObjects: ["silver gate"],
-            composition: "wide safe-center shot",
-            continuityNotes: "Keep the same outfit.",
           },
         ],
       }),

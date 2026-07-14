@@ -1,5 +1,4 @@
 import type { Gender, PersonInput, PersonProfile, PersonRole } from "@/lib/contracts/api";
-import { defaultStudentAvatars, defaultTeacherAvatars } from "@/lib/mock/assets";
 
 type DbPerson = {
   id: string;
@@ -65,18 +64,20 @@ function toPersonProfile(person: DbPerson): PersonProfile {
 
 function toPersonData(input: PersonInput): PersonData {
   if (input.role === "teacher") {
+    const englishName = input.englishName.trim();
+
     return {
       role: "teacher",
-      name: input.name.trim(),
-      chineseName: null,
-      englishName: null,
-      age: null,
-      gender: input.gender ?? null,
+      name: englishName,
+      chineseName: input.chineseName.trim(),
+      englishName,
+      age: optionalNumber(input.age),
+      gender: input.gender,
       appearance: normalizeOptionalText(input.appearance),
       interests: [],
       learningGoal: null,
       notes: normalizeOptionalText(input.notes),
-      avatarUrl: normalizeOptionalText(input.avatarUrl) ?? defaultTeacherAvatars[input.gender ?? "female"],
+      avatarUrl: normalizeOptionalText(input.avatarUrl),
     };
   }
 
@@ -93,7 +94,7 @@ function toPersonData(input: PersonInput): PersonData {
     interests: input.interests.map((interest) => interest.trim()).filter(Boolean),
     learningGoal: normalizeOptionalText(input.learningGoal),
     notes: normalizeOptionalText(input.notes),
-    avatarUrl: normalizeOptionalText(input.avatarUrl) ?? defaultStudentAvatars[input.gender],
+    avatarUrl: normalizeOptionalText(input.avatarUrl),
   };
 }
 

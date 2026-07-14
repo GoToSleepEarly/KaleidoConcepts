@@ -1,64 +1,18 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, Loader2, Plus, X } from "lucide-react";
 
+import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
-import type { CourseBasicDetail, CourseBasicInput, EnglishLevel, PersonProfile, StoryIdeaMode } from "@/lib/contracts/api";
+import type { CourseBasicDetail, CourseBasicInput, EnglishLevel, PersonProfile, PresetOption, StoryIdeaMode } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
 const englishLevels: EnglishLevel[] = ["A1", "A2", "B1", "B2", "C1", "C2"];
 const durations = [30, 45, 60] as const;
-
-const defaultThemes = [
-  "魔法世界",
-  "宇宙冒险",
-  "海底世界",
-  "恐龙时代",
-  "森林探险",
-  "未来城市",
-  "童话王国",
-  "西游记",
-  "三国演义",
-  "校园生活",
-  "动物乐园",
-  "美食之旅",
-  "运动比赛",
-  "博物馆奇妙夜",
-  "环游世界",
-  "神秘岛屿",
-  "机器人世界",
-  "农场生活",
-  "冰雪王国",
-  "超级英雄",
-];
-
-const defaultGrammar = [
-  "Present Simple",
-  "Present Continuous",
-  "Past Simple",
-  "Past Continuous",
-  "Future Simple",
-  "Present Perfect",
-  "There be",
-  "Have got",
-  "Can / Could",
-  "Must / Have to",
-  "Should",
-  "Comparative Adjectives",
-  "Superlative Adjectives",
-  "Countable / Uncountable Nouns",
-  "Some / Any",
-  "Prepositions of Place",
-  "Prepositions of Time",
-  "Wh- Questions",
-  "Imperatives",
-  "Object Pronouns",
-];
 
 type FormState = {
   title: string;
@@ -148,6 +102,9 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
   const router = useRouter();
   const [teachers, setTeachers] = useState<PersonProfile[]>([]);
   const [students, setStudents] = useState<PersonProfile[]>([]);
+  const [themePresets, setThemePresets] = useState<string[]>([]);
+  const [grammarPresets, setGrammarPresets] = useState<PresetOption[]>([]);
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [customTheme, setCustomTheme] = useState("");
   const [customGrammar, setCustomGrammar] = useState("");
@@ -157,11 +114,35 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
   const [error, setError] = useState("");
   const submitLabel = courseId ? "保存并继续" : "保存并生成故事方案";
 
-  const themeOptions = useMemo(() => (form.theme && !defaultThemes.includes(form.theme) ? [...defaultThemes, form.theme] : defaultThemes), [form.theme]);
-  const grammarOptions = useMemo(() => {
-    const customItems = form.grammar.filter((item) => !defaultGrammar.includes(item));
-    return [...defaultGrammar, ...customItems];
-  }, [form.grammar]);
+  const themeOptions = useMemo(
+    () => (form.theme && !themePresets.includes(form.theme) ? [...themePresets, form.theme] : themePresets),
+    [form.theme, themePresets],
+  );
+  const grammarCategories = useMemo(() => {
+    const groups = new Map<string, PresetOption[]>();
+    for (const preset of grammarPresets) {
+      const category = preset.category ?? "其他";
+      const bucket = groups.get(category);
+      if (bucket) {
+        bucket.push(preset);
+      } else {
+        groups.set(category, [preset]);
+      }
+    }
+    return [...groups.entries()].map(([category, presets]) => ({ category, presets }));
+  }, [grammarPresets]);
+  const knownGrammarLabels = useMemo(() => new Set(grammarPresets.map((preset) => preset.label)), [grammarPresets]);
+  const customGrammarItems = useMemo(
+    () => form.grammar.filter((item) => !knownGrammarLabels.has(item)),
+    [form.grammar, knownGrammarLabels],
+  );
+  const countByCategory = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const { category, presets } of grammarCategories) {
+      counts.set(category, presets.filter((preset) => form.grammar.includes(preset.label)).length);
+    }
+    return counts;
+  }, [grammarCategories, form.grammar]);
 
   useEffect(() => {
     let isActive = true;
@@ -171,23 +152,35 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
       setLoadError("");
 
       try {
-        const [teacherResponse, studentResponse, courseResponse] = await Promise.all([
+        const [teacherResponse, studentResponse, themeResponse, grammarResponse, courseResponse] = await Promise.all([
           fetch("/api/people?role=teacher"),
           fetch("/api/people?role=student"),
+          fetch("/api/presets?kind=theme"),
+          fetch("/api/presets?kind=grammar"),
           courseId ? fetch(`/api/courses/${courseId}/basic`) : Promise.resolve(null),
         ]);
 
-        if (!teacherResponse.ok || !studentResponse.ok || (courseResponse && !courseResponse.ok)) {
+        if (
+          !teacherResponse.ok ||
+          !studentResponse.ok ||
+          !themeResponse.ok ||
+          !grammarResponse.ok ||
+          (courseResponse && !courseResponse.ok)
+        ) {
           throw new Error("基础信息加载失败");
         }
 
         const teacherData = (await teacherResponse.json()) as { people: PersonProfile[] };
         const studentData = (await studentResponse.json()) as { people: PersonProfile[] };
+        const themeData = (await themeResponse.json()) as { presets: PresetOption[] };
+        const grammarData = (await grammarResponse.json()) as { presets: PresetOption[] };
         const courseData = courseResponse ? ((await courseResponse.json()) as { course: CourseBasicDetail }) : null;
 
         if (isActive) {
           setTeachers(teacherData.people);
           setStudents(studentData.people);
+          setThemePresets(themeData.presets.map((preset) => preset.label));
+          setGrammarPresets(grammarData.presets);
           setForm(toFormState(courseData?.course));
         }
       } catch {
@@ -387,14 +380,68 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
       </section>
 
       <section className="rounded-lg border border-[#E5E7EB] bg-white p-6 shadow-sm">
-        <FieldHeader description="可以选择多个语法点，也可以输入自定义语法目标。" title="语法点" />
+        <FieldHeader description="先选择语法大类，再在展开的列表里勾选具体语法点，可跨类累加。" title="语法点" />
+
+        {form.grammar.length ? (
+          <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50/60 p-3">
+            <div className="text-xs font-medium text-violet-700">已选 {form.grammar.length} 个语法点</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {form.grammar.map((grammar) => (
+                <button
+                  className="inline-flex h-8 items-center gap-1 rounded-full border border-violet-500 bg-white px-3 text-xs font-medium text-violet-700 transition-colors duration-200 hover:bg-violet-100"
+                  key={grammar}
+                  onClick={() => toggleGrammar(grammar)}
+                  type="button"
+                >
+                  {grammar}
+                  <X className="size-3" />
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="mt-4 flex flex-wrap gap-2">
-          {grammarOptions.map((grammar) => (
-            <ChoiceChip key={grammar} selected={form.grammar.includes(grammar)} onClick={() => toggleGrammar(grammar)}>
-              {grammar}
-            </ChoiceChip>
-          ))}
+          {grammarCategories.map(({ category }) => {
+            const selectedCount = countByCategory.get(category) ?? 0;
+            return (
+              <ChoiceChip
+                key={category}
+                selected={expandedCategory === category}
+                onClick={() => setExpandedCategory((current) => (current === category ? null : category))}
+              >
+                {category}
+                {selectedCount ? <span className="text-violet-700">· {selectedCount}</span> : null}
+              </ChoiceChip>
+            );
+          })}
         </div>
+
+        {expandedCategory ? (
+          <div className="mt-3 rounded-lg border border-[#E5E7EB] bg-slate-50/60 p-4">
+            <div className="flex flex-wrap gap-2">
+              {(grammarCategories.find((group) => group.category === expandedCategory)?.presets ?? []).map((preset) => (
+                <ChoiceChip key={preset.id} selected={form.grammar.includes(preset.label)} onClick={() => toggleGrammar(preset.label)}>
+                  {preset.label}
+                </ChoiceChip>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {customGrammarItems.length ? (
+          <div className="mt-3">
+            <div className="text-xs font-medium text-slate-500">自定义语法点</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {customGrammarItems.map((grammar) => (
+                <ChoiceChip key={grammar} selected onClick={() => toggleGrammar(grammar)}>
+                  {grammar}
+                </ChoiceChip>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <InlineAddField
           buttonLabel="添加语法点"
           onAdd={addCustomGrammar}
@@ -473,6 +520,15 @@ function PeopleSection({ title, description, children }: { title: string; descri
 }
 
 function PersonChoiceCard({ person, selected, onClick }: { person: PersonProfile; selected: boolean; onClick: () => void }) {
+  const displayName = person.chineseName ?? person.name;
+  const roleLabel = person.role === "teacher" ? "老师" : "学生";
+  const metaParts = [
+    person.englishName,
+    typeof person.age === "number" ? `${person.age} 岁` : null,
+    person.gender === "male" ? "男" : person.gender === "female" ? "女" : null,
+    roleLabel,
+  ].filter(Boolean);
+
   return (
     <button
       className={cn(
@@ -482,23 +538,17 @@ function PersonChoiceCard({ person, selected, onClick }: { person: PersonProfile
       onClick={onClick}
       type="button"
     >
-      {person.avatarUrl ? (
-        <Image alt="" className="size-14 rounded-full object-cover ring-4 ring-slate-50" height={56} src={person.avatarUrl} width={56} />
-      ) : (
-        <div className="size-14 rounded-full bg-slate-100" />
-      )}
+      <PersonAvatar avatarUrl={person.avatarUrl} gender={person.gender} name={displayName} seed={person.id} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <h4 className="truncate text-sm font-semibold text-slate-950">{person.role === "student" ? person.chineseName : person.name}</h4>
+          <h4 className="truncate text-sm font-semibold text-slate-950">{displayName}</h4>
           {selected ? (
             <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white">
               <Check className="size-3" />
             </span>
           ) : null}
         </div>
-        <p className="mt-1 text-xs text-slate-500">
-          {person.role === "student" ? `${person.englishName} · ${person.age} 岁` : person.gender === "male" ? "男老师" : person.gender === "female" ? "女老师" : "老师"}
-        </p>
+        <p className="mt-1 text-xs text-slate-500">{metaParts.join(" · ")}</p>
         <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600">{person.appearance || "暂无外貌描述"}</p>
       </div>
     </button>

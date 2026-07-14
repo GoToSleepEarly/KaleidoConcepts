@@ -4,19 +4,29 @@ import React from "react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, ChevronDown, LogOut, Sparkles, UsersRound } from "lucide-react";
+import { BookOpen, ChevronDown, ListChecks, LogOut, Sparkles, Tags, UsersRound } from "lucide-react";
 
 import { clearAuthSession, getStoredSession } from "@/lib/auth-session";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/people", label: "人物档案", icon: UsersRound, key: "people" },
+  { href: "/themes", label: "主题库", icon: Tags, key: "themes" },
+  { href: "/grammar", label: "语法点库", icon: ListChecks, key: "grammar" },
   { href: "/courses", label: "课程列表", icon: BookOpen, key: "courses" },
 ];
 
 function getRouteMeta(pathname: string) {
   if (pathname.startsWith("/people")) {
     return { title: "人物档案", activeKey: "people" };
+  }
+
+  if (pathname.startsWith("/themes")) {
+    return { title: "主题库", activeKey: "themes" };
+  }
+
+  if (pathname.startsWith("/grammar")) {
+    return { title: "语法点库", activeKey: "grammar" };
   }
 
   if (pathname === "/courses/new") {

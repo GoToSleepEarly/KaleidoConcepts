@@ -1,13 +1,27 @@
-import React from "react";
-import { ProtectedLayout } from "@/components/protected-layout";
-import { CourseHtmlPreview } from "@/features/courses/components/course-preview";
+import { redirect } from "next/navigation";
 
-export default async function CoursePage({ params }: { params: Promise<{ id: string }> }) {
+import { getDb } from "@/lib/server/db";
+import { getCoursePreview } from "@/lib/server/repositories/course-preview";
+import { PresenterDeckClient } from "@/features/courses/components/presenter-deck-client";
+
+export default async function CoursePresenterPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const db = getDb();
 
-  return (
-    <ProtectedLayout chromeless>
-      <CourseHtmlPreview courseId={id} />
-    </ProtectedLayout>
-  );
+  let preview;
+  try {
+    preview = await getCoursePreview(db, id);
+  } catch {
+    redirect("/courses");
+  }
+
+  if (preview.course.status !== "published") {
+    redirect(`/courses/${id}/create/preview`);
+  }
+
+  if (!preview) {
+    redirect("/courses");
+  }
+
+  return <PresenterDeckClient initial={preview} courseId={id} />;
 }
