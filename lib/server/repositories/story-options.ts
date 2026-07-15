@@ -16,7 +16,12 @@ export type StoryOptionsDb = {
       where: { id: string };
       select: { id: true; durationMinutes: true; selectedStoryOptionId: true };
     }) => Promise<CourseRecord | null>;
-    update?: (query: { where: { id: string }; data: { selectedStoryOptionId: string } }) => Promise<{ selectedStoryOptionId: string | null }>;
+    update?: (query: {
+      where: { id: string };
+      data:
+        | { selectedStoryOptionId: string }
+        | { status: "draft"; lessonDraftGenStatus: "idle"; lessonDraftGenStartedAt: null; lessonDraftGenError: null };
+    }) => Promise<{ selectedStoryOptionId: string | null }>;
   };
   courseStoryOption: {
     findMany?: (query: { where: { courseId: string }; orderBy: { createdAt: "asc" } }) => Promise<DbStoryOption[]>;
@@ -24,6 +29,21 @@ export type StoryOptionsDb = {
     deleteMany?: (query: { where: { courseId: string } }) => Promise<unknown>;
     createMany?: (query: { data: Array<StoryOption & { courseId: string }> }) => Promise<unknown>;
   };
+  courseLessonDraft?: {
+    findUnique?: (query: { where: { courseId: string } }) => Promise<{ courseId: string } | null>;
+    deleteMany?: (query: { where: { courseId: string } }) => Promise<unknown>;
+  };
+  courseResourcePlan?: {
+    deleteMany?: (query: { where: { courseId: string } }) => Promise<unknown>;
+  };
+  courseImage?: {
+    deleteMany?: (query: { where: { courseId: string } }) => Promise<unknown>;
+  };
+};
+
+export type UpdateStoryOptionsOptions = {
+  clearLessonDraft?: boolean;
+  removeImageDirectory?: (courseId: string) => Promise<void>;
 };
 
 export class StoryOptionsValidationError extends Error {
@@ -119,6 +139,11 @@ async function getCourseOrThrow(db: StoryOptionsDb, courseId: string) {
   return course;
 }
 
+async function checkLessonDraftExists(db: StoryOptionsDb, courseId: string) {
+  const draft = await db.courseLessonDraft?.findUnique?.({ where: { courseId } });
+  return Boolean(draft);
+}
+
 async function readOptions(db: StoryOptionsDb, courseId: string, selectedOptionId: string | null): Promise<StoryOptionsListResponse> {
   const records = await db.courseStoryOption.findMany?.({
     where: { courseId },
@@ -128,6 +153,7 @@ async function readOptions(db: StoryOptionsDb, courseId: string, selectedOptionI
   return {
     options: records?.map(toStoryOption) ?? [],
     selectedOptionId,
+    lessonDraftExists: await checkLessonDraftExists(db, courseId),
   };
 }
 
@@ -147,6 +173,24 @@ async function replaceStoryOptions(db: StoryOptionsDb, courseId: string, options
   });
 }
 
+async function clearDownstreamContent(db: StoryOptionsDb, courseId: string, removeImageDirectory?: (courseId: string) => Promise<void>) {
+  await db.courseImage?.deleteMany?.({ where: { courseId } });
+  await db.courseResourcePlan?.deleteMany?.({ where: { courseId } });
+  await db.courseLessonDraft?.deleteMany?.({ where: { courseId } });
+  await db.course.update?.({
+    where: { id: courseId },
+    data: { status: "draft", lessonDraftGenStatus: "idle", lessonDraftGenStartedAt: null, lessonDraftGenError: null },
+  });
+
+  if (removeImageDirectory) {
+    try {
+      await removeImageDirectory(courseId);
+    } catch (error) {
+      console.error(`清理课程图片目录失败：${courseId}`, error);
+    }
+  }
+}
+
 export async function saveGeneratedStoryOptions(db: StoryOptionsDb, courseId: string, options: StoryOption[], expectedChapterCount?: number) {
   const course = await getCourseOrThrow(db, courseId);
 
@@ -159,16 +203,23 @@ export async function saveGeneratedStoryOptions(db: StoryOptionsDb, courseId: st
   return readOptions(db, courseId, null);
 }
 
-export async function updateStoryOptions(db: StoryOptionsDb, courseId: string, options: StoryOption[], expectedChapterCount?: number) {
+export async function updateStoryOptions(
+  db: StoryOptionsDb,
+  courseId: string,
+  options: StoryOption[],
+  updateOptions?: UpdateStoryOptionsOptions,
+  expectedChapterCount?: number,
+) {
   const course = await getCourseOrThrow(db, courseId);
-
-  if (course.selectedStoryOptionId) {
-    throw new StoryOptionsLockedError();
-  }
 
   validateStoryOptions(options, expectedChapterCount ?? getExpectedChapterCount(course.durationMinutes));
   await replaceStoryOptions(db, courseId, options);
-  return readOptions(db, courseId, null);
+
+  if (updateOptions?.clearLessonDraft) {
+    await clearDownstreamContent(db, courseId, updateOptions.removeImageDirectory);
+  }
+
+  return readOptions(db, courseId, course.selectedStoryOptionId);
 }
 
 export async function selectStoryOption(db: StoryOptionsDb, courseId: string, optionId: string) {

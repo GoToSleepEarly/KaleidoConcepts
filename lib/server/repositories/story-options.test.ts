@@ -60,6 +60,9 @@ describe("story options repository", () => {
           },
           findMany: async () => options.map((option) => ({ ...option, courseId: "course-1" })),
         },
+        courseLessonDraft: {
+          findUnique: async () => null,
+        },
       },
       "course-1",
       options,
@@ -84,12 +87,105 @@ describe("story options repository", () => {
           },
           findMany: async () => options.map((option) => ({ ...option, courseId: "course-1" })),
         },
+        courseLessonDraft: {
+          findUnique: async () => null,
+        },
       },
       "course-1",
       options,
     );
 
     expect(saved.options[0]?.title).toBe("The Star Gate");
+    expect(saved.lessonDraftExists).toBe(false);
+  });
+
+  test("updates options even after a story option has been selected", async () => {
+    const saved = await updateStoryOptions(
+      {
+        course: {
+          findUnique: async () => ({ id: "course-1", durationMinutes: 30, selectedStoryOptionId: "option-2" }),
+        },
+        courseStoryOption: {
+          deleteMany: async ({ where }) => {
+            expect(where).toEqual({ courseId: "course-1" });
+          },
+          createMany: async ({ data }) => {
+            expect(data).toHaveLength(3);
+          },
+          findMany: async () => options.map((option) => ({ ...option, courseId: "course-1" })),
+        },
+        courseLessonDraft: {
+          findUnique: async () => ({ courseId: "course-1" }),
+        },
+      },
+      "course-1",
+      options,
+    );
+
+    expect(saved.selectedOptionId).toBe("option-2");
+    expect(saved.lessonDraftExists).toBe(true);
+  });
+
+  test("clears downstream lesson draft, resource plan and images when requested", async () => {
+    const calls: string[] = [];
+    const removedImageDirs: string[] = [];
+
+    const saved = await updateStoryOptions(
+      {
+        course: {
+          findUnique: async () => ({ id: "course-1", durationMinutes: 30, selectedStoryOptionId: "option-2" }),
+          update: async ({ where, data }) => {
+            calls.push("course.update");
+            expect(where).toEqual({ id: "course-1" });
+            expect(data).toEqual({
+              status: "draft",
+              lessonDraftGenStatus: "idle",
+              lessonDraftGenStartedAt: null,
+              lessonDraftGenError: null,
+            });
+            return { selectedStoryOptionId: "option-2" };
+          },
+        },
+        courseStoryOption: {
+          deleteMany: async ({ where }) => {
+            expect(where).toEqual({ courseId: "course-1" });
+          },
+          createMany: async ({ data }) => {
+            expect(data).toHaveLength(3);
+          },
+          findMany: async () => options.map((option) => ({ ...option, courseId: "course-1" })),
+        },
+        courseLessonDraft: {
+          findUnique: async () => null,
+          deleteMany: async ({ where }) => {
+            calls.push("lessonDraft.deleteMany");
+            expect(where).toEqual({ courseId: "course-1" });
+          },
+        },
+        courseResourcePlan: {
+          deleteMany: async ({ where }) => {
+            calls.push("resourcePlan.deleteMany");
+            expect(where).toEqual({ courseId: "course-1" });
+          },
+        },
+        courseImage: {
+          deleteMany: async ({ where }) => {
+            calls.push("image.deleteMany");
+            expect(where).toEqual({ courseId: "course-1" });
+          },
+        },
+      },
+      "course-1",
+      options,
+      { clearLessonDraft: true, removeImageDirectory: async (courseId) => void removedImageDirs.push(courseId) },
+    );
+
+    expect(calls).toContain("lessonDraft.deleteMany");
+    expect(calls).toContain("resourcePlan.deleteMany");
+    expect(calls).toContain("image.deleteMany");
+    expect(calls).toContain("course.update");
+    expect(removedImageDirs).toEqual(["course-1"]);
+    expect(saved.lessonDraftExists).toBe(false);
   });
 
   test("selects one saved story option once", async () => {
@@ -134,11 +230,18 @@ describe("story options repository", () => {
             return options.map((option) => ({ ...option, courseId: "course-1" }));
           },
         },
+        courseLessonDraft: {
+          findUnique: async ({ where }) => {
+            expect(where).toEqual({ courseId: "course-1" });
+            return { courseId: "course-1" };
+          },
+        },
       },
       "course-1",
     );
 
     expect(result.selectedOptionId).toBe("option-2");
     expect(result.options).toHaveLength(3);
+    expect(result.lessonDraftExists).toBe(true);
   });
 });

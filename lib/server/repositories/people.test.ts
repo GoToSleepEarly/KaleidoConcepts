@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { createPerson, listPeople, updatePerson } from "./people";
+import { archivePerson, createPerson, listPeople, PersonNotFoundError, updatePerson } from "./people";
 
 describe("people repository", () => {
   test("lists active people with optional role filtering", async () => {
@@ -192,5 +192,70 @@ describe("people repository", () => {
     );
 
     expect(updated.updatedAt).toBe("2026-07-03T09:00:00.000Z");
+  });
+
+  test("archives an existing person via soft delete", async () => {
+    const calls: string[] = [];
+    let archivedAt: Date | null = null;
+
+    await archivePerson(
+      {
+        person: {
+          findUnique: async ({ where }: { where: { id: string } }) => {
+            calls.push("findUnique");
+            expect(where).toEqual({ id: "student-1" });
+            return {
+              id: "student-1",
+              role: "student",
+              name: "Tom",
+              chineseName: "汤姆",
+              englishName: "Tom",
+              age: 8,
+              gender: "male",
+              appearance: "短发",
+              interests: [],
+              learningGoal: null,
+              notes: null,
+              avatarUrl: null,
+              archivedAt: null,
+              createdAt: new Date("2026-07-01T09:00:00.000Z"),
+              updatedAt: new Date("2026-07-01T09:00:00.000Z"),
+            };
+          },
+          update: async ({ where, data }: { where: { id: string }; data: { archivedAt: Date } }) => {
+            calls.push("update");
+            expect(where).toEqual({ id: "student-1" });
+            expect(data).toHaveProperty("archivedAt");
+            archivedAt = (data as { archivedAt: Date }).archivedAt;
+            return {} as never;
+          },
+        },
+      } as never,
+      "student-1",
+    );
+
+    expect(calls).toEqual(["findUnique", "update"]);
+    expect(archivedAt).toBeInstanceOf(Date);
+  });
+
+  test("throws when archiving a missing person and never calls update", async () => {
+    let updateCalled = false;
+
+    await expect(
+      archivePerson(
+        {
+          person: {
+            findUnique: async () => null,
+            update: async () => {
+              updateCalled = true;
+              return {} as never;
+            },
+          },
+        } as never,
+        "missing-person",
+      ),
+    ).rejects.toBeInstanceOf(PersonNotFoundError);
+
+    expect(updateCalled).toBe(false);
   });
 });

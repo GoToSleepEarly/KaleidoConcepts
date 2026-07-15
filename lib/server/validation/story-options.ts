@@ -17,4 +17,5 @@ export const storyOptionSchema = z.object({
 
 export const storyOptionsPayloadSchema = z.object({
   options: z.array(storyOptionSchema).length(3),
+  clearLessonDraft: z.boolean().optional(),
 });

@@ -15,6 +15,7 @@ const course: CourseBasicDetail = {
   grammar: ["Past Simple"],
   storyIdeaMode: "ai",
   storyIdea: "",
+  llmModel: "deepseek_chat",
   status: "draft",
 };
 

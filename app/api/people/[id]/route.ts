@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getDb } from "@/lib/server/db";
-import { updatePerson } from "@/lib/server/repositories/people";
+import { archivePerson, PersonNotFoundError, updatePerson } from "@/lib/server/repositories/people";
 
 const genderSchema = z.enum(["male", "female"]);
 
@@ -48,5 +48,20 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }
 
     return NextResponse.json({ message: "人物保存失败" }, { status: 500 });
+  }
+}
+
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+
+  try {
+    await archivePerson(getDb(), id);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    if (error instanceof PersonNotFoundError) {
+      return NextResponse.json({ message: error.message }, { status: 404 });
+    }
+
+    return NextResponse.json({ message: "人物删除失败" }, { status: 500 });
   }
 }

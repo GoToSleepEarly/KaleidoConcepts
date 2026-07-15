@@ -24,15 +24,6 @@ type LessonDraftGenerationContext = {
   storyOption: StoryOption;
 };
 type ChatMessage = { role: "system" | "user"; content: string };
-type DeepSeekRequestBody = {
-  model: string;
-  messages: ChatMessage[];
-  max_tokens: number;
-  response_format: { type: "json_object" };
-  thinking: { type: "enabled" | "disabled" };
-  reasoning_effort?: "medium";
-  temperature?: number;
-};
 
 const nonEmpty = z
   .string()
@@ -241,19 +232,12 @@ export function buildLessonContentPrompt(
     "The answer must have no surrounding whitespace.",
     "vocab_hint only outputs type, answer, and a concise Chinese hint. Its target is derived by code.",
     "phrase_hint only outputs type, answer, and a concise Chinese hint. Its target is derived by code.",
-    "Closing Reading must be a coherent concluding reading of about 150 English words, normally 130-170 words. It must not contain exercises or read like a summary list.",
+    "Closing Reading must be a coherent concluding reading of about 150 English words. It must not contain exercises.",
     "Story text must not contain blanks, question numbers, Markdown, HTML, or answer labels.",
     "Do not output sentenceId, exerciseId, occurrence, order, pattern, letterCount, images, or lesson-plan fields.",
     "",
     "Output shape example (expand it to the required full lesson):",
     JSON.stringify(schemaExample, null, 2),
-    "",
-    "Before returning, silently self-check every chapter:",
-    "- 120-160 English words and exactly 2 paragraphs.",
-    "- Exactly 8 exercises: 6 given_word_blank, 1 vocab_hint, 1 phrase_hint.",
-    "- At most one exercise per sentence, no repeated answers, and all required learning targets covered across the lesson.",
-    "- Closing Reading is coherent, exercise-free, and about 150 English words.",
-    "- JSON matches the schema and contains no extra fields.",
     "",
     "Return JSON only.",
   ].join("\n");
@@ -367,36 +351,55 @@ function canonicalizePlanTargets(plan: AiLessonContentPlan, targets: string[]) {
   );
 }
 
-export function buildDeepSeekRequestBody(
-  messages: ChatMessage[],
-  _durationMinutes: number,
-  _chapterCount = 1,
-): DeepSeekRequestBody {
-  void _durationMinutes;
-  void _chapterCount;
-  const body: DeepSeekRequestBody = {
-    model: process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro",
-    messages,
-    max_tokens: 48000,
+function buildQuickRouterResponsesRequestBody(messages: ChatMessage[]) {
+  return {
+    model: process.env.QUICKROUTER_LESSON_MODEL ?? process.env.QUICKROUTER_RESPONSES_MODEL ?? "gpt-5.5",
+    input: messages,
+    max_output_tokens: 8000,
     response_format: { type: "json_object" },
-    thinking: { type: "enabled" },
-    reasoning_effort: "medium",
+    temperature: 0.2,
   };
+}
 
-  if (process.env.DEEPSEEK_THINKING === "disabled") {
-    body.thinking = { type: "disabled" };
-    delete body.reasoning_effort;
-    body.temperature = 0.2;
-  }
+type QuickRouterResponsesData = {
+  choices?: Array<{ message?: { content?: string | null } }>;
+  output?: Array<{ content?: Array<{ text?: string; type?: string }> }>;
+  error?: { message?: string };
+  message?: string;
+};
 
-  return body;
+async function callQuickRouterResponses(messages: ChatMessage[]) {
+  const apiKey = process.env.QUICKROUTER_API_KEY;
+  if (!apiKey) throw new Error("AI 服务未配置");
+  const response = await fetch("https://api.quickrouter.ai/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(buildQuickRouterResponsesRequestBody(messages)),
+  });
+  const data = (await response.json().catch(() => ({}))) as QuickRouterResponsesData;
+  if (!response.ok) throw new Error(data.error?.message || data.message || `AI 请求失败：HTTP ${response.status}`);
+  const content =
+    data.choices?.[0]?.message?.content ??
+    data.output
+      ?.flatMap((item) => item.content ?? [])
+      .map((item) => item.text)
+      .filter(Boolean)
+      .join("\n");
+  if (!content) throw new LessonDraftValidationError("AI 未返回课文内容，请重试生成");
+  return content;
 }
 
 async function callDeepSeek(
   messages: ChatMessage[],
-  durationMinutes: number,
-  chapterCount: number,
+  _durationMinutes: number,
+  _chapterCount: number,
 ) {
+  void _durationMinutes;
+  void _chapterCount;
   const apiKey = process.env.DEEPSEEK_API_KEY;
   const baseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com";
   if (!apiKey) throw new Error("AI 服务未配置");
@@ -408,9 +411,13 @@ async function callDeepSeek(
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(
-        buildDeepSeekRequestBody(messages, durationMinutes, chapterCount),
-      ),
+      body: JSON.stringify({
+        model: process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
+        messages,
+        max_tokens: 8000,
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+      }),
     },
   );
   if (!response.ok)
@@ -418,22 +425,15 @@ async function callDeepSeek(
   const data = (await response.json()) as {
     choices?: Array<{
       finish_reason?: string;
-      message?: { content?: string | null; reasoning_content?: string | null };
+      message?: { content?: string | null };
     }>;
-    usage?: { completion_tokens?: number; total_tokens?: number };
   };
   const choice = data.choices?.[0];
   if (choice?.finish_reason === "length")
     throw new LessonDraftValidationError(
-      "AI 输出达到长度上限，系统已提高长课程额度，请重试生成",
+      "AI 输出达到长度上限，请重试生成",
     );
   if (!choice?.message?.content) {
-    console.error("DeepSeek returned no lesson content", {
-      finishReason: choice?.finish_reason ?? null,
-      reasoningLength: choice?.message?.reasoning_content?.length ?? 0,
-      completionTokens: data.usage?.completion_tokens ?? null,
-      totalTokens: data.usage?.total_tokens ?? null,
-    });
     throw new LessonDraftValidationError("AI 未返回课文内容，请重试生成");
   }
   return choice.message.content;
@@ -501,7 +501,7 @@ function mockLessonDraft(context: LessonDraftGenerationContext): LessonDraft {
 export async function generateLessonDraft(
   context: LessonDraftGenerationContext,
 ): Promise<LessonDraft> {
-  if (process.env.DEEPSEEK_API_KEY === "mock")
+  if (process.env.QUICKROUTER_API_KEY === "mock" || process.env.DEEPSEEK_API_KEY === "mock")
     return validateLessonDraft(mockLessonDraft(context), context.storyOption);
   const messages: ChatMessage[] = [
     {
@@ -511,11 +511,13 @@ export async function generateLessonDraft(
     },
     { role: "user", content: buildLessonContentPrompt(context) },
   ];
-  const content = await callDeepSeek(
-    messages,
-    context.course.durationMinutes,
-    context.storyOption.chapters.length,
-  );
+
+  const useGpt55 = context.course.llmModel === "gpt_5_5" && process.env.QUICKROUTER_API_KEY;
+  const llmCall = useGpt55
+    ? callQuickRouterResponses(messages)
+    : callDeepSeek(messages, context.course.durationMinutes, context.storyOption.chapters.length);
+
+  const content = await llmCall;
   try {
     const plan = parseLessonContentPlan(parseJsonObject(content));
     const targets = allowedTargets(context);

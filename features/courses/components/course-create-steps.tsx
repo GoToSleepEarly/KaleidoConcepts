@@ -20,8 +20,8 @@ const steps: CreateStep[] = [
 
 export function CourseCreateSteps({ currentStep, courseId }: { currentStep: number; courseId?: string }) {
   return (
-    <nav className="rounded-lg border border-[#E5E7EB] bg-white px-5 py-4 shadow-sm" aria-label="课程创建步骤">
-      <ol className="grid gap-3 lg:grid-cols-5">
+    <nav className="rounded-xl border border-border bg-card px-5 py-4 shadow-sm" aria-label="课程创建步骤">
+      <ol className="grid gap-2 lg:grid-cols-5">
         {steps.map((item) => {
           const isCurrent = item.step === currentStep;
           const isDone = item.step < currentStep;
@@ -29,25 +29,25 @@ export function CourseCreateSteps({ currentStep, courseId }: { currentStep: numb
           const content = (
             <span
               className={cn(
-                "flex min-h-12 items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors duration-200",
-                isCurrent && "bg-violet-50 text-violet-700",
-                isDone && "text-slate-700",
-                !isCurrent && !isDone && "text-slate-400",
-                canLink && "hover:bg-slate-50",
+                "flex min-h-[52px] items-center gap-3 rounded-lg px-3 py-2 text-left transition-all duration-200 ease-out-expo",
+                isCurrent && "bg-primary-50 text-primary",
+                isDone && "text-foreground hover:bg-secondary",
+                !isCurrent && !isDone && "text-muted-foreground",
+                canLink && "cursor-pointer",
               )}
             >
               <span
                 className={cn(
-                  "flex size-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold",
-                  isCurrent && "border-violet-600 bg-violet-600 text-white",
-                  isDone && "border-emerald-500 bg-emerald-50 text-emerald-600",
-                  !isCurrent && !isDone && "border-slate-200 bg-slate-50 text-slate-400",
+                  "flex size-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-semibold transition-all duration-200",
+                  isCurrent && "border-primary bg-primary text-primary-foreground ring-4 ring-primary/10",
+                  isDone && "border-success bg-success text-success-foreground",
+                  !isCurrent && !isDone && "border-border bg-secondary text-muted-foreground",
                 )}
               >
                 {isDone ? <Check className="size-3.5" /> : item.step}
               </span>
               <span>
-                <span className="block text-xs font-medium">Step {item.step}</span>
+                <span className="block text-xs font-medium opacity-80">Step {item.step}</span>
                 <span className="block text-sm font-semibold">{item.label}</span>
               </span>
             </span>

@@ -11,6 +11,7 @@ export const courseBasicInputSchema = z
     grammar: z.array(z.string().trim().min(1)).min(1),
     storyIdeaMode: z.enum(["manual", "ai"]),
     storyIdea: z.string().optional(),
+    llmModel: z.enum(["deepseek_chat", "gpt_5_5"]).default("deepseek_chat"),
   })
   .superRefine((value, context) => {
     if (value.storyIdeaMode === "manual" && !value.storyIdea?.trim()) {

@@ -15,6 +15,7 @@ const course: CourseBasicDetail = {
   grammar: ["Past Simple", "There be"],
   storyIdeaMode: "manual",
   storyIdea: "老师和学生尤在博物馆遇见李白，一起找回月光诗卷。",
+  llmModel: "deepseek_chat",
   status: "draft",
 };
 

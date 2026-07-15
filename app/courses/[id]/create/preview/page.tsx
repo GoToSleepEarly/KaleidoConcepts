@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { ArrowLeft, Download, Save, Send } from "lucide-react";
 
+import { ProtectedLayout } from "@/components/protected-layout";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
 import { CourseSlideDeck } from "@/features/courses/components/course-slide-deck";
 import { PropertyPanel } from "@/features/courses/components/preview-editor/property-panel";
@@ -13,6 +17,7 @@ import type {
   CoursePreviewResponse,
   SlideTextOverride,
 } from "@/lib/contracts/api";
+import { cn } from "@/lib/utils";
 import { exportSlidesToPDF } from "@/lib/utils/pdf-export";
 
 type PreviewMode = "html" | "pdf";
@@ -163,24 +168,33 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
 
   if (loading && !data) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-slate-500">加载预览中…</p>
-      </div>
+      <ProtectedLayout>
+        <div className="mx-auto max-w-6xl space-y-6">
+          <CourseCreateSteps currentStep={5} courseId={courseId ?? undefined} />
+          <div className="flex min-h-[320px] items-center justify-center rounded-xl border border-border bg-card">
+            <div className="flex items-center gap-3 text-muted-foreground">
+              <Spinner />
+              <span className="text-sm font-medium">加载预览中…</span>
+            </div>
+          </div>
+        </div>
+      </ProtectedLayout>
     );
   }
 
   if (error || !data || !draftPresentation || !courseId) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4">
-        <p className="text-red-600">{error ?? "加载失败"}</p>
-        <button
-          type="button"
-          onClick={() => courseId && loadPreview(courseId)}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-        >
-          重试
-        </button>
-      </div>
+      <ProtectedLayout>
+        <div className="mx-auto max-w-6xl space-y-6">
+          <CourseCreateSteps currentStep={5} courseId={courseId ?? undefined} />
+          <div className="flex min-h-[320px] flex-col items-center justify-center gap-4 rounded-xl border border-border bg-card text-center">
+            <p className="text-sm text-destructive">{error ?? "加载失败"}</p>
+            <Button onClick={() => courseId && loadPreview(courseId)} variant="outline">
+              重试
+            </Button>
+          </div>
+        </div>
+      </ProtectedLayout>
     );
   }
 
@@ -201,89 +215,120 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
   })();
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col print:bg-white print:p-0">
-      {/* Top bar */}
-      <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between gap-4 print:hidden">
-        <div className="flex-1">
-          <CourseCreateSteps currentStep={5} courseId={courseId} />
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-sm">
-            <button
-              type="button"
-              onClick={() => setMode("html")}
-              className={`px-3 py-1.5 transition ${
-                mode === "html" ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              课件预览
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("pdf")}
-              className={`px-3 py-1.5 transition ${
-                mode === "pdf" ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              打印预览
-            </button>
-          </div>
-          {mode === "pdf" && (
-            <button
-              type="button"
-              onClick={handleDownloadPdf}
-              disabled={downloadingPdf}
-              className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition disabled:opacity-50"
-            >
-              {downloadingPdf ? "生成中…" : "下载 PDF"}
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/courses/${courseId}/create/resources`}
-            className="px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition"
-          >
-            返回 Step 4
-          </Link>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || !hasUnsavedChanges}
-            className="px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition disabled:opacity-50"
-          >
-            {saving ? "保存中…" : "保存草稿"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowPublishConfirm(true)}
-            disabled={publishing}
-            className="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition disabled:opacity-50"
-          >
-            {publishing ? "发布中…" : "发布课程"}
-          </button>
-        </div>
-      </header>
+    <ProtectedLayout>
+      <div className="mx-auto max-w-6xl space-y-6">
+        <CourseCreateSteps currentStep={5} courseId={courseId} />
 
-      {/* Main area */}
-      <div className="flex-1 flex overflow-hidden print:overflow-visible print:block">
-        {/* Preview area */}
-        <main className="flex-1 p-6 overflow-auto print:p-0 print:overflow-visible">
-          {mode === "html" ? (
-            <div className="max-w-6xl mx-auto h-[calc(100vh-120px)]">
-              <CourseSlideDeck
-                pages={data.pages}
-                mode="html"
-                canEdit={data.canEdit}
-                courseId={courseId}
-                selectedPageId={selectedPageId ?? undefined}
-                onSelectPage={(id) => setSelectedPageId(id)}
-                variant="editor"
-                presentation={draftPresentation}
-              />
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <Button asChild variant="outline" size="sm" className="mb-4">
+              <Link href={`/courses/${courseId}/create/resources`}>
+                <ArrowLeft className="size-4" />
+                返回资源生成
+              </Link>
+            </Button>
+            <h2 className="text-xl font-semibold tracking-tight text-foreground">课程预览与发布</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              检查课件版式与文本框，确认无误后发布进入授课模式。
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex overflow-hidden rounded-lg border border-border text-sm">
+              <button
+                type="button"
+                onClick={() => setMode("html")}
+                className={cn(
+                  "px-3 py-1.5 transition-colors duration-200",
+                  mode === "html"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-card text-muted-foreground hover:bg-secondary",
+                )}
+              >
+                课件预览
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("pdf")}
+                className={cn(
+                  "px-3 py-1.5 transition-colors duration-200",
+                  mode === "pdf"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-card text-muted-foreground hover:bg-secondary",
+                )}
+              >
+                打印预览
+              </button>
             </div>
-          ) : (
-            <div className="max-w-5xl mx-auto">
+            {mode === "pdf" ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadPdf}
+                disabled={downloadingPdf}
+                loading={downloadingPdf}
+              >
+                <Download className="size-4" />
+                下载 PDF
+              </Button>
+            ) : null}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSave}
+              disabled={saving || !hasUnsavedChanges}
+              loading={saving}
+            >
+              <Save className="size-4" />
+              保存草稿
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setShowPublishConfirm(true)}
+              disabled={publishing}
+              loading={publishing}
+            >
+              <Send className="size-4" />
+              发布课程
+            </Button>
+          </div>
+        </div>
+
+        {error ? (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {error}
+          </div>
+        ) : null}
+
+        {mode === "html" ? (
+          <div className="flex min-h-[520px] gap-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <main className="flex-1 overflow-auto p-6">
+              <div className="mx-auto h-[calc(100vh-22rem)] min-h-[440px] max-w-4xl">
+                <CourseSlideDeck
+                  pages={data.pages}
+                  mode="html"
+                  canEdit={data.canEdit}
+                  courseId={courseId}
+                  selectedPageId={selectedPageId ?? undefined}
+                  onSelectPage={(id) => setSelectedPageId(id)}
+                  variant="editor"
+                  presentation={draftPresentation}
+                />
+              </div>
+            </main>
+            <aside className="w-80 shrink-0 border-l border-border">
+              <PropertyPanel
+                selectedPage={selectedPage}
+                presentation={draftPresentation}
+                onChange={handlePresentationChange}
+                onSlideOverrideChange={handleSlideOverride}
+                onSlideReset={handleSlideReset}
+                hasUnsavedChanges={hasUnsavedChanges}
+              />
+            </aside>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+            <div className="mx-auto max-w-4xl">
               <CourseSlideDeck
                 pages={data.pages}
                 mode="pdf"
@@ -293,53 +338,28 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
                 presentation={draftPresentation}
               />
             </div>
-          )}
-        </main>
-
-        {/* Right property panel */}
-        {mode === "html" && (
-          <aside className="w-80 bg-white border-l border-slate-200 print:hidden">
-            <PropertyPanel
-              selectedPage={selectedPage}
-              presentation={draftPresentation}
-              onChange={handlePresentationChange}
-              onSlideOverrideChange={handleSlideOverride}
-              onSlideReset={handleSlideReset}
-              hasUnsavedChanges={hasUnsavedChanges}
-            />
-          </aside>
+          </div>
         )}
       </div>
 
-      {/* Publish confirm modal */}
-      {showPublishConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">确认发布课程？</h3>
-            <p className="text-sm text-slate-600 mb-5">
+      {showPublishConfirm ? (
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-foreground/40 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-lg">
+            <h3 className="mb-2 text-lg font-semibold text-foreground">确认发布课程？</h3>
+            <p className="mb-5 text-sm text-muted-foreground">
               发布后课程将进入授课模式，课件内容不可再编辑。如需修改，请重新回到创建流程。
             </p>
             <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowPublishConfirm(false)}
-                className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50"
-                disabled={publishing}
-              >
+              <Button variant="outline" onClick={() => setShowPublishConfirm(false)} disabled={publishing}>
                 取消
-              </button>
-              <button
-                type="button"
-                onClick={handlePublish}
-                disabled={publishing}
-                className="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-              >
-                {publishing ? "发布中…" : "确认发布"}
-              </button>
+              </Button>
+              <Button onClick={handlePublish} disabled={publishing} loading={publishing}>
+                确认发布
+              </Button>
             </div>
           </div>
         </div>
-      )}
-    </div>
+      ) : null}
+    </ProtectedLayout>
   );
 }

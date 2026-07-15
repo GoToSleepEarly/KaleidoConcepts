@@ -6,7 +6,6 @@ import type {
   StoryOption,
 } from "@/lib/contracts/api";
 import {
-  buildDeepSeekRequestBody,
   buildLessonContentPrompt,
   countEnglishWords,
   generateLessonDraft,
@@ -15,19 +14,21 @@ import {
 import type { AiLessonContentPlan } from "./lesson-content-compiler";
 import { renderChapterReadingText } from "./lesson-content-compiler";
 
-const course: CourseBasicDetail = {
+const baseCourse = {
   id: "course-1",
   title: "Moonlight",
   teacherId: "teacher-1",
   studentIds: ["student-1"],
-  englishLevel: "A1",
-  durationMinutes: 45,
+  englishLevel: "A1" as const,
+  durationMinutes: 45 as const,
   theme: "唐代诗歌博物馆",
   grammar: ["Past Simple", "There be", "Modals"],
-  storyIdeaMode: "manual",
+  storyIdeaMode: "manual" as const,
   storyIdea: "找回诗卷",
-  status: "draft",
+  status: "draft" as const,
 };
+const deepseekCourse: CourseBasicDetail = { ...baseCourse, llmModel: "deepseek_chat" };
+const gpt55Course: CourseBasicDetail = { ...baseCourse, llmModel: "gpt_5_5" };
 const teacher: PersonProfile = {
   id: "teacher-1",
   role: "teacher",
@@ -53,7 +54,8 @@ const storyOption: StoryOption = {
   storyline: "老师和学生找回诗卷。",
   chapters: [{ title: "诗卷变暗", summary: "诗卷失去光亮。" }],
 };
-const context = { course, teacher, students: [student], storyOption };
+const deepseekContext = { course: deepseekCourse, teacher, students: [student], storyOption };
+const gpt55Context = { course: gpt55Course, teacher, students: [student], storyOption };
 const chapterExpansion = Array.from({ length: 75 }, () => "carefully").join(
   " ",
 );
@@ -97,7 +99,6 @@ const aiPlan: AiLessonContentPlan = {
                 {
                   type: "vocab_hint",
                   answer: "clue",
-                  target: "Vocabulary",
                   hint: "线索",
                 },
                 { type: "text", text: "." },
@@ -125,10 +126,11 @@ const aiPlan: AiLessonContentPlan = {
               parts: [
                 { type: "text", text: "They " },
                 {
-                  type: "choice_blank",
+                  type: "given_word_blank",
                   answer: "must",
                   target: "Modals",
-                  choices: ["must", "might"],
+                  prompt: "must",
+                  baseWord: "must",
                 },
                 { type: "text", text: " follow the light." },
               ],
@@ -139,7 +141,6 @@ const aiPlan: AiLessonContentPlan = {
                 {
                   type: "phrase_hint",
                   answer: "give up",
-                  target: "Verb Phrases",
                   hint: "放弃",
                 },
                 { type: "text", text: "." },
@@ -182,6 +183,24 @@ const aiPlan: AiLessonContentPlan = {
   },
 };
 
+function quickRouterResponse(content: unknown) {
+  return new Response(
+    JSON.stringify({
+      output: [
+        {
+          content: [
+            {
+              text: JSON.stringify(content),
+              type: "output_text",
+            },
+          ],
+        },
+      ],
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function deepSeekResponse(content: unknown) {
   return new Response(
     JSON.stringify({
@@ -204,7 +223,7 @@ afterEach(() => {
 
 describe("lesson content prompt", () => {
   test("defines one exercise part as the source of clean text and forbids anchors", () => {
-    const prompt = buildLessonContentPrompt(context);
+    const prompt = buildLessonContentPrompt(deepseekContext);
     expect(prompt).toContain("Level: A1");
     expect(prompt).toContain(
       "Code will concatenate text.text and exercise.answer",
@@ -216,9 +235,6 @@ describe("lesson content prompt", () => {
     );
     expect(prompt).toContain(
       "Closing Reading must be a coherent concluding reading of about 150 English words",
-    );
-    expect(prompt).toContain(
-      "Before returning, silently self-check every chapter",
     );
     expect(prompt).toContain("Choose one dominant narrative tense");
     expect(prompt).toContain(
@@ -247,56 +263,32 @@ describe("lesson content schema", () => {
   });
 });
 
-describe("lesson draft DeepSeek request", () => {
-  test("uses medium-effort thinking with a balanced long-output budget", () => {
-    expect(
-      buildDeepSeekRequestBody([{ role: "user", content: "Generate." }], 45),
-    ).toMatchObject({
-      model: "deepseek-v4-pro",
-      thinking: { type: "enabled" },
-      reasoning_effort: "medium",
-      response_format: { type: "json_object" },
-      max_tokens: 48000,
-    });
-    expect(
-      buildDeepSeekRequestBody([{ role: "user", content: "Generate." }], 60)
-        .max_tokens,
-    ).toBe(48000);
-    expect(
-      buildDeepSeekRequestBody([{ role: "user", content: "Generate." }], 45, 5)
-        .max_tokens,
-    ).toBe(48000);
-  });
-
-  test("disables thinking only through explicit configuration", () => {
-    vi.stubEnv("DEEPSEEK_THINKING", "disabled");
-    const body = buildDeepSeekRequestBody(
-      [{ role: "user", content: "Generate." }],
-      45,
-      5,
-    );
-    expect(body).toMatchObject({
-      thinking: { type: "disabled" },
-      temperature: 0.2,
-      max_tokens: 48000,
-    });
-    expect(body).not.toHaveProperty("reasoning_effort");
-  });
-});
-
 describe("lesson draft generation", () => {
-  test("generates clean text and embedded exercises from one AI structure", async () => {
+  test("generates clean text and embedded exercises via DeepSeek (default)", async () => {
     vi.stubEnv("DEEPSEEK_API_KEY", "test-key");
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => deepSeekResponse(aiPlan)),
     );
-    const draft = await generateLessonDraft(context);
+    const draft = await generateLessonDraft(deepseekContext);
     expect(draft.chapters[0].paragraphs[0].sentences[0].text).toBe(
       "MsPANTeacher and YouStudent visited the museum.",
     );
     expect(renderChapterReadingText(draft.chapters[0])).toContain(
       "(1) ________ (visit)",
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("uses GPT-5.5 via QuickRouter when selected", async () => {
+    vi.stubEnv("QUICKROUTER_API_KEY", "test-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => quickRouterResponse(aiPlan)),
+    );
+    const draft = await generateLessonDraft(gpt55Context);
+    expect(draft.chapters[0].paragraphs[0].sentences[0].text).toBe(
+      "MsPANTeacher and YouStudent visited the museum.",
     );
     expect(fetch).toHaveBeenCalledTimes(1);
   });
@@ -316,7 +308,7 @@ describe("lesson draft generation", () => {
     const errorSpy = vi
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
-    await expect(generateLessonDraft(context)).rejects.toThrow(
+    await expect(generateLessonDraft(deepseekContext)).rejects.toThrow(
       "has 2 exercise parts; max 1",
     );
     expect(errorSpy).toHaveBeenCalledWith(
@@ -336,7 +328,7 @@ describe("lesson draft generation", () => {
       vi.fn(async () => deepSeekResponse(shortPlan)),
     );
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    await expect(generateLessonDraft(context)).rejects.toThrow(
+    await expect(generateLessonDraft(deepseekContext)).rejects.toThrow(
       "课文明显偏离 120-160 词目标",
     );
   });
@@ -368,7 +360,7 @@ describe("lesson draft generation", () => {
       "fetch",
       vi.fn(async () => deepSeekResponse(nearTarget)),
     );
-    await expect(generateLessonDraft(context)).resolves.toMatchObject({
+    await expect(generateLessonDraft(deepseekContext)).resolves.toMatchObject({
       schemaVersion: "lesson_content_v1",
     });
   });
@@ -381,41 +373,15 @@ describe("lesson draft generation", () => {
         async () =>
           new Response(
             JSON.stringify({
-              choices: [
-                { finish_reason: "stop", message: { content: "{bad json" } },
-              ],
+              choices: [{ finish_reason: "stop", message: { content: "{bad json" } }],
             }),
             { status: 200 },
           ),
       ),
     );
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    await expect(generateLessonDraft(context)).rejects.toThrow(
+    await expect(generateLessonDraft(deepseekContext)).rejects.toThrow(
       "AI 返回的 JSON 无法解析，请重试生成",
-    );
-  });
-
-  test("reports a length-limited empty response before treating it as generic empty content", async () => {
-    vi.stubEnv("DEEPSEEK_API_KEY", "test-key");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({
-              choices: [
-                {
-                  finish_reason: "length",
-                  message: { content: null, reasoning_content: "thinking" },
-                },
-              ],
-            }),
-            { status: 200 },
-          ),
-      ),
-    );
-    await expect(generateLessonDraft(context)).rejects.toThrow(
-      "AI 输出达到长度上限",
     );
   });
 });

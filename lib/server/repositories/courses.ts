@@ -5,6 +5,7 @@ import type {
   CourseListItem,
   CourseStatus,
   EnglishLevel,
+  LlmModel,
   PersonProfile,
   PersonRole,
   StoryIdeaMode,
@@ -44,6 +45,7 @@ type DbCourseBasic = {
   grammar: string[];
   storyIdeaMode: StoryIdeaMode;
   storyIdea: string | null;
+  llmModel: LlmModel;
   status: CourseStatus;
   people: Array<{
     personId: string;
@@ -74,12 +76,20 @@ type CourseBasicWriteData = {
   grammar: string[];
   storyIdeaMode: StoryIdeaMode;
   storyIdea: string | null;
+  llmModel: LlmModel;
 };
 
 export class CourseBasicValidationError extends Error {
   constructor(message = "课程基础信息不完整") {
     super(message);
     this.name = "CourseBasicValidationError";
+  }
+}
+
+export class CourseNotFoundError extends Error {
+  constructor(message = "课程不存在") {
+    super(message);
+    this.name = "CourseNotFoundError";
   }
 }
 
@@ -132,6 +142,7 @@ export type CoursesDb = {
         };
       };
     }) => Promise<DbCourseBasic | null>;
+    delete?: (query: { where: { id: string } }) => Promise<{ id: string }>;
   };
   person?: {
     findMany: (query: {
@@ -196,6 +207,7 @@ function toCourseBasicWriteData(input: CourseBasicInput): CourseBasicWriteData {
     grammar: uniqueValues(input.grammar.map(normalizeText).filter(Boolean)),
     storyIdeaMode: input.storyIdeaMode,
     storyIdea: input.storyIdeaMode === "manual" ? normalizeOptionalText(input.storyIdea) : null,
+    llmModel: input.llmModel ?? "deepseek_chat",
   };
 }
 
@@ -278,6 +290,7 @@ function toCourseBasicDetail(course: DbCourseBasic): CourseBasicDetail {
     grammar: course.grammar,
     storyIdeaMode: course.storyIdeaMode,
     storyIdea: course.storyIdea ?? undefined,
+    llmModel: course.llmModel,
     status: course.status,
   };
 }
@@ -436,6 +449,31 @@ export async function getCourseBasic(db: CoursesDb, id: string) {
   });
 
   return course ? toCourseBasicDetail(course) : null;
+}
+
+export async function deleteCourse(db: CoursesDb, id: string) {
+  if (!db.course.findUnique || !db.course.delete) {
+    throw new CourseNotFoundError();
+  }
+
+  const existing = await db.course.findUnique({
+    where: { id },
+    include: {
+      people: {
+        include: {
+          person: true,
+        },
+      },
+    },
+  });
+
+  if (!existing) {
+    throw new CourseNotFoundError();
+  }
+
+  await db.course.delete({ where: { id } });
+
+  return { id };
 }
 
 export async function getStoryGenerationContext(db: CoursesDb, id: string) {
