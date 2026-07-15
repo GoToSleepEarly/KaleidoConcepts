@@ -55,7 +55,6 @@ const plan: AiLessonContentPlan = {
                 {
                   type: "vocab_hint",
                   answer: "clue",
-                  target: "Vocabulary",
                   hint: "线索",
                 },
                 { type: "text", text: "." },
@@ -83,7 +82,6 @@ const plan: AiLessonContentPlan = {
                 {
                   type: "phrase_hint",
                   answer: "give up",
-                  target: "Verb Phrases",
                   hint: "放弃",
                 },
                 { type: "text", text: "." },
@@ -141,7 +139,6 @@ describe("lesson content compiler", () => {
     invalid.chapters[0].paragraphs[0].sentences[0].parts.splice(2, 0, {
       type: "vocab_hint",
       answer: "museum",
-      target: "Vocabulary",
       hint: "博物馆",
     });
     expect(() => compileLessonContentDraft(invalid, storyOption)).toThrow(

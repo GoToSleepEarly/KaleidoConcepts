@@ -3,11 +3,11 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/server/db";
 import {
   listStoryOptions,
-  StoryOptionsLockedError,
   StoryOptionsNotFoundError,
   StoryOptionsValidationError,
   updateStoryOptions,
 } from "@/lib/server/repositories/story-options";
+import { removeCourseImageDirectory } from "@/lib/server/storage/course-images";
 import { storyOptionsPayloadSchema } from "@/lib/server/validation/story-options";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -34,15 +34,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   }
 
   try {
-    const result = await updateStoryOptions(getDb(), id, payload.data.options);
+    const result = await updateStoryOptions(getDb(), id, payload.data.options, {
+      clearLessonDraft: payload.data.clearLessonDraft,
+      removeImageDirectory: payload.data.clearLessonDraft ? removeCourseImageDirectory : undefined,
+    });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof StoryOptionsNotFoundError) {
       return NextResponse.json({ message: "课程不存在" }, { status: 404 });
-    }
-
-    if (error instanceof StoryOptionsLockedError) {
-      return NextResponse.json({ message: error.message }, { status: 409 });
     }
 
     if (error instanceof StoryOptionsValidationError) {

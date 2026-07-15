@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { createCourseBasic, getCourseBasic, listCourses, updateCourseBasic } from "./courses";
+import { CourseNotFoundError, createCourseBasic, deleteCourse, getCourseBasic, listCourses, updateCourseBasic } from "./courses";
 
 describe("listCourses", () => {
   test("maps database courses to management list items", async () => {
@@ -86,6 +86,7 @@ describe("course basic info", () => {
     grammar: ["Past Simple", "There be"],
     storyIdeaMode: "manual" as const,
     storyIdea: "学生进入宇宙冒险，遇到外星人并学习太空知识。",
+    llmModel: "deepseek_chat" as const,
   };
 
   const roleValidationDb = {
@@ -112,6 +113,7 @@ describe("course basic info", () => {
               grammar: ["Past Simple", "There be"],
               storyIdeaMode: "manual",
               storyIdea: "学生进入宇宙冒险，遇到外星人并学习太空知识。",
+              llmModel: "deepseek_chat",
               status: "draft",
               people: {
                 create: [
@@ -179,6 +181,7 @@ describe("course basic info", () => {
               grammar: ["Past Simple"],
               storyIdeaMode: "ai",
               storyIdea: null,
+              llmModel: "deepseek_chat",
               status: "draft",
               people: [
                 { personId: "teacher-1", person: { role: "teacher" } },
@@ -202,7 +205,68 @@ describe("course basic info", () => {
       grammar: ["Past Simple"],
       storyIdeaMode: "ai",
       storyIdea: undefined,
+      llmModel: "deepseek_chat",
       status: "draft",
     });
+  });
+});
+
+describe("deleteCourse", () => {
+  test("deletes an existing course after verifying it exists", async () => {
+    const calls: string[] = [];
+
+    const result = await deleteCourse(
+      {
+        course: {
+          findUnique: async ({ where }) => {
+            calls.push("findUnique");
+            expect(where).toEqual({ id: "course-1" });
+            return {
+              id: "course-1",
+              title: "Space Adventure",
+              englishLevel: "B2",
+              durationMinutes: 45,
+              theme: "宇宙冒险",
+              grammar: ["Past Simple"],
+              storyIdeaMode: "ai",
+              storyIdea: null,
+              llmModel: "deepseek_chat",
+              status: "draft",
+              people: [],
+            };
+          },
+          delete: async ({ where }) => {
+            calls.push("delete");
+            expect(where).toEqual({ id: "course-1" });
+            return { id: "course-1" };
+          },
+        },
+      },
+      "course-1",
+    );
+
+    expect(result).toEqual({ id: "course-1" });
+    expect(calls).toEqual(["findUnique", "delete"]);
+  });
+
+  test("throws when the course does not exist and never calls delete", async () => {
+    let deleteCalled = false;
+
+    await expect(
+      deleteCourse(
+        {
+          course: {
+            findUnique: async () => null,
+            delete: async () => {
+              deleteCalled = true;
+              return { id: "course-1" };
+            },
+          },
+        },
+        "missing-course",
+      ),
+    ).rejects.toBeInstanceOf(CourseNotFoundError);
+
+    expect(deleteCalled).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, MouseEvent, useEffect, useMemo, useState } from "react";
-import { Edit3, Plus, UserRound, X } from "lucide-react";
+import { Edit3, Plus, Trash2, UserRound, X } from "lucide-react";
 
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
@@ -248,6 +248,24 @@ export function PeopleManager() {
     }
   }
 
+  async function handleDelete(person: PersonProfile) {
+    const roleLabel = person.role === "teacher" ? "教师" : "学生";
+    if (!window.confirm(`确认删除${roleLabel}「${person.chineseName ?? person.name}」？删除后新建课程将不再出现该人物。`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/people/${person.id}`, { method: "DELETE" });
+      if (!response.ok) {
+        throw new Error("人物删除失败");
+      }
+
+      setPeople((current) => current.filter((item) => item.id !== person.id));
+    } catch {
+      window.alert("人物删除失败，请稍后重试。");
+    }
+  }
+
   return (
     <>
       <section className="space-y-6">
@@ -288,7 +306,7 @@ export function PeopleManager() {
         ) : visiblePeople.length > 0 ? (
           <div className="grid grid-cols-2 gap-5 2xl:grid-cols-3">
             {visiblePeople.map((person) => (
-              <PersonCard key={person.id} onEdit={openEditDrawer} person={person} />
+              <PersonCard key={person.id} onDelete={handleDelete} onEdit={openEditDrawer} person={person} />
             ))}
           </div>
         ) : (
@@ -370,10 +388,23 @@ export function PeopleManager() {
   );
 }
 
-function PersonCard({ person, onEdit }: { person: PersonProfile; onEdit: (person: PersonProfile) => void }) {
+function PersonCard({
+  person,
+  onEdit,
+  onDelete,
+}: {
+  person: PersonProfile;
+  onEdit: (person: PersonProfile) => void;
+  onDelete: (person: PersonProfile) => void;
+}) {
   function handleEditClick(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     onEdit(person);
+  }
+
+  function handleDeleteClick(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    onDelete(person);
   }
 
   return (
@@ -398,14 +429,24 @@ function PersonCard({ person, onEdit }: { person: PersonProfile; onEdit: (person
             <p className="mt-1 text-xs text-slate-500">{person.age ? `${person.age} 岁 · ` : ""}{genderCopy(person.gender)}</p>
           </div>
         </div>
-        <button
-          aria-label="编辑人物"
-          className="flex size-9 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors duration-200 hover:bg-violet-50 hover:text-violet-700"
-          onClick={handleEditClick}
-          type="button"
-        >
-          <Edit3 className="size-4" />
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            aria-label="编辑人物"
+            className="flex size-9 items-center justify-center rounded-md text-slate-400 transition-colors duration-200 hover:bg-violet-50 hover:text-violet-700"
+            onClick={handleEditClick}
+            type="button"
+          >
+            <Edit3 className="size-4" />
+          </button>
+          <button
+            aria-label="删除人物"
+            className="flex size-9 items-center justify-center rounded-md text-slate-400 transition-colors duration-200 hover:bg-red-50 hover:text-red-600"
+            onClick={handleDeleteClick}
+            type="button"
+          >
+            <Trash2 className="size-4" />
+          </button>
+        </div>
       </div>
 
       {person.role === "teacher" ? (

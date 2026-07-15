@@ -27,12 +27,23 @@ type PersonFindManyQuery = {
 type PersonDelegate = {
   findMany: (query: PersonFindManyQuery) => Promise<DbPerson[]>;
   create: (query: { data: PersonData }) => Promise<DbPerson>;
-  update: (query: { where: { id: string }; data: PersonData }) => Promise<DbPerson>;
+  update: (query: {
+    where: { id: string };
+    data: PersonData | { archivedAt: Date };
+  }) => Promise<DbPerson>;
+  findUnique: (query: { where: { id: string } }) => Promise<DbPerson | null>;
 };
 
 export type PeopleDb = {
   person: PersonDelegate;
 };
+
+export class PersonNotFoundError extends Error {
+  constructor(message = "人物不存在") {
+    super(message);
+    this.name = "PersonNotFoundError";
+  }
+}
 
 function normalizeOptionalText(value: string | undefined) {
   const trimmed = value?.trim();
@@ -122,4 +133,17 @@ export async function updatePerson(db: PeopleDb, id: string, input: PersonInput)
   });
 
   return toPersonProfile(person);
+}
+
+export async function archivePerson(db: PeopleDb, id: string) {
+  const current = await db.person.findUnique({ where: { id } });
+
+  if (!current) {
+    throw new PersonNotFoundError();
+  }
+
+  await db.person.update({
+    where: { id },
+    data: { archivedAt: new Date() },
+  });
 }

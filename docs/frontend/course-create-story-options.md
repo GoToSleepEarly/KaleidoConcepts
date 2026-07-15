@@ -135,15 +135,24 @@ type StoryChapter = {
 - 方案 2（`enhanced`）作为默认推荐方向高亮优先。
 - 卡片展示：方案定位、故事标题、故事主线、章节线。
 - 不展示任何知识点信息。
-- 老师可轻微编辑标题、故事主线、章节标题、章节大纲。
+- 老师可编辑标题、故事主线、章节标题、章节大纲。
 - 点击 `保存修改` 调用 `PUT /api/courses/:id/story-options`。
 - 点击 `选择这个故事` 调用 `POST /api/courses/:id/story-options/:optionId/select`。
 - 选择成功后跳转 `/courses/:id/create/lesson-draft`。
 
+选定之后仍可编辑（Bug 修复）：
+- 选定故事后不再锁定编辑：`轻微编辑`、`保存修改` 与编辑面板保持可用。
+- 章节数量不变（编辑只改文字），选中方案 id 与 `selectedStoryOptionId` 保持不变。
+- 保存时，如果课程已经生成过 Step 3 阅读草稿（`lessonDraftExists = true`），弹确认弹窗，由老师决定是否清空下游内容：
+  - `仅保存故事`：只更新故事方案，保留已有 Step 3 草稿及后续资源方案 / 图片。老师需自行知晓正文可能与新大纲不一致。
+  - `保存并清空重做`（推荐）：更新故事方案，并清空 Step 3 阅读草稿、Step 4 资源方案与已生成图片（含磁盘图片目录），回到干净状态重新生成。
+- 如果课程没有 Step 3 草稿（`lessonDraftExists = false`），保存直接生效，不弹窗。
+
 本期不支持：
-- 重新生成
+- 重新生成（整批重新生成 3 方案；编辑仅限对现有方案改文字）
 - 选择后解除选择
-- 选择后覆盖方案
+- 选择后改选其它方案（`选择这个故事` 在已选定时仍锁定，只保留“已选择，继续”）
+- 章节数量变更（编辑仅限文字）
 
 ## API 合同
 
@@ -155,6 +164,7 @@ type StoryChapter = {
 {
   options: StoryOption[];
   selectedOptionId: string | null;
+  lessonDraftExists: boolean; // 是否已生成 Step 3 阅读草稿，供前端决定保存时是否弹清空确认
 }
 ```
 
@@ -164,7 +174,7 @@ type StoryChapter = {
 - 读取课程基础信息、老师和学生画像。
 - 调用 DeepSeek 或开发 mock。
 - 生成并保存 3 个中文故事大纲方案。
-- 如果课程已选择方案，本期返回 409。
+- 如果课程已选择方案，本期返回 409（生成整批 3 方案会破坏已选定 id，保持锁定）。
 
 响应：
 
@@ -181,8 +191,16 @@ type StoryChapter = {
 ```ts
 {
   options: StoryOption[];
+  clearLessonDraft?: boolean; // 已有 Step 3 草稿时，true 表示同时清空下游草稿/资源方案/图片
 }
 ```
+
+行为：
+- 校验 options（长度 3、章节数量匹配课程时长）。
+- 覆盖保存故事方案（`deleteMany` + `createMany`，option id 由 payload 决定，保持稳定，`selectedStoryOptionId` 不失效）。
+- **移除选定后的编辑锁**：即使 `selectedStoryOptionId` 已存在也允许保存。
+- 当 `clearLessonDraft = true` 时，在同一事务内清空：`CourseLessonDraft`、`CourseResourcePlan`、`CourseImage`（DB 记录），并调用 `removeCourseImageDirectory(courseId)` 清理磁盘图片目录（非阻塞，失败仅记日志，不回滚 DB）；同时将课程 `status` 回退为 `draft`（若之前为 `building_resources` / `ready` / `build_failed`）。
+- `clearLessonDraft` 缺省或 false 时，只更新故事方案，不动下游。
 
 响应：
 
@@ -190,8 +208,18 @@ type StoryChapter = {
 {
   options: StoryOption[];
   selectedOptionId: string | null;
+  lessonDraftExists: boolean;
 }
 ```
+
+失败：
+- `400 { message: "故事方案信息不完整" }`
+- `404 { message: "课程不存在" }`
+- `500 { message: "故事方案保存失败" }`
+
+失败恢复：
+- 保存失败不修改前端表单，可重试。
+- 清空下游是显式操作，仅在 `clearLessonDraft = true` 且保存成功后执行；磁盘清理失败不影响 DB 一致性，与课程删除的容错策略一致。
 
 ### `POST /api/courses/:id/story-options/:optionId/select`
 
@@ -229,3 +257,27 @@ Step 3 负责：
 - 生成练习、答案、图片分镜和视觉一致性信息
 
 Step 3 不再读取 `knowledgeHook` 或 `beat`。
+
+## 变更记录：选定后可编辑故事（Bug 修复）
+
+背景：老师选定故事后，Step 2 完全锁定，无法再修正标题、主线、章节文字（`isLocked = Boolean(selectedOptionId)` 隐藏保存/编辑入口，`updateStoryOptions` 抛 `StoryOptionsLockedError`）。产品决策：允许编辑，由老师决定是否清空下游草稿。
+
+后端改动：
+- `story-options.ts` `updateStoryOptions`：去掉 `if (course.selectedStoryOptionId) throw new StoryOptionsLockedError()`，允许选定后覆盖保存；`saveGeneratedStoryOptions`（generate 路径）保持锁定不变。
+- `replaceStoryOptions` 用 payload 里的 option id 重建，选定 id 稳定，`selectedStoryOptionId` 不失效。
+- `listStoryOptions` 响应新增 `lessonDraftExists`（查 `courseLessonDraft`）。
+- `PUT /api/courses/:id/story-options` 接受 `clearLessonDraft?: boolean`；为 true 时事务内删除 `CourseLessonDraft` / `CourseResourcePlan` / `CourseImage` 并把 `status` 回退 `draft`，随后非阻塞 `removeCourseImageDirectory(courseId)`。
+- `storyOptionsPayloadSchema` 增加可选 `clearLessonDraft: z.boolean().optional()`。
+
+前端改动（`story-options-manager.tsx`）：
+- 删除 `isLocked` 对编辑/保存的限制：`保存修改` 按钮、卡片 `轻微编辑`、`EditPanel` 在选定后仍可用。
+- `LoadResponse` 增加 `lessonDraftExists` 并入 state。
+- `saveOptions`：若 `lessonDraftExists` 为 true，先弹确认弹窗（“仅保存故事” / “保存并清空重做”），据选择传 `clearLessonDraft`；成功后按响应刷新 `lessonDraftExists`。
+- `选择这个故事` 保持已选定锁定语义不变（仍是“已选择，继续”跳转 Step 3）。
+
+验收：
+- 选定故事后仍能编辑标题/主线/章节并保存成功。
+- 已有 Step 3 草稿时保存弹确认；选“清空重做”后 Step 3 回到未生成态、Step 4 资源与图片清空、磁盘目录清理。
+- 选“仅保存故事”只更新方案，草稿保留。
+- 无草稿时保存不弹窗直接生效。
+- `pnpm test` / `pnpm lint` / `pnpm build` 通过；新增去锁、清空下游的单测。

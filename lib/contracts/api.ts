@@ -6,6 +6,7 @@ export type CourseStatus = "draft" | "building_resources" | "ready" | "build_fai
 export type CourseCreateStep = "basic" | "story_options" | "lesson_draft" | "resources" | "preview";
 export type PersonRole = "teacher" | "student";
 export type StoryIdeaMode = "manual" | "ai";
+export type LlmModel = "deepseek_chat" | "gpt_5_5";
 
 export type PresetKind = "theme" | "grammar";
 
@@ -379,11 +380,17 @@ export type CourseBasicInput = {
   grammar: string[];
   storyIdeaMode: StoryIdeaMode;
   storyIdea?: string;
+  llmModel?: LlmModel;
 };
 
-export type CourseBasicDetail = CourseBasicInput & {
+export type UpdateLlmModelInput = {
+  llmModel: LlmModel;
+};
+
+export type CourseBasicDetail = Omit<CourseBasicInput, "llmModel"> & {
   id: string;
   status: CourseStatus;
+  llmModel: LlmModel;
 };
 
 export type CourseBasicMutationResponse = {
@@ -411,6 +418,7 @@ export type StoryOption = {
 export type StoryOptionsListResponse = {
   options: StoryOption[];
   selectedOptionId: string | null;
+  lessonDraftExists: boolean;
 };
 
 export type LessonDraft = LessonContentDraft;
@@ -516,8 +524,18 @@ export type LessonExercise =
       letterCount: string;
     };
 
+export type LessonDraftGenStatus = "idle" | "running" | "succeeded" | "failed";
+
+export type LessonDraftGeneration = {
+  status: LessonDraftGenStatus;
+  startedAt: string | null;
+  error: string | null;
+};
+
 export type LessonDraftResponse = {
   draft: LessonDraft | null;
+  generation: LessonDraftGeneration;
+  llmModel: LlmModel;
 };
 
 export type CreateCourseResponse = {

@@ -83,11 +83,11 @@ function wordPattern(word: string) {
   ].join(" ");
 }
 
-function hintPattern(answer: string) {
+export function hintPattern(answer: string) {
   return answer.split(/\s+/).filter(Boolean).map(wordPattern).join(" ");
 }
 
-function hintLetterCount(answer: string) {
+export function hintLetterCount(answer: string) {
   const counts = answer
     .split(/\s+/)
     .filter(Boolean)
@@ -97,7 +97,7 @@ function hintLetterCount(answer: string) {
     : counts.join("+");
 }
 
-function normalizeAnswer(answer: string) {
+export function normalizeAnswer(answer: string) {
   return answer.trim().replace(/\s+/g, " ").toLocaleLowerCase("en");
 }
 
@@ -214,7 +214,7 @@ function validateTargetCoverage(
     throw new Error(`知识点未覆盖：${missingTargets.join(" / ")}`);
 }
 
-function deriveClosingVocabularyTerms(chapters: LessonContentChapter[]) {
+export function deriveClosingVocabularyTerms(chapters: LessonContentChapter[]) {
   return Array.from(
     new Set(
       chapters

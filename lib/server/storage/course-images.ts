@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export type CourseImageStorageTargetInput = {
@@ -27,6 +27,12 @@ export function buildCourseImageStorageTarget(input: CourseImageStorageTargetInp
     storagePath,
     publicUrl: `/api/course-images/${input.courseId}/${input.imageId}.webp`,
   };
+}
+
+export async function removeCourseImageDirectory(courseId: string, storageDir = process.env.STORAGE_DIR) {
+  const root = resolveStorageDir(storageDir);
+  const courseDir = path.join(root, "course-images", courseId);
+  await rm(courseDir, { recursive: true, force: true });
 }
 
 function decodeDataUrl(value: string) {

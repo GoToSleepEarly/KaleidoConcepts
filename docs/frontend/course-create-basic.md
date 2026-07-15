@@ -40,10 +40,9 @@
 - 老师卡片单选
 - 学生卡片多选
 - 课程标题、英语等级、课程时长、主题、语法点、故事想法填写
-- 默认主题选项
-- 默认语法点选项
-- 自定义主题输入
-- 自定义语法点输入
+- 主题从主题库选择（`GET /api/presets?kind=theme`）
+- 语法点从语法点库选择（`GET /api/presets?kind=grammar`）
+- 库外历史值回显（编辑旧课程时，theme / grammar 不在预设库内仍显示为已选中）
 - `POST /api/courses`
 - `PUT /api/courses/:id/basic`
 - 保存成功跳转到 `/courses/:id/create/story-options`
@@ -57,6 +56,8 @@
 - 多老师
 - 删除草稿
 - 自动保存
+- 表单内自定义 / 新增主题（统一在主题库 `/themes` 维护）
+- 表单内自定义 / 新增语法点（统一在语法点库 `/grammar` 维护）
 
 ## 字段规则
 
@@ -101,59 +102,22 @@
 - 必填
 - 单选
 - 语义：世界观 / 场景框架
-- 支持默认选项 + 自定义输入
+- 只能从主题库选择，不提供表单内自定义输入
+- 数据来源：`GET /api/presets?kind=theme`
 - 本期只允许一个主题
-
-默认主题选项：
-1. 魔法世界
-2. 宇宙冒险
-3. 海底世界
-4. 恐龙时代
-5. 森林探险
-6. 未来城市
-7. 童话王国
-8. 西游记
-9. 三国演义
-10. 校园生活
-11. 动物乐园
-12. 美食之旅
-13. 运动比赛
-14. 博物馆奇妙夜
-15. 环游世界
-16. 神秘岛屿
-17. 机器人世界
-18. 农场生活
-19. 冰雪王国
-20. 超级英雄
+- 需要新增或调整主题时，去主题库 `/themes` 维护
+- 编辑旧课程时，若课程 theme 不在预设库（历史值或已删除预设），仍作为已选中项回显
 
 ### 语法点
 
 - 必填
-- 至少选择或输入 1 个
-- 支持默认选项 + 自定义输入
+- 至少选择 1 个
+- 只能从语法点库选择，不提供表单内自定义输入
+- 数据来源：`GET /api/presets?kind=grammar`
 - 可以多个
-
-默认语法点选项：
-1. Present Simple
-2. Present Continuous
-3. Past Simple
-4. Past Continuous
-5. Future Simple
-6. Present Perfect
-7. There be
-8. Have got
-9. Can / Could
-10. Must / Have to
-11. Should
-12. Comparative Adjectives
-13. Superlative Adjectives
-14. Countable / Uncountable Nouns
-15. Some / Any
-16. Prepositions of Place
-17. Prepositions of Time
-18. Wh- Questions
-19. Imperatives
-20. Object Pronouns
+- 按分类展开选择，可跨类累加
+- 需要新增或调整语法点时，去语法点库 `/grammar` 维护
+- 编辑旧课程时，若课程 grammar 含不在预设库的项（历史值或已删除预设），仍作为已选中项回显
 
 ### 故事想法
 
@@ -328,3 +292,24 @@ CourseBasicInput
 ## 后续优化
 
 - 课程列表的编辑入口后续根据课程当前所属步骤跳转；当前统一进入 `/courses/:id/create/basic`。
+
+## 变更记录：主题 / 语法点只能选择（Bug 修复）
+
+背景：Step 1 表单原来允许手输自定义主题 / 语法点，与“统一在预设库维护”的产品约定冲突，导致库外脏值、无法统一管理。
+
+前端改动（`features/courses/components/course-basic-form.tsx`）：
+- 删除 `customTheme` / `customGrammar` state
+- 删除 `addCustomTheme()` / `addCustomGrammar()`
+- 删除主题、语法点两处 `InlineAddField`（“添加主题” / “添加语法点”）
+- 若 `InlineAddField`、`Plus` 图标无其他引用则一并删除
+- 保留 `themeOptions`（form.theme 不在预设内时追加为可选中项）
+- 保留 `customGrammarItems`（form.grammar 中不在 `knownGrammarLabels` 的项，作为“库外已选语法点”回显区，可取消，不可新增）
+- 校验文案：`请选择主题` / `请至少选择 1 个语法点`（去掉“或输入”）
+
+后端：无需改动。`Course.theme` / `Course.grammar` 仍为字符串 / 字符串数组，与预设库解耦，历史值不受预设增删影响。
+
+验收：
+- Step 1 无任何自定义主题 / 语法点输入框
+- 主题、语法点只能从预设库勾选
+- 编辑含库外历史值的旧课程，历史值仍回显为已选中且可取消
+- `pnpm test` / `pnpm lint` / `pnpm build` 通过

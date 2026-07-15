@@ -34,6 +34,11 @@ model Person {
   courses      CoursePerson[]
 }
 
+enum LlmModel {
+  deepseek_chat
+  gpt_5_5
+}
+
 model Course {
   id              String          @id @default(cuid())
   title           String
@@ -43,8 +48,12 @@ model Course {
   grammar         String[]
   storyIdeaMode   StoryIdeaMode   @default(ai)
   storyIdea       String?
+  llmModel        LlmModel        @default(deepseek_chat)
   selectedStoryOptionId String?
   status          CourseStatus    @default(draft)
+  lessonDraftGenStatus    LessonDraftGenStatus @default(idle)
+  lessonDraftGenStartedAt DateTime?
+  lessonDraftGenError     String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   people          CoursePerson[]
@@ -189,6 +198,13 @@ enum CourseStatus {
   ready
   build_failed
   published
+}
+
+enum LessonDraftGenStatus {
+  idle
+  running
+  succeeded
+  failed
 }
 
 enum CourseImageStatus {

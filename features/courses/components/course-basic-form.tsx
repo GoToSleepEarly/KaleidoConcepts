@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, Loader2, Plus, X } from "lucide-react";
+import { ArrowLeft, Check, Loader2, X } from "lucide-react";
 
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
@@ -84,11 +84,11 @@ function validateForm(form: FormState) {
   }
 
   if (!form.theme.trim()) {
-    return "请选择或输入主题";
+    return "请选择主题";
   }
 
   if (form.grammar.length < 1) {
-    return "请至少选择或输入 1 个语法点";
+    return "请至少选择 1 个语法点";
   }
 
   if (form.storyIdeaMode === "manual" && !form.storyIdea.trim()) {
@@ -106,8 +106,6 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
   const [grammarPresets, setGrammarPresets] = useState<PresetOption[]>([]);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [customTheme, setCustomTheme] = useState("");
-  const [customGrammar, setCustomGrammar] = useState("");
   const [isLoading, setIsLoading] = useState(Boolean(courseId));
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -217,28 +215,6 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
         ? current.grammar.filter((item) => item !== grammar)
         : [...current.grammar, grammar],
     }));
-  }
-
-  function addCustomTheme() {
-    const value = customTheme.trim();
-
-    if (!value) {
-      return;
-    }
-
-    setForm((current) => ({ ...current, theme: value }));
-    setCustomTheme("");
-  }
-
-  function addCustomGrammar() {
-    const value = customGrammar.trim();
-
-    if (!value) {
-      return;
-    }
-
-    setForm((current) => ({ ...current, grammar: current.grammar.includes(value) ? current.grammar : [...current.grammar, value] }));
-    setCustomGrammar("");
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -361,7 +337,7 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
       </PeopleSection>
 
       <section className="rounded-lg border border-[#E5E7EB] bg-white p-6 shadow-sm">
-        <FieldHeader description="主题是整体世界观或场景框架，本期只允许选择一个。" title="主题" />
+        <FieldHeader description="主题是整体世界观或场景框架，从主题库选择一个；如需新增或调整选项，请前往主题库管理。" title="主题" />
         <div className="mt-4 flex flex-wrap gap-2">
           {themeOptions.map((theme) => (
             <ChoiceChip key={theme} selected={form.theme === theme} onClick={() => setForm((current) => ({ ...current, theme }))}>
@@ -369,14 +345,6 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
             </ChoiceChip>
           ))}
         </div>
-        <InlineAddField
-          buttonLabel="添加主题"
-          onAdd={addCustomTheme}
-          onChange={setCustomTheme}
-          onEnter={addCustomTheme}
-          placeholder="输入自定义主题"
-          value={customTheme}
-        />
       </section>
 
       <section className="rounded-lg border border-[#E5E7EB] bg-white p-6 shadow-sm">
@@ -431,7 +399,7 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
 
         {customGrammarItems.length ? (
           <div className="mt-3">
-            <div className="text-xs font-medium text-slate-500">自定义语法点</div>
+            <div className="text-xs font-medium text-slate-500">库外历史语法点（点击可移除）</div>
             <div className="mt-2 flex flex-wrap gap-2">
               {customGrammarItems.map((grammar) => (
                 <ChoiceChip key={grammar} selected onClick={() => toggleGrammar(grammar)}>
@@ -441,15 +409,6 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
             </div>
           </div>
         ) : null}
-
-        <InlineAddField
-          buttonLabel="添加语法点"
-          onAdd={addCustomGrammar}
-          onChange={setCustomGrammar}
-          onEnter={addCustomGrammar}
-          placeholder="输入自定义语法点"
-          value={customGrammar}
-        />
       </section>
 
       <section className="rounded-lg border border-[#E5E7EB] bg-white p-6 shadow-sm">
@@ -628,43 +587,6 @@ function ChoiceChip({ selected, onClick, children }: { selected: boolean; onClic
       {selected ? <Check className="size-3" /> : null}
       {children}
     </button>
-  );
-}
-
-function InlineAddField({
-  value,
-  onChange,
-  onAdd,
-  onEnter,
-  placeholder,
-  buttonLabel,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  onAdd: () => void;
-  onEnter: () => void;
-  placeholder: string;
-  buttonLabel: string;
-}) {
-  return (
-    <div className="mt-4 flex max-w-xl gap-2">
-      <input
-        className="h-10 min-w-0 flex-1 rounded-lg border border-[#E5E7EB] px-3 text-sm outline-none transition duration-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
-        onChange={(event) => onChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            onEnter();
-          }
-        }}
-        placeholder={placeholder}
-        value={value}
-      />
-      <Button onClick={onAdd} type="button" variant="outline">
-        <Plus className="size-4" />
-        {buttonLabel}
-      </Button>
-    </div>
   );
 }
 

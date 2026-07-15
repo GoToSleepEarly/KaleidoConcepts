@@ -33,7 +33,7 @@ Step 3 不负责：
 3. AI 只输出一份句子片段结构；练习答案本身就是原文片段，不再单独引用 sentenceId。
 4. AI 不输出最终 blanks、题号、sentenceId、segments、pattern、letterCount、图片字段。
 5. 代码从同一份片段结构派生 clean sentence、exercise、segments、题号和词汇 pattern。
-6. 前端 MVP 只展示最终拼接好的带题阅读文本和答案列表，不做复杂编辑和模式切换。
+6. 前端展示最终拼接好的带题阅读文本和答案列表，并支持文字级编辑（章节标题 / 正文文字 / 答案 / 提示 / closing），不改变题目数量与结构。
 
 ## 输入边界
 
@@ -256,30 +256,39 @@ type LessonClosingReading = {
 - 生成答案列表
 - 给 Step 4 提供 clean text
 
-## 前端 MVP 行为
+## 前端行为
 
 入口：
 
 - `/courses/:id/create/lesson-draft`
 
-未生成：
+进入页面先拉取生成状态与草稿：`GET /api/courses/:id/lesson-draft`，响应含 `draft` 与 `generation` 两块（见下方 API 合同）。据此进入三种界面之一：未生成 / 生成中 / 已生成。
+
+未生成（`generation.status = "idle"` 且无 draft）：
 
 - 显示生成按钮。
 - 点击后调用 `POST /api/courses/:id/lesson-draft/generate`。
-- 生成中显示阶段进度：
+- 请求返回后立即进入“生成中”界面并开始轮询（不再依赖前端本地 `isGenerating`）。
+
+生成中（`generation.status = "running"`，参见 Bug3 恢复方案）：
+
+- 显示阶段进度：
   - 规划英文阅读结构
   - 生成故事正文与互动题
   - 校验题目锚点
   - 保存草稿
+- 进度按 `generation.startedAt` 到当前时间的真实间隔推算，刷新页面后进度不清零。
+- 前端每 5 秒轮询 `GET /api/courses/:id/lesson-draft`；`status` 变为 `succeeded` 后停止轮询并展示草稿，变为 `failed` 后停止轮询并展示错误与“重新生成”。
+- 刷新 / 关闭标签页 / 切走再回来都不影响服务端生成，回来后读到 `running` 继续轮询，不会重复触发付费生成。
 
-已生成：
+已生成（存在 draft）：
 
 - 顶部按章节切换。
-- 主区域展示最终拼接好的带题阅读文本。
-- 右侧或下方展示本章答案列表。
-- Closing Reading 单独展示，不带题。
+- 主区域展示最终拼接好的带题阅读文本，支持文字级编辑（见 Bug4 方案）。
+- 右侧或下方展示本章答案列表，支持编辑答案与提示。
+- Closing Reading 单独展示，不带题，支持编辑标题与正文。
 - 不提供学生版/答案版切换。
-- 不提供复杂 segment 编辑。
+- 不改变题目数量、题型与嵌入位置（编辑仅限文字）。
 - 不显示图片提示编辑。
 - 显示提示：图片将在资源生成步骤根据最终正文自动生成。
 - 点击进入资源生成。
@@ -368,6 +377,184 @@ Step 3 默认开启 thinking 以保证长篇故事和练习质量，并提高输
 - 非对话旁白的叙事时态保持连贯。
 - vocabulary_hint hint 为中文。
 - 生成的学生阅读文本符合嵌入式题目预期。
+
+## 变更记录：生成刷新可恢复（Bug 3 修复）
+
+背景：Step 3 生成是同步阻塞请求（`POST .../generate` 内直接 `await generateLessonDraft`，约 5 分钟）。前端“生成中”只存于本地 `isGenerating` state，一旦刷新 / 切标签页，`isGenerating` 归 false，`GET .../lesson-draft` 又还没有 draft，界面就退回“生成阅读草稿”按钮，误导老师再点一次，重复消耗 DeepSeek 费用。
+
+产品决策：服务端持续生成 + 持久生成状态 + 前端轮询恢复 + 超时释放，参考 Step 4 图片 `submitting/generating` + `submittingTimeoutMs` 的成熟模式，不引入 Worker / MQ / WebSocket（遵循 MVP 单体约束）。
+
+### 数据结构（新增持久生成状态）
+
+在 `Course` 上新增生成状态字段（不新增独立表，生成状态与课程 1:1，随课程级联删除，且清空重做时天然一起清）：
+
+```prisma
+model Course {
+  // ...existing fields
+  lessonDraftGenStatus   LessonDraftGenStatus @default(idle)
+  lessonDraftGenStartedAt DateTime?
+  lessonDraftGenError     String?
+}
+
+enum LessonDraftGenStatus {
+  idle
+  running
+  succeeded
+  failed
+}
+```
+
+说明：
+
+- `idle`：从未生成或已被清空重做（Bug2 清空下游会把状态重置回 `idle`）。
+- `running`：服务端正在生成，`lessonDraftGenStartedAt` 记录开始时间，供前端推算真实进度与超时判断。
+- `succeeded`：生成成功且 draft 已落库（`CourseLessonDraft` 存在即等价成功，`succeeded` 只是冗余标记，读时以 draft 是否存在为准）。
+- `failed`：生成失败或超时释放，`lessonDraftGenError` 记录原因，供前端展示并允许重新生成。
+- 字段变更走 Prisma migration，服务器仅 `pnpm prisma:deploy`（遵循 AGENTS.md）。
+
+### 服务端持续生成 + 超时释放
+
+`POST /api/courses/:id/lesson-draft/generate`（重构为“启动生成”，不再阻塞到完成）：
+
+1. 幂等前置：若已有 draft，直接返回 `{ draft, generation: { status: "succeeded" } }`。
+2. 领取生成锁（乐观并发，防重复付费）：`updateMany({ where: { id, lessonDraftGenStatus: { in: ["idle", "failed"] } }, data: { lessonDraftGenStatus: "running", lessonDraftGenStartedAt: now(), lessonDraftGenError: null } })`。
+   - 若 `count === 0`，说明已有生成在 `running`（或竞态），直接返回当前状态 `202 { generation: { status: "running", startedAt } }`，不重复调用 DeepSeek。
+3. 领锁成功后，在服务端进程内以“后台任务”方式执行生成（`void (async () => { ... })()`，不 `await`），请求立即返回 `202 { generation: { status: "running", startedAt } }`：
+   - 成功：`saveLessonDraft`（复用现有校验），再 `update` 课程 `lessonDraftGenStatus = "succeeded"`。
+   - 失败：`update` 课程 `lessonDraftGenStatus = "failed"`、`lessonDraftGenError = message`。
+   - 说明：Next.js 单体在单实例内可让 async 任务在响应返回后继续跑；进程被杀（重启 / dev reload）会中断，靠下面的超时释放兜底。
+
+`GET /api/courses/:id/lesson-draft`（读时顺带做超时释放，参考 `recoverStuckImages`）：
+
+- 读课程生成状态与 draft。
+- 若 `lessonDraftGenStatus = "running"` 且 `now - lessonDraftGenStartedAt > lessonDraftGenTimeoutMs`（默认 900000ms，`LESSON_DRAFT_GEN_TIMEOUT_MS` 可配，取值高于生成真实耗时），把状态释放为 `failed`、`lessonDraftGenError = "生成超时未完成，请重新生成"`，避免僵死在“生成中”。释放是读操作里的写，无副作用（未产生 draft，不涉及付费重复）。
+- 返回 `{ draft, generation: { status, startedAt, error } }`。
+
+### 失败恢复策略
+
+- 刷新 / 关标签页：服务端生成不受影响，前端回来读到 `running` 继续轮询。
+- 进程被杀导致僵死：`running` 超过超时阈值后被 GET 释放为 `failed`，前端展示错误并允许重新生成，不会重复付费（因为没有产生 draft，重新生成是全新一次）。
+- 生成失败：状态置 `failed` + 原因，前端可一键重新生成。
+- 已有 draft 后再点生成：被步骤 1 幂等拦截，不会重复付费。
+
+### 前端改动（`lesson-draft-manager.tsx`）
+
+- 删除“仅靠本地 `isGenerating` 判断生成中”的逻辑；界面态由 `GET` 返回的 `generation.status` + `draft` 驱动。
+- 进入页面 / 刷新：`GET` 后若 `status = "running"` 直接进入“生成中”界面并启动 5 秒轮询；`succeeded`/有 draft 进入已生成；否则进入未生成。
+- `generateDraft`：`POST` 后不等待完成，收到 `202` 立即进入“生成中”并启动轮询。
+- 进度条基于 `generation.startedAt` 到 `Date.now()` 的真实间隔推算（沿用现有 `generationStages` 与 `estimatedTotalMs`），刷新后进度不归零。
+- 轮询到 `failed` 停止并展示 `generation.error` + “重新生成”；到有 draft 停止并展示草稿。
+
+### API 合同变更（Bug 3）
+
+`GET /api/courses/:id/lesson-draft` 响应：
+
+```ts
+{
+  draft: LessonDraft | null;
+  generation: {
+    status: "idle" | "running" | "succeeded" | "failed";
+    startedAt: string | null; // ISO，running 时用于推算进度与超时
+    error: string | null;     // failed 时的原因
+  };
+}
+```
+
+`POST /api/courses/:id/lesson-draft/generate` 响应：
+
+- 已有 draft：`200 { draft, generation: { status: "succeeded", startedAt, error: null } }`
+- 新启动 / 已在生成：`202 { draft: null, generation: { status: "running", startedAt, error: null } }`
+- 失败（前置条件不满足等）：沿用现有 400 / 404 错误码。
+
+### 验收（Bug 3）
+
+- 点击生成后立即进入“生成中”，请求快速返回（不再阻塞 5 分钟）。
+- 生成中刷新页面：仍显示“生成中”，进度按真实耗时继续，不退回生成按钮，不重复调用 DeepSeek。
+- 生成完成后刷新：显示已生成草稿。
+- 模拟进程中断（手动把 `lessonDraftGenStartedAt` 调早并保持 `running`）：GET 后状态释放为 `failed`，可重新生成。
+- `pnpm test` / `pnpm lint` / `pnpm build` 通过；新增生成锁幂等、超时释放的单测。
+
+## 变更记录：草稿文字级编辑（Bug 4 修复）
+
+背景：Step 3 已生成后，`ReadingPanel`、`AnswerPanel`、`ClosingReadingPanel` 全为只读，老师无法修正 AI 生成的错别字、答案或提示。产品决策：支持文字级编辑（章节标题 / 正文文字 / 答案 / 提示 / closing），不改题目数量与结构；保存时后端重算派生字段并复用现有校验。
+
+### 编辑范围
+
+可编辑：
+
+- 章节标题 `chapter.title`。
+- 正文中的纯文本片段 `segment.type === "text"` 的 `text`。
+- 每题的 `answer`（`given_word_blank` / `choice_blank` / `vocab_hint` / `phrase_hint`）。
+- 题目提示类文字：`given_word_blank.prompt`、`vocab_hint.hint` / `phrase_hint.hint`；`choice_blank.choices` 允许改选项文字（不改数量，且必须仍包含 answer）。
+- Closing Reading 的 `title` 与 `sentences`。
+
+不可编辑（结构不变）：
+
+- 章节 / 段落 / 句子 / 练习的数量与 id。
+- 题型 `type`、题号 `order`、`sentenceId`、segment 的挂载关系。
+- `castAliases`、`sourceStoryOptionId`、`schemaVersion` 等元信息。
+
+### 保存时后端重算（单一事实来源）
+
+Bug4 编辑改的是“语义文字”，但 `sentence.text`、`pattern`、`letterCount`、closing `vocabularyTerms` 都是从 answer/parts 派生的。若前端直接把改后的 draft PUT 回来，这些派生字段会与新 answer 脱节。因此保存路径必须复用 `lesson-content-compiler.ts` 的派生逻辑，在后端重算，而不是信任前端传入的派生值：
+
+- 改答案 → 重算所在 `sentence.text`（用 `sentence.parts` 拼接规则：text 取 text，exercise 取 answer）。
+- 改答案 → 重算该题 `pattern`（`hintPattern`）与 `letterCount`（`hintLetterCount`）——仅 `vocab_hint` / `phrase_hint` 有这两个字段。
+- 改答案 → 重算 closing `vocabularyTerms`（`deriveClosingVocabularyTerms`：取所有 vocab_hint / phrase_hint answer 去重 slice 0,8）。
+- 改正文纯文本 → 重算所在 `sentence.text`。
+- 重算后仍跑 `validateLessonDraft`（章节数匹配、每句最多一题、同章 answer 去重、题号连续、embeddedCount === 1、closing 非空等），任何破坏结构的编辑都会被拒绝。
+
+实现方式：保存前把 DB 结构“反投影”回可重算的最小结构（或直接在 DB 结构上按 sentence 重新拼 text + 按 exercise 重算 pattern/letterCount + 重算 closing terms），核心是**派生字段一律后端重算，前端传值仅作为可编辑源文字**。改答案须校验新 answer 在拼接后的 sentence 中仍只出现一次、同章不与其它题重复（复用编译器的 `normalizeAnswer` 比较）。
+
+### API 合同（Bug 4）
+
+复用现有 `PUT /api/courses/:id/lesson-draft`：
+
+请求：
+
+```ts
+{ draft: LessonDraft }
+```
+
+行为：
+
+- 接收前端编辑后的 draft。
+- 后端按上面规则重算派生字段。
+- 复用 `validateLessonDraft` 校验；不通过返回 `400 { message }`。
+- upsert 保存，返回重算并校验后的 draft。
+
+响应：
+
+```ts
+{ draft: LessonDraft }
+```
+
+失败：
+
+- `400 { message: "课文草稿信息不完整" }`（校验失败，含结构被破坏 / answer 重复 / answer 未出现在句中等）
+- `404 { message: "课程不存在" }`
+- `500 { message: "课文草稿保存失败" }`
+
+### 前端改动（`lesson-draft-manager.tsx`）
+
+- `ReadingPanel`：章节标题、正文纯文本片段改为可编辑（inline 输入 / textarea）；exercise 片段仍以徽标形式展示，其提示 / 选项文字在答案区或就近编辑。
+- `AnswerPanel`：每题 answer 可编辑；有 hint 的题可编辑 hint。
+- `ClosingReadingPanel`：title 与 sentences 可编辑。
+- 编辑维护本地 draft 副本；点击“保存草稿”PUT 全量 draft，成功后用响应（含后端重算结果）刷新本地状态，保证前端看到的 `pattern`/`letterCount`/`text`/`vocabularyTerms` 与后端一致。
+- pattern / letterCount / 题号 / segment 结构不提供直接编辑入口（由后端派生）。
+
+### 失败恢复策略（Bug 4）
+
+- 保存失败不改动前端本地编辑内容，可修正后重试。
+- 校验失败明确提示原因（如“答案在正文中重复”“该章答案重复”），老师据此修正。
+
+### 验收（Bug 4）
+
+- 改章节标题 / 正文文字 / 答案 / 提示 / closing 后保存成功，刷新后仍在。
+- 改某题 answer 后：该句拼接文本、该题 pattern/letterCount、closing 词表随之更新，且前端展示与后端一致。
+- 制造非法编辑（answer 与同章其它题重复、answer 不在句中）时保存被拒并给出原因。
+- 不出现题目数量 / 题型 / 结构被改的路径。
+- `pnpm test` / `pnpm lint` / `pnpm build` 通过；新增“改答案重算派生字段 + 复用校验”的单测。
 
 ## 实现状态
 
