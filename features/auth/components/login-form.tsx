@@ -53,9 +53,9 @@ export function LoginForm() {
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
+    <form className="space-y-6" onSubmit={handleSubmit}>
       <div className="space-y-2">
-        <label className="text-sm font-medium text-foreground" htmlFor="username">
+        <label className="text-sm font-medium text-slate-800" htmlFor="username">
           账号
         </label>
         <Input
@@ -63,11 +63,12 @@ export function LoginForm() {
           onChange={(event) => setUsername(event.target.value)}
           value={username}
           autoComplete="username"
+          className="h-12"
         />
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium text-foreground" htmlFor="password">
+        <label className="text-sm font-medium text-slate-800" htmlFor="password">
           密码
         </label>
         <div className="relative">
@@ -77,11 +78,11 @@ export function LoginForm() {
             type={showPassword ? "text" : "password"}
             value={password}
             autoComplete="current-password"
-            className="pr-11"
+            className="h-12 pr-11"
           />
           <button
             aria-label={showPassword ? "隐藏密码" : "显示密码"}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors duration-200 hover:text-foreground"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors duration-200 hover:text-slate-700"
             onClick={() => setShowPassword((value) => !value)}
             type="button"
           >
@@ -90,10 +91,10 @@ export function LoginForm() {
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
         <input
           checked={remember}
-          className="size-4 rounded border-border text-primary focus:ring-ring focus:ring-offset-0"
+          className="size-4 rounded border-slate-300 text-[#3147FF] focus:ring-[#3147FF] focus:ring-offset-0"
           onChange={(event) => setRemember(event.target.checked)}
           type="checkbox"
         />
@@ -101,12 +102,12 @@ export function LoginForm() {
       </label>
 
       {error ? (
-        <div className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive animate-fade-in">
+        <div className="animate-fade-in rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       ) : null}
 
-      <Button className="h-11 w-full" loading={isSubmitting} size="lg" type="submit">
+      <Button className="h-12 w-full bg-[#3147FF] hover:bg-[#2637CC] active:bg-[#1F2EA8]" loading={isSubmitting} size="lg" type="submit">
         登录
       </Button>
     </form>

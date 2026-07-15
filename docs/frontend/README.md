@@ -1,94 +1,32 @@
-# 前后端模块索引
+# Frontend Module Index
 
-本目录用于固化模块上下文。新任务开始时，先读本文件，再读目标模块文档。
+This directory keeps only current module context. Historical plans, old PRD drafts, and superseded module notes have been removed for the release branch.
 
-从课程列表模块开始，每个模块默认同时对齐并实现前端与后台，避免后续联调返工。
+## Current Entry Points
 
-## 工作方式
+- Login: `/login`
+- After login: `/courses`
+- Default account: `teacher`
+- Default password: `123456`
 
-每个模块遵循：
+## Current Modules
 
-1. 讨论模块前端与后台细节
-2. 给出建议和原因
-3. 用户确认
-4. 写入模块文档
-5. 用户确认文档
-6. 同步实现前端与后台
-7. 自测
-8. 用户验收
+| Module | Document | Status |
+| --- | --- | --- |
+| App shell and auth | `docs/frontend/app-shell-and-auth.md` | Implemented |
+| People profiles | `docs/frontend/people-profiles.md` | Implemented |
+| Course list | `docs/frontend/courses-list-management.md` | Implemented |
+| Course create Step 1 | `docs/frontend/course-create-basic.md` | Implemented |
+| Story options Step 2 | `docs/frontend/course-create-story-options.md` | Implemented |
+| Lesson draft Step 3 | `docs/frontend/course-create-lesson-draft.md` | Implemented |
+| Resources Step 4 | `docs/frontend/course-create-resources.md` | Implemented |
+| Preview and PDF Step 5 | `docs/frontend/course-preview-and-pdf.md` | Implemented |
+| Preset library | `docs/frontend/preset-library.md` | Implemented |
 
-不在细节未确认时直接开发。
+## Release Notes
 
-## 通用约束
-
-- 需求文档优先，线稿和设计稿只作为参考。
-- MVP 当前只考虑 Web 端。
-- 本期只开发已确认范围，不做未实现入口或占位页面。
-- 数据当前可以使用 mock 或本地持久化，但接口路径、请求结构、响应结构、错误码和失败恢复策略要按真实联调标准设计。
-- 不清楚的交互、字段、API、状态、错误处理、验收标准必须先确认。
-- 模块文档必须同时写清楚页面实现、API 合同、数据结构、mock / 本地存储边界和后续联调替换点。
-- 临时 mock、本地存储或测试逻辑必须用 TODO 注释标明后续删除 / 替换位置。
-- 布局审美参考 `$gpt-taste` 的适用部分：高级、克制、清晰、避免廉价模板感；不套用营销页式 AIDA / 大 Hero / 重 GSAP。
-
-## 模块列表
-
-| 模块 | 文档 | 状态 | 提交 |
-| --- | --- | --- | --- |
-| 应用框架与登录 | `docs/frontend/app-shell-and-auth.md` / `docs/frontend/real-backend-auth-and-students.md` | 已接后端仓库，Prisma 依赖待安装 | `6a6340b` |
-| 人物档案 | `docs/frontend/people-profiles.md` | 已实现，待用户验收 | - |
-| 课程列表 | `docs/frontend/courses-list-management.md` | 已实现课程列表管理，Prisma 依赖待安装 | - |
-| 新建课程 Step 1 | `docs/frontend/course-create-basic.md` | 已实现，待用户验收 | - |
-| 故事方案 Step 2 | `docs/frontend/course-create-story-options.md` | 二期重构方案已对齐，待实现 | - |
-| 绘本内容草稿 Step 3 | `docs/frontend/course-create-lesson-draft.md` | 二期质量重构方案已对齐，待实现 | - |
-| 资源生成 Step 4 | `docs/frontend/course-create-resources.md` | MVP 资源方案流程已实现，待真实生成验收 | - |
-| 课程预览 Step 5 | `docs/frontend/course-preview-and-pdf.md` | 已实现，待用户验收 | - |
-| PDF 预览 / 导出 | `docs/frontend/course-preview-and-pdf.md` | 已实现，待用户验收 | - |
-| API 与数据合同 | 待创建 | 随模块同步维护 | - |
-
-## 当前默认入口
-
-- 登录页：`/login`
-- 登录成功后：`/courses`
-- 账号：`teacher`
-- 密码：`123456`
-
-## 本地真实数据库预览
-
-本地预览默认使用真实 PostgreSQL，不使用 `MOCK_DB`：
-
-```bash
-pnpm dev:preview
-```
-
-该命令会：
-
-1. 启动项目内嵌 PostgreSQL，数据目录为 `.local/postgres`
-2. 使用 `.env` 中的 `DATABASE_URL`
-3. 执行 `pnpm prisma:generate`
-4. 执行 `pnpm prisma:deploy`
-5. 执行 `pnpm prisma:seed`
-6. 清理 `.next`，避免旧 build / dev manifest 导致页面卡在登录状态检查
-7. 启动 `pnpm dev`
-
-如果只需要单独启动数据库：
-
-```bash
-pnpm dev:db
-```
-
-## 新模块启动检查
-
-启动任何新模块前，先确认：
-
-- 模块目标是什么
-- 本期范围包含什么
-- 本期范围不包含什么
-- 页面入口和路由是什么
-- 使用哪些数据模型
-- 需要哪些 API
-- API 请求 / 响应结构是什么
-- 失败状态和错误提示是什么
-- 是否需要本地持久化或 mock 数据
-- mock / 测试逻辑后续如何替换
-- 需要哪些操作和状态
-- 验收标准是什么
+- Production schema changes must use Prisma migrations.
+- Production deploy should run `pnpm prisma:deploy`, not `prisma migrate dev`.
+- Production data and generated images must live outside the deployment code directory.
+- Back up the database and image directory before destructive production migrations.
+- Course images are managed through `course_images`; `structured_lesson` must not store image URLs, prompts, or image state.

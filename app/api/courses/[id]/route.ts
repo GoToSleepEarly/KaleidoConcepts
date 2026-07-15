@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { mockCourse } from "@/lib/mock-course-data";
 import { getDb } from "@/lib/server/db";
 import { CourseNotFoundError, deleteCourse } from "@/lib/server/repositories/courses";
 import { removeCourseImageDirectory } from "@/lib/server/storage/course-images";
-
-export async function GET() {
-  return NextResponse.json({ course: mockCourse });
-}
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

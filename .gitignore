@@ -10,3 +10,4 @@ prisma/dev.db
 .claude/
 .playwright-cli/
 output/
+tsconfig.tsbuildinfo

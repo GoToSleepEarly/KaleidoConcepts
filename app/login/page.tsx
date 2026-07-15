@@ -4,53 +4,52 @@ import { LoginForm } from "@/features/auth/components/login-form";
 
 export default function LoginPage() {
   return (
-    <main className="min-h-dvh bg-background p-4 sm:p-8">
-      <div className="grid min-h-[calc(100dvh-2rem)] overflow-hidden rounded-2xl border border-border bg-card shadow-sm sm:min-h-[calc(100dvh-4rem)] lg:grid-cols-[1fr_1fr]">
-        <section className="relative hidden min-h-[600px] overflow-hidden lg:block">
-          <div className="absolute inset-0 bg-[url('/mock-assets/login-story-world.png')] bg-cover bg-center" />
-          <div className="absolute inset-0 bg-gradient-to-br from-foreground/60 via-primary-700/20 to-primary/40" />
-          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-foreground/70 to-transparent" />
+    <main className="relative min-h-dvh overflow-hidden bg-[#050812] text-white">
+      <div className="absolute inset-0 bg-[url('/mock-assets/login-academy-portal.png')] bg-cover bg-[35%_center]" />
+      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,8,18,0.22)_0%,rgba(5,8,18,0.58)_48%,rgba(5,8,18,0.96)_100%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,18,0.16)_0%,rgba(5,8,18,0.28)_55%,rgba(5,8,18,0.8)_100%)]" />
 
-          <div className="relative flex h-full flex-col justify-between p-10 xl:p-12 text-white">
-            <div className="flex items-center gap-3 text-[15px] font-semibold">
-              <span className="flex size-9 items-center justify-center rounded-xl bg-white/15 backdrop-blur-sm">
-                <Sparkles className="size-5" />
-              </span>
-              Kaleido Concepts
-            </div>
+      <div className="relative grid min-h-dvh grid-cols-1 lg:grid-cols-[minmax(0,1fr)_480px]">
+        <section className="flex min-h-[46dvh] flex-col justify-between px-6 py-7 sm:px-10 lg:min-h-dvh lg:px-14 lg:py-12 xl:px-16">
+          <div className="flex items-center gap-3 text-sm font-semibold text-white">
+            <span className="flex size-10 items-center justify-center rounded-lg border border-white/14 bg-white/8 text-white shadow-[0_12px_34px_rgba(37,99,235,0.22)]">
+              <Sparkles className="size-5" />
+            </span>
+            Kaleido Concepts
+          </div>
 
-            <div className="max-w-lg">
-              <h1 className="text-balance text-4xl xl:text-5xl font-semibold leading-[1.1] tracking-tight">
-                Kaleido Concepts
-              </h1>
-              <p className="mt-3 text-2xl font-medium text-white/95">万象之境</p>
-              <p className="mt-8 text-lg font-medium leading-relaxed text-white/90">
-                AI 定制互动绘本英语教学平台
-              </p>
-              <p className="mt-2 text-base text-white/70">为每位学生生成专属的学习旅程</p>
-            </div>
+          <div className="max-w-[620px] pb-10 lg:pb-4">
+            <h1 className="text-balance text-5xl font-semibold leading-none text-white sm:text-6xl lg:text-7xl">
+              万象为镜，照见奇思。
+            </h1>
+            <p className="mt-6 text-xl font-medium leading-8 text-white/84 sm:text-2xl">
+              AI 定制互动绘本英语项目
+            </p>
           </div>
         </section>
 
-        <section className="flex items-center justify-center p-8 lg:p-12">
-          <div className="w-full max-w-sm">
+        <section className="relative flex items-center justify-center overflow-hidden border-t border-white/10 bg-[#070B16]/94 px-5 py-8 backdrop-blur-md lg:border-l lg:border-t-0 lg:px-10">
+          <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(rgba(255,255,255,0.8)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.8)_1px,transparent_1px)] [background-size:44px_44px]" />
+          <div className="absolute left-0 top-16 hidden h-28 w-px bg-gradient-to-b from-transparent via-[#26D7FF]/70 to-transparent lg:block" />
+          <div className="relative w-full max-w-[420px]">
             <div className="mb-8 lg:hidden">
-              <div className="mb-5 flex items-center gap-3 text-[15px] font-semibold text-foreground">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-                  <Sparkles className="size-5" />
-                </span>
+              <p className="text-sm font-semibold text-white">Kaleido Concepts</p>
+              <p className="mt-3 text-2xl font-semibold leading-tight text-white">万象为镜，照见奇思。</p>
+              <p className="mt-2 text-sm text-white/64">AI 定制互动绘本英语项目</p>
+            </div>
+
+            <div className="mb-7 text-center">
+              <p className="font-serif text-3xl leading-none tracking-[0.02em] text-white sm:text-[2.15rem]">
                 Kaleido Concepts
+              </p>
+              <div className="mx-auto mt-4 h-px w-20 bg-gradient-to-r from-transparent via-[#26D7FF]/80 to-transparent" />
+            </div>
+
+            <div className="rounded-lg border border-white/12 bg-white/[0.04] p-2 shadow-[0_32px_90px_rgba(2,6,23,0.52)]">
+              <div className="rounded-md border border-white/8 bg-white p-8 text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-9">
+                <LoginForm />
               </div>
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Kaleido Concepts</h1>
-              <p className="mt-1 text-sm text-muted-foreground">万象之境 · AI 定制互动绘本</p>
             </div>
-
-            <div className="mb-8">
-              <h2 className="text-xl font-semibold tracking-tight text-foreground">欢迎回来</h2>
-              <p className="mt-2 text-sm text-muted-foreground">使用教师账号登录，开始创建课程。</p>
-            </div>
-
-            <LoginForm />
           </div>
         </section>
       </div>
