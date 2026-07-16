@@ -6,6 +6,7 @@
     "dev": "next dev",
     "dev:db": "node scripts/dev-db.mjs",
     "dev:preview": "node scripts/dev-preview.mjs",
+    "deploy:prod": "bash scripts/deploy-prod.sh",
     "build": "next build",
     "start": "next start",
     "prisma:generate": "prisma generate",

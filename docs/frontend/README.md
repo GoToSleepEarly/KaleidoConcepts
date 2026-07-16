@@ -30,3 +30,4 @@ This directory keeps only current module context. Historical plans, old PRD draf
 - Production data and generated images must live outside the deployment code directory.
 - Back up the database and image directory before destructive production migrations.
 - Course images are managed through `course_images`; `structured_lesson` must not store image URLs, prompts, or image state.
+- Production one-click deploy command: `pnpm deploy:prod`.
