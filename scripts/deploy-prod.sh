@@ -83,8 +83,13 @@ pnpm prisma:deploy
 echo "==> Building app"
 pnpm build
 
-echo "==> Restarting pm2 process: $APP_NAME"
-pm2 restart "$APP_NAME"
+if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
+  echo "==> Restarting pm2 process: $APP_NAME"
+  pm2 restart "$APP_NAME"
+else
+  echo "==> Starting pm2 process: $APP_NAME"
+  pm2 start pnpm --name "$APP_NAME" -- start
+fi
 
 echo "Deployment finished."
 echo "Database backup: $DB_BACKUP"
