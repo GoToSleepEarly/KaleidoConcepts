@@ -31,8 +31,8 @@ const closingViewId = "__closing__";
 const pollIntervalMs = 5_000;
 
 const llmModelOptions: { value: LlmModel; label: string }[] = [
-  { value: "deepseek_chat", label: "DeepSeek Chat" },
-  { value: "gpt_5_5", label: "GPT-5.5" },
+  { value: "deepseek_chat", label: "DeepSeek" },
+  { value: "gpt_5_5", label: "GPT 5.5" },
 ];
 
 const idleGeneration: LessonDraftGeneration = {
@@ -50,7 +50,7 @@ const generationStages = [
   },
   {
     label: "生成故事正文与互动题",
-    note: "DeepSeek 正在生成完整故事、句子片段和多种练习题。",
+    note: "AI 正在生成完整故事、句子片段和多种练习题。",
     untilMs: 260_000,
   },
   {

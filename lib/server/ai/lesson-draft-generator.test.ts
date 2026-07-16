@@ -229,7 +229,8 @@ describe("lesson content prompt", () => {
       "Code will concatenate text.text and exercise.answer",
     );
     expect(prompt).toContain("Use at most one exercise part in each sentence");
-    expect(prompt).toContain("Each chapter must contain 120-160 English words");
+    expect(prompt).toContain("CRITICAL WORD COUNT: Each chapter MUST contain 120-160 English words");
+    expect(prompt).toContain("CRITICAL TARGET COVERAGE: You MUST use every required learning target");
     expect(prompt).toContain(
       "exactly 6 given_word_blank, exactly 1 vocab_hint, and exactly 1 phrase_hint",
     );
@@ -291,6 +292,34 @@ describe("lesson draft generation", () => {
       "MsPANTeacher and YouStudent visited the museum.",
     );
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("enables DeepSeek thinking by default for stability", async () => {
+    vi.stubEnv("DEEPSEEK_API_KEY", "test-key");
+    const fetchMock = vi.fn(async () => deepSeekResponse(aiPlan));
+    vi.stubGlobal("fetch", fetchMock);
+    await generateLessonDraft(deepseekContext);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      { body: string },
+    ];
+    const body = JSON.parse(init.body);
+    expect(body.thinking).toEqual({ type: "enabled" });
+    expect(body.max_tokens).toBe(48000);
+  });
+
+  test("enables GPT-5.5 reasoning by default for stability", async () => {
+    vi.stubEnv("QUICKROUTER_API_KEY", "test-key");
+    const fetchMock = vi.fn(async () => quickRouterResponse(aiPlan));
+    vi.stubGlobal("fetch", fetchMock);
+    await generateLessonDraft(gpt55Context);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      { body: string },
+    ];
+    const body = JSON.parse(init.body);
+    expect(body.reasoning).toEqual({ effort: "medium" });
+    expect(body.max_output_tokens).toBe(32000);
   });
 
   test("logs raw output when compiler validation fails", async () => {

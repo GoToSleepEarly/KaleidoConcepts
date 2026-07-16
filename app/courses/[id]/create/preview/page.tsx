@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Download, Save, Send } from "lucide-react";
+import { ArrowLeft, Download, LayoutList, Save, Send } from "lucide-react";
 
 import { ProtectedLayout } from "@/components/protected-layout";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ import { exportSlidesToPDF } from "@/lib/utils/pdf-export";
 type PreviewMode = "html" | "pdf";
 
 export default function CreatePreviewPage({ params }: { params: Promise<{ id: string }> }) {
+  const router = useRouter();
   const [courseId, setCourseId] = useState<string | null>(null);
   const [data, setData] = useState<CoursePreviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -145,12 +147,20 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
       }
       const json = (await res.json()) as { redirectUrl: string };
       window.open(json.redirectUrl, "_blank");
+      router.push("/courses");
     } catch (e) {
       setError(e instanceof Error ? e.message : "发布失败");
     } finally {
       setPublishing(false);
       setShowPublishConfirm(false);
     }
+  };
+
+  const handleBackToCourses = () => {
+    if (hasUnsavedChanges && !window.confirm("有未保存的更改，确定离开吗？")) {
+      return;
+    }
+    router.push("/courses");
   };
 
   const handleDownloadPdf = async () => {
@@ -221,12 +231,18 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
 
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <Button asChild variant="outline" size="sm" className="mb-4">
-              <Link href={`/courses/${courseId}/create/resources`}>
-                <ArrowLeft className="size-4" />
-                返回资源生成
-              </Link>
-            </Button>
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/courses/${courseId}/create/resources`}>
+                  <ArrowLeft className="size-4" />
+                  返回资源生成
+                </Link>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleBackToCourses}>
+                <LayoutList className="size-4" />
+                返回课程列表
+              </Button>
+            </div>
             <h2 className="text-xl font-semibold tracking-tight text-foreground">课程预览与发布</h2>
             <p className="mt-2 text-sm text-muted-foreground">
               检查课件版式与文本框，确认无误后发布进入授课模式。
@@ -347,7 +363,7 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
           <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-lg">
             <h3 className="mb-2 text-lg font-semibold text-foreground">确认发布课程？</h3>
             <p className="mb-5 text-sm text-muted-foreground">
-              发布后课程将进入授课模式，课件内容不可再编辑。如需修改，请重新回到创建流程。
+              发布后课程进入授课模式，将在新标签页打开授课页，当前页返回课程列表。发布后仍可回到本页继续编辑版式。
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowPublishConfirm(false)} disabled={publishing}>

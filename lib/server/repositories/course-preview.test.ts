@@ -294,7 +294,7 @@ describe("toPreviewPages", () => {
     expect(textSegs[0].text).toContain("Summer");
   });
 
-  test("editable is true for draft/ready/build_failed, false for published", () => {
+  test("editable is true for all statuses including published (published courses can re-edit)", () => {
     const draft = makeDraft();
     const plan = makePlan();
     const coverImg = succeededImage();
@@ -303,7 +303,7 @@ describe("toPreviewPages", () => {
     expect(draftPages.every((p) => p.editable)).toBe(true);
 
     const pubPages = toPreviewPages("c2", draft, [], plan, defaultPresentation, "published", coverImg);
-    expect(pubPages.every((p) => !p.editable)).toBe(true);
+    expect(pubPages.every((p) => p.editable)).toBe(true);
   });
 
   test("returns default textBox style (opacity + fontSize) and merges slideOverrides", () => {

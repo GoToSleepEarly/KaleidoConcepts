@@ -205,13 +205,31 @@ export function CoursesManager() {
                     <td className="px-5 py-4">
                       <div className="flex justify-end gap-2">
                         <Button asChild size="sm" variant="outline">
-                          <Link href={course.nextEditPath}>
+                          <Link
+                            href={
+                              course.status === "published"
+                                ? `/courses/${course.id}/create/preview`
+                                : course.nextEditPath
+                            }
+                          >
                             编辑
                           </Link>
                         </Button>
-                        <Button asChild size="sm" variant="outline">
-                          <Link href={`/courses/${course.id}`}>预览</Link>
-                        </Button>
+                        {course.status === "published" ? (
+                          <Button asChild size="sm">
+                            <Link href={`/courses/${course.id}`}>授课</Link>
+                          </Button>
+                        ) : course.lessonDraftExists ? (
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={`/courses/${course.id}/create/preview`}>预览</Link>
+                          </Button>
+                        ) : (
+                          <span title="请先生成课文草稿">
+                            <Button size="sm" variant="outline" disabled>
+                              预览
+                            </Button>
+                          </span>
+                        )}
                         <Button
                           size="icon-sm"
                           variant="ghost"

@@ -4,10 +4,7 @@ import {
   CoursePreviewNotFoundError,
   CoursePreviewPrerequisiteError,
 } from "@/lib/server/repositories/course-preview";
-import {
-  CoursePublishStatusError,
-  publishCourse,
-} from "@/lib/server/repositories/course-presentation";
+import { publishCourse } from "@/lib/server/repositories/course-presentation";
 import { getDb } from "@/lib/server/db";
 import type { CoursePresentationUpdate } from "@/lib/contracts/api";
 
@@ -26,9 +23,6 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
     }
     if (error instanceof CoursePreviewPrerequisiteError) {
       return NextResponse.json({ message }, { status: 400 });
-    }
-    if (error instanceof CoursePublishStatusError) {
-      return NextResponse.json({ message }, { status: 409 });
     }
     return NextResponse.json({ message }, { status: 500 });
   }

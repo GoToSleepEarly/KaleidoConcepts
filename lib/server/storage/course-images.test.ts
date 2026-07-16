@@ -2,11 +2,20 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildCourseImageStorageTarget, downloadCourseImage } from "./course-images";
 
 let root: string;
+
+function isWebp(buffer: Buffer) {
+  return buffer.length >= 12 && buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP";
+}
+
+async function makePng() {
+  return sharp({ create: { width: 8, height: 8, channels: 3, background: { r: 200, g: 120, b: 60 } } }).png().toBuffer();
+}
 
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), "course-images-"));
@@ -69,6 +78,41 @@ describe("course image storage", () => {
 
     expect((await readFile(result.storagePath)).equals(bytes)).toBe(true);
     expect(result.publicUrl).toBe("/api/course-images/course-1/image-large.webp");
+  });
+
+  it("re-encodes a downloaded PNG to WebP before storing", async () => {
+    const png = await makePng();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength),
+      })),
+    );
+
+    const result = await downloadCourseImage({
+      sourceUrl: "https://example.com/image.png",
+      storageDir: root,
+      courseId: "course-1",
+      imageId: "image-1",
+    });
+
+    const stored = await readFile(result.storagePath);
+    expect(isWebp(stored)).toBe(true);
+    expect(stored.length).toBeLessThan(png.length);
+  });
+
+  it("re-encodes a base64 PNG data URL to WebP before storing", async () => {
+    const png = await makePng();
+    const result = await downloadCourseImage({
+      sourceUrl: `data:image/png;base64,${png.toString("base64")}`,
+      storageDir: root,
+      courseId: "course-1",
+      imageId: "image-1",
+    });
+
+    expect(isWebp(await readFile(result.storagePath))).toBe(true);
   });
 
   it("throws when remote download fails", async () => {

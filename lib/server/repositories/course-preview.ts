@@ -86,13 +86,6 @@ export class CoursePreviewPrerequisiteError extends Error {
   }
 }
 
-export class CoursePublishStatusError extends Error {
-  constructor(message = "课程已发布，无法编辑") {
-    super(message);
-    this.name = "CoursePublishStatusError";
-  }
-}
-
 const DEFAULT_TEXT_BOX = { opacity: 0.85, fontSize: 1.0 };
 
 function personDisplayName(person: DbPerson) {
@@ -230,12 +223,13 @@ export function toPreviewPages(
   imageRecords: Array<{ slotId: string } & CoursePreviewImage>,
   plan: CourseResourcePlan | null,
   presentation: CoursePresentationConfig,
-  courseStatus: CourseStatus,
+  _courseStatus: CourseStatus,
   coverImage: CoursePreviewImage,
   teacherName?: string | null,
   studentNames?: string[],
 ): CoursePreviewPage[] {
-  const editable = courseStatus !== "published";
+  // 所有状态（含 published）均可回到 Step5 编辑版式，页面统一标记为可编辑。
+  const editable = true;
   const imagesBySlot = new Map<string, CoursePreviewImage>();
   imageRecords.forEach((img) => imagesBySlot.set(img.slotId, img));
 

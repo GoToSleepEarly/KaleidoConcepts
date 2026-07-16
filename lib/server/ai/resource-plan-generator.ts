@@ -72,6 +72,18 @@ function personName(person: PersonProfile) {
   return person.englishName?.trim() || person.chineseName?.trim() || person.name.trim();
 }
 
+// Whitelisted profile fields the image model needs to keep a character visually consistent. Gender and age are listed
+// explicitly so the model never guesses them from the name; all other visual detail is intentionally funneled through
+// `appearance`, so adding a new visual attribute means editing the person's appearance text, not this prompt.
+function describePerson(person: PersonProfile) {
+  const attributes = [
+    person.gender ? person.gender : null,
+    typeof person.age === "number" ? `age ${person.age}` : null,
+    person.appearance?.trim() || person.notes?.trim() || "appearance not provided",
+  ].filter(Boolean);
+  return `${personName(person)} (${attributes.join(", ")})`;
+}
+
 function sentenceLines(draft: LessonDraft) {
   return draft.chapters
     .map((chapter) =>
@@ -94,19 +106,17 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
     "Read the full lesson first, then directly write self-contained prompts specifically for GPT Image 2 for the cover and every lesson shot.",
     "The default art direction is hand-drawn comic picture-book style. Do not switch to 3D, photorealistic, oil painting, cyberpunk, or cinematic realism.",
     "The plan must create one cover brief and exactly 2 lesson shots per chapter.",
-    "Each chapter has exactly 2 paragraphs. Create shotOrder 1 for paragraph 1 and shotOrder 2 for paragraph 2.",
     "Each shot's sourceParagraphId must be its assigned paragraph id.",
     "Every coverBrief.imagePrompt and shots[].imagePrompt must be a complete GPT Image 2 prompt that the image model can use by itself without seeing any other context.",
     "Each imagePrompt must repeat the concrete appearance of visible characters and the concrete story setting enough to avoid obvious inconsistencies.",
     "Do not force the same clothing if the story clearly changes the character's situation; describe the current scene's clothing and props specifically.",
     "The cover brief must describe story poster key art with a memorable central visual hook, not a generic class group portrait.",
-    "Only use cast aliases from the lesson for all characters. Do not add extra students, classmates, teachers, parents, crowds, background people, or unnamed humans.",
     "",
     `Course title: ${context.course.title}`,
     `Theme: ${context.course.theme}`,
     `Level: ${context.course.englishLevel}`,
-    `Teacher: ${personName(context.teacher)} (${context.teacher.appearance || context.teacher.notes || "appearance not provided"})`,
-    `Students: ${context.students.map((student) => `${personName(student)} (${student.appearance || student.notes || "appearance not provided"})`).join("; ")}`,
+    `Teacher: ${describePerson(context.teacher)}`,
+    `Students: ${context.students.map((student) => describePerson(student)).join("; ")}`,
     `Story title: ${context.storyOption.title}`,
     `Storyline: ${context.storyOption.storyline}`,
     "Story chapters:",
@@ -116,9 +126,9 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
     "",
     "Rules:",
     "- Only use cast aliases from the lesson when naming characters in imagePrompt descriptions.",
+    "- Keep each named character's gender and age consistent with the cast profile above; never change a character's gender or make them look a different age.",
     "- Do not add extra students, classmates, teachers, parents, crowds, background people, or unnamed humans.",
     "- Output exactly two shots for each chapter: shotOrder 1 must use paragraph 1, shotOrder 2 must use paragraph 2.",
-    "- Each shot must use the paragraph id assigned by shotOrder: shotOrder 1 uses paragraph 1, shotOrder 2 uses paragraph 2.",
     "- Cover brief must use the same characters, story world, visual style, and representative story elements from the shot plan.",
     "- Cover brief description must include one memorable central visual hook built from the main character, teacher/student cast, setting, and key story object.",
     "- imagePrompt must be concrete and visual, ideally 900-1200 characters, never over 1200 characters.",

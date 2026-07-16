@@ -23,7 +23,7 @@ type LessonDraftGenerationContext = {
   students: PersonProfile[];
   storyOption: StoryOption;
 };
-type ChatMessage = { role: "system" | "user"; content: string };
+type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 const nonEmpty = z
   .string()
@@ -217,17 +217,17 @@ export function buildLessonContentPrompt(
       .join("\n"),
     "",
     `Output exactly ${context.storyOption.chapters.length} chapters and exactly 2 paragraphs per chapter.`,
-    "Use enough naturally varied complete sentences to develop each chapter fully; do not pad or compress the story to hit a sentence count.",
-    "Each chapter must contain 120-160 English words in its compiled clean text.",
+    "CRITICAL WORD COUNT: Each chapter MUST contain 120-160 English words in compiled clean text (text parts concatenated with exercise answers). This is a hard requirement — count words before outputting.",
+    "CRITICAL TARGET COVERAGE: You MUST use every required learning target listed above at least once as a given_word_blank's target field. Missing a required target will cause rejection.",
     "Each chapter must contain exactly 8 exercise parts: exactly 6 given_word_blank, exactly 1 vocab_hint, and exactly 1 phrase_hint.",
     "Do not use choice_blank in this lesson format.",
     "Use at most one exercise part in each sentence and distribute exercises naturally across the chapter.",
-    "Use every required learning target at least once across the whole lesson.",
+    "Distribute the required learning targets across chapters so that every target appears at least once.",
     "Grammar and tense must be accurate and coherent across the whole story.",
     "Choose one dominant narrative tense based on the story and selected learning targets.",
     "Keep non-dialogue narration in that tense. Change tense only when the timeline or meaning genuinely requires it.",
     "Dialogue may use other tenses naturally. Never switch narrative tense only to create an exercise.",
-    "Before output, silently check tense continuity chapter by chapter.",
+    "Before output, silently verify: (1) every chapter has 120-160 words, (2) every required learning target appears in at least one given_word_blank, (3) each chapter has exactly 8 exercises (6 given_word_blank + 1 vocab_hint + 1 phrase_hint).",
     "Do not repeat the same exercise answer within a chapter, ignoring case.",
     "The answer must have no surrounding whitespace.",
     "vocab_hint only outputs type, answer, and a concise Chinese hint. Its target is derived by code.",
@@ -352,12 +352,17 @@ function canonicalizePlanTargets(plan: AiLessonContentPlan, targets: string[]) {
 }
 
 function buildQuickRouterResponsesRequestBody(messages: ChatMessage[]) {
+  // 稳定性优先：GPT-5.5 是推理模型，显式开启 reasoning 让它在输出前自检词数/题数/
+  // 知识点覆盖。推理 token 与正文共享预算，因此同步加大 max_output_tokens。
+  const reasoningDisabled = process.env.QUICKROUTER_REASONING === "disabled";
   return {
     model: process.env.QUICKROUTER_LESSON_MODEL ?? process.env.QUICKROUTER_RESPONSES_MODEL ?? "gpt-5.5",
     input: messages,
-    max_output_tokens: 8000,
+    max_output_tokens: reasoningDisabled ? 16000 : 32000,
     response_format: { type: "json_object" },
-    temperature: 0.2,
+    ...(reasoningDisabled
+      ? { temperature: 0.2 }
+      : { reasoning: { effort: "medium" } }),
   };
 }
 
@@ -402,6 +407,10 @@ async function callDeepSeek(
   void _chapterCount;
   const apiKey = process.env.DEEPSEEK_API_KEY;
   const baseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com";
+  const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro";
+  // 稳定性优先：默认开启 thinking，让模型在输出前自检词数/题数/知识点覆盖。
+  // 仅当显式设置 DEEPSEEK_THINKING=disabled 时才关闭（换取更快但更不稳的生成）。
+  const thinkingEnabled = process.env.DEEPSEEK_THINKING !== "disabled";
   if (!apiKey) throw new Error("AI 服务未配置");
   const response = await fetch(
     `${baseUrl.replace(/\/$/, "")}/chat/completions`,
@@ -412,11 +421,13 @@ async function callDeepSeek(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
+        model,
         messages,
-        max_tokens: 8000,
+        max_tokens: thinkingEnabled ? 48000 : 16000,
         response_format: { type: "json_object" },
-        temperature: 0.2,
+        ...(thinkingEnabled
+          ? { thinking: { type: "enabled" }, reasoning_effort: "medium" }
+          : { thinking: { type: "disabled" }, temperature: 0.2 }),
       }),
     },
   );
@@ -425,7 +436,7 @@ async function callDeepSeek(
   const data = (await response.json()) as {
     choices?: Array<{
       finish_reason?: string;
-      message?: { content?: string | null };
+      message?: { content?: string | null; reasoning_content?: string | null };
     }>;
   };
   const choice = data.choices?.[0];
@@ -503,7 +514,18 @@ export async function generateLessonDraft(
 ): Promise<LessonDraft> {
   if (process.env.QUICKROUTER_API_KEY === "mock" || process.env.DEEPSEEK_API_KEY === "mock")
     return validateLessonDraft(mockLessonDraft(context), context.storyOption);
-  const messages: ChatMessage[] = [
+
+  const useGpt55 = context.course.llmModel === "gpt_5_5" && !!process.env.QUICKROUTER_API_KEY;
+  // 真实模型名用于日志观测，避免误导排查（此前固定打印 deepseek_chat）。
+  const modelLabel = useGpt55
+    ? (process.env.QUICKROUTER_LESSON_MODEL ?? process.env.QUICKROUTER_RESPONSES_MODEL ?? "gpt-5.5")
+    : (process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro");
+  // 默认不自动重试：开启 thinking/reasoning 后单次约 5 分钟，且自检已把单次成功率拉高，
+  // 再叠加重试会让等待时间成倍变长（最坏 3×5 分钟）。失败交由用户手动重新生成。
+  // 如需恢复自动重试，设置 LESSON_DRAFT_MAX_ATTEMPTS（如 2 或 3）。
+  const maxAttempts = Math.max(1, Number(process.env.LESSON_DRAFT_MAX_ATTEMPTS) || 1);
+
+  const baseMessages: ChatMessage[] = [
     {
       role: "system",
       content:
@@ -512,36 +534,184 @@ export async function generateLessonDraft(
     { role: "user", content: buildLessonContentPrompt(context) },
   ];
 
-  const useGpt55 = context.course.llmModel === "gpt_5_5" && process.env.QUICKROUTER_API_KEY;
-  const llmCall = useGpt55
-    ? callQuickRouterResponses(messages)
-    : callDeepSeek(messages, context.course.durationMinutes, context.storyOption.chapters.length);
+  const messages: ChatMessage[] = [...baseMessages];
 
-  const content = await llmCall;
-  try {
-    const plan = parseLessonContentPlan(parseJsonObject(content));
-    const targets = allowedTargets(context);
-    canonicalizePlanTargets(plan, targets);
-    validatePlanPolicy(plan, targets);
-    return validateLessonDraft(
-      compileLessonContentDraft(
-        plan,
+  let lastError: Error | null = null;
+  let lastErrorCategory = "";
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let content: string | null = null;
+    try {
+      const llmCall = useGpt55
+        ? callQuickRouterResponses(messages)
+        : callDeepSeek(messages, context.course.durationMinutes, context.storyOption.chapters.length);
+
+      content = await llmCall;
+      const plan = parseLessonContentPlan(parseJsonObject(content));
+      const targets = allowedTargets(context);
+      const targetByKey = new Map(targets.map((t) => [targetKey(t), t]));
+
+      const aiReturnedTargets: Array<{
+        chapter: number;
+        type: string;
+        originalTarget: string;
+        canonicalizedTo: string;
+      }> = [];
+
+      plan.chapters.forEach((chapter, chapterIndex) => {
+        chapter.paragraphs.forEach((paragraph) => {
+          paragraph.sentences.forEach((sentence) => {
+            sentence.parts.forEach((part) => {
+              if (part.type === "text") return;
+              if (part.type === "vocab_hint") {
+                aiReturnedTargets.push({
+                  chapter: chapterIndex + 1,
+                  type: part.type,
+                  originalTarget: "(auto)",
+                  canonicalizedTo: "Vocabulary",
+                });
+              } else if (part.type === "phrase_hint") {
+                aiReturnedTargets.push({
+                  chapter: chapterIndex + 1,
+                  type: part.type,
+                  originalTarget: "(auto)",
+                  canonicalizedTo: "Verb Phrases",
+                });
+              } else {
+                const originalTarget = part.target;
+                const matched = targetByKey.get(targetKey(originalTarget));
+                aiReturnedTargets.push({
+                  chapter: chapterIndex + 1,
+                  type: part.type,
+                  originalTarget,
+                  canonicalizedTo: matched ?? `(UNMATCHED: ${originalTarget})`,
+                });
+              }
+            });
+          });
+        });
+      });
+
+      console.info("[LessonDraft] AI generation details", {
+        attempt,
+        model: modelLabel,
+        courseId: context.course.id,
+        requiredGrammar: context.course.grammar,
+        allowedTargets: targets,
+        aiReturnedTargets,
+      });
+
+      canonicalizePlanTargets(plan, targets);
+      validatePlanPolicy(plan, targets);
+      const draft = validateLessonDraft(
+        compileLessonContentDraft(
+          plan,
+          context.storyOption,
+          context.course.grammar,
+          castAliases(context),
+        ),
         context.storyOption,
-        context.course.grammar,
-        castAliases(context),
-      ),
-      context.storyOption,
-    );
-  } catch (error) {
-    console.error("Lesson draft AI output failed validation", {
-      error: error instanceof Error ? error.message : String(error),
-      rawContent: content,
-    });
-    if (error instanceof LessonDraftValidationError) throw error;
-    throw new LessonDraftValidationError(
-      error instanceof Error
-        ? error.message
-        : "AI 课文内容校验失败，请重试生成",
-    );
+      );
+
+      if (attempt > 1) {
+        console.info("[LessonDraft] Generation succeeded after retry", {
+          attempt,
+          model: modelLabel,
+          courseId: context.course.id,
+        });
+      }
+      return draft;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const errorMessage = lastError.message;
+
+      const isConfigError = errorMessage === "AI 服务未配置";
+      const isHttpError = errorMessage.startsWith("AI 请求失败：HTTP") || errorMessage.startsWith("DeepSeek 请求失败：HTTP");
+      const isRetriable = !isConfigError && !isHttpError;
+
+      console.error("Lesson draft AI output failed validation", {
+        attempt,
+        error: errorMessage,
+        model: modelLabel,
+        courseId: context.course.id,
+        requiredGrammar: context.course.grammar,
+        willRetry: isRetriable && attempt < maxAttempts,
+        rawContent: content,
+      });
+
+      if (!isRetriable || attempt >= maxAttempts) {
+        if (error instanceof LessonDraftValidationError) throw error;
+        throw new LessonDraftValidationError(
+          errorMessage.includes("AI 服务未配置") || errorMessage.includes("HTTP")
+            ? errorMessage
+            : (error instanceof Error ? error.message : "AI 课文内容校验失败，请重试生成"),
+        );
+      }
+
+      const isWordCountError = errorMessage.includes("词目标");
+      const isExerciseCountError = errorMessage.includes("题目数");
+      const isCoverageError = errorMessage.includes("知识点未覆盖");
+      const isUnknownTargetError = errorMessage.includes("未配置的知识点");
+      const isFormatError = errorMessage.includes("JSON") || errorMessage.includes("格式") || errorMessage.includes("Unexpected") || errorMessage.includes("Expected");
+
+      let fixGuidance = "Please fix this issue and output the complete corrected JSON. Return JSON only, no explanations.";
+      if (isWordCountError) {
+        fixGuidance = "CRITICAL WORD COUNT FIX: Each chapter MUST contain exactly 120-160 English words in compiled clean text (text parts + exercise answers concatenated). Expand story details with natural sentences to reach the target. Do NOT add extra exercises to fill length — add descriptive text sentences instead. Output the complete corrected JSON only.";
+      } else if (isExerciseCountError) {
+        fixGuidance = "CRITICAL EXERCISE COUNT FIX: Each chapter MUST contain EXACTLY 8 exercises total: exactly 6 given_word_blank, exactly 1 vocab_hint, and exactly 1 phrase_hint. No more, no less. Remove extra exercises or add missing ones to reach exactly 8. Output the complete corrected JSON only.";
+      } else if (isCoverageError) {
+        fixGuidance = "CRITICAL TARGET COVERAGE FIX: You MUST use every required learning target listed in the prompt at least once as a given_word_blank exercise's target field. Check that ALL required grammar points appear in your given_word_blank exercises. Output the complete corrected JSON only.";
+      } else if (isUnknownTargetError) {
+        fixGuidance = "CRITICAL INVALID TARGET FIX: You used a learning target that is not in the allowed list. Only use the exact target names listed under 'Allowed targets' in the prompt. Remove or replace any exercises with targets not in that list. Output the complete corrected JSON only.";
+      } else if (isFormatError) {
+        fixGuidance = "FORMAT FIX: Output one valid strict JSON object matching the schema exactly. No markdown fences, no commentary, no trailing commas. Output the complete corrected JSON only.";
+      }
+
+      const errorCategory = isWordCountError ? "word_count"
+        : isExerciseCountError ? "exercise_count"
+        : isCoverageError ? "coverage"
+        : isUnknownTargetError ? "unknown_target"
+        : isFormatError ? "format"
+        : "other";
+      const sameErrorAsLast = lastErrorCategory === errorCategory;
+      lastErrorCategory = errorCategory;
+
+      if (attempt === 2 && sameErrorAsLast) {
+        messages.length = 0;
+        messages.push(...baseMessages);
+        messages.push({
+          role: "user",
+          content:
+            "Previous attempts failed validation. This is a fresh start. Pay EXTREME attention to ALL requirements: " +
+            "(1) Each chapter MUST have exactly 120-160 English words. " +
+            "(2) Each chapter MUST have exactly 8 exercises: 6 given_word_blank + 1 vocab_hint + 1 phrase_hint. " +
+            "(3) Every required learning target MUST appear in at least one given_word_blank. " +
+            "(4) Only use target names from the allowed list. " +
+            "(5) Output valid JSON only, no commentary. " +
+            "Return the complete JSON now.",
+        });
+        console.info("[LessonDraft] Resetting conversation for final attempt due to repeated error", {
+          errorCategory,
+          courseId: context.course.id,
+        });
+      } else {
+        messages.push({
+          role: "assistant",
+          content: content ?? "",
+        });
+
+        messages.push({
+          role: "user",
+          content:
+            `The previous output had this problem:\n${errorMessage}\n\n${fixGuidance}`,
+        });
+      }
+    }
   }
+
+  if (lastError) {
+    if (lastError instanceof LessonDraftValidationError) throw lastError;
+    throw new LessonDraftValidationError(lastError.message);
+  }
+  throw new LessonDraftValidationError("AI 课文内容校验失败，请重试生成");
 }
