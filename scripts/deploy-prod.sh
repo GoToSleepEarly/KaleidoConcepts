@@ -11,6 +11,10 @@ TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
 cd "$ROOT_DIR"
 
+if command -v cygpath >/dev/null 2>&1; then
+  ENV_FILE="$(cygpath -u "$ENV_FILE")"
+fi
+
 if [[ -f "$ENV_FILE" ]]; then
   set -a
   # shellcheck disable=SC1090
@@ -27,6 +31,26 @@ done
 
 if [[ -z "${DATABASE_URL:-}" ]]; then
   echo "DATABASE_URL is required."
+  echo "Expected to load it from: $ENV_FILE"
+  echo "If this is the first run, create $ROOT_DIR/.env from .env.example and fill in production values."
+  exit 1
+fi
+
+if [[ -z "${DATABASE_URL_FOR_PG_DUMP:-}" ]]; then
+  DATABASE_URL_FOR_PG_DUMP="$(
+    node -e '
+      const raw = process.env.DATABASE_URL;
+      if (!raw) process.exit(1);
+      const url = new URL(raw);
+      url.searchParams.delete("schema");
+      process.stdout.write(url.toString());
+    ' || true
+  )"
+fi
+
+if [[ -z "${DATABASE_URL_FOR_PG_DUMP:-}" ]]; then
+  echo "Failed to derive a pg_dump-compatible DATABASE_URL from DATABASE_URL."
+  echo "Your DATABASE_URL likely contains Prisma-only query params."
   exit 1
 fi
 
@@ -43,7 +67,7 @@ git pull --ff-only origin "$BRANCH"
 
 echo "==> Backing up database"
 DB_BACKUP="$BACKUP_DIR/pbl_${TIMESTAMP}.sql"
-pg_dump "$DATABASE_URL" > "$DB_BACKUP"
+pg_dump "$DATABASE_URL_FOR_PG_DUMP" > "$DB_BACKUP"
 
 echo "==> Backing up images"
 IMAGE_BACKUP="$BACKUP_DIR/images_${TIMESTAMP}.tar.gz"
