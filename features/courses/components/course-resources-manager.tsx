@@ -17,22 +17,36 @@ type ResourceStage = "needs_plan" | "needs_cover" | "needs_chapter_images" | "re
 
 const activeStatuses = new Set<CourseResourceImage["status"]>(["pending", "submitting", "generating"]);
 
-const tips = [
-  "AI 正在理解课文内容，为每张插图生成最合适的画面描述...",
-  "生图过程中你可以先预览课文内容，或去处理其他事情。",
-  "图片生成完成后会自动显示，你可以选择重新生成或沿用。",
-  "每张图片约需 20-40 秒，全部生成预计 1-3 分钟。",
-  "如果生成结果不满意，可以随时点击重新生成。",
-];
-
 const planGenerationSteps = ["分析课文结构", "规划画面分配", "撰写插图 Prompt", "整理资源方案"];
 
 const planTips = [
   "AI 正在分析课文段落结构，确定每个场景的视觉重点...",
   "正在为封面和每个段落设计最合适的画面构图。",
   "撰写英文插图 Prompt，确保风格统一、人物一致。",
-  "资源方案生成中，预计需要 1-3 分钟，请稍候。",
+  "资源方案生成中，预计需要 1-2 分钟，请稍候。",
 ];
+
+// A card whose slot is the current in-flight generate/retry target. Image generation runs synchronously inside the
+// request (1-3 min) so `data.images` does not update until it returns; deriving from `pendingAction` lets the target
+// card show a "生成中" placeholder immediately instead of only spinning the button.
+function isSlotPendingGeneration(image: CourseResourceImage, pendingAction: string | null) {
+  if (!pendingAction) {
+    return false;
+  }
+  if (pendingAction === "generate:all") {
+    return image.status === "missing";
+  }
+  if (pendingAction === `generate:${image.slotId}`) {
+    return true;
+  }
+  if (image.chapterId && pendingAction === `generate:${image.chapterId}`) {
+    return image.status === "missing";
+  }
+  if (image.id && pendingAction === `images/${image.id}/retry`) {
+    return true;
+  }
+  return false;
+}
 
 export function splitResourceImages(images: CourseResourceImage[]) {
   return {
@@ -88,50 +102,6 @@ function statusText(image: CourseResourceImage | null) {
     return "失败";
   }
   return "未生成";
-}
-
-function GenerationProgress({ images }: { images: CourseResourceImage[] }) {
-  const totalTasks = images.length;
-  const completedTasks = images.filter((i) => i.status === "succeeded" && !i.stale).length;
-  const activeTasks = images.filter((i) => activeStatuses.has(i.status)).length;
-  const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
-  const [tipIndex, setTipIndex] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTipIndex((prev) => (prev + 1) % tips.length);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, []);
-
-  if (activeTasks === 0) return null;
-
-  return (
-    <Card className="border-primary/20 bg-primary-50/50">
-      <CardContent className="p-5">
-        <div className="flex items-start gap-4">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-            <Spinner size="sm" className="text-primary" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-foreground">正在生成图片</h3>
-            <p className="mt-1 text-sm text-muted-foreground transition-all duration-300">
-              {tips[tipIndex]}
-            </p>
-            <div className="mt-4">
-              <div className="mb-2 flex items-center justify-between text-xs">
-                <span className="font-medium text-primary">
-                  {completedTasks}/{totalTasks} 张完成
-                  {activeTasks > 0 && <span className="ml-2 text-muted-foreground">· {activeTasks} 张生成中</span>}
-                </span>
-              </div>
-              <Progress value={progress} className="h-2" />
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
 }
 
 function PlanGenerationProgress() {
@@ -294,6 +264,7 @@ function ResourcePlanSummary({ data, pendingAction, onAction }: { data: CourseRe
           </div>
           <h2 className="text-lg font-semibold text-foreground">第一步：生成资源方案</h2>
           <p className="mt-2 max-w-md text-sm text-muted-foreground">AI 将分析课文内容，为封面和每个段落生成专用的插图提示词。</p>
+          <p className="mt-1 text-xs text-muted-foreground/80">预计需要 1-2 分钟，生成过程中请保持页面打开。</p>
           <Button
             className="mt-6"
             onClick={() => onAction("plan/generate")}
@@ -343,7 +314,11 @@ function ResourcePlanSummary({ data, pendingAction, onAction }: { data: CourseRe
 }
 
 function PromptPanel({ image, expanded, onToggle }: { image: CourseResourceImage; expanded: boolean; onToggle: () => void }) {
-  const shouldShow = expanded || (!image.publicUrl && !activeStatuses.has(image.status));
+  // Default: prompt is shown before an image exists and hidden once it does. `expanded` means the user flipped away
+  // from that default, so a click always toggles visibility (the old `expanded || default` OR could never collapse
+  // when the default was already "show").
+  const defaultShow = !image.publicUrl && !activeStatuses.has(image.status);
+  const shouldShow = expanded ? !defaultShow : defaultShow;
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
       <button
@@ -352,7 +327,7 @@ function PromptPanel({ image, expanded, onToggle }: { image: CourseResourceImage
         className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary"
       >
         <span>{shouldShow ? "收起 Prompt" : "查看 Prompt"}</span>
-        <span className="text-muted-foreground/70">单张约 20-40 秒</span>
+        <span className="text-muted-foreground/70">单张约 1-3 分钟</span>
       </button>
       {shouldShow ? (
         <pre className="max-h-48 overflow-auto whitespace-pre-wrap border-t border-border px-3 py-3 text-xs leading-5 text-muted-foreground">
@@ -376,14 +351,21 @@ function CoverPanel({
   promptExpanded: boolean;
   onTogglePrompt: () => void;
 }) {
+  // A cover slot is always present in the plan (status "missing" before it is ever generated), so button state must
+  // key off whether a record actually exists — not off `cover` being non-null — otherwise it shows "重新生成封面"
+  // before the first generation.
+  const coverExists = Boolean(cover && cover.status !== "missing");
   const coverActive = cover ? activeStatuses.has(cover.status) : false;
+  // Generation is synchronous (1-3 min); the record only flips to an active status after the request returns, so drive
+  // the in-card placeholder off the pending action to show progress immediately instead of only spinning the button.
+  const coverGenerating = coverActive || pendingAction === "cover/generate";
   return (
     <Card>
       <CardHeader className="pb-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <CardTitle className="text-base">第二步：视觉封面</CardTitle>
-            <CardDescription>先生成课程主视觉；章节图可以并行或批量生成。</CardDescription>
+            <CardDescription>先生成课程主视觉；章节图可以并行或批量生成。每张图片约需 1-3 分钟。</CardDescription>
           </div>
           <StatusBadge image={cover} />
         </div>
@@ -392,12 +374,13 @@ function CoverPanel({
         {cover ? <PromptPanel image={cover} expanded={promptExpanded} onToggle={onTogglePrompt} /> : null}
         <div className="mt-4 overflow-hidden rounded-xl border border-border bg-secondary">
           <div className="aspect-video">
-            {cover?.publicUrl ? (
+            {cover?.publicUrl && !coverGenerating ? (
               <div className="h-full bg-cover bg-center transition-opacity duration-500" style={{ backgroundImage: `url(${cover.publicUrl})` }} />
-            ) : coverActive ? (
+            ) : coverGenerating ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
                 <Spinner />
-                <p className="text-sm">封面生成中...</p>
+                <p className="text-sm">封面生成中，预计 1-3 分钟...</p>
+                <p className="text-xs text-muted-foreground/70">请保持页面打开，生成完成后会自动显示。</p>
               </div>
             ) : (
               <div className="flex h-full items-center justify-center text-muted-foreground/50">
@@ -411,14 +394,14 @@ function CoverPanel({
         ) : null}
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
-            variant={cover ? "outline" : "default"}
+            variant={coverExists ? "outline" : "default"}
             size="sm"
             onClick={() => onGenerate("cover/generate")}
             disabled={coverActive || pendingAction !== null}
-            loading={coverActive || pendingAction === "cover/generate"}
+            loading={coverGenerating}
           >
-            {cover ? <RefreshCcw className="size-4" /> : <ImageIcon className="size-4" />}
-            {cover ? "重新生成封面" : "生成封面"}
+            {coverExists ? <RefreshCcw className="size-4" /> : <ImageIcon className="size-4" />}
+            {coverExists ? "重新生成封面" : "生成封面"}
           </Button>
         </div>
       </CardContent>
@@ -579,6 +562,9 @@ function ChapterImageCard({
   const canGenerate = image.status === "missing";
   const isActive = activeStatuses.has(image.status);
   const isSucceeded = image.status === "succeeded" && !image.stale;
+  // Generation runs synchronously (1-3 min) so the record only flips to an active status after the request returns.
+  // Derive an in-flight flag from the pending action to show the "生成中" placeholder immediately on click.
+  const isGenerating = isActive || isSlotPendingGeneration(image, pendingAction);
 
   return (
     <article className={cn(
@@ -586,12 +572,13 @@ function ChapterImageCard({
       isSucceeded ? "border-border" : "border-border bg-secondary/30",
     )}>
       <div className="aspect-video bg-secondary relative overflow-hidden">
-        {image.publicUrl ? (
+        {image.publicUrl && !isGenerating ? (
           <div className="h-full bg-cover bg-center transition-opacity duration-500" style={{ backgroundImage: `url(${image.publicUrl})` }} />
-        ) : isActive ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+        ) : isGenerating ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center text-muted-foreground">
             <Spinner size="sm" />
-            <p className="text-xs">生成中</p>
+            <p className="text-xs">生成中，预计 1-3 分钟...</p>
+            <p className="text-[11px] text-muted-foreground/70">请保持页面打开</p>
           </div>
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground/40">
@@ -757,8 +744,6 @@ export function CourseResourcesManager({ courseId }: { courseId: string }) {
           {error}
         </div>
       ) : null}
-
-      {data && hasAnyActive ? <GenerationProgress images={data.images} /> : null}
 
       {data ? <ResourcePlanSummary data={data} pendingAction={pendingAction} onAction={(path) => void mutate(path)} /> : null}
 

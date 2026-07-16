@@ -167,4 +167,13 @@ describe("course resource plan parsing", () => {
     expect(prompt).toContain("shotOrder 1 must use paragraph 1");
     expect(prompt).toContain("shotOrder 2 must use paragraph 2");
   });
+
+  test("feeds each character's gender and age so the model does not guess", () => {
+    const prompt = buildCourseResourcePlanPrompt({ course, teacher, students: [student], storyOption, draft });
+
+    expect(prompt).toContain("Ms Lin (female");
+    expect(prompt).toContain("Summer (female, age 8");
+    expect(prompt).toContain("kind teacher with round glasses");
+    expect(prompt).toContain("gender");
+  });
 });

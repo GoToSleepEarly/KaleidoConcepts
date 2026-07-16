@@ -1,6 +1,8 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import sharp from "sharp";
+
 export type CourseImageStorageTargetInput = {
   storageDir?: string;
   courseId: string;
@@ -49,6 +51,34 @@ function decodeDataUrl(value: string) {
   return Buffer.from(value.slice(markerIndex + marker.length), "base64");
 }
 
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function isPng(buffer: Buffer) {
+  return buffer.length >= PNG_MAGIC.length && buffer.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC);
+}
+
+function webpQuality() {
+  const parsed = Number(process.env.COURSE_IMAGE_WEBP_QUALITY);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 100 ? parsed : 78;
+}
+
+// The image provider (gpt-image-2 via QuickRouter) ignores the `format` param and always returns full-size PNG
+// (~2MB). Re-encode PNG to WebP before persisting so Step 4 and course preview load quickly. Non-PNG buffers are
+// stored as-is, so this stays a safe fallback if the provider ever honors webp output.
+async function encodeForStorage(buffer: Buffer) {
+  if (!isPng(buffer)) {
+    return buffer;
+  }
+
+  try {
+    return await sharp(buffer).webp({ quality: webpQuality() }).toBuffer();
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.warn(`[course-images] webp re-encode failed, storing original PNG: ${msg}`);
+    return buffer;
+  }
+}
+
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 60000;
 
 function resolveDownloadTimeoutMs() {
@@ -61,7 +91,7 @@ export async function downloadCourseImage(input: CourseImageDownloadInput) {
   if (dataUrl) {
     const target = buildCourseImageStorageTarget(input);
     await mkdir(path.dirname(target.storagePath), { recursive: true });
-    await writeFile(target.storagePath, dataUrl);
+    await writeFile(target.storagePath, await encodeForStorage(dataUrl));
     return target;
   }
 
@@ -84,7 +114,7 @@ export async function downloadCourseImage(input: CourseImageDownloadInput) {
   const target = buildCourseImageStorageTarget(input);
   await mkdir(path.dirname(target.storagePath), { recursive: true });
   const buffer = Buffer.from(await response.arrayBuffer());
-  await writeFile(target.storagePath, buffer);
+  await writeFile(target.storagePath, await encodeForStorage(buffer));
 
   return target;
 }
