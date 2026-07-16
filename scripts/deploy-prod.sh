@@ -37,20 +37,18 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
 fi
 
 if [[ -z "${DATABASE_URL_FOR_PG_DUMP:-}" ]]; then
-  DATABASE_URL_FOR_PG_DUMP="$(
-    node -e '
-      const raw = process.env.DATABASE_URL;
-      if (!raw) process.exit(1);
-      const url = new URL(raw);
-      url.searchParams.delete("schema");
-      process.stdout.write(url.toString());
-    ' || true
-  )"
+  DATABASE_URL_FOR_PG_DUMP="${DATABASE_URL%%\?*}"
 fi
 
 if [[ -z "${DATABASE_URL_FOR_PG_DUMP:-}" ]]; then
   echo "Failed to derive a pg_dump-compatible DATABASE_URL from DATABASE_URL."
   echo "Your DATABASE_URL likely contains Prisma-only query params."
+  exit 1
+fi
+
+if [[ "$DATABASE_URL_FOR_PG_DUMP" == *"schema="* ]]; then
+  echo "DATABASE_URL_FOR_PG_DUMP still contains Prisma-only query params."
+  echo "Set DATABASE_URL_FOR_PG_DUMP explicitly in production if your pg_dump connection needs extra options."
   exit 1
 fi
 
