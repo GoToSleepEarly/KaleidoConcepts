@@ -13,8 +13,6 @@ const course: CourseBasicDetail = {
   durationMinutes: 30,
   theme: "forest gate",
   grammar: ["Past Simple"],
-  storyIdeaMode: "ai",
-  storyIdea: "",
   llmModel: "deepseek_chat",
   status: "draft",
 };
@@ -163,9 +161,12 @@ describe("course resource plan parsing", () => {
     expect(prompt).toContain("story poster");
     expect(prompt).toContain("memorable central visual hook");
     expect(prompt).toContain("Do not add extra students");
-    expect(prompt).toContain("Only use cast aliases");
+    expect(prompt).toContain("Only name characters that appear in CAST BIBLE");
     expect(prompt).toContain("shotOrder 1 must use paragraph 1");
     expect(prompt).toContain("shotOrder 2 must use paragraph 2");
+    expect(prompt).toContain("CAST BIBLE");
+    expect(prompt).toContain("450-800 characters");
+    expect(prompt).toContain("Do not paraphrase age, gender, hair, glasses, or other stable identity traits");
   });
 
   test("feeds each character's gender and age so the model does not guess", () => {
@@ -175,5 +176,40 @@ describe("course resource plan parsing", () => {
     expect(prompt).toContain("Summer (female, age 8");
     expect(prompt).toContain("kind teacher with round glasses");
     expect(prompt).toContain("gender");
+  });
+
+  test("uses Step3 character visual bible before Step1 profiles for third-party characters", () => {
+    const prompt = buildCourseResourcePlanPrompt({
+      course,
+      teacher,
+      students: [student],
+      storyOption,
+      draft: {
+        ...draft,
+        characterVisualBible: [
+          {
+            name: "He Zhao",
+            role: "story protagonist",
+            status: "complete",
+            stableFeatures: "high-school boy, bright outgoing temperament, clean short hair, playful smile",
+            variableStates: "school uniform, back-row seat, online quiz, exam room",
+            avoidChanges: "do not turn him into an adult or a gloomy character",
+          },
+          {
+            name: "Xie Yu",
+            role: "story protagonist",
+            status: "incomplete",
+            stableFeatures: "待补充",
+            variableStates: "back-row sleeping, calm quiz solving",
+            avoidChanges: "do not invent official appearance",
+          },
+        ],
+      },
+    });
+
+    expect(prompt).toContain("Character Visual Bible from Step3, highest priority");
+    expect(prompt).toContain("He Zhao");
+    expect(prompt).toContain("bright outgoing temperament");
+    expect(prompt).toContain("incomplete; use neutral educational illustration");
   });
 });

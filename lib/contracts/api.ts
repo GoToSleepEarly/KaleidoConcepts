@@ -1,11 +1,8 @@
-import type { StructuredLesson } from "@/lib/lesson/types";
-
 export type Gender = "male" | "female";
 export type EnglishLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
 export type CourseStatus = "draft" | "building_resources" | "ready" | "build_failed" | "published";
 export type CourseCreateStep = "basic" | "story_options" | "lesson_draft" | "resources" | "preview";
 export type PersonRole = "teacher" | "student";
-export type StoryIdeaMode = "manual" | "ai";
 export type LlmModel = "deepseek_chat" | "gpt_5_5";
 
 export type PresetKind = "theme" | "grammar";
@@ -92,25 +89,6 @@ export type StudentInput = {
   interests: string[];
   learningGoal?: string;
   notes?: string;
-};
-
-export type CourseBrief = {
-  studentIds: string[];
-  age: number;
-  englishLevel: EnglishLevel;
-  grammar: string[];
-  durationMinutes: 30 | 45 | 60;
-  theme: string;
-  storyIdea: string;
-};
-
-export type StoryPlan = {
-  id: string;
-  title: string;
-  summary: string;
-  chapters: string[];
-  imageUrl: string;
-  accent: "green" | "blue" | "violet";
 };
 
 export type CourseImage = {
@@ -341,19 +319,6 @@ export type BuildProgress = {
   pdfDone: boolean;
 };
 
-export type CourseDetail = {
-  id: string;
-  title: string;
-  students: StudentProfile[];
-  brief: CourseBrief;
-  storyPlans: StoryPlan[];
-  selectedStoryPlanId: string;
-  lessonText: string;
-  structuredLesson: StructuredLesson;
-  images: CourseImage[];
-  progress: BuildProgress;
-};
-
 export type CourseListItem = {
   id: string;
   title: string;
@@ -376,10 +341,8 @@ export type CourseBasicInput = {
   studentIds: string[];
   englishLevel: EnglishLevel;
   durationMinutes: 30 | 45 | 60;
-  theme: string;
+  theme?: string;
   grammar: string[];
-  storyIdeaMode: StoryIdeaMode;
-  storyIdea?: string;
   llmModel?: LlmModel;
 };
 
@@ -400,8 +363,6 @@ export type CourseBasicMutationResponse = {
   };
 };
 
-export type StoryOptionVariant = "faithful" | "enhanced" | "creative";
-
 export type StoryChapter = {
   title: string;
   summary: string;
@@ -409,16 +370,10 @@ export type StoryChapter = {
 
 export type StoryOption = {
   id: string;
-  variant: StoryOptionVariant;
+  variant: string;
   title: string;
   storyline: string;
   chapters: StoryChapter[];
-};
-
-export type StoryOptionsListResponse = {
-  options: StoryOption[];
-  selectedOptionId: string | null;
-  lessonDraftExists: boolean;
 };
 
 export type LessonDraft = LessonContentDraft;
@@ -428,6 +383,16 @@ export type CastAlias = {
   displayName: string;
 };
 
+export type CharacterVisualProfile = {
+  name: string;
+  role: string;
+  status: "complete" | "incomplete";
+  stableFeatures: string;
+  variableStates: string;
+  avoidChanges: string;
+  source?: string;
+};
+
 export type LessonContentDraft = {
   schemaVersion: "lesson_content_v1";
   sourceStoryOptionId: string;
@@ -435,6 +400,7 @@ export type LessonContentDraft = {
   title: string;
   language: "en";
   castAliases: CastAlias[];
+  characterVisualBible?: CharacterVisualProfile[];
   chapters: LessonContentChapter[];
   closingReading: LessonClosingReading;
 };
@@ -538,25 +504,32 @@ export type LessonDraftResponse = {
   llmModel: LlmModel;
 };
 
-export type CreateCourseResponse = {
-  course: CourseDetail;
+export type LessonChatRole = "user" | "assistant";
+
+export type LessonChatMessage = {
+  id: string;
+  role: LessonChatRole;
+  content: string;
+  createdAt: string;
+};
+
+export type LessonChatStoryDirection = {
+  id: string;
+  title: string;
+  storyline: string;
+  stages: string[];
+  reason: string;
+};
+
+export type LessonChatResponse = {
+  messages: LessonChatMessage[];
+  draftText: string;
+  llmModel: LlmModel;
+  lessonDraftExists: boolean;
 };
 
 export type CoursesListResponse = {
   courses: CourseListItem[];
-};
-
-export type StoryOptionsResponse = {
-  options: StoryPlan[];
-};
-
-export type LessonTextResponse = {
-  lessonText: string;
-};
-
-export type BuildStatusResponse = {
-  progress: BuildProgress;
-  images: CourseImage[];
 };
 
 export type PeopleListResponse = {

@@ -6,6 +6,7 @@ import type {
   StoryOption,
 } from "@/lib/contracts/api";
 import {
+  buildGptLessonBlueprint,
   buildLessonContentPrompt,
   countEnglishWords,
   generateLessonDraft,
@@ -23,11 +24,12 @@ const baseCourse = {
   durationMinutes: 45 as const,
   theme: "唐代诗歌博物馆",
   grammar: ["Past Simple", "There be", "Modals"],
-  storyIdeaMode: "manual" as const,
-  storyIdea: "找回诗卷",
   status: "draft" as const,
 };
-const deepseekCourse: CourseBasicDetail = { ...baseCourse, llmModel: "deepseek_chat" };
+const deepseekCourse: CourseBasicDetail = {
+  ...baseCourse,
+  llmModel: "deepseek_chat",
+};
 const gpt55Course: CourseBasicDetail = { ...baseCourse, llmModel: "gpt_5_5" };
 const teacher: PersonProfile = {
   id: "teacher-1",
@@ -54,8 +56,18 @@ const storyOption: StoryOption = {
   storyline: "老师和学生找回诗卷。",
   chapters: [{ title: "诗卷变暗", summary: "诗卷失去光亮。" }],
 };
-const deepseekContext = { course: deepseekCourse, teacher, students: [student], storyOption };
-const gpt55Context = { course: gpt55Course, teacher, students: [student], storyOption };
+const deepseekContext = {
+  course: deepseekCourse,
+  teacher,
+  students: [student],
+  storyOption,
+};
+const gpt55Context = {
+  course: gpt55Course,
+  teacher,
+  students: [student],
+  storyOption,
+};
 const chapterExpansion = Array.from({ length: 75 }, () => "carefully").join(
   " ",
 );
@@ -183,6 +195,65 @@ const aiPlan: AiLessonContentPlan = {
   },
 };
 
+const gptExercise = (answer: string, givenWord = answer) => ({
+  before: "The class ",
+  answer,
+  after: " the glowing clue carefully.",
+  givenWord,
+});
+
+const gptHintExercise = (answer: string) => ({
+  before: "The class found a ",
+  answer,
+  after: " beside the old scroll.",
+  hint: "Chinese hint",
+});
+
+const gptParagraph = (
+  exercise1: ReturnType<typeof gptExercise>,
+  exercise2:
+    ReturnType<typeof gptExercise> | ReturnType<typeof gptHintExercise>,
+  exercise3:
+    ReturnType<typeof gptExercise> | ReturnType<typeof gptHintExercise>,
+  exercise4: ReturnType<typeof gptExercise>,
+) => ({
+  opening: "Moonlight filled the quiet museum hall that evening.",
+  exercise1,
+  transition1:
+    "Everyone moved forward because the silver trail was growing brighter.",
+  exercise2,
+  transition2: "A soft bell rang while the group studied the ancient wall.",
+  exercise3,
+  transition3: "They shared their ideas and chose the safest path together.",
+  exercise4,
+  closing: "Warm light filled the room.",
+});
+
+const gptPlan = {
+  title: "The Moonlight Scroll",
+  chapters: {
+    chapter1: {
+      title: "The Scroll Goes Dark",
+      paragraph1: gptParagraph(
+        gptExercise("visited", "visit"),
+        gptExercise("was", "be"),
+        gptHintExercise("clue"),
+        gptExercise("could", "can"),
+      ),
+      paragraph2: gptParagraph(
+        gptExercise("followed", "follow"),
+        gptHintExercise("give up"),
+        gptExercise("returned", "return"),
+        gptExercise("smiled", "smile"),
+      ),
+    },
+  },
+  closingReading: {
+    title: "The Light Returns",
+    text: "The class remembered the clue and shared the story together.",
+  },
+};
+
 function quickRouterResponse(content: unknown) {
   return new Response(
     JSON.stringify({
@@ -229,8 +300,12 @@ describe("lesson content prompt", () => {
       "Code will concatenate text.text and exercise.answer",
     );
     expect(prompt).toContain("Use at most one exercise part in each sentence");
-    expect(prompt).toContain("CRITICAL WORD COUNT: Each chapter MUST contain 120-160 English words");
-    expect(prompt).toContain("CRITICAL TARGET COVERAGE: You MUST use every required learning target");
+    expect(prompt).toContain(
+      "CRITICAL WORD COUNT: Each chapter MUST contain 120-160 English words",
+    );
+    expect(prompt).toContain(
+      "CRITICAL TARGET COVERAGE: You MUST use every required learning target",
+    );
     expect(prompt).toContain(
       "exactly 6 given_word_blank, exactly 1 vocab_hint, and exactly 1 phrase_hint",
     );
@@ -264,6 +339,43 @@ describe("lesson content schema", () => {
   });
 });
 
+describe("GPT-5.5 lesson blueprint", () => {
+  test("preassigns every required target while fixing the 6+1+1 exercise structure", () => {
+    const blueprint = buildGptLessonBlueprint(gpt55Context);
+    const slots = blueprint.chapters.flatMap((chapter) =>
+      chapter.paragraphs.flatMap((paragraph) => paragraph.exercises),
+    );
+
+    expect(slots).toHaveLength(8);
+    expect(
+      slots.filter((slot) => slot.type === "given_word_blank"),
+    ).toHaveLength(6);
+    expect(slots.filter((slot) => slot.type === "vocab_hint")).toHaveLength(1);
+    expect(slots.filter((slot) => slot.type === "phrase_hint")).toHaveLength(1);
+    expect(
+      new Set(
+        slots
+          .filter((slot) => slot.type === "given_word_blank")
+          .map((slot) => slot.target),
+      ),
+    ).toEqual(new Set(baseCourse.grammar));
+  });
+
+  test("rejects a course whose required targets exceed the grammar slots", () => {
+    const context = {
+      ...gpt55Context,
+      course: {
+        ...gpt55Context.course,
+        grammar: Array.from({ length: 7 }, (_, index) => `Target ${index + 1}`),
+      },
+    };
+
+    expect(() => buildGptLessonBlueprint(context)).toThrow(
+      "7 learning targets but only 6 grammar exercise slots",
+    );
+  });
+});
+
 describe("lesson draft generation", () => {
   test("generates clean text and embedded exercises via DeepSeek (default)", async () => {
     vi.stubEnv("DEEPSEEK_API_KEY", "test-key");
@@ -285,11 +397,11 @@ describe("lesson draft generation", () => {
     vi.stubEnv("QUICKROUTER_API_KEY", "test-key");
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => quickRouterResponse(aiPlan)),
+      vi.fn(async () => quickRouterResponse(gptPlan)),
     );
     const draft = await generateLessonDraft(gpt55Context);
-    expect(draft.chapters[0].paragraphs[0].sentences[0].text).toBe(
-      "MsPANTeacher and YouStudent visited the museum.",
+    expect(draft.chapters[0].paragraphs[0].sentences[1].text).toBe(
+      "The class visited the glowing clue carefully.",
     );
     expect(fetch).toHaveBeenCalledTimes(1);
   });
@@ -310,7 +422,7 @@ describe("lesson draft generation", () => {
 
   test("enables GPT-5.5 reasoning by default for stability", async () => {
     vi.stubEnv("QUICKROUTER_API_KEY", "test-key");
-    const fetchMock = vi.fn(async () => quickRouterResponse(aiPlan));
+    const fetchMock = vi.fn(async () => quickRouterResponse(gptPlan));
     vi.stubGlobal("fetch", fetchMock);
     await generateLessonDraft(gpt55Context);
     const [, init] = fetchMock.mock.calls[0] as unknown as [
@@ -320,6 +432,49 @@ describe("lesson draft generation", () => {
     const body = JSON.parse(init.body);
     expect(body.reasoning).toEqual({ effort: "medium" });
     expect(body.max_output_tokens).toBe(32000);
+    expect(body.response_format).toBeUndefined();
+    expect(body.text.format).toMatchObject({
+      type: "json_schema",
+      name: "pbl_lesson_content",
+      strict: true,
+    });
+    expect(body.text.format.schema.required).toEqual([
+      "title",
+      "chapters",
+      "closingReading",
+    ]);
+    expect(body.input[1].content).toContain(
+      "All story text, exercise sentences, hints, and answers must match CEFR A1",
+    );
+    expect(body.input[1].content).toContain(
+      "chapter1.paragraph1.exercise1: given_word_blank; required target: Past Simple",
+    );
+  });
+
+  test("compiles GPT-5.5 fixed slots into exactly eight embedded exercises", async () => {
+    vi.stubEnv("QUICKROUTER_API_KEY", "test-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => quickRouterResponse(gptPlan)),
+    );
+
+    const draft = await generateLessonDraft(gpt55Context);
+    expect(draft.chapters[0].exercises).toHaveLength(8);
+    expect(
+      draft.chapters[0].exercises.map((exercise) => exercise.type),
+    ).toEqual([
+      "given_word_blank",
+      "given_word_blank",
+      "vocab_hint",
+      "given_word_blank",
+      "given_word_blank",
+      "phrase_hint",
+      "given_word_blank",
+      "given_word_blank",
+    ]);
+    expect(
+      new Set(draft.chapters[0].exercises.map((exercise) => exercise.target)),
+    ).toEqual(new Set([...baseCourse.grammar, "Vocabulary", "Verb Phrases"]));
   });
 
   test("logs raw output when compiler validation fails", async () => {
@@ -402,7 +557,9 @@ describe("lesson draft generation", () => {
         async () =>
           new Response(
             JSON.stringify({
-              choices: [{ finish_reason: "stop", message: { content: "{bad json" } }],
+              choices: [
+                { finish_reason: "stop", message: { content: "{bad json" } },
+              ],
             }),
             { status: 200 },
           ),

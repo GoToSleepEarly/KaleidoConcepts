@@ -1,0 +1,5 @@
+ALTER TABLE "Course"
+  DROP COLUMN IF EXISTS "storyIdeaMode",
+  DROP COLUMN IF EXISTS "storyIdea";
+
+DROP TYPE IF EXISTS "StoryIdeaMode";

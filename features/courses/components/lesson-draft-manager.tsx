@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -16,13 +16,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
 import type {
+  CharacterVisualProfile,
   LessonContentChapter,
   LessonDraft,
   LessonDraftGeneration,
   LessonDraftResponse,
   LessonExercise,
   LessonSentence,
-  LlmModel,
 } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
@@ -30,10 +30,6 @@ const closingViewId = "__closing__";
 
 const pollIntervalMs = 5_000;
 
-const llmModelOptions: { value: LlmModel; label: string }[] = [
-  { value: "deepseek_chat", label: "DeepSeek" },
-  { value: "gpt_5_5", label: "GPT 5.5" },
-];
 
 const idleGeneration: LessonDraftGeneration = {
   status: "idle",
@@ -45,17 +41,17 @@ const estimatedTotalMs = 300_000;
 const generationStages = [
   {
     label: "规划英文阅读结构",
-    note: "读取故事大纲、人物信息和 CEFR 等级要求。",
+    note: "读取故事、人物信息和 CEFR 等级要求。",
     untilMs: 45_000,
   },
   {
     label: "生成故事正文与互动题",
-    note: "AI 正在生成完整故事、句子片段和多种练习题。",
+    note: "AI 正在生成故事、句子片段和练习题。",
     untilMs: 260_000,
   },
   {
     label: "校验课文与题目",
-    note: "系统正在校验章节长度、知识点和练习结构。",
+    note: "系统正在校验章节、知识点和练习结构。",
     untilMs: 285_000,
   },
   {
@@ -80,7 +76,6 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
   const [isEditing, setIsEditing] = useState(false);
   const [generation, setGeneration] =
     useState<LessonDraftGeneration>(idleGeneration);
-  const [selectedLlmModel, setSelectedLlmModel] = useState<LlmModel>("deepseek_chat");
   const [activeChapterId, setActiveChapterId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -98,7 +93,6 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
 
   function applyResponse(data: LessonDraftResponse) {
     setGeneration(data.generation);
-    setSelectedLlmModel(data.llmModel);
     if (data.draft) {
       setDraft(data.draft);
       setActiveChapterId((current) =>
@@ -239,6 +233,12 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
     });
   }
 
+  function updateCharacterVisualBible(text: string) {
+    mutateEditDraft((next) => {
+      next.characterVisualBible = parseCharacterVisualBibleText(text);
+    });
+  }
+
   useEffect(() => {
     let isActive = true;
 
@@ -253,7 +253,7 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
           const data = (await response.json().catch(() => null)) as {
             message?: string;
           } | null;
-          throw new Error(data?.message ?? "阅读草稿加载失败");
+          throw new Error(data?.message ?? "标准教案加载失败");
         }
 
         const data = (await response.json()) as LessonDraftResponse;
@@ -264,7 +264,7 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
       } catch (loadError) {
         if (isActive) {
           setError(
-            loadError instanceof Error ? loadError.message : "阅读草稿加载失败",
+            loadError instanceof Error ? loadError.message : "标准教案加载失败",
           );
         }
       } finally {
@@ -330,40 +330,6 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
     : null;
   const elapsedMs = startedAtMs ? Math.max(0, nowMs - startedAtMs) : 0;
 
-  async function generateDraft() {
-    setError("");
-    setMessage("");
-
-    try {
-      const response = await fetch(
-        `/api/courses/${courseId}/lesson-draft/generate`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ llmModel: selectedLlmModel }),
-        },
-      );
-
-      if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as {
-          message?: string;
-        } | null;
-        throw new Error(data?.message ?? "阅读草稿生成失败");
-      }
-
-      const data = (await response.json()) as LessonDraftResponse;
-      applyResponse(data);
-      if (data.draft) {
-        setMessage("英文互动阅读草稿已生成。");
-      }
-    } catch (generateError) {
-      setError(
-        generateError instanceof Error
-          ? generateError.message
-          : "阅读草稿生成失败",
-      );
-    }
-  }
 
   async function saveDraft() {
     if (!editDraft) {
@@ -385,17 +351,17 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
         const data = (await response.json().catch(() => null)) as {
           message?: string;
         } | null;
-        throw new Error(data?.message ?? "阅读草稿保存失败");
+        throw new Error(data?.message ?? "标准教案保存失败");
       }
 
       const data = (await response.json()) as { draft: LessonDraft };
       setDraft(data.draft);
       setEditDraft(null);
       setIsEditing(false);
-      setMessage("阅读草稿已保存。");
+      setMessage("标准教案已保存。");
     } catch (saveError) {
       setError(
-        saveError instanceof Error ? saveError.message : "阅读草稿保存失败",
+        saveError instanceof Error ? saveError.message : "标准教案保存失败",
       );
     } finally {
       setIsSaving(false);
@@ -403,7 +369,7 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
   }
 
   if (isLoading) {
-    return <StatusPanel label="正在加载英文阅读草稿..." />;
+    return <StatusPanel label="正在加载标准教案..." />;
   }
 
   return (
@@ -415,14 +381,14 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
           <Button asChild className="mb-4 h-9 px-3 text-sm" variant="outline">
             <Link href={`/courses/${courseId}/create/story-options`}>
               <ArrowLeft className="size-4" />
-              返回故事大纲
+              返回 AI 教案共创
             </Link>
           </Button>
           <h2 className="text-xl font-semibold tracking-tight text-slate-950">
-            英文互动阅读草稿
+            标准教案
           </h2>
           <p className="mt-2 text-sm text-slate-500">
-            检查带题阅读文本和答案。图片将在资源生成步骤根据最终正文自动生成。
+            检查带题阅读文本和答案。图片会在资源生成步骤根据最终正文自动生成。
           </p>
         </div>
         {draft ? (
@@ -440,7 +406,7 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
                   ) : (
                     <Save className="size-4" />
                   )}
-                  保存草稿
+                  保存教案
                 </Button>
                 <Button
                   disabled={isSaving}
@@ -456,7 +422,7 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
               <>
                 <Button onClick={beginEdit} type="button" variant="outline">
                   <Pencil className="size-4" />
-                  编辑草稿
+                  编辑教案
                 </Button>
                 <Button
                   asChild
@@ -493,49 +459,7 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
         isGenerating ? (
           <GenerationPanel elapsedMs={elapsedMs} />
         ) : (
-          <section className="rounded-lg border border-[#E5E7EB] bg-white p-8 text-center shadow-sm">
-            <h3 className="text-lg font-semibold text-slate-950">
-              {generation.status === "failed"
-                ? "重新生成英文互动阅读草稿"
-                : "生成英文互动阅读草稿"}
-            </h3>
-            {generation.status === "failed" && generation.error ? (
-              <p className="mx-auto mt-2 max-w-xl rounded-lg bg-red-50 px-4 py-3 text-sm leading-6 text-red-600">
-                上次生成未完成：{generation.error}
-              </p>
-            ) : null}
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
-              系统会基于选中的中文故事大纲，生成英文正文、嵌入式练习题和答案。生成期间可以离开或刷新页面，进度会自动恢复。
-            </p>
-            <div className="mt-5 flex items-center justify-center gap-2">
-              <span className="text-sm text-slate-600">AI 模型：</span>
-              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-                {llmModelOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    className={cn(
-                      "rounded-md px-3 py-1.5 text-sm font-medium transition",
-                      selectedLlmModel === option.value
-                        ? "bg-white text-slate-900 shadow-sm"
-                        : "text-slate-500 hover:text-slate-700",
-                    )}
-                    onClick={() => setSelectedLlmModel(option.value)}
-                    type="button"
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <Button
-              className="mt-5 bg-violet-600 text-white hover:bg-violet-700"
-              onClick={generateDraft}
-              type="button"
-            >
-              <Sparkles className="size-4" />
-              {generation.status === "failed" ? "重新生成阅读草稿" : "生成阅读草稿"}
-            </Button>
-          </section>
+          <EmptyStandardLessonPanel courseId={courseId} />
         )
       ) : workingDraft ? (
         <div className="grid gap-5 xl:grid-cols-[220px_1fr_300px]">
@@ -578,11 +502,15 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
             <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
               <div className="mb-2 flex items-center gap-2 font-semibold text-slate-900">
                 <CheckCircle2 className="size-4 text-emerald-600" />
-                图片生成说明
+                结构化说明
               </div>
-              图片将在下一步根据 clean text
-              自动生成。本页不再维护图片提示，避免图片和正文编辑脱节。
+              当前页面展示的是由文本教案整理出的标准结构。后续资源生成会读取这里的正文和章节信息。
             </section>
+            <CharacterVisualBiblePanel
+              draft={workingDraft}
+              isEditing={isEditing}
+              onChange={updateCharacterVisualBible}
+            />
           </aside>
         </div>
       ) : null}
@@ -590,6 +518,122 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
   );
 }
 
+function serializeCharacterVisualBible(profiles: CharacterVisualProfile[] = []) {
+  return profiles
+    .map((profile) =>
+      [
+        `${profile.name}:`,
+        `身份：${profile.role}`,
+        `形象状态：${profile.status === "complete" ? "已补全" : "待补充"}`,
+        `稳定特征：${profile.stableFeatures}`,
+        `可变状态：${profile.variableStates}`,
+        `避免变化：${profile.avoidChanges}`,
+      ].join("\n"),
+    )
+    .join("\n\n");
+}
+
+function parseCharacterVisualBibleText(text: string): CharacterVisualProfile[] {
+  const profiles: CharacterVisualProfile[] = [];
+  let current: Partial<CharacterVisualProfile> | null = null;
+
+  function finishCurrent() {
+    if (!current?.name) return;
+    profiles.push({
+      name: current.name.trim(),
+      role: current.role?.trim() || "故事角色",
+      status: current.status === "complete" ? "complete" : "incomplete",
+      stableFeatures: current.stableFeatures?.trim() || "待补充",
+      variableStates: current.variableStates?.trim() || "待补充",
+      avoidChanges: current.avoidChanges?.trim() || "待补充",
+      source: "step3_edit",
+    });
+  }
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const nameMatch = line.match(/^(.+?)[:：]\s*$/);
+    if (nameMatch && !/^(身份|形象状态|稳定特征|可变状态|避免变化)$/.test(nameMatch[1])) {
+      finishCurrent();
+      current = { name: nameMatch[1].trim() };
+      continue;
+    }
+
+    if (!current) continue;
+    const fieldMatch = line.match(/^(身份|形象状态|稳定特征|可变状态|避免变化)[:：]\s*(.+)$/);
+    if (!fieldMatch) continue;
+    if (fieldMatch[1] === "身份") current.role = fieldMatch[2];
+    if (fieldMatch[1] === "形象状态") current.status = /已补全|完整|complete/i.test(fieldMatch[2]) ? "complete" : "incomplete";
+    if (fieldMatch[1] === "稳定特征") current.stableFeatures = fieldMatch[2];
+    if (fieldMatch[1] === "可变状态") current.variableStates = fieldMatch[2];
+    if (fieldMatch[1] === "避免变化") current.avoidChanges = fieldMatch[2];
+  }
+
+  finishCurrent();
+  return profiles;
+}
+
+function CharacterVisualBiblePanel({
+  draft,
+  isEditing,
+  onChange,
+}: {
+  draft: LessonDraft;
+  isEditing: boolean;
+  onChange: (text: string) => void;
+}) {
+  const profiles = draft.characterVisualBible ?? [];
+  if (!isEditing && profiles.length === 0) return null;
+
+  return (
+    <section className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm leading-6 text-emerald-800">
+      <div className="mb-2 font-semibold text-emerald-950">角色视觉设定</div>
+      {isEditing ? (
+        <>
+          <textarea
+            className="min-h-44 w-full resize-y rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs leading-6 text-slate-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={"角色名：\n身份：故事主角\n形象状态：已补全 / 待补充\n稳定特征：...\n可变状态：...\n避免变化：..."}
+            value={serializeCharacterVisualBible(profiles)}
+          />
+          <p className="mt-2 text-xs text-emerald-700">这里会直接影响 Step4 图片 prompt 的角色一致性。</p>
+        </>
+      ) : (
+        <div className="space-y-3">
+          {profiles.map((profile) => (
+            <div className="rounded-lg bg-white/70 px-3 py-2" key={profile.name}>
+              <div className="font-semibold text-emerald-950">
+                {profile.name}
+                {profile.status === "incomplete" ? <span className="ml-2 text-xs font-medium text-amber-700">待补充</span> : null}
+              </div>
+              <div className="mt-1 text-xs text-emerald-800">稳定特征：{profile.stableFeatures}</div>
+              <div className="mt-1 text-xs text-emerald-700">可变状态：{profile.variableStates}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function EmptyStandardLessonPanel({ courseId }: { courseId: string }) {
+  return (
+    <section className="rounded-lg border border-[#E5E7EB] bg-white p-8 text-center shadow-sm">
+      <h3 className="text-lg font-semibold text-slate-950">还没有标准教案</h3>
+      <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
+        请先回到 AI 教案共创页，生成并确认右侧文本教案。系统结构化成功后，这里会显示可预览和微调的标准教案。
+      </p>
+      <Button asChild className="mt-5 bg-violet-600 text-white hover:bg-violet-700">
+        <Link href={`/courses/${courseId}/create/story-options`}>
+          <Sparkles className="size-4" />
+          返回 AI 教案共创
+        </Link>
+      </Button>
+    </section>
+  );
+}
 function ChapterNav({
   draft,
   activeChapterId,
@@ -762,7 +806,7 @@ function EditableSentence({
             className="inline-flex items-center gap-1 rounded-md bg-violet-100 px-2 py-1 text-xs font-medium text-violet-700"
             key={`${sentence.id}-${index}`}
           >
-            填空（{exercise ? `第 ${exercise.order} 题` : "?"}）
+            填空{exercise ? `第 ${exercise.order} 题` : "?"}
           </span>
         );
       })}
@@ -930,7 +974,7 @@ function InlineExercise({
         [{label}: {exercise.pattern}
       </span>
       <span>
-        提示：{exercise.hint}，{exercise.letterCount}个字母]
+        提示：{exercise.hint}，{exercise.letterCount} 个字母
       </span>
     </span>
   );
@@ -1121,7 +1165,7 @@ function ClosingReadingPanel({
             ))}
           </div>
           <p className="text-xs text-slate-400">
-            词表将在保存时依据词汇 / 短语题答案自动重算。
+            词表会在保存时依据词汇 / 短语题答案自动重算。
           </p>
         </div>
       ) : (

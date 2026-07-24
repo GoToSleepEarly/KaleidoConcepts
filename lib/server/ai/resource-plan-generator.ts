@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type {
+  CharacterVisualProfile,
   CourseBasicDetail,
   CourseResourcePlan,
   LessonDraft,
@@ -84,6 +85,37 @@ function describePerson(person: PersonProfile) {
   return `${personName(person)} (${attributes.join(", ")})`;
 }
 
+function visualProfileLine(profile: CharacterVisualProfile) {
+  return [
+    `- ${profile.name}: role=${profile.role}`,
+    `status=${profile.status === "complete" ? "complete" : "incomplete; use neutral educational illustration, do not invent official appearance"}`,
+    `stable_features=${profile.stableFeatures}`,
+    `variable_states=${profile.variableStates}`,
+    `avoid_changes=${profile.avoidChanges}`,
+  ].join("; ");
+}
+
+function castBible(context: ResourcePlanGenerationContext) {
+  const visualProfiles = context.draft.characterVisualBible ?? [];
+  if (visualProfiles.length > 0) {
+    const step1Profiles = [context.teacher, ...context.students].map((person) => `- ${personName(person)}: classroom cast; ${describePerson(person)}`);
+    return [
+      "Character Visual Bible from Step3, highest priority:",
+      ...visualProfiles.map(visualProfileLine),
+      "Classroom cast from Step1:",
+      ...step1Profiles,
+    ].join("\n");
+  }
+
+  const profiles = [context.teacher, ...context.students];
+  return context.draft.castAliases
+    .map((alias) => {
+      const profile = profiles.find((person) => personName(person) === alias.displayName);
+      return `- ${alias.alias} = ${alias.displayName}: ${profile ? describePerson(profile) : alias.displayName}`;
+    })
+    .join("\n");
+}
+
 function sentenceLines(draft: LessonDraft) {
   return draft.chapters
     .map((chapter) =>
@@ -107,16 +139,19 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
     "The default art direction is hand-drawn comic picture-book style. Do not switch to 3D, photorealistic, oil painting, cyberpunk, or cinematic realism.",
     "The plan must create one cover brief and exactly 2 lesson shots per chapter.",
     "Each shot's sourceParagraphId must be its assigned paragraph id.",
-    "Every coverBrief.imagePrompt and shots[].imagePrompt must be a complete GPT Image 2 prompt that the image model can use by itself without seeing any other context.",
-    "Each imagePrompt must repeat the concrete appearance of visible characters and the concrete story setting enough to avoid obvious inconsistencies.",
-    "Do not force the same clothing if the story clearly changes the character's situation; describe the current scene's clothing and props specifically.",
+    "Every coverBrief.imagePrompt and shots[].imagePrompt must be a compact, self-contained GPT Image 2 prompt.",
+    "Character consistency is mandatory: copy the relevant stable_features or Step1 appearance phrases from CAST BIBLE into every imagePrompt where that character appears. Do not paraphrase age, gender, hair, glasses, or other stable identity traits.",
+    "Stable identity anchors must remain consistent, but variable_states may change with the lesson scene. Clothing, expression, props, and posture may vary only when they match the story moment.",
+    "If a character status is incomplete, use a neutral educational illustration version and do not invent official appearance, exact costume, logo, or canon-only visual details.",
     "The cover brief must describe story poster key art with a memorable central visual hook, not a generic class group portrait.",
     "",
     `Course title: ${context.course.title}`,
-    `Theme: ${context.course.theme}`,
+    `Final theme from Step2: ${context.storyOption.title}`,
     `Level: ${context.course.englishLevel}`,
     `Teacher: ${describePerson(context.teacher)}`,
     `Students: ${context.students.map((student) => describePerson(student)).join("; ")}`,
+    "CAST BIBLE, highest-priority character visual facts:",
+    castBible(context),
     `Story title: ${context.storyOption.title}`,
     `Storyline: ${context.storyOption.storyline}`,
     "Story chapters:",
@@ -125,15 +160,18 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
     sentenceLines(context.draft),
     "",
     "Rules:",
-    "- Only use cast aliases from the lesson when naming characters in imagePrompt descriptions.",
-    "- Keep each named character's gender and age consistent with the cast profile above; never change a character's gender or make them look a different age.",
+    "- Only name characters that appear in CAST BIBLE or in the lesson sentences.",
+    "- If Step3 supplied Character Visual Bible, it overrides Step1 cast profile for third-party story characters.",
+    "- Keep each named character's stable identity anchors consistent with CAST BIBLE; never change a character's gender, age band, core hair/glasses traits, or stable temperament.",
+    "- Allow variable states to follow the chapter: outfit, expression, action, emotional state, and scene props can change when the story sentence supports it.",
     "- Do not add extra students, classmates, teachers, parents, crowds, background people, or unnamed humans.",
     "- Output exactly two shots for each chapter: shotOrder 1 must use paragraph 1, shotOrder 2 must use paragraph 2.",
     "- Cover brief must use the same characters, story world, visual style, and representative story elements from the shot plan.",
     "- Cover brief description must include one memorable central visual hook built from the main character, teacher/student cast, setting, and key story object.",
-    "- imagePrompt must be concrete and visual, ideally 900-1200 characters, never over 1200 characters.",
+    "- imagePrompt must be concrete but concise, ideally 450-800 characters, never over 1200 characters.",
     '- Each imagePrompt must explicitly identify itself as a GPT Image 2 prompt and start with "GPT Image 2 prompt: Horizontal 16:9 ...".',
-    "- Each imagePrompt must include: current visible characters, concrete appearance/clothing/props, concrete background, story action, composition, style, mood, and safety constraints.",
+    "- Each imagePrompt must include only: visible cast with copied appearance phrases, concrete background, story action, composition, style, mood, and safety constraints.",
+    "- Avoid redundant wording. Mention the no-text safety constraint once at the end.",
     "- Do not include readable text, letters, numbers, signs, speech bubbles, logos, or watermarks in any visual description or imagePrompt.",
     "",
     "Return JSON only with this shape:",
@@ -207,6 +245,11 @@ async function callQuickRouterResponses(messages: ChatMessage[]) {
 
 function mockResourcePlan(context: ResourcePlanGenerationContext): CourseResourcePlan {
   const firstAlias = context.draft.castAliases[0]?.alias || "Student";
+  const firstProfile = describePerson(context.teacher);
+  const castSummary =
+    context.draft.characterVisualBible && context.draft.characterVisualBible.length > 0
+      ? context.draft.characterVisualBible.map(visualProfileLine).join("; ")
+      : [context.teacher, ...context.students].map(describePerson).join("; ");
   const shots = context.draft.chapters.flatMap((chapter) =>
     chapter.paragraphs.slice(0, 2).map((paragraph, index) => ({
       chapterId: chapter.id,
@@ -214,21 +257,19 @@ function mockResourcePlan(context: ResourcePlanGenerationContext): CourseResourc
       shotOrder: (index + 1) as 1 | 2,
       sourceParagraphId: paragraph.id,
       focus: index === 0 ? "The characters discover the story world." : "The characters act on the clue.",
-      keyObjects: [context.course.theme],
-      imagePrompt: `GPT Image 2 prompt: Horizontal 16:9 hand-drawn children's picture-book illustration. ${firstAlias} appears as the same friendly child story character with a bright classroom adventure outfit and small backpack. ${
+      keyObjects: [context.storyOption.title],
+      imagePrompt: `GPT Image 2 prompt: Horizontal 16:9 hand-drawn children's picture-book illustration. ${firstAlias} uses this exact stable appearance: ${firstProfile}. ${
         index === 0 ? "Show the character discovering the story world." : "Show the character acting on the clue."
-      } The scene is set in a ${context.course.theme} story world with warm colors, clean expressive linework, soft watercolor texture, safe centered composition, and no readable text, letters, numbers, speech bubbles, logos, or watermarks.`,
+      } Set in ${context.storyOption.title}, warm colors, clean expressive linework, soft watercolor texture, safe centered composition. Pure image only. No title, captions, subtitles, readable text, letters, numbers, speech bubbles, logo, or watermark.`,
     })),
   );
 
   return {
     schemaVersion: "course_resource_plan_v1",
     coverBrief: {
-      description: `All main characters stand together in the ${context.course.theme} story world, showing the visual style for the whole course.`,
-      storyElements: [context.course.theme],
-      imagePrompt: `GPT Image 2 prompt: Horizontal 16:9 hand-drawn children's picture-book cover. ${context.draft.castAliases
-        .map((alias) => `${alias.alias} appears as a friendly child story character in a bright classroom adventure outfit`)
-        .join(", ")}. They stand in a ${context.course.theme} story world with a clear central story hook, warm colors, clean expressive linework, soft watercolor texture, and no readable text, letters, numbers, speech bubbles, logos, or watermarks.`,
+      description: `All main characters stand together in the ${context.storyOption.title} story world, showing the visual style for the whole course.`,
+      storyElements: [context.storyOption.title],
+      imagePrompt: `GPT Image 2 prompt: Horizontal 16:9 hand-drawn children's picture-book cover. Main cast uses these exact stable appearances: ${castSummary}. They stand in a ${context.storyOption.title} story world with one clear central visual hook, warm colors, clean expressive linework, soft watercolor texture. Pure image only. No title, captions, subtitles, readable text, letters, numbers, speech bubbles, logo, or watermark.`,
     },
     shots,
     version: 1,
@@ -236,7 +277,7 @@ function mockResourcePlan(context: ResourcePlanGenerationContext): CourseResourc
 }
 
 export async function generateCourseResourcePlan(context: ResourcePlanGenerationContext) {
-  if (process.env.QUICKROUTER_API_KEY === "mock" || !process.env.QUICKROUTER_API_KEY) {
+  if (process.env.NODE_ENV === "test" || process.env.QUICKROUTER_API_KEY === "mock" || !process.env.QUICKROUTER_API_KEY) {
     return assertResourcePlanValid(mockResourcePlan(context), context.draft);
   }
 

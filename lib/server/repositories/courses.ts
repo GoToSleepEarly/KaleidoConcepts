@@ -8,7 +8,6 @@ import type {
   LlmModel,
   PersonProfile,
   PersonRole,
-  StoryIdeaMode,
 } from "@/lib/contracts/api";
 
 type DbCourse = {
@@ -43,8 +42,6 @@ type DbCourseBasic = {
   durationMinutes: 30 | 45 | 60;
   theme: string;
   grammar: string[];
-  storyIdeaMode: StoryIdeaMode;
-  storyIdea: string | null;
   llmModel: LlmModel;
   status: CourseStatus;
   people: Array<{
@@ -74,8 +71,6 @@ type CourseBasicWriteData = {
   durationMinutes: 30 | 45 | 60;
   theme: string;
   grammar: string[];
-  storyIdeaMode: StoryIdeaMode;
-  storyIdea: string | null;
   llmModel: LlmModel;
 };
 
@@ -185,13 +180,8 @@ function dbPersonToProfile(person: NonNullable<DbCourseBasic["people"][number]["
   };
 }
 
-function normalizeText(value: string) {
-  return value.trim();
-}
-
-function normalizeOptionalText(value: string | undefined) {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
+function normalizeText(value: string | undefined) {
+  return value?.trim() ?? "";
 }
 
 function uniqueValues(values: string[]) {
@@ -203,10 +193,8 @@ function toCourseBasicWriteData(input: CourseBasicInput): CourseBasicWriteData {
     title: normalizeText(input.title),
     englishLevel: input.englishLevel,
     durationMinutes: input.durationMinutes,
-    theme: normalizeText(input.theme),
+    theme: normalizeText(input.theme) || "待在 Step2 确定",
     grammar: uniqueValues(input.grammar.map(normalizeText).filter(Boolean)),
-    storyIdeaMode: input.storyIdeaMode,
-    storyIdea: input.storyIdeaMode === "manual" ? normalizeOptionalText(input.storyIdea) : null,
     llmModel: input.llmModel ?? "deepseek_chat",
   };
 }
@@ -214,11 +202,7 @@ function toCourseBasicWriteData(input: CourseBasicInput): CourseBasicWriteData {
 function validateCourseBasicShape(input: CourseBasicInput) {
   const data = toCourseBasicWriteData(input);
 
-  if (!data.title || !input.teacherId || input.studentIds.length < 1 || !data.theme || data.grammar.length < 1) {
-    throw new CourseBasicValidationError();
-  }
-
-  if (data.storyIdeaMode === "manual" && !data.storyIdea) {
+  if (!data.title || !input.teacherId || input.studentIds.length < 1 || data.grammar.length < 1) {
     throw new CourseBasicValidationError();
   }
 
@@ -288,8 +272,6 @@ function toCourseBasicDetail(course: DbCourseBasic): CourseBasicDetail {
     durationMinutes: course.durationMinutes,
     theme: course.theme,
     grammar: course.grammar,
-    storyIdeaMode: course.storyIdeaMode,
-    storyIdea: course.storyIdea ?? undefined,
     llmModel: course.llmModel,
     status: course.status,
   };
@@ -332,8 +314,8 @@ function getCourseProgress(course: DbCourse): {
   }
 
   return {
-    currentStep: "basic",
-    nextEditPath: `/courses/${course.id}/create/basic`,
+    currentStep: "story_options",
+    nextEditPath: `/courses/${course.id}/create/story-options`,
     lessonDraftExists,
     storyOptionsCount,
   };

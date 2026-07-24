@@ -502,35 +502,42 @@ describe("lesson draft repository", () => {
     expect(savedContent).not.toBeNull();
   });
 
-  test("rejects an answer duplicated within the chapter", async () => {
+  test("allows an answer duplicated within the chapter", async () => {
     const edited = structuredClone(draft);
     edited.chapters[0].exercises[1].answer = "walked";
+    let savedContent: LessonDraft | null = null;
 
-    await expect(
-      saveLessonDraft(
-        {
-          course: {
-            findUnique: async () => ({
-              id: "course-1",
-              selectedStoryOptionId: "option-1",
-              lessonDraftGenStatus: "succeeded",
-              lessonDraftGenStartedAt: null,
-              lessonDraftGenError: null,
-            }),
-          },
-          courseStoryOption: {
-            findFirst: async () => ({ ...storyOption, courseId: "course-1" }),
-          },
-          courseLessonDraft: {
-            upsert: async () => {
-              throw new Error("should not upsert a chapter with duplicate answers");
-            },
+    const result = await saveLessonDraft(
+      {
+        course: {
+          findUnique: async () => ({
+            id: "course-1",
+            selectedStoryOptionId: "option-1",
+            lessonDraftGenStatus: "succeeded",
+            lessonDraftGenStartedAt: null,
+            lessonDraftGenError: null,
+          }),
+        },
+        courseStoryOption: {
+          findFirst: async () => ({ ...storyOption, courseId: "course-1" }),
+        },
+        courseLessonDraft: {
+          upsert: async (query) => {
+            savedContent = query.update.content;
+            return {
+              courseId: "course-1",
+              sourceStoryOptionId: query.update.sourceStoryOptionId,
+              content: query.update.content,
+            };
           },
         },
-        "course-1",
-        edited,
-      ),
-    ).rejects.toThrow("重复答案");
+      },
+      "course-1",
+      edited,
+    );
+
+    expect(result.draft.chapters[0].exercises[1].answer).toBe("walked");
+    expect(savedContent).not.toBeNull();
   });
 
   test("rejects an answer that appears more than once in its sentence", async () => {

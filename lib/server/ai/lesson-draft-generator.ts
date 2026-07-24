@@ -16,6 +16,14 @@ import {
   type AiLessonContentPlan,
   type AiSentencePart,
 } from "./lesson-content-compiler";
+import {
+  buildGptLessonBlueprint,
+  buildGptLessonJsonSchema,
+  parseGptLessonContentPlan,
+  type GptLessonBlueprint,
+} from "./gpt-lesson-content";
+
+export { buildGptLessonBlueprint } from "./gpt-lesson-content";
 
 type LessonDraftGenerationContext = {
   course: CourseBasicDetail;
@@ -243,6 +251,65 @@ export function buildLessonContentPrompt(
   ].join("\n");
 }
 
+function buildGptLessonContentPrompt(
+  context: LessonDraftGenerationContext,
+  blueprint: GptLessonBlueprint,
+) {
+  const aliases = castAliases(context);
+  const slotRequirements = blueprint.chapters.flatMap((chapter, chapterIndex) =>
+    chapter.paragraphs.flatMap((paragraph, paragraphIndex) =>
+      paragraph.exercises.map((exercise, exerciseIndex) => {
+        const target =
+          exercise.type === "given_word_blank"
+            ? `; required target: ${exercise.target}`
+            : "";
+        return `- chapter${chapterIndex + 1}.paragraph${paragraphIndex + 1}.exercise${exerciseIndex + 1}: ${exercise.type}${target}`;
+      }),
+    ),
+  );
+
+  return [
+    "Create one complete interactive English reading lesson.",
+    "The response structure is enforced separately. Fill every required field with final lesson content.",
+    "Silently plan the whole story and all learning-target uses before writing the final response.",
+    "",
+    "NON-NEGOTIABLE QUALITY REQUIREMENTS",
+    `- All story text, exercise sentences, hints, and answers must match CEFR ${context.course.englishLevel}.`,
+    "- Required learning targets are allowed, but do not introduce other language above this CEFR level.",
+    "- Each chapter must be one continuous story with clear cause and effect.",
+    "- Every opening, transition, exercise sentence, and closing must contribute naturally to that story.",
+    "- After restoring every answer, the text must read as fluent uninterrupted prose, not isolated examples.",
+    "- Each exercise object represents exactly one complete story sentence. `before` and `after` surround the single answer anchor.",
+    "- Aim for 140-150 English words per chapter; the accepted range is 120-160 words.",
+    "- Use one coherent dominant narrative tense; change tense only when meaning requires it.",
+    "- Do not repeat an exercise answer within the same chapter.",
+    "- `givenWord` is the base word or concise learner prompt; `hint` must be concise Chinese and must not reveal the answer.",
+    "- The closing reading is exercise-free and about 150 English words.",
+    "",
+    "COURSE INPUT",
+    `Level: ${context.course.englishLevel}`,
+    `Duration: ${context.course.durationMinutes} minutes`,
+    `Theme: ${context.course.theme}`,
+    `Teacher alias: ${aliases[0].alias} (${personDescription(context.teacher)})`,
+    `Student aliases: ${context.students.map((student, index) => `${aliases[index + 1].alias} (${personDescription(student)})`).join("; ")}`,
+    "Use aliases exactly in story text.",
+    `Story title: ${context.storyOption.title}`,
+    `Storyline: ${context.storyOption.storyline}`,
+    "Chapter outlines:",
+    context.storyOption.chapters
+      .map(
+        (chapter, index) =>
+          `${index + 1}. ${chapter.title}: ${chapter.summary}`,
+      )
+      .join("\n"),
+    "",
+    "FIXED EXERCISE ASSIGNMENTS",
+    ...slotRequirements,
+    "",
+    "Return only the structured lesson response.",
+  ].join("\n");
+}
+
 function parseJsonObject(text: string) {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
@@ -351,15 +418,28 @@ function canonicalizePlanTargets(plan: AiLessonContentPlan, targets: string[]) {
   );
 }
 
-function buildQuickRouterResponsesRequestBody(messages: ChatMessage[]) {
+function buildQuickRouterResponsesRequestBody(
+  messages: ChatMessage[],
+  schema: Record<string, unknown>,
+) {
   // 稳定性优先：GPT-5.5 是推理模型，显式开启 reasoning 让它在输出前自检词数/题数/
   // 知识点覆盖。推理 token 与正文共享预算，因此同步加大 max_output_tokens。
   const reasoningDisabled = process.env.QUICKROUTER_REASONING === "disabled";
   return {
-    model: process.env.QUICKROUTER_LESSON_MODEL ?? process.env.QUICKROUTER_RESPONSES_MODEL ?? "gpt-5.5",
+    model:
+      process.env.QUICKROUTER_LESSON_MODEL ??
+      process.env.QUICKROUTER_RESPONSES_MODEL ??
+      "gpt-5.5",
     input: messages,
     max_output_tokens: reasoningDisabled ? 16000 : 32000,
-    response_format: { type: "json_object" },
+    text: {
+      format: {
+        type: "json_schema",
+        name: "pbl_lesson_content",
+        strict: true,
+        schema,
+      },
+    },
     ...(reasoningDisabled
       ? { temperature: 0.2 }
       : { reasoning: { effort: "medium" } }),
@@ -373,7 +453,10 @@ type QuickRouterResponsesData = {
   message?: string;
 };
 
-async function callQuickRouterResponses(messages: ChatMessage[]) {
+async function callQuickRouterResponses(
+  messages: ChatMessage[],
+  schema: Record<string, unknown>,
+) {
   const apiKey = process.env.QUICKROUTER_API_KEY;
   if (!apiKey) throw new Error("AI 服务未配置");
   const response = await fetch("https://api.quickrouter.ai/v1/responses", {
@@ -383,10 +466,19 @@ async function callQuickRouterResponses(messages: ChatMessage[]) {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(buildQuickRouterResponsesRequestBody(messages)),
+    body: JSON.stringify(
+      buildQuickRouterResponsesRequestBody(messages, schema),
+    ),
   });
-  const data = (await response.json().catch(() => ({}))) as QuickRouterResponsesData;
-  if (!response.ok) throw new Error(data.error?.message || data.message || `AI 请求失败：HTTP ${response.status}`);
+  const data = (await response
+    .json()
+    .catch(() => ({}))) as QuickRouterResponsesData;
+  if (!response.ok)
+    throw new Error(
+      data.error?.message ||
+        data.message ||
+        `AI 请求失败：HTTP ${response.status}`,
+    );
   const content =
     data.choices?.[0]?.message?.content ??
     data.output
@@ -394,7 +486,8 @@ async function callQuickRouterResponses(messages: ChatMessage[]) {
       .map((item) => item.text)
       .filter(Boolean)
       .join("\n");
-  if (!content) throw new LessonDraftValidationError("AI 未返回课文内容，请重试生成");
+  if (!content)
+    throw new LessonDraftValidationError("AI 未返回课文内容，请重试生成");
   return content;
 }
 
@@ -441,9 +534,7 @@ async function callDeepSeek(
   };
   const choice = data.choices?.[0];
   if (choice?.finish_reason === "length")
-    throw new LessonDraftValidationError(
-      "AI 输出达到长度上限，请重试生成",
-    );
+    throw new LessonDraftValidationError("AI 输出达到长度上限，请重试生成");
   if (!choice?.message?.content) {
     throw new LessonDraftValidationError("AI 未返回课文内容，请重试生成");
   }
@@ -512,26 +603,46 @@ function mockLessonDraft(context: LessonDraftGenerationContext): LessonDraft {
 export async function generateLessonDraft(
   context: LessonDraftGenerationContext,
 ): Promise<LessonDraft> {
-  if (process.env.QUICKROUTER_API_KEY === "mock" || process.env.DEEPSEEK_API_KEY === "mock")
+  if (
+    process.env.QUICKROUTER_API_KEY === "mock" ||
+    process.env.DEEPSEEK_API_KEY === "mock"
+  )
     return validateLessonDraft(mockLessonDraft(context), context.storyOption);
 
-  const useGpt55 = context.course.llmModel === "gpt_5_5" && !!process.env.QUICKROUTER_API_KEY;
+  const useGpt55 =
+    context.course.llmModel === "gpt_5_5" && !!process.env.QUICKROUTER_API_KEY;
   // 真实模型名用于日志观测，避免误导排查（此前固定打印 deepseek_chat）。
   const modelLabel = useGpt55
-    ? (process.env.QUICKROUTER_LESSON_MODEL ?? process.env.QUICKROUTER_RESPONSES_MODEL ?? "gpt-5.5")
+    ? (process.env.QUICKROUTER_LESSON_MODEL ??
+      process.env.QUICKROUTER_RESPONSES_MODEL ??
+      "gpt-5.5")
     : (process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro");
+  const gptBlueprint = useGpt55 ? buildGptLessonBlueprint(context) : null;
+  const gptJsonSchema = gptBlueprint
+    ? buildGptLessonJsonSchema(gptBlueprint)
+    : null;
   // 默认不自动重试：开启 thinking/reasoning 后单次约 5 分钟，且自检已把单次成功率拉高，
   // 再叠加重试会让等待时间成倍变长（最坏 3×5 分钟）。失败交由用户手动重新生成。
   // 如需恢复自动重试，设置 LESSON_DRAFT_MAX_ATTEMPTS（如 2 或 3）。
-  const maxAttempts = Math.max(1, Number(process.env.LESSON_DRAFT_MAX_ATTEMPTS) || 1);
+  const maxAttempts = Math.max(
+    1,
+    Number(process.env.LESSON_DRAFT_MAX_ATTEMPTS) || 1,
+  );
 
   const baseMessages: ChatMessage[] = [
     {
       role: "system",
-      content:
-        "You create coherent children's PBL English reading lessons. Return one strict JSON object only. Exercise parts are literal story text, so preserve natural spacing around parts and use at most one exercise part per sentence.",
+      content: useGpt55
+        ? "You create coherent children's PBL English reading lessons. Follow the supplied structured output contract exactly and focus on CEFR accuracy, correct learning-target use, and fluent storytelling."
+        : "You create coherent children's PBL English reading lessons. Return one strict JSON object only. Exercise parts are literal story text, so preserve natural spacing around parts and use at most one exercise part per sentence.",
     },
-    { role: "user", content: buildLessonContentPrompt(context) },
+    {
+      role: "user",
+      content:
+        useGpt55 && gptBlueprint
+          ? buildGptLessonContentPrompt(context, gptBlueprint)
+          : buildLessonContentPrompt(context),
+    },
   ];
 
   const messages: ChatMessage[] = [...baseMessages];
@@ -543,11 +654,19 @@ export async function generateLessonDraft(
     let content: string | null = null;
     try {
       const llmCall = useGpt55
-        ? callQuickRouterResponses(messages)
-        : callDeepSeek(messages, context.course.durationMinutes, context.storyOption.chapters.length);
+        ? callQuickRouterResponses(messages, gptJsonSchema!)
+        : callDeepSeek(
+            messages,
+            context.course.durationMinutes,
+            context.storyOption.chapters.length,
+          );
 
       content = await llmCall;
-      const plan = parseLessonContentPlan(parseJsonObject(content));
+      const parsedContent = parseJsonObject(content);
+      const plan =
+        useGpt55 && gptBlueprint
+          ? parseGptLessonContentPlan(parsedContent, gptBlueprint)
+          : parseLessonContentPlan(parsedContent);
       const targets = allowedTargets(context);
       const targetByKey = new Map(targets.map((t) => [targetKey(t), t]));
 
@@ -626,7 +745,9 @@ export async function generateLessonDraft(
       const errorMessage = lastError.message;
 
       const isConfigError = errorMessage === "AI 服务未配置";
-      const isHttpError = errorMessage.startsWith("AI 请求失败：HTTP") || errorMessage.startsWith("DeepSeek 请求失败：HTTP");
+      const isHttpError =
+        errorMessage.startsWith("AI 请求失败：HTTP") ||
+        errorMessage.startsWith("DeepSeek 请求失败：HTTP");
       const isRetriable = !isConfigError && !isHttpError;
 
       console.error("Lesson draft AI output failed validation", {
@@ -642,9 +763,12 @@ export async function generateLessonDraft(
       if (!isRetriable || attempt >= maxAttempts) {
         if (error instanceof LessonDraftValidationError) throw error;
         throw new LessonDraftValidationError(
-          errorMessage.includes("AI 服务未配置") || errorMessage.includes("HTTP")
+          errorMessage.includes("AI 服务未配置") ||
+            errorMessage.includes("HTTP")
             ? errorMessage
-            : (error instanceof Error ? error.message : "AI 课文内容校验失败，请重试生成"),
+            : error instanceof Error
+              ? error.message
+              : "AI 课文内容校验失败，请重试生成",
         );
       }
 
@@ -652,27 +776,42 @@ export async function generateLessonDraft(
       const isExerciseCountError = errorMessage.includes("题目数");
       const isCoverageError = errorMessage.includes("知识点未覆盖");
       const isUnknownTargetError = errorMessage.includes("未配置的知识点");
-      const isFormatError = errorMessage.includes("JSON") || errorMessage.includes("格式") || errorMessage.includes("Unexpected") || errorMessage.includes("Expected");
+      const isFormatError =
+        errorMessage.includes("JSON") ||
+        errorMessage.includes("格式") ||
+        errorMessage.includes("Unexpected") ||
+        errorMessage.includes("Expected");
 
-      let fixGuidance = "Please fix this issue and output the complete corrected JSON. Return JSON only, no explanations.";
+      let fixGuidance =
+        "Please fix this issue and output the complete corrected JSON. Return JSON only, no explanations.";
       if (isWordCountError) {
-        fixGuidance = "CRITICAL WORD COUNT FIX: Each chapter MUST contain exactly 120-160 English words in compiled clean text (text parts + exercise answers concatenated). Expand story details with natural sentences to reach the target. Do NOT add extra exercises to fill length — add descriptive text sentences instead. Output the complete corrected JSON only.";
+        fixGuidance =
+          "CRITICAL WORD COUNT FIX: Each chapter MUST contain exactly 120-160 English words in compiled clean text (text parts + exercise answers concatenated). Expand story details with natural sentences to reach the target. Do NOT add extra exercises to fill length — add descriptive text sentences instead. Output the complete corrected JSON only.";
       } else if (isExerciseCountError) {
-        fixGuidance = "CRITICAL EXERCISE COUNT FIX: Each chapter MUST contain EXACTLY 8 exercises total: exactly 6 given_word_blank, exactly 1 vocab_hint, and exactly 1 phrase_hint. No more, no less. Remove extra exercises or add missing ones to reach exactly 8. Output the complete corrected JSON only.";
+        fixGuidance =
+          "CRITICAL EXERCISE COUNT FIX: Each chapter MUST contain EXACTLY 8 exercises total: exactly 6 given_word_blank, exactly 1 vocab_hint, and exactly 1 phrase_hint. No more, no less. Remove extra exercises or add missing ones to reach exactly 8. Output the complete corrected JSON only.";
       } else if (isCoverageError) {
-        fixGuidance = "CRITICAL TARGET COVERAGE FIX: You MUST use every required learning target listed in the prompt at least once as a given_word_blank exercise's target field. Check that ALL required grammar points appear in your given_word_blank exercises. Output the complete corrected JSON only.";
+        fixGuidance =
+          "CRITICAL TARGET COVERAGE FIX: You MUST use every required learning target listed in the prompt at least once as a given_word_blank exercise's target field. Check that ALL required grammar points appear in your given_word_blank exercises. Output the complete corrected JSON only.";
       } else if (isUnknownTargetError) {
-        fixGuidance = "CRITICAL INVALID TARGET FIX: You used a learning target that is not in the allowed list. Only use the exact target names listed under 'Allowed targets' in the prompt. Remove or replace any exercises with targets not in that list. Output the complete corrected JSON only.";
+        fixGuidance =
+          "CRITICAL INVALID TARGET FIX: You used a learning target that is not in the allowed list. Only use the exact target names listed under 'Allowed targets' in the prompt. Remove or replace any exercises with targets not in that list. Output the complete corrected JSON only.";
       } else if (isFormatError) {
-        fixGuidance = "FORMAT FIX: Output one valid strict JSON object matching the schema exactly. No markdown fences, no commentary, no trailing commas. Output the complete corrected JSON only.";
+        fixGuidance =
+          "FORMAT FIX: Output one valid strict JSON object matching the schema exactly. No markdown fences, no commentary, no trailing commas. Output the complete corrected JSON only.";
       }
 
-      const errorCategory = isWordCountError ? "word_count"
-        : isExerciseCountError ? "exercise_count"
-        : isCoverageError ? "coverage"
-        : isUnknownTargetError ? "unknown_target"
-        : isFormatError ? "format"
-        : "other";
+      const errorCategory = isWordCountError
+        ? "word_count"
+        : isExerciseCountError
+          ? "exercise_count"
+          : isCoverageError
+            ? "coverage"
+            : isUnknownTargetError
+              ? "unknown_target"
+              : isFormatError
+                ? "format"
+                : "other";
       const sameErrorAsLast = lastErrorCategory === errorCategory;
       lastErrorCategory = errorCategory;
 
@@ -690,10 +829,13 @@ export async function generateLessonDraft(
             "(5) Output valid JSON only, no commentary. " +
             "Return the complete JSON now.",
         });
-        console.info("[LessonDraft] Resetting conversation for final attempt due to repeated error", {
-          errorCategory,
-          courseId: context.course.id,
-        });
+        console.info(
+          "[LessonDraft] Resetting conversation for final attempt due to repeated error",
+          {
+            errorCategory,
+            courseId: context.course.id,
+          },
+        );
       } else {
         messages.push({
           role: "assistant",
@@ -702,8 +844,7 @@ export async function generateLessonDraft(
 
         messages.push({
           role: "user",
-          content:
-            `The previous output had this problem:\n${errorMessage}\n\n${fixGuidance}`,
+          content: `The previous output had this problem:\n${errorMessage}\n\n${fixGuidance}`,
         });
       }
     }

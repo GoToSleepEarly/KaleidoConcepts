@@ -84,17 +84,15 @@ describe("course basic info", () => {
     durationMinutes: 45 as const,
     theme: "宇宙冒险",
     grammar: ["Past Simple", "There be"],
-    storyIdeaMode: "manual" as const,
-    storyIdea: "学生进入宇宙冒险，遇到外星人并学习太空知识。",
     llmModel: "deepseek_chat" as const,
   };
 
   const roleValidationDb = {
     person: {
       findMany: async () => [
-        { id: "teacher-1", role: "teacher" },
-        { id: "student-1", role: "student" },
-        { id: "student-2", role: "student" },
+        { id: "teacher-1", role: "teacher" as const },
+        { id: "student-1", role: "student" as const },
+        { id: "student-2", role: "student" as const },
       ],
     },
   };
@@ -111,8 +109,6 @@ describe("course basic info", () => {
               durationMinutes: 45,
               theme: "宇宙冒险",
               grammar: ["Past Simple", "There be"],
-              storyIdeaMode: "manual",
-              storyIdea: "学生进入宇宙冒险，遇到外星人并学习太空知识。",
               llmModel: "deepseek_chat",
               status: "draft",
               people: {
@@ -179,8 +175,6 @@ describe("course basic info", () => {
               durationMinutes: 45,
               theme: "宇宙冒险",
               grammar: ["Past Simple"],
-              storyIdeaMode: "ai",
-              storyIdea: null,
               llmModel: "deepseek_chat",
               status: "draft",
               people: [
@@ -203,8 +197,6 @@ describe("course basic info", () => {
       durationMinutes: 45,
       theme: "宇宙冒险",
       grammar: ["Past Simple"],
-      storyIdeaMode: "ai",
-      storyIdea: undefined,
       llmModel: "deepseek_chat",
       status: "draft",
     });
@@ -228,8 +220,6 @@ describe("deleteCourse", () => {
               durationMinutes: 45,
               theme: "宇宙冒险",
               grammar: ["Past Simple"],
-              storyIdeaMode: "ai",
-              storyIdea: null,
               llmModel: "deepseek_chat",
               status: "draft",
               people: [],
