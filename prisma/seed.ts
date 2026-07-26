@@ -88,7 +88,7 @@ async function main() {
   for (const [index, label] of themePresets.entries()) {
     await prisma.presetOption.upsert({
       where: { kind_label: { kind: "theme", label } },
-      update: { sortOrder: index },
+      update: { sortOrder: index, archivedAt: null },
       create: { kind: "theme", label, sortOrder: index },
     });
   }
@@ -98,7 +98,7 @@ async function main() {
     for (const label of group.labels) {
       await prisma.presetOption.upsert({
         where: { kind_label: { kind: "grammar", label } },
-        update: { category: group.category, sortOrder: grammarSortOrder },
+        update: { category: group.category, sortOrder: grammarSortOrder, archivedAt: null },
         create: { kind: "grammar", label, category: group.category, sortOrder: grammarSortOrder },
       });
       grammarSortOrder += 1;
