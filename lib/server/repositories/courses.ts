@@ -14,7 +14,6 @@ type DbCourse = {
   id: string;
   title: string;
   englishLevel: EnglishLevel;
-  theme: string;
   status: CourseStatus;
   selectedStoryOptionId: string | null;
   createdAt: Date;
@@ -22,6 +21,10 @@ type DbCourse = {
   lessonDraft?: {
     courseId: string;
   } | null;
+  storyOptions?: Array<{
+    id: string;
+    title: string;
+  }>;
   people: Array<{
     person: {
       role: "student" | "teacher";
@@ -40,7 +43,6 @@ type DbCourseBasic = {
   title: string;
   englishLevel: EnglishLevel;
   durationMinutes: 30 | 45 | 60;
-  theme: string;
   grammar: string[];
   llmModel: LlmModel;
   status: CourseStatus;
@@ -69,7 +71,6 @@ type CourseBasicWriteData = {
   title: string;
   englishLevel: EnglishLevel;
   durationMinutes: 30 | 45 | 60;
-  theme: string;
   grammar: string[];
   llmModel: LlmModel;
 };
@@ -106,6 +107,12 @@ export type CoursesDb = {
         lessonDraft: {
           select: {
             courseId: true;
+          };
+        };
+        storyOptions: {
+          select: {
+            id: true;
+            title: true;
           };
         };
       };
@@ -193,7 +200,6 @@ function toCourseBasicWriteData(input: CourseBasicInput): CourseBasicWriteData {
     title: normalizeText(input.title),
     englishLevel: input.englishLevel,
     durationMinutes: input.durationMinutes,
-    theme: normalizeText(input.theme) || "待在 Step2 确定",
     grammar: uniqueValues(input.grammar.map(normalizeText).filter(Boolean)),
     llmModel: input.llmModel ?? "deepseek_chat",
   };
@@ -270,7 +276,6 @@ function toCourseBasicDetail(course: DbCourseBasic): CourseBasicDetail {
     studentIds,
     englishLevel: course.englishLevel,
     durationMinutes: course.durationMinutes,
-    theme: course.theme,
     grammar: course.grammar,
     llmModel: course.llmModel,
     status: course.status,
@@ -344,12 +349,19 @@ export async function listCourses(db: CoursesDb): Promise<CourseListItem[]> {
           courseId: true,
         },
       },
+      storyOptions: {
+        select: {
+          id: true,
+          title: true,
+        },
+      },
     },
   });
 
   return courses.map((course) => {
     const teacher = course.people.find(({ person }) => person.role === "teacher")?.person;
     const progress = getCourseProgress(course);
+    const storyTitle = course.storyOptions?.find((option) => option.id === course.selectedStoryOptionId)?.title ?? null;
 
     return {
       id: course.id,
@@ -359,7 +371,7 @@ export async function listCourses(db: CoursesDb): Promise<CourseListItem[]> {
         .filter(({ person }) => person.role === "student")
         .map(({ person }) => person.englishName || person.chineseName || person.name),
       englishLevel: course.englishLevel,
-      theme: course.theme,
+      storyTitle,
       status: course.status,
       storyOptionsCount: progress.storyOptionsCount,
       selectedStoryOptionId: course.selectedStoryOptionId,

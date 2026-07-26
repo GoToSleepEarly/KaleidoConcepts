@@ -62,8 +62,6 @@ type CourseBasicInput = {
 
 ## 数据
 
-`Course` 当前仍保存 `theme` 字段，创建 Step1 时写入占位值 `待在 Step2 确定`；最终内容主题以后续 Step2 的 `Content Intent.Theme` 为准。
-
 `CoursePerson` 保存一个老师和一个或多个学生。
 
 ## 验收标准

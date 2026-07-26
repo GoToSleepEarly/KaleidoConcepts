@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type { CourseBasicDetail, PersonProfile } from "@/lib/contracts/api";
 
-import { parseCharacterVisualBible, parseContentIntent, structureLessonChatDraft } from "./lesson-chat-structure";
+import { structureLessonChatDraft } from "./lesson-chat-structure";
 
 const course: CourseBasicDetail = {
   id: "course-1",
@@ -11,7 +11,6 @@ const course: CourseBasicDetail = {
   studentIds: ["student-1"],
   englishLevel: "B1",
   durationMinutes: 30,
-  theme: "待在 Step2 确定",
   grammar: ["Past Simple"],
   llmModel: "deepseek_chat",
   status: "draft",
@@ -41,30 +40,9 @@ const student: PersonProfile = {
   updatedAt: "2026-07-24T00:00:00.000Z",
 };
 
-const draftText = `【Content Intent】
-Theme: 校园成长与自我认同
-Story Mode: reference_story
-Reference: 伪装学霸
-Protagonists: 贺朝, 谢俞
-Classroom Cast: Teacher Zixuan, Sophia
-
-【Character Visual Bible】
-贺朝：
-身份：故事主角
-形象状态：已补全
-稳定特征：高中男生，外向明亮，清爽短发，常带笑意
-可变状态：校服、后排座位、线上答题、考场
-避免变化：不要变成成年人或阴郁气质
-
-谢俞：
-身份：故事主角
-形象状态：已补全
-稳定特征：高中男生，冷静疏离，干净短发，眼神锐利
-可变状态：后排睡觉、冷静答题、被理解
-避免变化：不要变成长发或热闹外向气质
-
-【Lesson Draft】
-Hello class! Teacher Zixuan 带着 Sophia 进入课堂。
+const draftText = `【Lesson Draft】
+Story Title: Boys Behind Masks
+Hello class! Teacher Zixuan brings Sophia into a story about courage and honest choices.
 
 【Lesson Meta】
 Level: B1
@@ -91,7 +69,7 @@ S2: They learned to (4) [P1: s _ _ _ d b _ (提示：支持，5+2个字母)] eac
 【Stage 3】
 Title: 并肩发光
 English Title: Standing Together
-Teacher Tip: 过去完成时。
+Teacher Tip: 过去式。
 【Reading】
 S1: Teacher Zixuan said the truth was (5) [V3: r _ _ _ _ _ _ d (提示：揭露，8个字母)].
 S2: Sophia realized that courage (6) ________ (grow) slowly.
@@ -113,37 +91,19 @@ V3 = revealed
 P1 = stand by`;
 
 describe("lesson chat structure", () => {
-  test("parses content intent and character visual bible from the text draft", () => {
-    expect(parseContentIntent(draftText)).toMatchObject({
-      theme: "校园成长与自我认同",
-      storyMode: "reference_story",
-      reference: "伪装学霸",
-    });
-
-    const profiles = parseCharacterVisualBible(draftText);
-    expect(profiles).toHaveLength(2);
-    expect(profiles[0]).toMatchObject({
-      name: "贺朝",
-      status: "complete",
-      stableFeatures: "高中男生，外向明亮，清爽短发，常带笑意",
-    });
-  });
-
-  test("stores character visual bible on the structured lesson draft", async () => {
+  test("structures clean final lesson text without intent or visual bible fields", async () => {
     const { storyOption, draft } = await structureLessonChatDraft({ course, teacher, students: [student] }, draftText);
 
-    expect(storyOption.title).toBe("校园成长与自我认同");
-    expect(draft.characterVisualBible).toHaveLength(2);
-    expect(draft.characterVisualBible?.[0].name).toBe("贺朝");
-    expect(draft.castAliases.some((alias) => alias.displayName === "贺朝")).toBe(true);
+    expect(storyOption.title).toBe("Boys Behind Masks");
+    expect(draft.title).toBe("Boys Behind Masks");
+    expect(draft.chapters).toHaveLength(3);
+    expect(draft.chapters[0].exercises).toHaveLength(2);
+    expect(draft.castAliases.some((alias) => alias.displayName === "Sophia")).toBe(true);
   });
 
-  test("blocks reference stories when third-party appearance is incomplete", async () => {
+  test("blocks final text that has no answer key", async () => {
     await expect(
-      structureLessonChatDraft(
-        { course, teacher, students: [student] },
-        draftText.replace("形象状态：已补全\n稳定特征：高中男生，冷静疏离，干净短发，眼神锐利", "形象状态：待补充\n稳定特征：待补充"),
-      ),
-    ).rejects.toThrow("第三方角色外观未补全");
+      structureLessonChatDraft({ course, teacher, students: [student] }, draftText.replace(/【教师答案区 \/ Answer Key】[\s\S]+$/, "")),
+    ).rejects.toThrow("缺少【教师答案区 / Answer Key】");
   });
 });

@@ -67,12 +67,17 @@ function parseMessages(value: unknown): LessonChatMessage[] {
   return Array.isArray(value) ? value.filter(isChatMessage) : [];
 }
 
-export function createChatMessage(role: LessonChatMessage["role"], content: string): LessonChatMessage {
+export function createChatMessage(
+  role: LessonChatMessage["role"],
+  content: string,
+  actions?: LessonChatMessage["actions"],
+): LessonChatMessage {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     role,
     content,
     createdAt: new Date().toISOString(),
+    ...(actions?.length ? { actions } : {}),
   };
 }
 

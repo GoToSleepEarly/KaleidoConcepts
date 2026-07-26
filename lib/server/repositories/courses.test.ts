@@ -25,6 +25,12 @@ describe("listCourses", () => {
                   courseId: true,
                 },
               },
+              storyOptions: {
+                select: {
+                  id: true,
+                  title: true,
+                },
+              },
             },
           });
 
@@ -33,7 +39,6 @@ describe("listCourses", () => {
               id: "course-1",
               title: "The Brave Little Rabbit",
               englishLevel: "A1",
-              theme: "Plants / Nature",
               status: "ready",
               selectedStoryOptionId: "option-1",
               createdAt: new Date("2026-07-01T09:00:00.000Z"),
@@ -41,6 +46,12 @@ describe("listCourses", () => {
               lessonDraft: {
                 courseId: "course-1",
               },
+              storyOptions: [
+                {
+                  id: "option-1",
+                  title: "The Forest Gate",
+                },
+              ],
               people: [
                 { person: { role: "student", englishName: "Summer", chineseName: "夏天", name: "Summer" } },
                 { person: { role: "student", englishName: "Tom", chineseName: "汤姆", name: "Tom" } },
@@ -62,7 +73,7 @@ describe("listCourses", () => {
         teacherName: "Ms. Lin",
         studentNames: ["Summer", "Tom"],
         englishLevel: "A1",
-        theme: "Plants / Nature",
+        storyTitle: "The Forest Gate",
         status: "ready",
         storyOptionsCount: 3,
         selectedStoryOptionId: "option-1",
@@ -82,7 +93,6 @@ describe("course basic info", () => {
     studentIds: ["student-1", "student-2"],
     englishLevel: "B2" as const,
     durationMinutes: 45 as const,
-    theme: "宇宙冒险",
     grammar: ["Past Simple", "There be"],
     llmModel: "deepseek_chat" as const,
   };
@@ -107,7 +117,6 @@ describe("course basic info", () => {
               title: "Space Adventure",
               englishLevel: "B2",
               durationMinutes: 45,
-              theme: "宇宙冒险",
               grammar: ["Past Simple", "There be"],
               llmModel: "deepseek_chat",
               status: "draft",
@@ -173,7 +182,6 @@ describe("course basic info", () => {
               title: "Space Adventure",
               englishLevel: "B2",
               durationMinutes: 45,
-              theme: "宇宙冒险",
               grammar: ["Past Simple"],
               llmModel: "deepseek_chat",
               status: "draft",
@@ -195,7 +203,6 @@ describe("course basic info", () => {
       studentIds: ["student-1"],
       englishLevel: "B2",
       durationMinutes: 45,
-      theme: "宇宙冒险",
       grammar: ["Past Simple"],
       llmModel: "deepseek_chat",
       status: "draft",
@@ -218,7 +225,6 @@ describe("deleteCourse", () => {
               title: "Space Adventure",
               englishLevel: "B2",
               durationMinutes: 45,
-              theme: "宇宙冒险",
               grammar: ["Past Simple"],
               llmModel: "deepseek_chat",
               status: "draft",

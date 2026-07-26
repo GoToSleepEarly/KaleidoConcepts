@@ -349,6 +349,11 @@ export function PeopleManager() {
                     <TextField label="英文名" onChange={(value) => setForm((current) => ({ ...current, englishName: value }))} required value={form.englishName} />
                     <TextField label="年龄" onChange={(value) => setForm((current) => ({ ...current, age: value }))} required type="number" value={form.age} />
                     <GenderSelector onChange={(gender) => setForm((current) => ({ ...current, gender }))} value={form.gender} />
+                    <AppearancePresetField
+                      onChange={(appearance) => setForm((current) => ({ ...current, appearance }))}
+                      role={form.role}
+                      value={form.appearance}
+                    />
                     <TextAreaField label="外貌描述" onChange={(value) => setForm((current) => ({ ...current, appearance: value }))} value={form.appearance} />
                     <TextAreaField label="备注" onChange={(value) => setForm((current) => ({ ...current, notes: value }))} value={form.notes} />
                   </>
@@ -358,6 +363,11 @@ export function PeopleManager() {
                     <TextField label="英文名" onChange={(value) => setForm((current) => ({ ...current, englishName: value }))} required value={form.englishName} />
                     <TextField label="年龄" onChange={(value) => setForm((current) => ({ ...current, age: value }))} required type="number" value={form.age} />
                     <GenderSelector onChange={(gender) => setForm((current) => ({ ...current, gender }))} value={form.gender} />
+                    <AppearancePresetField
+                      onChange={(appearance) => setForm((current) => ({ ...current, appearance }))}
+                      role={form.role}
+                      value={form.appearance}
+                    />
                     <TextAreaField label="外貌描述" onChange={(value) => setForm((current) => ({ ...current, appearance: value }))} required value={form.appearance} />
                     <InterestsField
                       addInterest={addInterest}
@@ -516,6 +526,92 @@ function GenderSelector({ value, onChange, optional }: { value: Gender | ""; onC
         ))}
       </div>
     </div>
+  );
+}
+
+const appearancePresetGroups = [
+  {
+    label: "发型",
+    placeholder: "选择发型",
+    options: ["短发", "齐肩发", "马尾辫", "黑色长发", "自然卷发", "刘海明显"],
+  },
+  {
+    label: "眼镜",
+    placeholder: "选择眼镜",
+    options: ["不戴眼镜", "圆框眼镜", "黑框眼镜", "细框眼镜"],
+  },
+  {
+    label: "脸型",
+    placeholder: "选择脸型",
+    options: ["圆脸", "鹅蛋脸", "长脸", "方脸", "小脸"],
+  },
+  {
+    label: "体型",
+    placeholder: "选择体型",
+    options: ["偏瘦", "匀称", "结实", "高个子", "小个子"],
+  },
+  {
+    label: "整体气质",
+    placeholder: "选择气质",
+    options: ["安静内向", "活泼外向", "认真专注", "爱笑", "好奇心强", "运动感"],
+  },
+] as const;
+
+function appendAppearanceToken(value: string, token: string) {
+  const normalizedParts = value
+    .split(/[，,、\n]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (normalizedParts.includes(token)) {
+    return normalizedParts.filter((part) => part !== token).join("，");
+  }
+
+  return [...normalizedParts, token].join("，");
+}
+
+function AppearancePresetField({
+  value,
+  role,
+  onChange,
+}: {
+  value: string;
+  role: PersonRole;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <section className="rounded-lg border border-violet-100 bg-violet-50/50 p-3">
+      <div className="text-sm font-medium text-slate-800">身份锚点</div>
+      <p className="mt-1 text-xs leading-5 text-slate-500">
+        可选。用于快速补充长期稳定特征，添加后仍可在外貌描述里自由编辑。
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {appearancePresetGroups.map((group) => (
+          <label className="block" key={group.label}>
+            <span className="mb-1 block text-xs font-medium text-slate-500">{group.label}</span>
+            <select
+              className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
+              onChange={(event) => {
+                if (!event.target.value) return;
+                onChange(appendAppearanceToken(value, event.target.value));
+                event.currentTarget.value = "";
+              }}
+              value=""
+            >
+              <option value="">{group.placeholder}</option>
+              {group.options.map((option) => (
+                <option disabled={value.split(/[，,、\n]/).map((part) => part.trim()).includes(option)} key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+      </div>
+      {role === "teacher" ? (
+        <p className="mt-3 text-xs leading-5 text-slate-500">老师可少选，优先固定发型、眼镜或一个容易识别的小特征。</p>
+      ) : null}
+    </section>
   );
 }
 

@@ -1,10 +1,4 @@
-import type {
-  CharacterVisualProfile,
-  CourseBasicDetail,
-  LessonDraft,
-  PersonProfile,
-  StoryOption,
-} from "@/lib/contracts/api";
+import type { CourseBasicDetail, LessonDraft, PersonProfile, StoryOption } from "@/lib/contracts/api";
 import {
   compileLessonContentDraft,
   type AiLessonContentPlan,
@@ -37,19 +31,9 @@ type ExerciseMeta = {
   label?: string;
 };
 
-type ContentIntent = {
-  theme: string;
-  storyMode: "original_story" | "reference_story" | "hybrid_adaptation";
-  reference: string;
-  protagonists: string;
-  classroomCast: string;
-};
-
 const answerKeyPattern = /(?:【\s*(?:教师答案区\s*\/\s*Answer Key|Answer Key|答案区|教师答案区)\s*】|^Answer Key\s*:?\s*$)/im;
-const closingPattern = /(?:【\s*(?:Closing Reading|课后主旨泛读|Main Idea Reading Practice)[^】]*】|^✨?\s*课后主旨泛读.*$)/im;
-const contentIntentPattern = /【\s*Content Intent\s*】/im;
+const closingPattern = /(?:【\s*(?:Closing Reading|课后主旨泛读|Main Idea Reading Practice)\s*】|^Closing Reading\s*:?\s*$)/im;
 const lessonDraftPattern = /【\s*Lesson Draft\s*】/im;
-const visualBiblePattern = /【\s*Character Visual Bible\s*】|【\s*角色视觉设定\s*(?:\/\s*Character Visual Bible)?\s*】/im;
 const stageMarkerPattern = /【\s*Stage\s*(\d+)\s*】/gi;
 
 function personName(person: PersonProfile) {
@@ -60,23 +44,15 @@ function aliasBase(name: string) {
   return name.replace(/[^A-Za-z0-9]/g, "") || "Person";
 }
 
-function castAliases(context: LessonChatStructureContext, visualBible: CharacterVisualProfile[]) {
+function castAliases(context: LessonChatStructureContext) {
   const teacherName = personName(context.teacher);
-  const aliases = [
+  return [
     { alias: `${aliasBase(teacherName)}Teacher`, displayName: teacherName },
     ...context.students.map((student, index) => {
       const name = personName(student);
       return { alias: `${aliasBase(name)}Student${index > 0 ? index + 1 : ""}`, displayName: name };
     }),
   ];
-
-  for (const profile of visualBible) {
-    if (!aliases.some((alias) => alias.displayName === profile.name)) {
-      aliases.push({ alias: `${aliasBase(profile.name)}Character${aliases.length + 1}`, displayName: profile.name });
-    }
-  }
-
-  return aliases;
 }
 
 function expectedChapterCount(durationMinutes: number) {
@@ -91,15 +67,6 @@ function sectionAfter(text: string, pattern: RegExp) {
   return text.slice(match.index + match[0].length);
 }
 
-function sectionBetween(text: string, startPattern: RegExp, endPattern: RegExp) {
-  const startMatch = text.match(startPattern);
-  if (!startMatch || startMatch.index == null) return "";
-  const start = startMatch.index + startMatch[0].length;
-  const rest = text.slice(start);
-  const end = rest.search(endPattern);
-  return (end >= 0 ? rest.slice(0, end) : rest).trim();
-}
-
 function stripAfterKnownSections(text: string) {
   const closingIndex = text.search(closingPattern);
   const answerIndex = text.search(answerKeyPattern);
@@ -111,33 +78,15 @@ function normalizeLine(line: string) {
   return line.trim().replace(/\s+/g, " ");
 }
 
-function stripSentenceLabel(line: string) {
-  return line.replace(/^\s*S\d+\s*[:：、]\s*/i, "").trim();
+function parseStoryTitle(text: string, fallback: string) {
+  const lessonText = sectionAfter(text, lessonDraftPattern) || text;
+  const beforeStages = lessonText.split(stageMarkerPattern)[0] ?? lessonText;
+  const match = beforeStages.match(/^(?:Story Title|故事题目)\s*[:：]\s*(.+)$/im);
+  return match?.[1]?.trim() || fallback;
 }
 
-export function parseContentIntent(text: string): ContentIntent | null {
-  const block = sectionBetween(text, contentIntentPattern, /【\s*(?:Character Visual Bible|角色视觉设定|Lesson Draft|Lesson Meta|Stage\s*\d+)\s*】/i);
-  if (!block) return null;
-
-  const fields = new Map<string, string>();
-  for (const rawLine of block.split(/\r?\n/)) {
-    const match = rawLine.match(/^([^:：]+)[:：]\s*(.+)$/);
-    if (match) fields.set(match[1].trim().toLowerCase(), match[2].trim());
-  }
-
-  const rawMode = fields.get("story mode") ?? fields.get("story_mode") ?? "";
-  const storyMode =
-    rawMode === "reference_story" || rawMode === "hybrid_adaptation" || rawMode === "original_story"
-      ? rawMode
-      : "original_story";
-
-  return {
-    theme: fields.get("theme") || "",
-    storyMode,
-    reference: fields.get("reference") || "",
-    protagonists: fields.get("protagonists") || "",
-    classroomCast: fields.get("classroom cast") || "",
-  };
+function stripSentenceLabel(line: string) {
+  return line.replace(/^\s*S\d+\s*[:：]\s*/i, "").trim();
 }
 
 function parseAnswerKey(text: string) {
@@ -151,13 +100,13 @@ function parseAnswerKey(text: string) {
     const line = rawLine.trim();
     if (!line) continue;
 
-    const numbered = line.match(/^(?:Answer\s*)?\(?(\d{1,3})\)?\s*(?:[.。:：]|\s+-\s+)\s*(.+)$/i);
+    const numbered = line.match(/^(?:Answer\s*)?\(?(\d{1,3})\)?\s*(?:[.、:：]|\s+-\s+)\s*(.+)$/i);
     if (numbered) {
       answers.set(Number(numbered[1]), numbered[2].trim());
       continue;
     }
 
-    const labeled = line.match(/^([VP]\d+)\s*[=:：]\s*([^|｜，,;；]+)(?:[|｜，,;；]\s*(.+))?$/i);
+    const labeled = line.match(/^([VP]\d+)\s*[=:：]\s*([^|~，,;；]+)(?:[|~，,;；]\s*(.+))?$/i);
     if (labeled) {
       labelAnswers.set(labeled[1].toUpperCase(), {
         answer: labeled[2].trim(),
@@ -197,7 +146,7 @@ function parseStages(text: string): ParsedStage[] {
   const stages: ParsedStage[] = [];
   for (let index = 0; index < legacyParts.length; index += 2) {
     const block = legacyParts[index + 1] ?? "";
-    const firstLine = block.split(/\r?\n/).find((line) => line.trim())?.trim() ?? `第 ${stages.length + 1} 阶段`;
+    const firstLine = block.split(/\r?\n/).find((line) => line.trim())?.trim() ?? `第${stages.length + 1}阶段`;
     const titleMatch = firstLine.match(/^(.+?)(?:\(([^)]+)\))?$/);
     const readingLines = block
       .split(/\r?\n/)
@@ -221,11 +170,12 @@ function parseClosingReading(text: string) {
     .map(stripSentenceLabel)
     .map(normalizeLine)
     .filter(Boolean);
-  return lines.length ? lines : ["The lesson reminds us to read carefully, think bravely, and grow with the story."];
+  if (lines.length === 0) throw new LessonDraftValidationError("缺少【Closing Reading】正文");
+  return lines;
 }
 
 function hintFromToken(token: string) {
-  return token.match(/提示[:：]\s*([^，,；;\]]+)/)?.[1]?.trim();
+  return token.match(/提示[:：]\s*([^，,；;\])）]+)/)?.[1]?.trim();
 }
 
 function choicesFromPrompt(prompt: string) {
@@ -350,80 +300,6 @@ function summarize(lines: string[]) {
     .slice(0, 160);
 }
 
-function normalizeField(value = "") {
-  return value.trim().replace(/\s+/g, " ");
-}
-
-function isIncompleteVisualText(value: string) {
-  const normalized = value.trim().toLowerCase();
-  return !normalized || normalized.includes("待补充") || normalized.includes("unknown") || normalized.includes("not provided");
-}
-
-export function parseCharacterVisualBible(text: string): CharacterVisualProfile[] {
-  const match = text.match(visualBiblePattern);
-  if (!match || match.index == null) return [];
-  const start = match.index + match[0].length;
-  const rest = text.slice(start);
-  const nextSection = rest.search(/(?:【\s*(?:Lesson Draft|Lesson Meta|Stage\s*\d+|Closing Reading|教师答案区|Answer Key)\s*】)/i);
-  const block = (nextSection >= 0 ? rest.slice(0, nextSection) : rest).trim();
-  if (!block) return [];
-
-  const profiles: CharacterVisualProfile[] = [];
-  let current: Partial<CharacterVisualProfile> | null = null;
-
-  function finishCurrent() {
-    if (!current?.name) return;
-    const stableFeatures = normalizeField(current.stableFeatures) || "待补充";
-    const explicitComplete = current.status === "complete";
-    profiles.push({
-      name: normalizeField(current.name),
-      role: normalizeField(current.role) || "故事角色",
-      status: explicitComplete && !isIncompleteVisualText(stableFeatures) ? "complete" : "incomplete",
-      stableFeatures,
-      variableStates: normalizeField(current.variableStates) || "待补充",
-      avoidChanges: normalizeField(current.avoidChanges) || "待补充",
-      source: "lesson_chat",
-    });
-  }
-
-  for (const rawLine of block.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || /^说明[:：]/.test(line)) continue;
-
-    const nameMatch = line.match(/^(.+?)[:：]\s*$/);
-    if (nameMatch && !/^(身份|形象状态|稳定特征|可变状态|避免变化|来源)$/i.test(nameMatch[1])) {
-      finishCurrent();
-      current = { name: nameMatch[1].trim() };
-      continue;
-    }
-
-    if (!current) continue;
-
-    const fieldMatch = line.match(/^(身份|形象状态|稳定特征|可变状态|避免变化)[:：]\s*(.+)$/);
-    if (!fieldMatch) continue;
-    const value = fieldMatch[2].trim();
-    if (fieldMatch[1] === "身份") current.role = value;
-    if (fieldMatch[1] === "形象状态") current.status = /已补全|完整|complete/i.test(value) ? "complete" : "incomplete";
-    if (fieldMatch[1] === "稳定特征") current.stableFeatures = value;
-    if (fieldMatch[1] === "可变状态") current.variableStates = value;
-    if (fieldMatch[1] === "避免变化") current.avoidChanges = value;
-  }
-
-  finishCurrent();
-  return profiles;
-}
-
-function assertVisualBibleReady(intent: ContentIntent | null, visualBible: CharacterVisualProfile[]) {
-  if (!intent || intent.storyMode === "original_story") return;
-  if (visualBible.length === 0) {
-    throw new LessonDraftValidationError("第三方/混合故事必须补充【Character Visual Bible】，否则后续图片容易返工");
-  }
-  const incomplete = visualBible.filter((profile) => profile.status !== "complete" || isIncompleteVisualText(profile.stableFeatures));
-  if (incomplete.length > 0) {
-    throw new LessonDraftValidationError(`第三方角色外观未补全：${incomplete.map((profile) => profile.name).join("、")}。请先在 Step2 编辑或对话补充稳定特征`);
-  }
-}
-
 export async function structureLessonChatDraft(
   context: LessonChatStructureContext,
   draftText: string,
@@ -431,13 +307,7 @@ export async function structureLessonChatDraft(
   storyOption: StoryOption;
   draft: LessonDraft;
 }> {
-  if (!draftText.trim()) throw new LessonDraftValidationError("请先生成或填写文本教案");
-
-  const intent = parseContentIntent(draftText);
-  if (!intent) throw new LessonDraftValidationError("缺少【Content Intent】，请让 AI 修复格式或手动补充");
-
-  const visualBible = parseCharacterVisualBible(draftText);
-  assertVisualBibleReady(intent, visualBible);
+  if (!draftText.trim()) throw new LessonDraftValidationError("请先生成或填写最终文案");
 
   const { answers, labelAnswers } = parseAnswerKey(draftText);
   const stages = parseStages(draftText);
@@ -449,7 +319,7 @@ export async function structureLessonChatDraft(
   }
 
   const plan: AiLessonContentPlan = {
-    title: context.course.title,
+    title: parseStoryTitle(draftText, context.course.title),
     chapters: stages.map((stage) => {
       if (stage.readingLines.length === 0) throw new LessonDraftValidationError(`Stage ${stage.index} 缺少【Reading】正文`);
       const sentences = stage.readingLines.map((line) => parseSentenceLine(line, answers, labelAnswers, context));
@@ -467,14 +337,14 @@ export async function structureLessonChatDraft(
   const storyOption: StoryOption = {
     id: "chat-final",
     variant: "enhanced",
-    title: intent.theme || context.course.title,
-    storyline: summarize(stages.flatMap((stage) => stage.readingLines)) || `围绕 ${intent.theme || context.course.title} 展开的课堂故事。`,
+    title: plan.title,
+    storyline: summarize(stages.flatMap((stage) => stage.readingLines)) || `围绕 ${context.course.title} 展开的课堂故事。`,
     chapters: stages.map((stage) => ({
       title: stage.title,
       summary: summarize(stage.readingLines) || `${stage.title} 推动故事继续。`,
     })),
   };
 
-  const draft = compileLessonContentDraft(plan, storyOption, [], castAliases(context, visualBible));
-  return { storyOption, draft: { ...draft, characterVisualBible: visualBible } };
+  const draft = compileLessonContentDraft(plan, storyOption, [], castAliases(context));
+  return { storyOption, draft };
 }

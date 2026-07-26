@@ -44,7 +44,6 @@ model Course {
   title           String
   englishLevel    EnglishLevel
   durationMinutes Int             @default(45)
-  theme           String
   grammar         String[]
   llmModel        LlmModel        @default(deepseek_chat)
   selectedStoryOptionId String?

@@ -54,7 +54,7 @@ AppShell header 显示 `课程列表`，内容区不重复大标题。
 - 老师
 - 学生
 - 英语等级
-- 主题
+- 故事题目：优先展示 Step2 已确认的 `CourseStoryOption.title`；未确认故事时显示“未生成故事”
 - 课程状态
 - 更新时间
 - 操作：编辑 / 预览
@@ -91,7 +91,7 @@ type CourseListItem = {
   teacherName: string | null;
   studentNames: string[];
   englishLevel: "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
-  theme: string;
+  storyTitle: string | null;
   status: "draft" | "building_resources" | "ready" | "build_failed";
   updatedAt: string;
 };
@@ -116,7 +116,7 @@ type CourseListItem = {
 - 课程列表不再直接引用 `mockCourse`
 - 空数据时显示空状态
 - 接口失败时显示错误提示和重试入口
-- 列表展示标题、老师、学生、等级、主题、状态、更新时间
+- 列表展示标题、老师、学生、等级、故事题目、状态、更新时间
 - 课程操作区按状态区分入口（见下节「操作入口按状态区分」）
 - 本期不出现归档、搜索、筛选、批量操作
 - `pnpm test`、`pnpm lint`、`pnpm build` 通过

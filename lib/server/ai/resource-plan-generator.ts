@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import type {
-  CharacterVisualProfile,
   CourseBasicDetail,
   CourseResourcePlan,
   LessonDraft,
@@ -85,28 +84,7 @@ function describePerson(person: PersonProfile) {
   return `${personName(person)} (${attributes.join(", ")})`;
 }
 
-function visualProfileLine(profile: CharacterVisualProfile) {
-  return [
-    `- ${profile.name}: role=${profile.role}`,
-    `status=${profile.status === "complete" ? "complete" : "incomplete; use neutral educational illustration, do not invent official appearance"}`,
-    `stable_features=${profile.stableFeatures}`,
-    `variable_states=${profile.variableStates}`,
-    `avoid_changes=${profile.avoidChanges}`,
-  ].join("; ");
-}
-
 function castBible(context: ResourcePlanGenerationContext) {
-  const visualProfiles = context.draft.characterVisualBible ?? [];
-  if (visualProfiles.length > 0) {
-    const step1Profiles = [context.teacher, ...context.students].map((person) => `- ${personName(person)}: classroom cast; ${describePerson(person)}`);
-    return [
-      "Character Visual Bible from Step3, highest priority:",
-      ...visualProfiles.map(visualProfileLine),
-      "Classroom cast from Step1:",
-      ...step1Profiles,
-    ].join("\n");
-  }
-
   const profiles = [context.teacher, ...context.students];
   return context.draft.castAliases
     .map((alias) => {
@@ -140,17 +118,19 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
     "The plan must create one cover brief and exactly 2 lesson shots per chapter.",
     "Each shot's sourceParagraphId must be its assigned paragraph id.",
     "Every coverBrief.imagePrompt and shots[].imagePrompt must be a compact, self-contained GPT Image 2 prompt.",
-    "Character consistency is mandatory: copy the relevant stable_features or Step1 appearance phrases from CAST BIBLE into every imagePrompt where that character appears. Do not paraphrase age, gender, hair, glasses, or other stable identity traits.",
-    "Stable identity anchors must remain consistent, but variable_states may change with the lesson scene. Clothing, expression, props, and posture may vary only when they match the story moment.",
-    "If a character status is incomplete, use a neutral educational illustration version and do not invent official appearance, exact costume, logo, or canon-only visual details.",
+    "Character consistency is mandatory: use CLASSROOM CAST VISUAL FACTS as stable identity anchors. Keep age band, gender presentation, hairstyle, face shape, body type, glasses/no glasses, stable accessories, and temperament consistent whenever the same classroom cast member appears.",
+    "For each recurring classroom cast member, choose a simple lesson outfit from the story context. Keep that outfit consistent within the same day or setting; change it only when the paragraph clearly changes time, place, or activity.",
+    "Every imagePrompt must restate the visible character's stable identity anchors plus the lesson outfit needed for that scene. Let expression, pose, action, props, weather, and background follow the paragraph.",
+    "When the lesson mentions a historical person, real person, famous IP, game, or fixed character, use broad common knowledge to make a child-safe picture-book version recognizable, without promising exact official likeness or inventing detailed canon traits.",
+    "For growth stories about real or historical people, match each paragraph's age phase and era instead of forcing one identical face across ages.",
     "The cover brief must describe story poster key art with a memorable central visual hook, not a generic class group portrait.",
     "",
     `Course title: ${context.course.title}`,
-    `Final theme from Step2: ${context.storyOption.title}`,
+    `Story title from Step2: ${context.storyOption.title}`,
     `Level: ${context.course.englishLevel}`,
     `Teacher: ${describePerson(context.teacher)}`,
     `Students: ${context.students.map((student) => describePerson(student)).join("; ")}`,
-    "CAST BIBLE, highest-priority character visual facts:",
+    "CLASSROOM CAST VISUAL FACTS:",
     castBible(context),
     `Story title: ${context.storyOption.title}`,
     `Storyline: ${context.storyOption.storyline}`,
@@ -160,17 +140,19 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
     sentenceLines(context.draft),
     "",
     "Rules:",
-    "- Only name characters that appear in CAST BIBLE or in the lesson sentences.",
-    "- If Step3 supplied Character Visual Bible, it overrides Step1 cast profile for third-party story characters.",
-    "- Keep each named character's stable identity anchors consistent with CAST BIBLE; never change a character's gender, age band, core hair/glasses traits, or stable temperament.",
-    "- Allow variable states to follow the chapter: outfit, expression, action, emotional state, and scene props can change when the story sentence supports it.",
+    "- Only name characters that appear in CLASSROOM CAST VISUAL FACTS or in the lesson sentences.",
+    "- Keep classroom cast identity anchors consistent with CLASSROOM CAST VISUAL FACTS; never change a person's gender, age band, hairstyle, face shape, body type, glasses/no glasses, stable accessories, or temperament.",
+    "- In every imagePrompt, explicitly restate only the important visible identity anchors for each recurring person, then add a simple story-appropriate outfit for this lesson scene.",
+    "- Scene development may change expression, pose, action, props, weather, background, and clothing when the paragraph supports it. It must not randomly change identity anchors.",
+    "- For external people and characters mentioned in the lesson text, use broad common knowledge to stay visually recognizable where possible, but keep everything in an original classroom picture-book style.",
+    "- Allow age phase, outfit, expression, action, emotional state, and scene props to follow the chapter when the story sentence supports it.",
     "- Do not add extra students, classmates, teachers, parents, crowds, background people, or unnamed humans.",
     "- Output exactly two shots for each chapter: shotOrder 1 must use paragraph 1, shotOrder 2 must use paragraph 2.",
     "- Cover brief must use the same characters, story world, visual style, and representative story elements from the shot plan.",
     "- Cover brief description must include one memorable central visual hook built from the main character, teacher/student cast, setting, and key story object.",
     "- imagePrompt must be concrete but concise, ideally 450-800 characters, never over 1200 characters.",
     '- Each imagePrompt must explicitly identify itself as a GPT Image 2 prompt and start with "GPT Image 2 prompt: Horizontal 16:9 ...".',
-    "- Each imagePrompt must include only: visible cast with copied appearance phrases, concrete background, story action, composition, style, mood, and safety constraints.",
+    "- Each imagePrompt must include only: visible cast with stable identity anchors, lesson outfit, concrete background, story action, composition, style, mood, and safety constraints.",
     "- Avoid redundant wording. Mention the no-text safety constraint once at the end.",
     "- Do not include readable text, letters, numbers, signs, speech bubbles, logos, or watermarks in any visual description or imagePrompt.",
     "",
@@ -246,10 +228,7 @@ async function callQuickRouterResponses(messages: ChatMessage[]) {
 function mockResourcePlan(context: ResourcePlanGenerationContext): CourseResourcePlan {
   const firstAlias = context.draft.castAliases[0]?.alias || "Student";
   const firstProfile = describePerson(context.teacher);
-  const castSummary =
-    context.draft.characterVisualBible && context.draft.characterVisualBible.length > 0
-      ? context.draft.characterVisualBible.map(visualProfileLine).join("; ")
-      : [context.teacher, ...context.students].map(describePerson).join("; ");
+  const castSummary = [context.teacher, ...context.students].map(describePerson).join("; ");
   const shots = context.draft.chapters.flatMap((chapter) =>
     chapter.paragraphs.slice(0, 2).map((paragraph, index) => ({
       chapterId: chapter.id,

@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
 
-import { archivePerson, createPerson, listPeople, PersonNotFoundError, updatePerson } from "./people";
+import { archivePerson, createPerson, listPeople, PersonNotFoundError, updatePerson, type PeopleDb } from "./people";
 
 describe("people repository", () => {
   test("lists active people with optional role filtering", async () => {
     const people = await listPeople(
-      {
+      ({
         person: {
-          findMany: async (query) => {
+          findMany: async (query: Parameters<PeopleDb["person"]["findMany"]>[0]) => {
             expect(query).toEqual({
               where: { archivedAt: null, role: "teacher" },
               orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
@@ -33,7 +33,7 @@ describe("people repository", () => {
             ];
           },
         },
-      },
+      } as never),
       { role: "teacher" },
     );
 
@@ -55,9 +55,9 @@ describe("people repository", () => {
 
   test("creates a teacher profile aligned with student fields and derived display name", async () => {
     const teacher = await createPerson(
-      {
+      ({
         person: {
-          create: async ({ data }) => {
+          create: async ({ data }: Parameters<PeopleDb["person"]["create"]>[0]) => {
             expect(data).toEqual({
               role: "teacher",
               name: "Ms. Lin",
@@ -80,7 +80,7 @@ describe("people repository", () => {
             };
           },
         },
-      },
+      } as never),
       {
         role: "teacher",
         chineseName: "林老师",
@@ -102,9 +102,9 @@ describe("people repository", () => {
 
   test("creates a student profile without a default avatar and derived display name", async () => {
     const student = await createPerson(
-      {
+      ({
         person: {
-          create: async ({ data }) => {
+          create: async ({ data }: Parameters<PeopleDb["person"]["create"]>[0]) => {
             expect(data).toMatchObject({
               role: "student",
               name: "Tom",
@@ -125,7 +125,7 @@ describe("people repository", () => {
             };
           },
         },
-      },
+      } as never),
       {
         role: "student",
         chineseName: "汤姆",
@@ -146,9 +146,9 @@ describe("people repository", () => {
 
   test("updates a person without changing the role", async () => {
     const updated = await updatePerson(
-      {
+      ({
         person: {
-          update: async ({ where, data }) => {
+          update: async ({ where, data }: Parameters<PeopleDb["person"]["update"]>[0]) => {
             expect(where).toEqual({ id: "teacher-1" });
             expect(data).toMatchObject({
               role: "teacher",
@@ -178,7 +178,7 @@ describe("people repository", () => {
             };
           },
         },
-      },
+      } as never),
       "teacher-1",
       {
         role: "teacher",

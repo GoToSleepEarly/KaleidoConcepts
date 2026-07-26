@@ -8,7 +8,6 @@ import {
   BookOpenText,
   Edit3,
   Eye,
-  Globe2,
   Library,
   Loader2,
   MessageSquareText,
@@ -19,13 +18,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
-import type {
-  LessonChatMessage,
-  LessonChatResponse,
-  LessonChatStoryDirection,
-  LlmModel,
-  PresetOption,
-} from "@/lib/contracts/api";
+import type { LessonChatAction, LessonChatMessage, LessonChatResponse, LlmModel, PresetOption } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
 const llmModelOptions: { value: LlmModel; label: string }[] = [
@@ -33,7 +26,7 @@ const llmModelOptions: { value: LlmModel; label: string }[] = [
   { value: "gpt_5_5", label: "GPT 5.5" },
 ];
 
-type ChatIntent = "story_options" | "draft" | "revise";
+type ChatIntent = "outline" | "draft" | "revise";
 type StartMode = "library" | "idea";
 
 type DraftIssue = {
@@ -58,32 +51,33 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
   const [draftText, setDraftText] = useState("");
   const [input, setInput] = useState("");
   const [selectedLlmModel, setSelectedLlmModel] = useState<LlmModel>("deepseek_chat");
-  const [storyDirections, setStoryDirections] = useState<LessonChatStoryDirection[]>([]);
   const [themePresets, setThemePresets] = useState<PresetOption[]>([]);
   const [selectedTheme, setSelectedTheme] = useState("");
   const [startMode, setStartMode] = useState<StartMode | null>(null);
   const [ideaText, setIdeaText] = useState("");
-  const [webSearchRequested, setWebSearchRequested] = useState(false);
   const [lessonDraftExists, setLessonDraftExists] = useState(false);
   const [editorMode, setEditorMode] = useState<"preview" | "edit">("preview");
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [activeIntent, setActiveIntent] = useState<ChatIntent | null>(null);
   const [sendingSeconds, setSendingSeconds] = useState(0);
   const [streamedCharCount, setStreamedCharCount] = useState(0);
   const [isStructuring, setIsStructuring] = useState(false);
   const [structuringSeconds, setStructuringSeconds] = useState(0);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [notice, setNotice] = useState("");
 
   const hasDraft = draftText.trim().length > 0;
-  const hasStarted = messages.length > 0 || hasDraft || storyDirections.length > 0;
+  const hasStarted = messages.length > 0 || hasDraft;
   const showStartForm = !hasStarted;
   const canSend = input.trim().length > 0 && !isSending && !isStructuring;
   const visibleMessages = useMemo(() => messages.slice(-8), [messages]);
   const draftIssues = useMemo(() => analyzeDraftText(draftText), [draftText]);
   const blockers = draftIssues.filter((issue) => issue.level === "blocker");
   const warnings = draftIssues.filter((issue) => issue.level === "warning");
+  const isOutlineWork = isSending && activeIntent === "outline";
+  const isDraftWork = isSending && activeIntent !== "outline";
 
   useEffect(() => {
     let isActive = true;
@@ -128,19 +122,13 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
 
   useEffect(() => {
     if (!isSending) return;
-
-    const timer = window.setInterval(() => {
-      setSendingSeconds((current) => current + 1);
-    }, 1000);
+    const timer = window.setInterval(() => setSendingSeconds((current) => current + 1), 1000);
     return () => window.clearInterval(timer);
   }, [isSending]);
 
   useEffect(() => {
     if (!isStructuring) return;
-
-    const timer = window.setInterval(() => {
-      setStructuringSeconds((current) => current + 1);
-    }, 1000);
+    const timer = window.setInterval(() => setStructuringSeconds((current) => current + 1), 1000);
     return () => window.clearInterval(timer);
   }, [isStructuring]);
 
@@ -153,18 +141,23 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
     const content = text.trim();
     if (!content || isSending) return;
 
-    const inferredIntent = intent ?? (hasDraft ? "revise" : "draft");
+    const inferredIntent = intent ?? (hasDraft ? "revise" : "outline");
     setInput("");
     setError("");
-    setMessage("");
+    setNotice("");
     setStatusText("");
     setSendingSeconds(0);
     setStreamedCharCount(0);
+    setActiveIntent(inferredIntent);
     setIsSending(true);
-    setMessages((current) => [
-      ...current,
-      { id: `local-${Date.now()}`, role: "user", content, createdAt: new Date().toISOString() },
-    ]);
+
+    const localMessage: LessonChatMessage = {
+      id: `local-${Date.now()}`,
+      role: "user",
+      content,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((current) => [...current, localMessage]);
 
     try {
       const response = await fetch(`/api/courses/${courseId}/lesson-chat/message`, {
@@ -175,7 +168,6 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
           draftText,
           intent: inferredIntent,
           llmModel: selectedLlmModel,
-          webSearchEnabled: webSearchRequested,
         }),
       });
 
@@ -186,6 +178,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
       let buffer = "";
       let streamedDraft = "";
       let assistantReply = "";
+      let assistantActions: LessonChatAction[] | undefined;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -202,14 +195,11 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
           if (event === "status" && typeof data.message === "string") {
             setStatusText(data.message);
           } else if (event === "notice" && typeof data.message === "string") {
-            setMessage(data.message);
-          } else if (event === "story_options" && Array.isArray(data.options)) {
-            setStoryDirections(data.options as LessonChatStoryDirection[]);
+            setNotice(data.message);
           } else if (event === "draft_reset") {
             streamedDraft = "";
             updateDraftText("");
             setStreamedCharCount(0);
-            setStoryDirections([]);
           } else if (event === "draft_delta" && typeof data.text === "string") {
             streamedDraft += data.text;
             updateDraftText(streamedDraft);
@@ -220,6 +210,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
             setStreamedCharCount(data.draftText.length);
           } else if (event === "assistant" && typeof data.message === "string") {
             assistantReply = data.message;
+            assistantActions = Array.isArray(data.actions) ? (data.actions as LessonChatAction[]) : undefined;
           } else if (event === "error") {
             throw new Error(typeof data.message === "string" ? data.message : "AI 共创失败");
           }
@@ -227,21 +218,23 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
       }
 
       setMessages((current) => [
-        ...current.filter((item) => !item.id.startsWith("local-")),
+        ...current.filter((item) => item.id !== localMessage.id),
         { id: `user-${Date.now()}`, role: "user", content, createdAt: new Date().toISOString() },
         {
           id: `assistant-${Date.now()}`,
           role: "assistant",
-          content: assistantReply || (inferredIntent === "story_options" ? "已生成 3 个故事方向。" : "已更新右侧文本教案。"),
+          content: assistantReply || (inferredIntent === "outline" ? "已生成简单故事大纲。" : "已更新右侧最终文案。"),
           createdAt: new Date().toISOString(),
+          ...(assistantActions?.length ? { actions: assistantActions } : {}),
         },
       ]);
       setStatusText("");
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "AI 共创失败");
-      setMessages((current) => current.filter((item) => !item.id.startsWith("local-")));
+      setMessages((current) => current.filter((item) => item.id !== localMessage.id));
     } finally {
       setIsSending(false);
+      setActiveIntent(null);
       setSendingSeconds(0);
     }
   }
@@ -249,32 +242,27 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
   function startFromLibrary() {
     if (!selectedTheme) return;
     const prompt = [
-      `我没有明确故事想法。请基于主题灵感「${selectedTheme}」生成 3 个适合当前老师、学生、英语等级、课长和语法目标的故事方向。`,
-      "不要直接生成完整教案，先给我 3 个方向让我选择。",
-      "默认生成原创方向，不要凭空引入第三方 IP 或真实人物。",
+      `我想从主题灵感「${selectedTheme}」开始。`,
+      "请先生成一个简单故事大纲让我确认，不要直接生成最终课文。",
+      "默认使用原创故事，不要凭空引入第三方 IP 或真实人物。",
     ].join("\n");
-    void sendMessage(prompt, "story_options");
+    void sendMessage(prompt, "outline");
   }
 
   function startFromIdea() {
     const idea = ideaText.trim();
     if (!idea) return;
-    const prompt = [
-      "我已有故事想法，请基于下面内容生成完整文本教案，并严格遵循样例格式。",
-      "",
-      "故事想法：",
-      idea,
-    ].join("\n");
-    void sendMessage(prompt, "draft");
+    const prompt = ["我有自己的故事想法。请先生成一个简单故事大纲让我确认，不要直接生成最终课文。", "", "故事想法：", idea].join("\n");
+    void sendMessage(prompt, "outline");
   }
 
   async function clearChat() {
     if (isSending || isStructuring) return;
-    const confirmed = window.confirm("确定清空 Step2 对话和右侧文本教案吗？Step1 基础信息不会被清空。");
+    const confirmed = window.confirm("确定清空 Step2 对话和右侧最终文案吗？Step1 基础信息不会被清空。");
     if (!confirmed) return;
 
     setError("");
-    setMessage("");
+    setNotice("");
 
     try {
       const response = await fetch(`/api/courses/${courseId}/lesson-chat`, { method: "DELETE" });
@@ -284,12 +272,11 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
       }
       setMessages([]);
       updateDraftText("");
-      setStoryDirections([]);
       setStatusText("");
       setStartMode(null);
       setSelectedTheme("");
       setIdeaText("");
-      setMessage("已清空，可以重新开始。");
+      setNotice("已清空，可以重新开始。");
     } catch (clearError) {
       setError(clearError instanceof Error ? clearError.message : "清空对话失败");
     }
@@ -302,7 +289,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
     }
 
     if (!draftText.trim()) {
-      setError("请先生成文本教案");
+      setError("请先生成最终文案");
       return;
     }
 
@@ -314,7 +301,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
     setIsStructuring(true);
     setStructuringSeconds(0);
     setError("");
-    setMessage("正在解析文本教案并保存为标准结构...");
+    setNotice("");
 
     try {
       const response = await fetch(`/api/courses/${courseId}/lesson-chat/structure`, {
@@ -343,7 +330,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <CourseCreateSteps courseId={courseId} currentStep={2} />
 
       <div className="flex items-start justify-between gap-6">
@@ -356,46 +343,21 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
           </Button>
           <h2 className="text-balance text-xl font-semibold text-slate-950">AI 教案共创</h2>
           <p className="mt-2 max-w-3xl text-pretty text-sm leading-6 text-slate-500">
-            Step2 负责确定主题、故事、主角、角色视觉设定和完整文本教案。先选择启动方式，再通过聊天继续调整；第三方角色外观补全后才能进入 Step3。
+            先确认故事大纲，再生成最终文案。生成状态会显示在对应工作区内，不打断主流程。
           </p>
         </div>
-        <Button
-          className="bg-slate-950 text-white hover:bg-slate-800"
-          disabled={(!hasDraft && !lessonDraftExists) || isSending || isStructuring}
-          onClick={structureDraft}
-          type="button"
-        >
-          {isStructuring ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-          {lessonDraftExists ? "查看标准教案" : "确认并生成标准教案"}
-        </Button>
       </div>
 
       {error ? <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div> : null}
-      {message ? <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">{message}</div> : null}
-      {lessonDraftExists ? (
-        <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">标准教案已同步。修改右侧文本后需要重新确认。</div>
-      ) : null}
-      {isSending ? (
-        <div className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {statusText || "AI 正在准备输出..."} 已等待 {sendingSeconds} 秒
-          {streamedCharCount > 0 ? `，已输出 ${streamedCharCount} 字` : "，等待首段内容返回"}。
-        </div>
-      ) : null}
-      {isStructuring ? (
-        <div className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          正在进行程序解析：识别 Content Intent、阶段、题号、答案区和角色视觉设定，并写入标准教案，已等待 {structuringSeconds} 秒。
-        </div>
-      ) : null}
+      {notice ? <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">{notice}</div> : null}
 
-      <div className="grid min-h-[680px] gap-5 xl:grid-cols-[400px_1fr]">
-        <section className="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 p-4">
+      <div className="grid h-[calc(100vh-230px)] min-h-[620px] gap-5 xl:grid-cols-[400px_minmax(0,1fr)]">
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="shrink-0 border-b border-slate-100 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-slate-950">共创对话</div>
-                <p className="mt-1 text-pretty text-xs leading-5 text-slate-500">
-                  启动后可继续让 AI 修改故事、格式、题目、答案或角色外观。
-                </p>
+                <p className="mt-1 text-pretty text-xs leading-5 text-slate-500">大纲确认按钮会出现在 AI 的大纲消息下方。</p>
               </div>
               <button
                 aria-label="清空对话"
@@ -409,44 +371,28 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
               </button>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-                {llmModelOptions.map((option) => (
-                  <button
-                    className={cn(
-                      "rounded-md px-3 py-1.5 text-xs font-medium transition",
-                      selectedLlmModel === option.value ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700",
-                    )}
-                    key={option.value}
-                    onClick={() => setSelectedLlmModel(option.value)}
-                    type="button"
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-              <button
-                className={cn(
-                  "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition",
-                  webSearchRequested
-                    ? "border-amber-300 bg-amber-50 text-amber-700"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                )}
-                onClick={() => {
-                  setWebSearchRequested((current) => !current);
-                  if (!webSearchRequested) {
-                    setMessage("已请求联网搜索；如果当前模型链路不支持，系统会提示你手动输入参考剧情或角色形象。");
-                  }
-                }}
-                type="button"
-              >
-                <Globe2 className="size-4" />
-                联网搜索
-              </button>
+            <div className="mt-3 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+              {llmModelOptions.map((option) => (
+                <button
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-xs font-medium transition",
+                    selectedLlmModel === option.value ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700",
+                  )}
+                  key={option.value}
+                  onClick={() => setSelectedLlmModel(option.value)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
             </div>
+
+            {isOutlineWork ? (
+              <PanelStatus className="mt-3" label={statusText || "AI 正在生成故事大纲..."} seconds={sendingSeconds} />
+            ) : null}
           </div>
 
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4">
             {showStartForm ? (
               <StartForm
                 isSending={isSending}
@@ -464,69 +410,29 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
 
             {!showStartForm && visibleMessages.length > 0
               ? visibleMessages.map((item) => (
-                  <div
-                    className={cn(
-                      "whitespace-pre-wrap rounded-lg px-3 py-2 text-pretty text-sm leading-6",
-                      item.role === "user" ? "ml-8 bg-slate-950 text-white" : "mr-8 bg-slate-100 text-slate-800",
-                    )}
+                  <ChatBubble
+                    disabled={isSending || isStructuring}
                     key={item.id}
-                  >
-                    {item.content}
-                  </div>
+                    message={item}
+                    onAction={(action) => {
+                      if (action.id === "revise_outline" || action.id === "add_reference") {
+                        setInput(action.message);
+                        return;
+                      }
+                      void sendMessage(action.message, action.intent);
+                    }}
+                  />
                 ))
               : null}
-
-            {statusText ? (
-              <div className="inline-flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                <Loader2 className="size-4 animate-spin" />
-                {statusText}
-              </div>
-            ) : null}
-
-            {storyDirections.length > 0 ? (
-              <div className="space-y-3">
-                {storyDirections.map((option) => (
-                  <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" key={option.id}>
-                    <h3 className="text-balance text-sm font-semibold text-slate-950">{option.title}</h3>
-                    <p className="mt-2 text-pretty text-sm leading-6 text-slate-600">{option.storyline}</p>
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {option.stages.map((stage) => (
-                        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600" key={stage}>
-                          {stage}
-                        </span>
-                      ))}
-                    </div>
-                    <p className="mt-3 text-pretty text-xs leading-5 text-slate-500">{option.reason}</p>
-                    <Button
-                      className="mt-3 h-8 bg-slate-950 px-3 text-xs text-white hover:bg-slate-800"
-                      disabled={isSending}
-                      onClick={() =>
-                        void sendMessage(
-                          [
-                            `请基于这个方向生成完整文本教案：${option.title}`,
-                            `故事主线：${option.storyline}`,
-                            `阶段：${option.stages.join(" / ")}`,
-                          ].join("\n"),
-                          "draft",
-                        )
-                      }
-                      type="button"
-                    >
-                      用这个方向生成教案
-                    </Button>
-                  </article>
-                ))}
-              </div>
-            ) : null}
           </div>
 
           {!showStartForm ? (
-            <div className="border-t border-slate-100 p-4">
+            <div className="shrink-0 border-t border-slate-100 bg-white p-4">
               <div className="flex gap-2">
                 <textarea
                   className="min-h-20 flex-1 resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
                   onChange={(event) => setInput(event.target.value)}
-                  placeholder="让 AI 修改右侧文本教案，例如：更贴近样例格式、补齐答案、补充贺朝和谢俞外观..."
+                  placeholder={hasDraft ? "继续提出修改要求..." : "补充大纲要求，或点击 AI 大纲下方的确认按钮..."}
                   value={input}
                 />
                 <Button className="self-end bg-slate-950 text-white hover:bg-slate-800" disabled={!canSend} onClick={() => void sendMessage()} type="button">
@@ -537,40 +443,66 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
           ) : null}
         </section>
 
-        <section className="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 p-4">
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="shrink-0 border-b border-slate-100 p-4">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-sm font-semibold text-slate-950">当前文本教案</div>
-                <p className="mt-1 text-pretty text-xs leading-5 text-slate-500">
-                  默认预览。AI 格式异常时可切到编辑直接微调；编辑后 Step3 会标记为需要重新确认。
-                </p>
+                <div className="text-sm font-semibold text-slate-950">当前最终文案</div>
+                <p className="mt-1 text-pretty text-xs leading-5 text-slate-500">确认大纲后，AI 生成的最终文案会显示在这里。</p>
               </div>
-              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-                <button
-                  className={cn(
-                    "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition",
-                    editorMode === "preview" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700",
-                  )}
-                  onClick={() => setEditorMode("preview")}
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                  <button
+                    className={cn(
+                      "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition",
+                      editorMode === "preview" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700",
+                    )}
+                    onClick={() => setEditorMode("preview")}
+                    type="button"
+                  >
+                    <Eye className="size-3.5" />
+                    预览
+                  </button>
+                  <button
+                    className={cn(
+                      "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition",
+                      editorMode === "edit" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700",
+                    )}
+                    onClick={() => setEditorMode("edit")}
+                    type="button"
+                  >
+                    <Edit3 className="size-3.5" />
+                    编辑
+                  </button>
+                </div>
+                <Button
+                  className="h-8 bg-slate-950 px-3 text-xs text-white hover:bg-slate-800"
+                  disabled={(!hasDraft && !lessonDraftExists) || isSending || isStructuring}
+                  onClick={structureDraft}
                   type="button"
                 >
-                  <Eye className="size-3.5" />
-                  预览
-                </button>
-                <button
-                  className={cn(
-                    "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition",
-                    editorMode === "edit" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700",
-                  )}
-                  onClick={() => setEditorMode("edit")}
-                  type="button"
-                >
-                  <Edit3 className="size-3.5" />
-                  编辑
-                </button>
+                  {isStructuring ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                  {lessonDraftExists ? "查看 Step3" : "进入 Step3"}
+                </Button>
               </div>
             </div>
+
+            {isDraftWork ? (
+              <PanelStatus
+                className="mt-3"
+                detail={streamedCharCount > 0 ? `已输出 ${streamedCharCount} 字` : "等待首段内容返回"}
+                label={statusText || "AI 正在生成最终文案..."}
+                seconds={sendingSeconds}
+              />
+            ) : null}
+            {isStructuring ? (
+              <PanelStatus className="mt-3" label="正在解析阶段、题号、答案区和课文结构..." seconds={structuringSeconds} />
+            ) : null}
+            {lessonDraftExists && !isStructuring ? (
+              <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                标准教案已同步。修改最终文案后需要重新进入 Step3。
+              </div>
+            ) : null}
             {blockers.length > 0 ? (
               <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
                 {blockers.map((issue) => (
@@ -586,11 +518,12 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
               </div>
             ) : null}
           </div>
+
           {editorMode === "edit" ? (
             <textarea
-              className="min-h-0 flex-1 resize-none border-0 p-5 font-mono text-sm leading-7 text-slate-800 outline-none"
+              className="min-h-0 flex-1 resize-none overflow-y-auto border-0 p-5 font-mono text-sm leading-7 text-slate-800 outline-none"
               onChange={(event) => updateDraftText(event.target.value)}
-              placeholder="AI 生成的文本教案会流式出现在这里。"
+              placeholder="最终文案会显示在这里，也可以手动微调。"
               value={draftText}
             />
           ) : (
@@ -598,6 +531,68 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+function PanelStatus({
+  label,
+  seconds,
+  detail,
+  className,
+}: {
+  label: string;
+  seconds: number;
+  detail?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-700", className)}>
+      <div className="flex items-center gap-2 font-medium">
+        <Loader2 className="size-3.5 animate-spin" />
+        <span>{label}</span>
+      </div>
+      <div className="mt-1 text-emerald-600">
+        已等待 {seconds} 秒{detail ? `，${detail}` : ""}
+      </div>
+    </div>
+  );
+}
+
+function ChatBubble({
+  message,
+  disabled,
+  onAction,
+}: {
+  message: LessonChatMessage;
+  disabled: boolean;
+  onAction: (action: LessonChatAction) => void;
+}) {
+  const isAssistant = message.role === "assistant";
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg px-3 py-2 text-pretty text-sm leading-6",
+        message.role === "user" ? "ml-8 bg-slate-950 text-white" : "mr-8 bg-slate-100 text-slate-800",
+      )}
+    >
+      <div className={cn("whitespace-pre-wrap", isAssistant ? "max-h-72 overflow-y-auto pr-1" : "")}>{message.content}</div>
+      {isAssistant && message.actions?.length ? (
+        <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-200 pt-3">
+          {message.actions.map((action) => (
+            <button
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:opacity-50"
+              disabled={disabled}
+              key={action.id}
+              onClick={() => onAction(action)}
+              type="button"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -629,9 +624,7 @@ function StartForm({
     <div className="space-y-4">
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         <h3 className="text-sm font-semibold text-slate-950">这次教案从哪里开始？</h3>
-        <p className="mt-1 text-pretty text-xs leading-5 text-slate-500">
-          先收敛第一步，后面仍然用聊天继续修改和补全。
-        </p>
+        <p className="mt-1 text-pretty text-xs leading-5 text-slate-500">先生成故事大纲，确认方向后再生成最终文案。</p>
         <div className="mt-4 grid gap-3">
           <button
             className={cn(
@@ -644,7 +637,7 @@ function StartForm({
             <Library className="mt-0.5 size-4 text-slate-700" />
             <span>
               <span className="block text-sm font-medium text-slate-950">从灵感库开始</span>
-              <span className="mt-1 block text-xs leading-5 text-slate-500">选择一个主题灵感，让 AI 先给 3 个故事方向。</span>
+              <span className="mt-1 block text-xs leading-5 text-slate-500">选择一个主题灵感，让 AI 先生成一个可确认的大纲。</span>
             </span>
           </button>
           <button
@@ -657,8 +650,8 @@ function StartForm({
           >
             <MessageSquareText className="mt-0.5 size-4 text-slate-700" />
             <span>
-              <span className="block text-sm font-medium text-slate-950">我有已有想法</span>
-              <span className="mt-1 block text-xs leading-5 text-slate-500">输入参考剧情、角色或故事大概，AI 直接生成完整教案。</span>
+              <span className="block text-sm font-medium text-slate-950">我有自己的想法</span>
+              <span className="mt-1 block text-xs leading-5 text-slate-500">可以写原创点子，也可以写参考故事、历史人物、游戏角色或已有剧情。</span>
             </span>
           </button>
         </div>
@@ -690,7 +683,7 @@ function StartForm({
             </div>
           ) : (
             <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
-              主题灵感库为空。可以先去主题库维护，或切换到“我有已有想法”。
+              主题灵感库为空。可以先去主题库维护，或切换到“我有自己的想法”。
             </div>
           )}
           <Button
@@ -700,7 +693,7 @@ function StartForm({
             type="button"
           >
             {isSending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-            生成 3 个方向
+            生成故事大纲
           </Button>
         </div>
       ) : null}
@@ -714,7 +707,7 @@ function StartForm({
             className="mt-3 min-h-36 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
             id="story-idea"
             onChange={(event) => onIdeaTextChange(event.target.value)}
-            placeholder="例如：讲《伪装学霸》，主角是贺朝和谢俞，讲两个人伪装成学渣但其实非常优秀的校园成长故事。若涉及第三方角色，请补充稳定外观。"
+            placeholder="例如：参考 Mozart 的成长经历，做一个适合 B1 学生的音乐冒险故事；或用瓦罗兰特角色做团队解谜故事。"
             value={ideaText}
           />
           <Button
@@ -724,7 +717,7 @@ function StartForm({
             type="button"
           >
             {isSending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-            生成文本教案
+            生成故事大纲
           </Button>
         </div>
       ) : null}
@@ -737,17 +730,12 @@ function analyzeDraftText(text: string): DraftIssue[] {
   if (!trimmed) return [];
 
   const issues: DraftIssue[] = [];
-  const intent = parseContentIntent(trimmed);
   const answerKeyPattern = /(?:【\s*(?:教师答案区\s*\/\s*Answer Key|Answer Key|答案区|教师答案区)\s*】|^Answer Key\s*:?\s*$)/im;
   const answerKeyMatch = trimmed.match(answerKeyPattern);
   const bodyText = answerKeyMatch?.index == null ? trimmed : trimmed.slice(0, answerKeyMatch.index);
   const answerKeyText = answerKeyMatch?.index == null ? "" : trimmed.slice(answerKeyMatch.index + answerKeyMatch[0].length);
   const questionNumbers = [...bodyText.matchAll(/\((\d{1,3})\)/g)].map((match) => Number(match[1]));
   const uniqueQuestionNumbers = [...new Set(questionNumbers)].sort((left, right) => left - right);
-
-  if (!intent) {
-    issues.push({ level: "blocker", message: "缺少【Content Intent】" });
-  }
 
   if (!/【\s*Lesson Draft\s*】/i.test(trimmed)) {
     issues.push({ level: "blocker", message: "缺少【Lesson Draft】" });
@@ -757,16 +745,8 @@ function analyzeDraftText(text: string): DraftIssue[] {
     issues.push({ level: "blocker", message: "缺少【教师答案区 / Answer Key】" });
   }
 
-  if (intent && intent.storyMode !== "original_story") {
-    const visualProfiles = parseVisualProfiles(trimmed);
-    if (visualProfiles.length === 0) {
-      issues.push({ level: "blocker", message: "第三方/混合故事必须补充【Character Visual Bible】" });
-    } else {
-      const incomplete = visualProfiles.filter((profile) => profile.status !== "complete" || isIncompleteVisualText(profile.stableFeatures));
-      if (incomplete.length > 0) {
-        issues.push({ level: "blocker", message: `第三方角色外观未补全：${incomplete.map((profile) => profile.name).join("、")}` });
-      }
-    }
+  if (!/【\s*Closing Reading\s*】/i.test(trimmed)) {
+    issues.push({ level: "blocker", message: "缺少【Closing Reading】" });
   }
 
   if (uniqueQuestionNumbers.length > 0) {
@@ -797,57 +777,6 @@ function analyzeDraftText(text: string): DraftIssue[] {
   return issues.slice(0, 6);
 }
 
-function parseContentIntent(text: string) {
-  const block = sectionBetween(text, /【\s*Content Intent\s*】/i, /【\s*(?:Character Visual Bible|角色视觉设定|Lesson Draft|Lesson Meta|Stage\s*\d+)\s*】/i);
-  if (!block) return null;
-  const mode = block.match(/^Story Mode\s*[:：]\s*(.+)$/im)?.[1]?.trim();
-  const storyMode =
-    mode === "reference_story" || mode === "hybrid_adaptation" || mode === "original_story" ? mode : "original_story";
-  return { storyMode };
-}
-
-function sectionBetween(text: string, startPattern: RegExp, endPattern: RegExp) {
-  const startMatch = text.match(startPattern);
-  if (!startMatch || startMatch.index == null) return "";
-  const start = startMatch.index + startMatch[0].length;
-  const rest = text.slice(start);
-  const end = rest.search(endPattern);
-  return (end >= 0 ? rest.slice(0, end) : rest).trim();
-}
-
-function parseVisualProfiles(text: string) {
-  const block = sectionBetween(
-    text,
-    /【\s*(?:Character Visual Bible|角色视觉设定\s*(?:\/\s*Character Visual Bible)?)\s*】/i,
-    /【\s*(?:Lesson Draft|Lesson Meta|Stage\s*\d+|Closing Reading|教师答案区|Answer Key)\s*】/i,
-  );
-  if (!block) return [];
-  const profiles: Array<{ name: string; status: "complete" | "incomplete"; stableFeatures: string }> = [];
-  let current: { name: string; status: "complete" | "incomplete"; stableFeatures: string } | null = null;
-
-  for (const rawLine of block.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    const nameMatch = line.match(/^(.+?)[:：]\s*$/);
-    if (nameMatch && !/^(身份|形象状态|稳定特征|可变状态|避免变化|来源)$/.test(nameMatch[1])) {
-      if (current) profiles.push(current);
-      current = { name: nameMatch[1].trim(), status: "incomplete", stableFeatures: "" };
-      continue;
-    }
-    if (!current) continue;
-    const statusMatch = line.match(/^形象状态[:：]\s*(.+)$/);
-    if (statusMatch) current.status = /已补全|完整|complete/i.test(statusMatch[1]) ? "complete" : "incomplete";
-    const stableMatch = line.match(/^稳定特征[:：]\s*(.+)$/);
-    if (stableMatch) current.stableFeatures = stableMatch[1].trim();
-  }
-  if (current) profiles.push(current);
-  return profiles;
-}
-
-function isIncompleteVisualText(value: string) {
-  const normalized = value.trim().toLowerCase();
-  return !normalized || normalized.includes("待补充") || normalized.includes("unknown") || normalized.includes("not provided");
-}
-
 function extractStageBlocks(text: string) {
   const markerPattern = /【\s*Stage\s*\d+\s*】|第[一二三四五六七八九十\d]+阶段[:：]/gi;
   const markers = [...text.matchAll(markerPattern)];
@@ -869,7 +798,7 @@ function countReadingWords(stageBlock: string) {
     .replace(/\(\d{1,3}\)\s*_{3,}\s*[（(][^()（）]+[）)](?:\s*[（(]提示[:：][^()（）]+[）)])?/g, " ")
     .replace(/\[[^\]]+\]/g, " ")
     .replace(/[（(]提示[:：][^()（）]+[）)]/g, " ")
-    .replace(/^\s*S\d+\s*[:：、]\s*/gim, " ");
+    .replace(/^\s*S\d+\s*[:：]\s*/gim, " ");
   return (cleaned.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) ?? []).length;
 }
 
@@ -877,13 +806,13 @@ function LessonTextPreview({ text }: { text: string }) {
   if (!text.trim()) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-sm text-slate-400">
-        生成文本后可以在这里预览排版，也可以切到编辑模式手动微调。
+        确认故事大纲后，最终文案会出现在这里。
       </div>
     );
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-6">
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">
       <div className="mx-auto max-w-4xl space-y-3 text-sm leading-7 text-slate-700">
         {text.split("\n").map((line, index) => (
           <PreviewLine key={`${index}-${line}`} line={line} />
@@ -898,11 +827,7 @@ function PreviewLine({ line }: { line: string }) {
 
   if (!trimmed) return <div className="h-2" />;
 
-  if (/^【\s*(Content Intent|Character Visual Bible|角色视觉设定)/i.test(trimmed)) {
-    return <h3 className="pt-4 text-base font-semibold text-emerald-700">{renderInlineMarkdown(trimmed)}</h3>;
-  }
-
-  if (/^【\s*(Lesson Draft|Lesson Meta|Stage\s*\d+|Closing Reading)/i.test(trimmed) || /^第[一二三四五六七八九十\d]+阶段[:：]/.test(trimmed)) {
+  if (/^【\s*(Lesson Draft|Lesson Meta|Stage\s*\d+|Closing Reading)\s*】/i.test(trimmed) || /^第[一二三四五六七八九十\d]+阶段[:：]/.test(trimmed)) {
     return <h3 className="pt-4 text-base font-semibold text-slate-950">{renderInlineMarkdown(trimmed)}</h3>;
   }
 
@@ -910,7 +835,7 @@ function PreviewLine({ line }: { line: string }) {
     return <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">{renderInlineMarkdown(trimmed)}</p>;
   }
 
-  if (/^【\s*(教师答案区|Answer Key)|^Answer Key|答案区/.test(trimmed)) {
+  if (/^【\s*(教师答案区\s*\/\s*Answer Key|Answer Key|答案区)\s*】|^Answer Key/i.test(trimmed)) {
     return <h3 className="pt-4 text-base font-semibold text-amber-700">{renderInlineMarkdown(trimmed)}</h3>;
   }
 

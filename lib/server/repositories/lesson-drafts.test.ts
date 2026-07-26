@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import type { LessonContentDraft, StoryOption } from "@/lib/contracts/api";
+import type { LessonContentDraft, LessonDraft, StoryOption } from "@/lib/contracts/api";
 
 import {
   claimLessonDraftGeneration,
@@ -516,6 +516,7 @@ describe("lesson draft repository", () => {
             lessonDraftGenStatus: "succeeded",
             lessonDraftGenStartedAt: null,
             lessonDraftGenError: null,
+            llmModel: "deepseek_chat",
           }),
         },
         courseStoryOption: {
@@ -555,6 +556,7 @@ describe("lesson draft repository", () => {
               lessonDraftGenStatus: "succeeded",
               lessonDraftGenStartedAt: null,
               lessonDraftGenError: null,
+              llmModel: "deepseek_chat",
             }),
           },
           courseStoryOption: {

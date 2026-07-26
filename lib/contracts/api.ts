@@ -325,7 +325,7 @@ export type CourseListItem = {
   teacherName: string | null;
   studentNames: string[];
   englishLevel: EnglishLevel;
-  theme: string;
+  storyTitle: string | null;
   status: CourseStatus;
   storyOptionsCount: number;
   selectedStoryOptionId: string | null;
@@ -341,7 +341,6 @@ export type CourseBasicInput = {
   studentIds: string[];
   englishLevel: EnglishLevel;
   durationMinutes: 30 | 45 | 60;
-  theme?: string;
   grammar: string[];
   llmModel?: LlmModel;
 };
@@ -383,16 +382,6 @@ export type CastAlias = {
   displayName: string;
 };
 
-export type CharacterVisualProfile = {
-  name: string;
-  role: string;
-  status: "complete" | "incomplete";
-  stableFeatures: string;
-  variableStates: string;
-  avoidChanges: string;
-  source?: string;
-};
-
 export type LessonContentDraft = {
   schemaVersion: "lesson_content_v1";
   sourceStoryOptionId: string;
@@ -400,7 +389,6 @@ export type LessonContentDraft = {
   title: string;
   language: "en";
   castAliases: CastAlias[];
-  characterVisualBible?: CharacterVisualProfile[];
   chapters: LessonContentChapter[];
   closingReading: LessonClosingReading;
 };
@@ -506,19 +494,19 @@ export type LessonDraftResponse = {
 
 export type LessonChatRole = "user" | "assistant";
 
+export type LessonChatAction = {
+  id: string;
+  label: string;
+  message: string;
+  intent?: "outline" | "draft" | "revise";
+};
+
 export type LessonChatMessage = {
   id: string;
   role: LessonChatRole;
   content: string;
   createdAt: string;
-};
-
-export type LessonChatStoryDirection = {
-  id: string;
-  title: string;
-  storyline: string;
-  stages: string[];
-  reason: string;
+  actions?: LessonChatAction[];
 };
 
 export type LessonChatResponse = {

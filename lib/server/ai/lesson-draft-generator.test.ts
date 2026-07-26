@@ -22,7 +22,6 @@ const baseCourse = {
   studentIds: ["student-1"],
   englishLevel: "A1" as const,
   durationMinutes: 45 as const,
-  theme: "唐代诗歌博物馆",
   grammar: ["Past Simple", "There be", "Modals"],
   status: "draft" as const,
 };

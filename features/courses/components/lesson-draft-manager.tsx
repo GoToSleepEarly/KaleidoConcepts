@@ -16,7 +16,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
 import type {
-  CharacterVisualProfile,
   LessonContentChapter,
   LessonDraft,
   LessonDraftGeneration,
@@ -230,12 +229,6 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
   function updateClosingSentence(index: number, text: string) {
     mutateEditDraft((next) => {
       next.closingReading.sentences[index] = text;
-    });
-  }
-
-  function updateCharacterVisualBible(text: string) {
-    mutateEditDraft((next) => {
-      next.characterVisualBible = parseCharacterVisualBibleText(text);
     });
   }
 
@@ -506,115 +499,10 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
               </div>
               当前页面展示的是由文本教案整理出的标准结构。后续资源生成会读取这里的正文和章节信息。
             </section>
-            <CharacterVisualBiblePanel
-              draft={workingDraft}
-              isEditing={isEditing}
-              onChange={updateCharacterVisualBible}
-            />
           </aside>
         </div>
       ) : null}
     </div>
-  );
-}
-
-function serializeCharacterVisualBible(profiles: CharacterVisualProfile[] = []) {
-  return profiles
-    .map((profile) =>
-      [
-        `${profile.name}:`,
-        `身份：${profile.role}`,
-        `形象状态：${profile.status === "complete" ? "已补全" : "待补充"}`,
-        `稳定特征：${profile.stableFeatures}`,
-        `可变状态：${profile.variableStates}`,
-        `避免变化：${profile.avoidChanges}`,
-      ].join("\n"),
-    )
-    .join("\n\n");
-}
-
-function parseCharacterVisualBibleText(text: string): CharacterVisualProfile[] {
-  const profiles: CharacterVisualProfile[] = [];
-  let current: Partial<CharacterVisualProfile> | null = null;
-
-  function finishCurrent() {
-    if (!current?.name) return;
-    profiles.push({
-      name: current.name.trim(),
-      role: current.role?.trim() || "故事角色",
-      status: current.status === "complete" ? "complete" : "incomplete",
-      stableFeatures: current.stableFeatures?.trim() || "待补充",
-      variableStates: current.variableStates?.trim() || "待补充",
-      avoidChanges: current.avoidChanges?.trim() || "待补充",
-      source: "step3_edit",
-    });
-  }
-
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-
-    const nameMatch = line.match(/^(.+?)[:：]\s*$/);
-    if (nameMatch && !/^(身份|形象状态|稳定特征|可变状态|避免变化)$/.test(nameMatch[1])) {
-      finishCurrent();
-      current = { name: nameMatch[1].trim() };
-      continue;
-    }
-
-    if (!current) continue;
-    const fieldMatch = line.match(/^(身份|形象状态|稳定特征|可变状态|避免变化)[:：]\s*(.+)$/);
-    if (!fieldMatch) continue;
-    if (fieldMatch[1] === "身份") current.role = fieldMatch[2];
-    if (fieldMatch[1] === "形象状态") current.status = /已补全|完整|complete/i.test(fieldMatch[2]) ? "complete" : "incomplete";
-    if (fieldMatch[1] === "稳定特征") current.stableFeatures = fieldMatch[2];
-    if (fieldMatch[1] === "可变状态") current.variableStates = fieldMatch[2];
-    if (fieldMatch[1] === "避免变化") current.avoidChanges = fieldMatch[2];
-  }
-
-  finishCurrent();
-  return profiles;
-}
-
-function CharacterVisualBiblePanel({
-  draft,
-  isEditing,
-  onChange,
-}: {
-  draft: LessonDraft;
-  isEditing: boolean;
-  onChange: (text: string) => void;
-}) {
-  const profiles = draft.characterVisualBible ?? [];
-  if (!isEditing && profiles.length === 0) return null;
-
-  return (
-    <section className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm leading-6 text-emerald-800">
-      <div className="mb-2 font-semibold text-emerald-950">角色视觉设定</div>
-      {isEditing ? (
-        <>
-          <textarea
-            className="min-h-44 w-full resize-y rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs leading-6 text-slate-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-            onChange={(event) => onChange(event.target.value)}
-            placeholder={"角色名：\n身份：故事主角\n形象状态：已补全 / 待补充\n稳定特征：...\n可变状态：...\n避免变化：..."}
-            value={serializeCharacterVisualBible(profiles)}
-          />
-          <p className="mt-2 text-xs text-emerald-700">这里会直接影响 Step4 图片 prompt 的角色一致性。</p>
-        </>
-      ) : (
-        <div className="space-y-3">
-          {profiles.map((profile) => (
-            <div className="rounded-lg bg-white/70 px-3 py-2" key={profile.name}>
-              <div className="font-semibold text-emerald-950">
-                {profile.name}
-                {profile.status === "incomplete" ? <span className="ml-2 text-xs font-medium text-amber-700">待补充</span> : null}
-              </div>
-              <div className="mt-1 text-xs text-emerald-800">稳定特征：{profile.stableFeatures}</div>
-              <div className="mt-1 text-xs text-emerald-700">可变状态：{profile.variableStates}</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
   );
 }
 
