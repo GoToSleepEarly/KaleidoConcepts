@@ -178,7 +178,7 @@ export function CoursesManager() {
                   <th className="px-5 py-3">老师</th>
                   <th className="px-5 py-3">学生</th>
                   <th className="px-5 py-3">等级</th>
-                  <th className="px-5 py-3">主题</th>
+                  <th className="px-5 py-3">故事题目</th>
                   <th className="px-5 py-3">状态</th>
                   <th className="px-5 py-3">更新时间</th>
                   <th className="px-5 py-3 text-right">操作</th>
@@ -194,7 +194,7 @@ export function CoursesManager() {
                     <td className="px-5 py-4 text-muted-foreground">{course.studentNames.join(" / ") || "未选择学生"}</td>
                     <td className="px-5 py-4 text-muted-foreground">{course.englishLevel}</td>
                     <td className="max-w-[220px] px-5 py-4 text-muted-foreground">
-                      <div className="truncate">{course.theme}</div>
+                      <div className="truncate">{course.storyTitle || "未生成故事"}</div>
                     </td>
                     <td className="px-5 py-4">
                       <Badge variant={statusVariant[course.status]}>

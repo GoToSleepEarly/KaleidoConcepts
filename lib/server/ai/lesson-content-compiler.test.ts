@@ -146,9 +146,9 @@ describe("lesson content compiler", () => {
     );
   });
 
-  test("rejects repeated answers in a chapter ignoring case", () => {
-    const invalid = structuredClone(plan);
-    invalid.chapters[0].paragraphs[1].sentences[2] = {
+  test("allows repeated answers in a chapter", () => {
+    const repeated = structuredClone(plan);
+    repeated.chapters[0].paragraphs[1].sentences[2] = {
       parts: [
         { type: "text", text: "They " },
         {
@@ -160,9 +160,8 @@ describe("lesson content compiler", () => {
         { type: "text", text: " again." },
       ],
     };
-    expect(() => compileLessonContentDraft(invalid, storyOption)).toThrow(
-      'Chapter 1 repeats exercise answer "VISITED"',
-    );
+    const draft = compileLessonContentDraft(repeated, storyOption);
+    expect(draft.chapters[0].exercises.map((exercise) => exercise.answer)).toContain("VISITED");
   });
 
   test("uses the explicit exercise part even when the answer appears elsewhere in the sentence", () => {

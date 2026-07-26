@@ -8,14 +8,12 @@ import type {
   LlmModel,
   PersonProfile,
   PersonRole,
-  StoryIdeaMode,
 } from "@/lib/contracts/api";
 
 type DbCourse = {
   id: string;
   title: string;
   englishLevel: EnglishLevel;
-  theme: string;
   status: CourseStatus;
   selectedStoryOptionId: string | null;
   createdAt: Date;
@@ -23,6 +21,10 @@ type DbCourse = {
   lessonDraft?: {
     courseId: string;
   } | null;
+  storyOptions?: Array<{
+    id: string;
+    title: string;
+  }>;
   people: Array<{
     person: {
       role: "student" | "teacher";
@@ -41,10 +43,7 @@ type DbCourseBasic = {
   title: string;
   englishLevel: EnglishLevel;
   durationMinutes: 30 | 45 | 60;
-  theme: string;
   grammar: string[];
-  storyIdeaMode: StoryIdeaMode;
-  storyIdea: string | null;
   llmModel: LlmModel;
   status: CourseStatus;
   people: Array<{
@@ -72,10 +71,7 @@ type CourseBasicWriteData = {
   title: string;
   englishLevel: EnglishLevel;
   durationMinutes: 30 | 45 | 60;
-  theme: string;
   grammar: string[];
-  storyIdeaMode: StoryIdeaMode;
-  storyIdea: string | null;
   llmModel: LlmModel;
 };
 
@@ -111,6 +107,12 @@ export type CoursesDb = {
         lessonDraft: {
           select: {
             courseId: true;
+          };
+        };
+        storyOptions: {
+          select: {
+            id: true;
+            title: true;
           };
         };
       };
@@ -185,13 +187,8 @@ function dbPersonToProfile(person: NonNullable<DbCourseBasic["people"][number]["
   };
 }
 
-function normalizeText(value: string) {
-  return value.trim();
-}
-
-function normalizeOptionalText(value: string | undefined) {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
+function normalizeText(value: string | undefined) {
+  return value?.trim() ?? "";
 }
 
 function uniqueValues(values: string[]) {
@@ -203,10 +200,7 @@ function toCourseBasicWriteData(input: CourseBasicInput): CourseBasicWriteData {
     title: normalizeText(input.title),
     englishLevel: input.englishLevel,
     durationMinutes: input.durationMinutes,
-    theme: normalizeText(input.theme),
     grammar: uniqueValues(input.grammar.map(normalizeText).filter(Boolean)),
-    storyIdeaMode: input.storyIdeaMode,
-    storyIdea: input.storyIdeaMode === "manual" ? normalizeOptionalText(input.storyIdea) : null,
     llmModel: input.llmModel ?? "deepseek_chat",
   };
 }
@@ -214,11 +208,7 @@ function toCourseBasicWriteData(input: CourseBasicInput): CourseBasicWriteData {
 function validateCourseBasicShape(input: CourseBasicInput) {
   const data = toCourseBasicWriteData(input);
 
-  if (!data.title || !input.teacherId || input.studentIds.length < 1 || !data.theme || data.grammar.length < 1) {
-    throw new CourseBasicValidationError();
-  }
-
-  if (data.storyIdeaMode === "manual" && !data.storyIdea) {
+  if (!data.title || !input.teacherId || input.studentIds.length < 1 || data.grammar.length < 1) {
     throw new CourseBasicValidationError();
   }
 
@@ -286,10 +276,7 @@ function toCourseBasicDetail(course: DbCourseBasic): CourseBasicDetail {
     studentIds,
     englishLevel: course.englishLevel,
     durationMinutes: course.durationMinutes,
-    theme: course.theme,
     grammar: course.grammar,
-    storyIdeaMode: course.storyIdeaMode,
-    storyIdea: course.storyIdea ?? undefined,
     llmModel: course.llmModel,
     status: course.status,
   };
@@ -332,8 +319,8 @@ function getCourseProgress(course: DbCourse): {
   }
 
   return {
-    currentStep: "basic",
-    nextEditPath: `/courses/${course.id}/create/basic`,
+    currentStep: "story_options",
+    nextEditPath: `/courses/${course.id}/create/story-options`,
     lessonDraftExists,
     storyOptionsCount,
   };
@@ -362,12 +349,19 @@ export async function listCourses(db: CoursesDb): Promise<CourseListItem[]> {
           courseId: true,
         },
       },
+      storyOptions: {
+        select: {
+          id: true,
+          title: true,
+        },
+      },
     },
   });
 
   return courses.map((course) => {
     const teacher = course.people.find(({ person }) => person.role === "teacher")?.person;
     const progress = getCourseProgress(course);
+    const storyTitle = course.storyOptions?.find((option) => option.id === course.selectedStoryOptionId)?.title ?? null;
 
     return {
       id: course.id,
@@ -377,7 +371,7 @@ export async function listCourses(db: CoursesDb): Promise<CourseListItem[]> {
         .filter(({ person }) => person.role === "student")
         .map(({ person }) => person.englishName || person.chineseName || person.name),
       englishLevel: course.englishLevel,
-      theme: course.theme,
+      storyTitle,
       status: course.status,
       storyOptionsCount: progress.storyOptionsCount,
       selectedStoryOptionId: course.selectedStoryOptionId,

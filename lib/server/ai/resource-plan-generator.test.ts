@@ -11,10 +11,7 @@ const course: CourseBasicDetail = {
   studentIds: ["student-1"],
   englishLevel: "A1",
   durationMinutes: 30,
-  theme: "forest gate",
   grammar: ["Past Simple"],
-  storyIdeaMode: "ai",
-  storyIdea: "",
   llmModel: "deepseek_chat",
   status: "draft",
 };
@@ -77,9 +74,7 @@ const draft: LessonDraft = {
         {
           id: "chapter-1-paragraph-2",
           order: 2,
-          sentences: [
-            { id: "c1s3", text: "Summer found a clue under the gate.", segments: [{ type: "text", text: "Summer found a clue under the gate." }] },
-          ],
+          sentences: [{ id: "c1s3", text: "Summer found a clue under the gate.", segments: [{ type: "text", text: "Summer found a clue under the gate." }] }],
         },
       ],
       exercises: [],
@@ -163,17 +158,31 @@ describe("course resource plan parsing", () => {
     expect(prompt).toContain("story poster");
     expect(prompt).toContain("memorable central visual hook");
     expect(prompt).toContain("Do not add extra students");
-    expect(prompt).toContain("Only use cast aliases");
+    expect(prompt).toContain("Only name characters that appear in CLASSROOM CAST VISUAL FACTS");
     expect(prompt).toContain("shotOrder 1 must use paragraph 1");
     expect(prompt).toContain("shotOrder 2 must use paragraph 2");
+    expect(prompt).toContain("CLASSROOM CAST VISUAL FACTS");
+    expect(prompt).toContain("450-800 characters");
+    expect(prompt).toContain("face shape, body type, glasses/no glasses");
+    expect(prompt).toContain("choose a simple lesson outfit from the story context");
+    expect(prompt).toContain("Every imagePrompt must restate the visible character's stable identity anchors");
   });
 
-  test("feeds each character's gender and age so the model does not guess", () => {
+  test("feeds each classroom character's gender and age so the model does not guess", () => {
     const prompt = buildCourseResourcePlanPrompt({ course, teacher, students: [student], storyOption, draft });
 
     expect(prompt).toContain("Ms Lin (female");
     expect(prompt).toContain("Summer (female, age 8");
     expect(prompt).toContain("kind teacher with round glasses");
     expect(prompt).toContain("gender");
+  });
+
+  test("uses lightweight common-knowledge rules for external people and IP characters", () => {
+    const prompt = buildCourseResourcePlanPrompt({ course, teacher, students: [student], storyOption, draft });
+
+    expect(prompt).toContain("historical person, real person, famous IP, game, or fixed character");
+    expect(prompt).toContain("without promising exact official likeness");
+    expect(prompt).toContain("match each paragraph's age phase and era");
+    expect(prompt).toContain("original classroom picture-book style");
   });
 });

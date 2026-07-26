@@ -6,11 +6,18 @@ import type { CourseImagesDb } from "@/lib/server/repositories/course-images";
 import type { CoursePreviewDb } from "@/lib/server/repositories/course-preview";
 import type { CoursesDb } from "@/lib/server/repositories/courses";
 import type { LessonDraftsDb } from "@/lib/server/repositories/lesson-drafts";
+import type { LessonChatDb } from "@/lib/server/repositories/lesson-chat";
 import type { PeopleDb } from "@/lib/server/repositories/people";
 import type { PresetsDb } from "@/lib/server/repositories/presets";
-import type { StoryOptionsDb } from "@/lib/server/repositories/story-options";
 
-export type AppDb = AuthDb & PeopleDb & PresetsDb & CoursesDb & StoryOptionsDb & LessonDraftsDb & CourseImagesDb & CoursePreviewDb;
+export type AppDb = AuthDb &
+  PeopleDb &
+  PresetsDb &
+  CoursesDb &
+  LessonDraftsDb &
+  LessonChatDb &
+  CourseImagesDb &
+  CoursePreviewDb;
 
 let prisma: AppDb | null = null;
 

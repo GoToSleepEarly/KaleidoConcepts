@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -8,7 +8,7 @@ import { ArrowLeft, Check, Loader2, X } from "lucide-react";
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
-import type { CourseBasicDetail, CourseBasicInput, EnglishLevel, PersonProfile, PresetOption, StoryIdeaMode } from "@/lib/contracts/api";
+import type { CourseBasicDetail, CourseBasicInput, EnglishLevel, PersonProfile, PresetOption } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
 const englishLevels: EnglishLevel[] = ["A1", "A2", "B1", "B2", "C1", "C2"];
@@ -20,10 +20,7 @@ type FormState = {
   studentIds: string[];
   englishLevel: EnglishLevel;
   durationMinutes: 30 | 45 | 60;
-  theme: string;
   grammar: string[];
-  storyIdeaMode: StoryIdeaMode;
-  storyIdea: string;
 };
 
 const emptyForm: FormState = {
@@ -32,10 +29,7 @@ const emptyForm: FormState = {
   studentIds: [],
   englishLevel: "A1",
   durationMinutes: 45,
-  theme: "",
   grammar: [],
-  storyIdeaMode: "ai",
-  storyIdea: "",
 };
 
 function toFormState(course?: CourseBasicDetail): FormState {
@@ -49,10 +43,7 @@ function toFormState(course?: CourseBasicDetail): FormState {
     studentIds: course.studentIds,
     englishLevel: course.englishLevel,
     durationMinutes: course.durationMinutes,
-    theme: course.theme,
     grammar: course.grammar,
-    storyIdeaMode: course.storyIdeaMode,
-    storyIdea: course.storyIdea ?? "",
   };
 }
 
@@ -63,10 +54,7 @@ function toPayload(form: FormState): CourseBasicInput {
     studentIds: form.studentIds,
     englishLevel: form.englishLevel,
     durationMinutes: form.durationMinutes,
-    theme: form.theme.trim(),
     grammar: form.grammar.map((item) => item.trim()).filter(Boolean),
-    storyIdeaMode: form.storyIdeaMode,
-    storyIdea: form.storyIdea.trim(),
   };
 }
 
@@ -83,16 +71,8 @@ function validateForm(form: FormState) {
     return "请至少选择 1 个学生";
   }
 
-  if (!form.theme.trim()) {
-    return "请选择主题";
-  }
-
   if (form.grammar.length < 1) {
     return "请至少选择 1 个语法点";
-  }
-
-  if (form.storyIdeaMode === "manual" && !form.storyIdea.trim()) {
-    return "请填写故事大纲";
   }
 
   return "";
@@ -102,7 +82,6 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
   const router = useRouter();
   const [teachers, setTeachers] = useState<PersonProfile[]>([]);
   const [students, setStudents] = useState<PersonProfile[]>([]);
-  const [themePresets, setThemePresets] = useState<string[]>([]);
   const [grammarPresets, setGrammarPresets] = useState<PresetOption[]>([]);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -110,12 +89,8 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [error, setError] = useState("");
-  const submitLabel = courseId ? "保存并继续" : "保存并生成故事方案";
+  const submitLabel = courseId ? "保存并继续" : "保存并开始共创";
 
-  const themeOptions = useMemo(
-    () => (form.theme && !themePresets.includes(form.theme) ? [...themePresets, form.theme] : themePresets),
-    [form.theme, themePresets],
-  );
   const grammarCategories = useMemo(() => {
     const groups = new Map<string, PresetOption[]>();
     for (const preset of grammarPresets) {
@@ -150,10 +125,9 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
       setLoadError("");
 
       try {
-        const [teacherResponse, studentResponse, themeResponse, grammarResponse, courseResponse] = await Promise.all([
+        const [teacherResponse, studentResponse, grammarResponse, courseResponse] = await Promise.all([
           fetch("/api/people?role=teacher"),
           fetch("/api/people?role=student"),
-          fetch("/api/presets?kind=theme"),
           fetch("/api/presets?kind=grammar"),
           courseId ? fetch(`/api/courses/${courseId}/basic`) : Promise.resolve(null),
         ]);
@@ -161,7 +135,6 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
         if (
           !teacherResponse.ok ||
           !studentResponse.ok ||
-          !themeResponse.ok ||
           !grammarResponse.ok ||
           (courseResponse && !courseResponse.ok)
         ) {
@@ -170,14 +143,12 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
 
         const teacherData = (await teacherResponse.json()) as { people: PersonProfile[] };
         const studentData = (await studentResponse.json()) as { people: PersonProfile[] };
-        const themeData = (await themeResponse.json()) as { presets: PresetOption[] };
         const grammarData = (await grammarResponse.json()) as { presets: PresetOption[] };
         const courseData = courseResponse ? ((await courseResponse.json()) as { course: CourseBasicDetail }) : null;
 
         if (isActive) {
           setTeachers(teacherData.people);
           setStudents(studentData.people);
-          setThemePresets(themeData.presets.map((preset) => preset.label));
           setGrammarPresets(grammarData.presets);
           setForm(toFormState(courseData?.course));
         }
@@ -280,7 +251,7 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
             </Link>
           </Button>
           <h2 className="text-xl font-semibold tracking-tight text-slate-950">基础信息</h2>
-          <p className="mt-2 text-sm text-slate-500">{courseId ? "保存基础信息后继续进入故事方案。" : "保存后会创建草稿课程，并进入故事方案生成。"}</p>
+          <p className="mt-2 text-sm text-slate-500">{courseId ? "保存基础信息后继续进入 AI 教案共创。" : "保存后会创建课程，并进入 AI 教案共创。"}</p>
         </div>
         <Button className="bg-violet-600 text-white hover:bg-violet-700" disabled={isSaving} type="submit">
           {isSaving ? <Loader2 className="size-4 animate-spin" /> : null}
@@ -323,7 +294,7 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
         </div>
       </PeopleSection>
 
-      <PeopleSection title="选择学生" description="至少选择 1 个学生，AI 会结合学生画像生成故事。">
+      <PeopleSection title="选择学生" description="至少选择 1 个学生，AI 会结合学生画像生成教案。">
         <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {students.map((student) => (
             <PersonChoiceCard
@@ -337,22 +308,11 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
       </PeopleSection>
 
       <section className="rounded-lg border border-[#E5E7EB] bg-white p-6 shadow-sm">
-        <FieldHeader description="主题是整体世界观或场景框架，从主题库选择一个；如需新增或调整选项，请前往主题库管理。" title="主题" />
-        <div className="mt-4 flex flex-wrap gap-2">
-          {themeOptions.map((theme) => (
-            <ChoiceChip key={theme} selected={form.theme === theme} onClick={() => setForm((current) => ({ ...current, theme }))}>
-              {theme}
-            </ChoiceChip>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-lg border border-[#E5E7EB] bg-white p-6 shadow-sm">
-        <FieldHeader description="先选择语法大类，再在展开的列表里勾选具体语法点，可跨类累加。" title="语法点" />
+        <FieldHeader description="选择本课要覆盖的语法或语言点，可跨类别累加。" title="语法点" />
 
         {form.grammar.length ? (
           <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50/60 p-3">
-            <div className="text-xs font-medium text-violet-700">已选 {form.grammar.length} 个语法点</div>
+            <div className="text-xs font-medium text-violet-700">已选择 {form.grammar.length} 个语法点</div>
             <div className="mt-2 flex flex-wrap gap-2">
               {form.grammar.map((grammar) => (
                 <button
@@ -409,40 +369,6 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
             </div>
           </div>
         ) : null}
-      </section>
-
-      <section className="rounded-lg border border-[#E5E7EB] bg-white p-6 shadow-sm">
-        <FieldHeader description="故事想法是当前主题下的具体故事大纲。" title="故事想法" />
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <ModeCard
-            description="老师输入具体故事大纲。"
-            label="老师手动输入"
-            selected={form.storyIdeaMode === "manual"}
-            onClick={() => setForm((current) => ({ ...current, storyIdeaMode: "manual" }))}
-          />
-          <ModeCard
-            description="AI 基于主题、老师、学生和语法点构思。"
-            label="AI 构思"
-            selected={form.storyIdeaMode === "ai"}
-            onClick={() => setForm((current) => ({ ...current, storyIdeaMode: "ai" }))}
-          />
-        </div>
-        {form.storyIdeaMode === "manual" ? (
-          <label className="mt-4 block">
-            <span className="mb-2 block text-sm font-medium text-slate-700">
-              故事大纲 <span className="text-red-500">*</span>
-            </span>
-            <textarea
-              className="min-h-28 w-full resize-none rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm leading-6 outline-none transition duration-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
-              onChange={(event) => setForm((current) => ({ ...current, storyIdea: event.target.value }))}
-              value={form.storyIdea}
-            />
-          </label>
-        ) : (
-          <div className="mt-4 rounded-lg bg-violet-50 px-4 py-3 text-sm text-violet-700">
-            AI 会基于已选主题、老师、学生和语法点自动生成故事大纲。
-          </div>
-        )}
       </section>
 
       {error ? <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div> : null}
@@ -590,31 +516,3 @@ function ChoiceChip({ selected, onClick, children }: { selected: boolean; onClic
   );
 }
 
-function ModeCard({
-  label,
-  description,
-  selected,
-  onClick,
-}: {
-  label: string;
-  description: string;
-  selected: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className={cn(
-        "rounded-lg border border-[#E5E7EB] p-4 text-left transition duration-200 hover:border-violet-200 hover:bg-violet-50/40",
-        selected && "border-violet-500 bg-violet-50 ring-2 ring-violet-100",
-      )}
-      onClick={onClick}
-      type="button"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-medium text-slate-950">{label}</span>
-        {selected ? <X className="size-4 rotate-45 text-violet-700" /> : null}
-      </div>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
-    </button>
-  );
-}

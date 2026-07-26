@@ -84,6 +84,16 @@ function describePerson(person: PersonProfile) {
   return `${personName(person)} (${attributes.join(", ")})`;
 }
 
+function castBible(context: ResourcePlanGenerationContext) {
+  const profiles = [context.teacher, ...context.students];
+  return context.draft.castAliases
+    .map((alias) => {
+      const profile = profiles.find((person) => personName(person) === alias.displayName);
+      return `- ${alias.alias} = ${alias.displayName}: ${profile ? describePerson(profile) : alias.displayName}`;
+    })
+    .join("\n");
+}
+
 function sentenceLines(draft: LessonDraft) {
   return draft.chapters
     .map((chapter) =>
@@ -107,16 +117,21 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
     "The default art direction is hand-drawn comic picture-book style. Do not switch to 3D, photorealistic, oil painting, cyberpunk, or cinematic realism.",
     "The plan must create one cover brief and exactly 2 lesson shots per chapter.",
     "Each shot's sourceParagraphId must be its assigned paragraph id.",
-    "Every coverBrief.imagePrompt and shots[].imagePrompt must be a complete GPT Image 2 prompt that the image model can use by itself without seeing any other context.",
-    "Each imagePrompt must repeat the concrete appearance of visible characters and the concrete story setting enough to avoid obvious inconsistencies.",
-    "Do not force the same clothing if the story clearly changes the character's situation; describe the current scene's clothing and props specifically.",
+    "Every coverBrief.imagePrompt and shots[].imagePrompt must be a compact, self-contained GPT Image 2 prompt.",
+    "Character consistency is mandatory: use CLASSROOM CAST VISUAL FACTS as stable identity anchors. Keep age band, gender presentation, hairstyle, face shape, body type, glasses/no glasses, stable accessories, and temperament consistent whenever the same classroom cast member appears.",
+    "For each recurring classroom cast member, choose a simple lesson outfit from the story context. Keep that outfit consistent within the same day or setting; change it only when the paragraph clearly changes time, place, or activity.",
+    "Every imagePrompt must restate the visible character's stable identity anchors plus the lesson outfit needed for that scene. Let expression, pose, action, props, weather, and background follow the paragraph.",
+    "When the lesson mentions a historical person, real person, famous IP, game, or fixed character, use broad common knowledge to make a child-safe picture-book version recognizable, without promising exact official likeness or inventing detailed canon traits.",
+    "For growth stories about real or historical people, match each paragraph's age phase and era instead of forcing one identical face across ages.",
     "The cover brief must describe story poster key art with a memorable central visual hook, not a generic class group portrait.",
     "",
     `Course title: ${context.course.title}`,
-    `Theme: ${context.course.theme}`,
+    `Story title from Step2: ${context.storyOption.title}`,
     `Level: ${context.course.englishLevel}`,
     `Teacher: ${describePerson(context.teacher)}`,
     `Students: ${context.students.map((student) => describePerson(student)).join("; ")}`,
+    "CLASSROOM CAST VISUAL FACTS:",
+    castBible(context),
     `Story title: ${context.storyOption.title}`,
     `Storyline: ${context.storyOption.storyline}`,
     "Story chapters:",
@@ -125,15 +140,20 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
     sentenceLines(context.draft),
     "",
     "Rules:",
-    "- Only use cast aliases from the lesson when naming characters in imagePrompt descriptions.",
-    "- Keep each named character's gender and age consistent with the cast profile above; never change a character's gender or make them look a different age.",
+    "- Only name characters that appear in CLASSROOM CAST VISUAL FACTS or in the lesson sentences.",
+    "- Keep classroom cast identity anchors consistent with CLASSROOM CAST VISUAL FACTS; never change a person's gender, age band, hairstyle, face shape, body type, glasses/no glasses, stable accessories, or temperament.",
+    "- In every imagePrompt, explicitly restate only the important visible identity anchors for each recurring person, then add a simple story-appropriate outfit for this lesson scene.",
+    "- Scene development may change expression, pose, action, props, weather, background, and clothing when the paragraph supports it. It must not randomly change identity anchors.",
+    "- For external people and characters mentioned in the lesson text, use broad common knowledge to stay visually recognizable where possible, but keep everything in an original classroom picture-book style.",
+    "- Allow age phase, outfit, expression, action, emotional state, and scene props to follow the chapter when the story sentence supports it.",
     "- Do not add extra students, classmates, teachers, parents, crowds, background people, or unnamed humans.",
     "- Output exactly two shots for each chapter: shotOrder 1 must use paragraph 1, shotOrder 2 must use paragraph 2.",
     "- Cover brief must use the same characters, story world, visual style, and representative story elements from the shot plan.",
     "- Cover brief description must include one memorable central visual hook built from the main character, teacher/student cast, setting, and key story object.",
-    "- imagePrompt must be concrete and visual, ideally 900-1200 characters, never over 1200 characters.",
+    "- imagePrompt must be concrete but concise, ideally 450-800 characters, never over 1200 characters.",
     '- Each imagePrompt must explicitly identify itself as a GPT Image 2 prompt and start with "GPT Image 2 prompt: Horizontal 16:9 ...".',
-    "- Each imagePrompt must include: current visible characters, concrete appearance/clothing/props, concrete background, story action, composition, style, mood, and safety constraints.",
+    "- Each imagePrompt must include only: visible cast with stable identity anchors, lesson outfit, concrete background, story action, composition, style, mood, and safety constraints.",
+    "- Avoid redundant wording. Mention the no-text safety constraint once at the end.",
     "- Do not include readable text, letters, numbers, signs, speech bubbles, logos, or watermarks in any visual description or imagePrompt.",
     "",
     "Return JSON only with this shape:",
@@ -207,6 +227,8 @@ async function callQuickRouterResponses(messages: ChatMessage[]) {
 
 function mockResourcePlan(context: ResourcePlanGenerationContext): CourseResourcePlan {
   const firstAlias = context.draft.castAliases[0]?.alias || "Student";
+  const firstProfile = describePerson(context.teacher);
+  const castSummary = [context.teacher, ...context.students].map(describePerson).join("; ");
   const shots = context.draft.chapters.flatMap((chapter) =>
     chapter.paragraphs.slice(0, 2).map((paragraph, index) => ({
       chapterId: chapter.id,
@@ -214,21 +236,19 @@ function mockResourcePlan(context: ResourcePlanGenerationContext): CourseResourc
       shotOrder: (index + 1) as 1 | 2,
       sourceParagraphId: paragraph.id,
       focus: index === 0 ? "The characters discover the story world." : "The characters act on the clue.",
-      keyObjects: [context.course.theme],
-      imagePrompt: `GPT Image 2 prompt: Horizontal 16:9 hand-drawn children's picture-book illustration. ${firstAlias} appears as the same friendly child story character with a bright classroom adventure outfit and small backpack. ${
+      keyObjects: [context.storyOption.title],
+      imagePrompt: `GPT Image 2 prompt: Horizontal 16:9 hand-drawn children's picture-book illustration. ${firstAlias} uses this exact stable appearance: ${firstProfile}. ${
         index === 0 ? "Show the character discovering the story world." : "Show the character acting on the clue."
-      } The scene is set in a ${context.course.theme} story world with warm colors, clean expressive linework, soft watercolor texture, safe centered composition, and no readable text, letters, numbers, speech bubbles, logos, or watermarks.`,
+      } Set in ${context.storyOption.title}, warm colors, clean expressive linework, soft watercolor texture, safe centered composition. Pure image only. No title, captions, subtitles, readable text, letters, numbers, speech bubbles, logo, or watermark.`,
     })),
   );
 
   return {
     schemaVersion: "course_resource_plan_v1",
     coverBrief: {
-      description: `All main characters stand together in the ${context.course.theme} story world, showing the visual style for the whole course.`,
-      storyElements: [context.course.theme],
-      imagePrompt: `GPT Image 2 prompt: Horizontal 16:9 hand-drawn children's picture-book cover. ${context.draft.castAliases
-        .map((alias) => `${alias.alias} appears as a friendly child story character in a bright classroom adventure outfit`)
-        .join(", ")}. They stand in a ${context.course.theme} story world with a clear central story hook, warm colors, clean expressive linework, soft watercolor texture, and no readable text, letters, numbers, speech bubbles, logos, or watermarks.`,
+      description: `All main characters stand together in the ${context.storyOption.title} story world, showing the visual style for the whole course.`,
+      storyElements: [context.storyOption.title],
+      imagePrompt: `GPT Image 2 prompt: Horizontal 16:9 hand-drawn children's picture-book cover. Main cast uses these exact stable appearances: ${castSummary}. They stand in a ${context.storyOption.title} story world with one clear central visual hook, warm colors, clean expressive linework, soft watercolor texture. Pure image only. No title, captions, subtitles, readable text, letters, numbers, speech bubbles, logo, or watermark.`,
     },
     shots,
     version: 1,
@@ -236,7 +256,7 @@ function mockResourcePlan(context: ResourcePlanGenerationContext): CourseResourc
 }
 
 export async function generateCourseResourcePlan(context: ResourcePlanGenerationContext) {
-  if (process.env.QUICKROUTER_API_KEY === "mock" || !process.env.QUICKROUTER_API_KEY) {
+  if (process.env.NODE_ENV === "test" || process.env.QUICKROUTER_API_KEY === "mock" || !process.env.QUICKROUTER_API_KEY) {
     return assertResourcePlanValid(mockResourcePlan(context), context.draft);
   }
 

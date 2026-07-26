@@ -253,16 +253,6 @@ export function compileLessonContentDraft(
           }),
       );
 
-      const normalizedAnswers = new Set<string>();
-      for (const { id, part } of exerciseParts) {
-        const normalized = normalizeAnswer(part.answer);
-        if (normalizedAnswers.has(normalized))
-          throw new Error(
-            `Chapter ${chapterIndex + 1} repeats exercise answer "${part.answer}" at ${id}`,
-          );
-        normalizedAnswers.add(normalized);
-      }
-
       const exercises = exerciseParts.map(({ id, part }, index) =>
         compileExercise(part, chapterIndex, id, index + 1),
       );

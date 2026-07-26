@@ -23,11 +23,11 @@ type CopyConfig = {
 
 const copyByKind: Record<PresetKind, CopyConfig> = {
   theme: {
-    description: "维护新建课程时可选择的主题，主题是整体世界观或场景框架。",
-    addLabel: "新增主题",
-    emptyTitle: "还没有主题",
-    emptyHint: "新增主题后，即可在新建课程时选择。",
-    labelField: "主题名称",
+    description: "维护 Step2 可选择的主题灵感，用于让 AI 生成 3 个故事方向；最终主题以 Step2 确认文本为准。",
+    addLabel: "新增主题灵感",
+    emptyTitle: "还没有主题灵感",
+    emptyHint: "新增主题灵感后，即可在 Step2 从灵感库开始。",
+    labelField: "主题灵感名称",
     labelPlaceholder: "如：海底世界",
     useCategory: false,
   },

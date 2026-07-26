@@ -465,17 +465,6 @@ function recomputeDraftForSave(draft: LessonDraft): LessonDraft {
         exercises.map((exercise) => [exercise.id, exercise]),
       );
 
-      const normalizedAnswers = new Set<string>();
-      for (const exercise of exercises) {
-        const normalized = normalizeAnswer(exercise.answer);
-        if (normalizedAnswers.has(normalized)) {
-          throw new LessonDraftValidationError(
-            `${chapterLabel(chapterIndex)}存在重复答案：${exercise.answer}`,
-          );
-        }
-        normalizedAnswers.add(normalized);
-      }
-
       const paragraphs = chapter.paragraphs.map((paragraph) => ({
         ...paragraph,
         sentences: paragraph.sentences.map((sentence) => ({
