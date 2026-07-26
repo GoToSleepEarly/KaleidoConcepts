@@ -6,12 +6,6 @@ type PrismaClientLike = {
   user: {
     upsert: (query: unknown) => Promise<{ username: string }>;
   };
-  person: {
-    deleteMany: (query: unknown) => Promise<unknown>;
-  };
-  course: {
-    deleteMany: (query: unknown) => Promise<unknown>;
-  };
   presetOption: {
     upsert: (query: unknown) => Promise<unknown>;
   };
@@ -25,9 +19,6 @@ if (!process.env.DATABASE_URL) {
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
 }) as unknown as PrismaClientLike;
-
-const demoCourseIds = ["course-rabbit"];
-const demoPersonIds = ["person-teacher-lin", "student-summer", "student-tom"];
 
 const themePresets = [
   "魔法世界",
@@ -92,14 +83,6 @@ async function main() {
     where: { username: "teacher" },
     update: { password: "123456", displayName: "教师账号" },
     create: { username: "teacher", password: "123456", displayName: "教师账号" },
-  });
-
-  await prisma.course.deleteMany({
-    where: { id: { in: demoCourseIds } },
-  });
-
-  await prisma.person.deleteMany({
-    where: { id: { in: demoPersonIds } },
   });
 
   for (const [index, label] of themePresets.entries()) {
