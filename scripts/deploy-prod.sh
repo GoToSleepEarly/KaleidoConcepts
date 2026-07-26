@@ -80,6 +80,9 @@ pnpm prisma:generate
 echo "==> Applying Prisma migrations"
 pnpm prisma:deploy
 
+echo "==> Seeding preset library"
+pnpm prisma:seed
+
 echo "==> Building app"
 pnpm build
 
