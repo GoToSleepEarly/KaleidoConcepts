@@ -139,6 +139,23 @@ describe("course basic info", () => {
     expect(course).toEqual({ id: "course-1", status: "draft" });
   });
 
+  test("does not depend on the removed Step1 theme field when creating a course", async () => {
+    await createCourseBasic(
+      {
+        ...roleValidationDb,
+        course: {
+          create: async ({ data }) => {
+            expect(data).not.toHaveProperty("theme");
+            expect(data).not.toHaveProperty("storyIdeaMode");
+            expect(data).not.toHaveProperty("storyIdea");
+            return { id: "course-1", status: "draft" };
+          },
+        },
+      },
+      input,
+    );
+  });
+
   test("updates existing basic info without creating a second course", async () => {
     const course = await updateCourseBasic(
       {

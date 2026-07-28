@@ -1,15 +1,27 @@
-import type { CourseBasicDetail, LessonChatAction, LessonChatMessage, LlmModel, PersonProfile } from "@/lib/contracts/api";
+import type {
+  CourseBasicDetail,
+  LessonChatAction,
+  LessonChatMessage,
+  LlmModel,
+  PersonProfile,
+} from "@/lib/contracts/api";
 
-type LessonChatContext = {
+export type LessonChatContext = {
   course: CourseBasicDetail;
   teacher: PersonProfile;
   students: PersonProfile[];
 };
 
-type ProviderMessage = { role: "system" | "user" | "assistant"; content: string };
+type ProviderMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
 
 type ChatCompletionResponse = {
-  choices?: Array<{ message?: { content?: string }; delta?: { content?: string } }>;
+  choices?: Array<{
+    message?: { content?: string };
+    delta?: { content?: string };
+  }>;
   error?: { message?: string };
 };
 
@@ -48,7 +60,11 @@ export const outlineActions: LessonChatAction[] = [
 ];
 
 function personName(person: PersonProfile) {
-  return person.englishName?.trim() || person.chineseName?.trim() || person.name.trim();
+  return (
+    person.englishName?.trim() ||
+    person.chineseName?.trim() ||
+    person.name.trim()
+  );
 }
 
 function studentNames(students: PersonProfile[]) {
@@ -79,11 +95,52 @@ function phraseCount(durationMinutes: number) {
   return 5;
 }
 
-function buildSystemPrompt(context: LessonChatContext) {
+function distributeCount(total: number, buckets: number) {
+  return Array.from(
+    { length: buckets },
+    (_, index) =>
+      Math.floor(total / buckets) + (index < total % buckets ? 1 : 0),
+  );
+}
+
+function lessonQuestionBudget(durationMinutes: number) {
+  const stages = chapterCount(durationMinutes);
+  const questions = questionCount(durationMinutes);
+  const vocab = vocabCount(durationMinutes);
+  const phrases = phraseCount(durationMinutes);
+  const grammarAndChoice = questions - vocab - phrases;
+
+  return {
+    stages,
+    questions,
+    vocab,
+    phrases,
+    grammarAndChoice,
+    perStage: distributeCount(questions, stages).map((total, index) => ({
+      stage: index + 1,
+      total,
+      vocab: distributeCount(vocab, stages)[index],
+      phrases: distributeCount(phrases, stages)[index],
+      grammarAndChoice: distributeCount(grammarAndChoice, stages)[index],
+    })),
+  };
+}
+
+function formatStageBudget(durationMinutes: number) {
+  return lessonQuestionBudget(durationMinutes)
+    .perStage.map(
+      (item) =>
+        `Stage ${item.stage}: ${item.total} questions = ${item.vocab} vocabulary + ${item.phrases} verb phrase + ${item.grammarAndChoice} grammar/choice`,
+    )
+    .join("; ");
+}
+
+export function buildLessonChatSystemPrompt(context: LessonChatContext) {
   const stages = chapterCount(context.course.durationMinutes);
   const questions = questionCount(context.course.durationMinutes);
   const vocab = vocabCount(context.course.durationMinutes);
   const phrases = phraseCount(context.course.durationMinutes);
+  const grammarAndChoice = questions - vocab - phrases;
 
   return [
     "You are an expert PBL English reading lesson co-writer for Chinese English teachers.",
@@ -98,9 +155,11 @@ function buildSystemPrompt(context: LessonChatContext) {
     `- Target question count: about ${questions}`,
     `- Vocabulary labels: V1-V${vocab}`,
     `- Verb phrase labels: P1-P${phrases}`,
+    `- Grammar/choice questions: about ${grammarAndChoice}`,
     `- Grammar targets: ${context.course.grammar.join(" / ") || "choose naturally from the story"}`,
     `- Teacher: ${personName(context.teacher)}`,
     `- Students: ${studentNames(context.students)}`,
+    `- Question distribution by stage: ${formatStageBudget(context.course.durationMinutes)}`,
     "",
     "Outline rules:",
     "- Keep it short and easy to judge.",
@@ -116,11 +175,19 @@ function buildSystemPrompt(context: LessonChatContext) {
     "- The opening must begin with `Hello class!` and naturally introduce the teacher, students, story premise, and classroom challenge.",
     "- Use exactly the required number of stages with markers like 【Stage 1】, 【Stage 2】.",
     "- Each stage must contain Title, English Title, Teacher Tip, and 【Reading】.",
+    "- Each stage Reading must contain 120-160 English words. Aim for 130-145 words. Count only readable English story words, not labels, hints, or answer-key text.",
+    "- If any stage is over 160 English words, shorten the story sentences. Do not add extra text to explain exercises.",
     "- Each Reading sentence must be on its own line with labels S1:, S2:, etc. Each S line may contain at most one embedded question.",
-    "- Vocab question format: `(1) [V1: d _ _ _ _ _ _ e (提示：伪装，8个字母)]`.",
-    "- Phrase question format: `(9) [P1: p _ _ _ _ _ t (提示：保护，7个字母)]`.",
-    "- Grammar blank format: `(4) ________ (meet) (提示：过去发生的动作，过去式)`.",
-    "- Choice format: `(11) ________ (who / which)`.",
+    "- Use the stage question distribution exactly as a planning budget. Spread questions across the Reading lines instead of clustering them at the beginning or end.",
+    "- Use every vocabulary label and phrase label exactly once. Keep grammar/choice questions proportional to the listed grammar targets; rotate targets evenly instead of repeating only one grammar point.",
+    "- Exercise placement is critical: the exercise token must occupy the exact word position inside the sentence where the answer belongs.",
+    '- Good grammar blank: `S2: ZiXuan smiled and said, "You (3) ________ (ask) (提示：现在完成时) a question that many psychologists study."`.',
+    '- Bad grammar blank: `S2: ZiXuan smiled and said, "You ________ a question that many psychologists study." (3) ________ (ask) (提示：现在完成时)`.',
+    "- Never append a blank, base word, hint, vocab token, or phrase token after the sentence punctuation. Put it in the sentence at the missing-word position.",
+    "- Vocab question format inside the sentence: `(1) [V1: d _ _ _ _ _ _ e (提示：伪装，8个字母)]`.",
+    "- Phrase question format inside the sentence: `(9) [P1: p _ _ _ _ _ t (提示：保护，7个字母)]`.",
+    "- Grammar blank format inside the sentence: `(4) ________ (meet) (提示：过去发生的动作，过去式)`.",
+    "- Choice format inside the sentence: `(11) ________ (who / which)`.",
     "- Question numbers must increase continuously from (1). V/P labels must not skip or repeat.",
     "- Add 【Closing Reading】 with S1:, S2:, etc. The closing should summarize the story in 70-100 English words.",
     "- End with 【教师答案区 / Answer Key】 using `1. answer`, one answer per line.",
@@ -128,10 +195,19 @@ function buildSystemPrompt(context: LessonChatContext) {
   ].join("\n");
 }
 
-function buildOutlinePrompt(userMessage: string, existingMessages: LessonChatMessage[]) {
-  const priorOutline = [...existingMessages].reverse().find((message) => message.role === "assistant" && message.actions?.length)?.content;
+function buildOutlinePrompt(
+  userMessage: string,
+  existingMessages: LessonChatMessage[],
+) {
+  const priorOutline = [...existingMessages]
+    .reverse()
+    .find(
+      (message) => message.role === "assistant" && message.actions?.length,
+    )?.content;
   return [
-    priorOutline ? "The teacher is revising or replacing this previous outline:" : "The teacher's story idea or starting request is:",
+    priorOutline
+      ? "The teacher is revising or replacing this previous outline:"
+      : "The teacher's story idea or starting request is:",
     priorOutline ? priorOutline : userMessage,
     priorOutline ? ["", "Teacher's new request:", userMessage].join("\n") : "",
     "",
@@ -174,7 +250,11 @@ function mockOutline(context: LessonChatContext, idea: string) {
     `主要角色：${personName(context.teacher)}老师，${studentNames(context.students)}，以及一位需要完成挑战的故事主角。`,
     "故事目标：主角需要通过阅读线索、团队讨论和语言任务解决一个逐步升级的问题。",
     "章节大纲：",
-    ...Array.from({ length: stages }, (_, index) => `${index + 1}. 第${index + 1}阶段推进一个关键线索，并嵌入适合当前等级的阅读和语法挑战。`),
+    ...Array.from(
+      { length: stages },
+      (_, index) =>
+        `${index + 1}. 第${index + 1}阶段推进一个关键线索，并嵌入适合当前等级的阅读和语法挑战。`,
+    ),
     "课堂适配：故事结构清晰，方便承载词汇、短语、语法填空和选择题，也便于老师带学生讨论人物选择。",
     "需要确认：无，可直接生成最终文案。",
   ].join("\n");
@@ -205,9 +285,18 @@ function mockDraft(context: LessonChatContext) {
       `English Title: Clue ${index}`,
       `Teacher Tip: ${teacher} reminds the class to read each sentence carefully and find the grammar clue.`,
       "【Reading】",
-      `S1: The team entered a quiet room and found a ( ${question} ) [V${question}: c _ _ e (提示：线索，4个字母)] on the desk.`.replace("( ", "("),
-      `S2: ${students} ( ${question + 1} ) ________ (look) at the map before they made a plan.`.replace("( ", "("),
-      `S3: The main character learned to ( ${question + 2} ) [P1: s _ _ _ d b _ (提示：支持，5+2个字母)] a friend in trouble.`.replace("( ", "("),
+      `S1: The team entered a quiet room and found a ( ${question} ) [V${question}: c _ _ e (提示：线索，4个字母)] on the desk.`.replace(
+        "( ",
+        "(",
+      ),
+      `S2: ${students} ( ${question + 1} ) ________ (look) at the map before they made a plan.`.replace(
+        "( ",
+        "(",
+      ),
+      `S3: The main character learned to ( ${question + 2} ) [P1: s _ _ _ d b _ (提示：支持，5+2个字母)] a friend in trouble.`.replace(
+        "( ",
+        "(",
+      ),
       "",
     );
     question += 3;
@@ -223,22 +312,32 @@ function mockDraft(context: LessonChatContext) {
     "【教师答案区 / Answer Key】",
   );
   for (let index = 1; index < question; index += 1) {
-    lines.push(`${index}. ${index % 3 === 1 ? "clue" : index % 3 === 2 ? "looked" : "stand by"}`);
+    lines.push(
+      `${index}. ${index % 3 === 1 ? "clue" : index % 3 === 2 ? "looked" : "stand by"}`,
+    );
   }
   return lines.join("\n");
 }
 
-async function callProvider(messages: ProviderMessage[], llmModel: LlmModel, stream: boolean) {
+async function callProvider(
+  messages: ProviderMessage[],
+  llmModel: LlmModel,
+  stream: boolean,
+) {
   const isGpt = llmModel === "gpt_5_5" && process.env.QUICKROUTER_API_KEY;
-  const apiKey = isGpt ? process.env.QUICKROUTER_API_KEY : process.env.DEEPSEEK_API_KEY;
+  const apiKey = isGpt
+    ? process.env.QUICKROUTER_API_KEY
+    : process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error("AI service is not configured.");
 
   const url = isGpt
     ? "https://api.quickrouter.ai/v1/chat/completions"
     : `${(process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/$/, "")}/chat/completions`;
   const model = isGpt
-    ? process.env.QUICKROUTER_LESSON_CHAT_MODEL ?? process.env.QUICKROUTER_RESPONSES_MODEL ?? "gpt-5.5"
-    : process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro";
+    ? (process.env.QUICKROUTER_LESSON_CHAT_MODEL ??
+      process.env.QUICKROUTER_RESPONSES_MODEL ??
+      "gpt-5.5")
+    : (process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro");
 
   return fetch(url, {
     method: "POST",
@@ -246,20 +345,37 @@ async function callProvider(messages: ProviderMessage[], llmModel: LlmModel, str
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ model, messages, temperature: 0.35, max_tokens: 16000, stream }),
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: 0.35,
+      max_tokens: 16000,
+      stream,
+    }),
   });
 }
 
 async function readFullContent(response: Response) {
-  const data = (await response.json().catch(() => ({}))) as ChatCompletionResponse;
-  if (!response.ok) throw new Error(data.error?.message ?? `AI request failed: HTTP ${response.status}`);
+  const data = (await response
+    .json()
+    .catch(() => ({}))) as ChatCompletionResponse;
+  if (!response.ok)
+    throw new Error(
+      data.error?.message ?? `AI request failed: HTTP ${response.status}`,
+    );
   return data.choices?.[0]?.message?.content ?? "";
 }
 
-async function* readStreamingContent(response: Response): AsyncGenerator<string> {
+async function* readStreamingContent(
+  response: Response,
+): AsyncGenerator<string> {
   if (!response.ok || !response.body) {
-    const data = (await response.json().catch(() => ({}))) as ChatCompletionResponse;
-    throw new Error(data.error?.message ?? `AI request failed: HTTP ${response.status}`);
+    const data = (await response
+      .json()
+      .catch(() => ({}))) as ChatCompletionResponse;
+    throw new Error(
+      data.error?.message ?? `AI request failed: HTTP ${response.status}`,
+    );
   }
 
   const reader = response.body.getReader();
@@ -291,10 +407,17 @@ async function* readStreamingContent(response: Response): AsyncGenerator<string>
   }
 }
 
-function providerMessages(context: LessonChatContext, messages: LessonChatMessage[], userPrompt: string): ProviderMessage[] {
+function providerMessages(
+  context: LessonChatContext,
+  messages: LessonChatMessage[],
+  userPrompt: string,
+): ProviderMessage[] {
   return [
-    { role: "system", content: buildSystemPrompt(context) },
-    ...messages.slice(-10).map((message): ProviderMessage => ({ role: message.role, content: message.content })),
+    { role: "system", content: buildLessonChatSystemPrompt(context) },
+    ...messages.slice(-10).map((message): ProviderMessage => ({
+      role: message.role,
+      content: message.content,
+    })),
     { role: "user", content: userPrompt },
   ];
 }
@@ -310,11 +433,22 @@ export async function generateLessonChatOutline({
   userMessage: string;
   llmModel: LlmModel;
 }) {
-  if (process.env.QUICKROUTER_API_KEY === "mock" || process.env.DEEPSEEK_API_KEY === "mock") {
+  if (
+    process.env.QUICKROUTER_API_KEY === "mock" ||
+    process.env.DEEPSEEK_API_KEY === "mock"
+  ) {
     return mockOutline(context, userMessage);
   }
 
-  const response = await callProvider(providerMessages(context, messages, buildOutlinePrompt(userMessage, messages)), llmModel, false);
+  const response = await callProvider(
+    providerMessages(
+      context,
+      messages,
+      buildOutlinePrompt(userMessage, messages),
+    ),
+    llmModel,
+    false,
+  );
   return readFullContent(response);
 }
 
@@ -331,7 +465,10 @@ export async function* streamLessonChatDraft({
   currentDraft: string;
   llmModel: LlmModel;
 }) {
-  if (process.env.QUICKROUTER_API_KEY === "mock" || process.env.DEEPSEEK_API_KEY === "mock") {
+  if (
+    process.env.QUICKROUTER_API_KEY === "mock" ||
+    process.env.DEEPSEEK_API_KEY === "mock"
+  ) {
     const draft = mockDraft(context);
     for (let index = 0; index < draft.length; index += 24) {
       await new Promise((resolve) => setTimeout(resolve, 12));
@@ -340,6 +477,14 @@ export async function* streamLessonChatDraft({
     return;
   }
 
-  const response = await callProvider(providerMessages(context, messages, buildDraftPrompt(userMessage, currentDraft)), llmModel, true);
+  const response = await callProvider(
+    providerMessages(
+      context,
+      messages,
+      buildDraftPrompt(userMessage, currentDraft),
+    ),
+    llmModel,
+    true,
+  );
   yield* readStreamingContent(response);
 }

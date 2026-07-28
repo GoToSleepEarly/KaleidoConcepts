@@ -16,7 +16,7 @@ model User {
 }
 
 model Person {
-  id           String          @id @default(cuid())
+  id           String         @id @default(cuid())
   role         PersonRole
   name         String
   chineseName  String?
@@ -29,8 +29,8 @@ model Person {
   notes        String?
   avatarUrl    String?
   archivedAt   DateTime?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
   courses      CoursePerson[]
 }
 
@@ -40,26 +40,27 @@ enum LlmModel {
 }
 
 model Course {
-  id              String          @id @default(cuid())
-  title           String
-  englishLevel    EnglishLevel
-  durationMinutes Int             @default(45)
-  grammar         String[]
-  llmModel        LlmModel        @default(deepseek_chat)
-  selectedStoryOptionId String?
-  status          CourseStatus    @default(draft)
+  id                      String               @id @default(cuid())
+  title                   String
+  englishLevel            EnglishLevel
+  durationMinutes         Int                  @default(45)
+  grammar                 String[]
+  llmModel                LlmModel             @default(deepseek_chat)
+  selectedStoryOptionId   String?
+  status                  CourseStatus         @default(draft)
   lessonDraftGenStatus    LessonDraftGenStatus @default(idle)
   lessonDraftGenStartedAt DateTime?
   lessonDraftGenError     String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  people          CoursePerson[]
-  storyOptions    CourseStoryOption[]
-  lessonChatDraft LessonChatDraft?
-  lessonDraft     CourseLessonDraft?
-  resourcePlan    CourseResourcePlan?
-  presentation    CoursePresentation?
-  images          CourseImage[]
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  people                  CoursePerson[]
+  storyOptions            CourseStoryOption[]
+  lessonChatDraft         LessonChatDraft?
+  lessonDraft             CourseLessonDraft?
+  resourcePlan            CourseResourcePlan?
+  presentation            CoursePresentation?
+  images                  CourseImage[]
+  aiGenerationLogs        AiGenerationLog[]
 }
 
 model CoursePerson {
@@ -95,6 +96,26 @@ model LessonChatDraft {
   course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
 
+model AiGenerationLog {
+  id           String              @id @default(cuid())
+  courseId     String
+  feature      AiGenerationFeature
+  intent       String
+  llmModel     LlmModel
+  input        Json
+  outputText   String              @default("")
+  status       AiGenerationStatus
+  errorMessage String?
+  latencyMs    Int
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  course       Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, createdAt])
+  @@index([feature, createdAt])
+  @@index([status, createdAt])
+}
+
 model CourseLessonDraft {
   courseId            String   @id
   sourceStoryOptionId String
@@ -105,52 +126,52 @@ model CourseLessonDraft {
 }
 
 model CourseResourcePlan {
-  courseId              String   @id
-  plan                  Json
-  version               Int      @default(1)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  course                Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId  String   @id
+  plan      Json
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
 
 model CoursePresentation {
-  courseId          String  @id
-  coverTheme        String  @default("dark")
-  coverTitleFontSize Float  @default(1.0)
-  chapterTheme      String  @default("blue-purple")
-  slideOverrides    Json    @default("{}")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  course            Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId           String   @id
+  coverTheme         String   @default("dark")
+  coverTitleFontSize Float    @default(1.0)
+  chapterTheme       String   @default("blue-purple")
+  slideOverrides     Json     @default("{}")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  course             Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
 
 model CourseImage {
-  id               String              @id @default(cuid())
-  courseId         String
-  chapterId        String?
-  shotId           String
-  slotId           String
-  slotType         CourseImageSlotType
-  slotIndex        Int
+  id                String              @id @default(cuid())
+  courseId          String
+  chapterId         String?
+  shotId            String
+  slotId            String
+  slotType          CourseImageSlotType
+  slotIndex         Int
   sourceParagraphId String?
-  sourceExcerpt    String             @default("")
-  prompt           String
-  promptVersion    String             @default("step4-resource-plan-v1")
-  referenceImageIds Json              @default("[]")
-  width            Int                @default(1280)
-  height           Int                @default(720)
-  format           String             @default("webp")
-  sourceHash       String
-  status           CourseImageStatus
-  provider         CourseImageProvider
-  providerTaskId   String?
-  providerImageUrl String?
-  storagePath      String?
-  publicUrl        String?
-  failureReason    String?
-  createdAt        DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
-  course           Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  sourceExcerpt     String              @default("")
+  prompt            String
+  promptVersion     String              @default("step4-resource-plan-v1")
+  referenceImageIds Json                @default("[]")
+  width             Int                 @default(1280)
+  height            Int                 @default(720)
+  format            String              @default("webp")
+  sourceHash        String
+  status            CourseImageStatus
+  provider          CourseImageProvider
+  providerTaskId    String?
+  providerImageUrl  String?
+  storagePath       String?
+  publicUrl         String?
+  failureReason     String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  course            Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([courseId, slotId])
   @@index([courseId, status])
@@ -224,4 +245,13 @@ enum CourseImageSlotType {
 
 enum CourseImageProvider {
   tencent_hunyuan
+}
+
+enum AiGenerationFeature {
+  lesson_chat
+}
+
+enum AiGenerationStatus {
+  succeeded
+  failed
 }

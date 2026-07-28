@@ -2,7 +2,10 @@ import { describe, expect, test } from "vitest";
 
 import type { CourseBasicDetail, PersonProfile } from "@/lib/contracts/api";
 
-import { structureLessonChatDraft } from "./lesson-chat-structure";
+import {
+  collectLessonChatDraftFormatIssues,
+  structureLessonChatDraft,
+} from "./lesson-chat-structure";
 
 const course: CourseBasicDetail = {
   id: "course-1",
@@ -92,18 +95,66 @@ P1 = stand by`;
 
 describe("lesson chat structure", () => {
   test("structures clean final lesson text without intent or visual bible fields", async () => {
-    const { storyOption, draft } = await structureLessonChatDraft({ course, teacher, students: [student] }, draftText);
+    const { storyOption, draft } = await structureLessonChatDraft(
+      { course, teacher, students: [student] },
+      draftText,
+    );
 
     expect(storyOption.title).toBe("Boys Behind Masks");
     expect(draft.title).toBe("Boys Behind Masks");
     expect(draft.chapters).toHaveLength(3);
     expect(draft.chapters[0].exercises).toHaveLength(2);
-    expect(draft.castAliases.some((alias) => alias.displayName === "Sophia")).toBe(true);
+    expect(
+      draft.castAliases.some((alias) => alias.displayName === "Sophia"),
+    ).toBe(true);
   });
 
   test("blocks final text that has no answer key", async () => {
     await expect(
-      structureLessonChatDraft({ course, teacher, students: [student] }, draftText.replace(/【教师答案区 \/ Answer Key】[\s\S]+$/, "")),
+      structureLessonChatDraft(
+        { course, teacher, students: [student] },
+        draftText.replace(/【教师答案区 \/ Answer Key】[\s\S]+$/, ""),
+      ),
     ).rejects.toThrow("缺少【教师答案区 / Answer Key】");
+  });
+
+  test("collects one S line that contains multiple embedded questions", () => {
+    const multiQuestionLineText = draftText.replace(
+      "S1: He Zhao wore a clever (1) [V1: d _ _ _ _ _ _ e (提示：伪装，8个字母)].\nS2: Xie Yu looked (2) [V2: d _ _ _ _ _ t (提示：疏离的，7个字母)].",
+      "S1: He Zhao wore a clever (1) [V1: d _ _ _ _ _ _ e (提示：伪装，8个字母)], and Xie Yu looked (2) [V2: d _ _ _ _ _ t (提示：疏离的，7个字母)].",
+    );
+
+    const issues = collectLessonChatDraftFormatIssues(multiQuestionLineText);
+
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "multiple_questions_in_s_line",
+        lineNumber: 16,
+        questionNumbers: [1, 2],
+      }),
+    ]);
+  });
+
+  test("collects an answer that appears twice in its sentence", async () => {
+    const repeatedAnswerText = draftText.replace(
+      "S1: He Zhao wore a clever (1) [V1: d _ _ _ _ _ _ e (提示：伪装，8个字母)].",
+      "S1: He Zhao wore a clever (1) [V1: d _ _ _ _ _ _ e (提示：伪装，8个字母)] disguise.",
+    );
+
+    const issues = collectLessonChatDraftFormatIssues(repeatedAnswerText);
+
+    expect(issues).toEqual([
+      expect.objectContaining({
+        code: "answer_occurs_multiple_times",
+        lineNumber: 16,
+        questionNumbers: [1],
+      }),
+    ]);
+    await expect(
+      structureLessonChatDraft(
+        { course, teacher, students: [student] },
+        repeatedAnswerText,
+      ),
+    ).rejects.toThrow("答案“disguise”在所在句子中出现 2 次");
   });
 });

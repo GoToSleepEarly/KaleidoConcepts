@@ -3,7 +3,10 @@ import { z } from "zod";
 
 import { generateLessonDraft } from "@/lib/server/ai/lesson-draft-generator";
 import { getDb } from "@/lib/server/db";
-import { CourseBasicValidationError, getStoryGenerationContext } from "@/lib/server/repositories/courses";
+import {
+  CourseBasicValidationError,
+  getStoryGenerationContext,
+} from "@/lib/server/repositories/courses";
 import {
   claimLessonDraftGeneration,
   getLessonDraft,
@@ -17,10 +20,13 @@ import {
 } from "@/lib/server/repositories/lesson-drafts";
 
 const generateRequestSchema = z.object({
-  llmModel: z.enum(["deepseek_chat", "gpt_5_5"]).default("deepseek_chat"),
+  llmModel: z.enum(["deepseek_chat", "gpt_5_5"]).default("gpt_5_5"),
 });
 
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
   const db = getDb();
 
@@ -34,7 +40,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const body = await request.json().catch(() => ({}));
     const parsed = generateRequestSchema.safeParse(body);
-    const llmModel = parsed.success ? parsed.data.llmModel : "deepseek_chat";
+    const llmModel = parsed.success ? parsed.data.llmModel : "gpt_5_5";
 
     await db.course.update({
       where: { id },
@@ -56,30 +62,46 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const claim = await claimLessonDraftGeneration(db, id);
 
     if (!claim.claimed) {
-      return NextResponse.json({ draft: null, generation: claim.generation }, { status: 202 });
+      return NextResponse.json(
+        { draft: null, generation: claim.generation },
+        { status: 202 },
+      );
     }
 
     // Background task: keep generating after the response returns. The process staying alive in the
     // single-instance monolith lets this finish; if it dies, GET's timeout release recovers the stuck state.
     void (async () => {
       try {
-        const draft = await generateLessonDraft({ ...context, storyOption: option });
+        const draft = await generateLessonDraft({
+          ...context,
+          storyOption: option,
+        });
         await saveLessonDraft(db, id, draft);
         await markLessonDraftGenerationSucceeded(db, id);
       } catch (backgroundError) {
         console.error("Lesson draft generation failed", backgroundError);
-        const reason = backgroundError instanceof Error ? backgroundError.message : "课文草稿生成失败";
+        const reason =
+          backgroundError instanceof Error
+            ? backgroundError.message
+            : "课文草稿生成失败";
         await markLessonDraftGenerationFailed(db, id, reason);
       }
     })();
 
-    return NextResponse.json({ draft: null, generation: claim.generation }, { status: 202 });
+    return NextResponse.json(
+      { draft: null, generation: claim.generation },
+      { status: 202 },
+    );
   } catch (error) {
     if (error instanceof LessonDraftNotFoundError) {
       return NextResponse.json({ message: error.message }, { status: 404 });
     }
 
-    if (error instanceof LessonDraftPrerequisiteError || error instanceof CourseBasicValidationError || error instanceof LessonDraftValidationError) {
+    if (
+      error instanceof LessonDraftPrerequisiteError ||
+      error instanceof CourseBasicValidationError ||
+      error instanceof LessonDraftValidationError
+    ) {
       return NextResponse.json({ message: error.message }, { status: 400 });
     }
 

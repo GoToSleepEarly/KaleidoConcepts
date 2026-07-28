@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { structureLessonChatDraft } from "@/lib/server/ai/lesson-chat-structure";
+import {
+  collectLessonChatDraftFormatIssues,
+  structureLessonChatDraft,
+} from "@/lib/server/ai/lesson-chat-structure";
 import { getDb } from "@/lib/server/db";
 import { getStoryGenerationContext } from "@/lib/server/repositories/courses";
 import {
@@ -13,9 +16,14 @@ const structureSchema = z.object({
   draftText: z.string().trim().min(1),
 });
 
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
-  const parsed = structureSchema.safeParse(await request.json().catch(() => null));
+  const parsed = structureSchema.safeParse(
+    await request.json().catch(() => null),
+  );
 
   if (!parsed.success) {
     return NextResponse.json({ message: "请先生成文本教案" }, { status: 400 });
@@ -24,10 +32,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const db = getDb();
     const context = await getStoryGenerationContext(db, id);
-    if (!context) return NextResponse.json({ message: "课程不存在" }, { status: 404 });
+    if (!context)
+      return NextResponse.json({ message: "课程不存在" }, { status: 404 });
 
-    const { storyOption, draft } = await structureLessonChatDraft(context, parsed.data.draftText);
-    if (!db.courseStoryOption.upsert) throw new LessonDraftValidationError("故事大纲保存能力不可用");
+    const formatIssues = collectLessonChatDraftFormatIssues(
+      parsed.data.draftText,
+    );
+    if (formatIssues.length > 0) {
+      return NextResponse.json(
+        {
+          message: "最终文案需要先完成 AI 修复",
+          issues: formatIssues,
+        },
+        { status: 400 },
+      );
+    }
+
+    const { storyOption, draft } = await structureLessonChatDraft(
+      context,
+      parsed.data.draftText,
+    );
+    if (!db.courseStoryOption.upsert)
+      throw new LessonDraftValidationError("故事大纲保存能力不可用");
 
     await db.courseStoryOption.upsert({
       where: { courseId_id: { courseId: id, id: storyOption.id } },
@@ -51,9 +77,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const saved = await saveLessonDraft(db, id, draft);
     return NextResponse.json(saved);
   } catch (error) {
-    if (error instanceof LessonDraftValidationError || error instanceof z.ZodError) {
+    if (
+      error instanceof LessonDraftValidationError ||
+      error instanceof z.ZodError
+    ) {
       return NextResponse.json(
-        { message: error instanceof z.ZodError ? "文本教案暂时无法整理成标准结构，请让 AI 修复后重试" : error.message },
+        {
+          message:
+            error instanceof z.ZodError
+              ? "文本教案暂时无法整理成标准结构，请让 AI 修复后重试"
+              : error.message,
+        },
         { status: 400 },
       );
     }

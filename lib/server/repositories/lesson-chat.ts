@@ -1,4 +1,9 @@
-import type { LessonChatMessage, LessonChatResponse, LlmModel, StoryOption } from "@/lib/contracts/api";
+import type {
+  LessonChatMessage,
+  LessonChatResponse,
+  LlmModel,
+  StoryOption,
+} from "@/lib/contracts/api";
 
 type CourseRecord = {
   id: string;
@@ -12,21 +17,46 @@ type LessonChatDraftRecord = {
   draftText: string;
 };
 
+type AiGenerationLogCreateInput = {
+  courseId: string;
+  feature: "lesson_chat";
+  intent: string;
+  llmModel: LlmModel;
+  input: unknown;
+  outputText: string;
+  status: "succeeded" | "failed";
+  errorMessage?: string;
+  latencyMs: number;
+};
+
 export type LessonChatDb = {
   course: {
     findUnique: (query: {
       where: { id: string };
-      select: { id: true; llmModel: true; lessonDraft: { select: { courseId: true } } };
+      select: {
+        id: true;
+        llmModel: true;
+        lessonDraft: { select: { courseId: true } };
+      };
     }) => Promise<CourseRecord | null>;
-    update?: (query: { where: { id: string }; data: { llmModel: LlmModel } }) => Promise<unknown>;
+    update?: (query: {
+      where: { id: string };
+      data: { llmModel: LlmModel };
+    }) => Promise<unknown>;
   };
   lessonChatDraft: {
-    findUnique?: (query: { where: { courseId: string } }) => Promise<LessonChatDraftRecord | null>;
+    findUnique?: (query: {
+      where: { courseId: string };
+    }) => Promise<LessonChatDraftRecord | null>;
     deleteMany?: (query: { where: { courseId: string } }) => Promise<unknown>;
     upsert?: (query: {
       where: { courseId: string };
       update: { messages: LessonChatMessage[]; draftText: string };
-      create: { courseId: string; messages: LessonChatMessage[]; draftText: string };
+      create: {
+        courseId: string;
+        messages: LessonChatMessage[];
+        draftText: string;
+      };
     }) => Promise<LessonChatDraftRecord>;
   };
   courseStoryOption: {
@@ -35,6 +65,9 @@ export type LessonChatDb = {
       update: Omit<StoryOption, "id">;
       create: StoryOption & { courseId: string };
     }) => Promise<unknown>;
+  };
+  aiGenerationLog?: {
+    create: (query: { data: AiGenerationLogCreateInput }) => Promise<unknown>;
   };
 };
 
@@ -81,10 +114,17 @@ export function createChatMessage(
   };
 }
 
-export async function getLessonChatDraft(db: LessonChatDb, courseId: string): Promise<LessonChatResponse> {
+export async function getLessonChatDraft(
+  db: LessonChatDb,
+  courseId: string,
+): Promise<LessonChatResponse> {
   const course = await db.course.findUnique({
     where: { id: courseId },
-    select: { id: true, llmModel: true, lessonDraft: { select: { courseId: true } } },
+    select: {
+      id: true,
+      llmModel: true,
+      lessonDraft: { select: { courseId: true } },
+    },
   });
 
   if (!course) throw new LessonChatNotFoundError();
@@ -115,11 +155,28 @@ export async function saveLessonChatDraft(
 export async function clearLessonChatDraft(db: LessonChatDb, courseId: string) {
   const course = await db.course.findUnique({
     where: { id: courseId },
-    select: { id: true, llmModel: true, lessonDraft: { select: { courseId: true } } },
+    select: {
+      id: true,
+      llmModel: true,
+      lessonDraft: { select: { courseId: true } },
+    },
   });
 
   if (!course) throw new LessonChatNotFoundError();
   if (!db.lessonChatDraft.deleteMany) throw new LessonChatValidationError();
 
   await db.lessonChatDraft.deleteMany({ where: { courseId } });
+}
+
+export async function recordLessonChatAiGeneration(
+  db: LessonChatDb,
+  data: AiGenerationLogCreateInput,
+) {
+  if (!db.aiGenerationLog) return;
+
+  try {
+    await db.aiGenerationLog.create({ data });
+  } catch (error) {
+    console.error("Failed to record lesson chat AI generation log", error);
+  }
 }

@@ -168,7 +168,9 @@ export type CoursesDb = {
   };
 };
 
-function dbPersonToProfile(person: NonNullable<DbCourseBasic["people"][number]["person"]>): PersonProfile {
+function dbPersonToProfile(
+  person: NonNullable<DbCourseBasic["people"][number]["person"]>,
+): PersonProfile {
   return {
     id: person.id ?? "",
     role: person.role,
@@ -201,14 +203,19 @@ function toCourseBasicWriteData(input: CourseBasicInput): CourseBasicWriteData {
     englishLevel: input.englishLevel,
     durationMinutes: input.durationMinutes,
     grammar: uniqueValues(input.grammar.map(normalizeText).filter(Boolean)),
-    llmModel: input.llmModel ?? "deepseek_chat",
+    llmModel: input.llmModel ?? "gpt_5_5",
   };
 }
 
 function validateCourseBasicShape(input: CourseBasicInput) {
   const data = toCourseBasicWriteData(input);
 
-  if (!data.title || !input.teacherId || input.studentIds.length < 1 || data.grammar.length < 1) {
+  if (
+    !data.title ||
+    !input.teacherId ||
+    input.studentIds.length < 1 ||
+    data.grammar.length < 1
+  ) {
     throw new CourseBasicValidationError();
   }
 
@@ -240,9 +247,17 @@ async function validatePeople(db: CoursesDb, input: CourseBasicInput) {
     },
   });
 
-  const hasTeacher = people.some((person) => person.id === input.teacherId && person.role === "teacher");
-  const foundStudentIds = new Set(people.filter((person) => person.role === "student").map((person) => person.id));
-  const hasAllStudents = studentIds.every((studentId) => foundStudentIds.has(studentId));
+  const hasTeacher = people.some(
+    (person) => person.id === input.teacherId && person.role === "teacher",
+  );
+  const foundStudentIds = new Set(
+    people
+      .filter((person) => person.role === "student")
+      .map((person) => person.id),
+  );
+  const hasAllStudents = studentIds.every((studentId) =>
+    foundStudentIds.has(studentId),
+  );
 
   if (!hasTeacher || !hasAllStudents) {
     throw new CourseBasicValidationError();
@@ -263,7 +278,9 @@ function toPeopleCreate(teacherId: string, studentIds: string[]) {
 
 function toCourseBasicDetail(course: DbCourseBasic): CourseBasicDetail {
   const teacher = course.people.find(({ person }) => person.role === "teacher");
-  const studentIds = course.people.filter(({ person }) => person.role === "student").map(({ personId }) => personId);
+  const studentIds = course.people
+    .filter(({ person }) => person.role === "student")
+    .map(({ personId }) => personId);
 
   if (!teacher) {
     throw new CourseBasicValidationError("课程缺少老师");
@@ -359,9 +376,14 @@ export async function listCourses(db: CoursesDb): Promise<CourseListItem[]> {
   });
 
   return courses.map((course) => {
-    const teacher = course.people.find(({ person }) => person.role === "teacher")?.person;
+    const teacher = course.people.find(
+      ({ person }) => person.role === "teacher",
+    )?.person;
     const progress = getCourseProgress(course);
-    const storyTitle = course.storyOptions?.find((option) => option.id === course.selectedStoryOptionId)?.title ?? null;
+    const storyTitle =
+      course.storyOptions?.find(
+        (option) => option.id === course.selectedStoryOptionId,
+      )?.title ?? null;
 
     return {
       id: course.id,
@@ -369,7 +391,10 @@ export async function listCourses(db: CoursesDb): Promise<CourseListItem[]> {
       teacherName: teacher?.name ?? null,
       studentNames: course.people
         .filter(({ person }) => person.role === "student")
-        .map(({ person }) => person.englishName || person.chineseName || person.name),
+        .map(
+          ({ person }) =>
+            person.englishName || person.chineseName || person.name,
+        ),
       englishLevel: course.englishLevel,
       storyTitle,
       status: course.status,
@@ -383,7 +408,10 @@ export async function listCourses(db: CoursesDb): Promise<CourseListItem[]> {
   });
 }
 
-export async function createCourseBasic(db: CoursesDb, input: CourseBasicInput) {
+export async function createCourseBasic(
+  db: CoursesDb,
+  input: CourseBasicInput,
+) {
   if (!db.course.create) {
     throw new CourseBasicValidationError();
   }
@@ -404,7 +432,11 @@ export async function createCourseBasic(db: CoursesDb, input: CourseBasicInput) 
   return { id: course.id, status: course.status };
 }
 
-export async function updateCourseBasic(db: CoursesDb, id: string, input: CourseBasicInput) {
+export async function updateCourseBasic(
+  db: CoursesDb,
+  id: string,
+  input: CourseBasicInput,
+) {
   if (!db.course.update) {
     throw new CourseBasicValidationError();
   }
@@ -487,8 +519,12 @@ export async function getStoryGenerationContext(db: CoursesDb, id: string) {
   }
 
   const basic = toCourseBasicDetail(course);
-  const teacherRecord = course.people.find(({ person }) => person.role === "teacher")?.person;
-  const studentRecords = course.people.filter(({ person }) => person.role === "student").map(({ person }) => person);
+  const teacherRecord = course.people.find(
+    ({ person }) => person.role === "teacher",
+  )?.person;
+  const studentRecords = course.people
+    .filter(({ person }) => person.role === "student")
+    .map(({ person }) => person);
 
   if (!teacherRecord || studentRecords.length < 1) {
     throw new CourseBasicValidationError();

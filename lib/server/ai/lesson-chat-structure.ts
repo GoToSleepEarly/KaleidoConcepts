@@ -1,4 +1,9 @@
-import type { CourseBasicDetail, LessonDraft, PersonProfile, StoryOption } from "@/lib/contracts/api";
+import type {
+  CourseBasicDetail,
+  LessonDraft,
+  PersonProfile,
+  StoryOption,
+} from "@/lib/contracts/api";
 import {
   compileLessonContentDraft,
   type AiLessonContentPlan,
@@ -31,13 +36,48 @@ type ExerciseMeta = {
   label?: string;
 };
 
-const answerKeyPattern = /(?:【\s*(?:教师答案区\s*\/\s*Answer Key|Answer Key|答案区|教师答案区)\s*】|^Answer Key\s*:?\s*$)/im;
-const closingPattern = /(?:【\s*(?:Closing Reading|课后主旨泛读|Main Idea Reading Practice)\s*】|^Closing Reading\s*:?\s*$)/im;
+const answerKeyPattern =
+  /(?:【\s*(?:教师答案区\s*\/\s*Answer Key|Answer Key|答案区|教师答案区)\s*】|^Answer Key\s*:?\s*$)/im;
+const closingPattern =
+  /(?:【\s*(?:Closing Reading|课后主旨泛读|Main Idea Reading Practice)\s*】|^Closing Reading\s*:?\s*$)/im;
 const lessonDraftPattern = /【\s*Lesson Draft\s*】/im;
 const stageMarkerPattern = /【\s*Stage\s*(\d+)\s*】/gi;
+const exerciseTokenPattern =
+  /\((\d{1,3})\)\s*(?:\[[VP]\d+\s*:[^\]]+\]|_{3,}\s*[（(][^()（）]+[）)](?:\s*[（(]提示[:：][^()（）]+[）)])?)/gi;
+
+export type LessonChatDraftFormatIssue = {
+  code:
+    | "multiple_questions_in_s_line"
+    | "missing_answer"
+    | "answer_occurs_multiple_times";
+  message: string;
+  lineNumber?: number;
+  stage?: number;
+  sLabel?: string;
+  line?: string;
+  questionNumbers?: number[];
+};
+
+function normalizeAnswerForCheck(answer: string) {
+  return answer.trim().replace(/\s+/g, " ").toLocaleLowerCase("en");
+}
+
+function countAnswerOccurrences(sentenceText: string, answer: string) {
+  const needle = normalizeAnswerForCheck(answer);
+  if (!needle) return 0;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = /[a-z]/i.test(needle)
+    ? new RegExp(`\\b${escaped}\\b`, "g")
+    : new RegExp(escaped, "g");
+  return (normalizeAnswerForCheck(sentenceText).match(pattern) ?? []).length;
+}
 
 function personName(person: PersonProfile) {
-  return person.englishName?.trim() || person.chineseName?.trim() || person.name.trim();
+  return (
+    person.englishName?.trim() ||
+    person.chineseName?.trim() ||
+    person.name.trim()
+  );
 }
 
 function aliasBase(name: string) {
@@ -50,7 +90,10 @@ function castAliases(context: LessonChatStructureContext) {
     { alias: `${aliasBase(teacherName)}Teacher`, displayName: teacherName },
     ...context.students.map((student, index) => {
       const name = personName(student);
-      return { alias: `${aliasBase(name)}Student${index > 0 ? index + 1 : ""}`, displayName: name };
+      return {
+        alias: `${aliasBase(name)}Student${index > 0 ? index + 1 : ""}`,
+        displayName: name,
+      };
     }),
   ];
 }
@@ -81,7 +124,9 @@ function normalizeLine(line: string) {
 function parseStoryTitle(text: string, fallback: string) {
   const lessonText = sectionAfter(text, lessonDraftPattern) || text;
   const beforeStages = lessonText.split(stageMarkerPattern)[0] ?? lessonText;
-  const match = beforeStages.match(/^(?:Story Title|故事题目)\s*[:：]\s*(.+)$/im);
+  const match = beforeStages.match(
+    /^(?:Story Title|故事题目)\s*[:：]\s*(.+)$/im,
+  );
   return match?.[1]?.trim() || fallback;
 }
 
@@ -91,7 +136,8 @@ function stripSentenceLabel(line: string) {
 
 function parseAnswerKey(text: string) {
   const answerText = sectionAfter(text, answerKeyPattern);
-  if (!answerText.trim()) throw new LessonDraftValidationError("缺少【教师答案区 / Answer Key】");
+  if (!answerText.trim())
+    throw new LessonDraftValidationError("缺少【教师答案区 / Answer Key】");
 
   const answers = new Map<number, string>();
   const labelAnswers = new Map<string, { answer: string; hint?: string }>();
@@ -100,13 +146,17 @@ function parseAnswerKey(text: string) {
     const line = rawLine.trim();
     if (!line) continue;
 
-    const numbered = line.match(/^(?:Answer\s*)?\(?(\d{1,3})\)?\s*(?:[.、:：]|\s+-\s+)\s*(.+)$/i);
+    const numbered = line.match(
+      /^(?:Answer\s*)?\(?(\d{1,3})\)?\s*(?:[.、:：]|\s+-\s+)\s*(.+)$/i,
+    );
     if (numbered) {
       answers.set(Number(numbered[1]), numbered[2].trim());
       continue;
     }
 
-    const labeled = line.match(/^([VP]\d+)\s*[=:：]\s*([^|~，,;；]+)(?:[|~，,;；]\s*(.+))?$/i);
+    const labeled = line.match(
+      /^([VP]\d+)\s*[=:：]\s*([^|~，,;；]+)(?:[|~，,;；]\s*(.+))?$/i,
+    );
     if (labeled) {
       labelAnswers.set(labeled[1].toUpperCase(), {
         answer: labeled[2].trim(),
@@ -115,7 +165,10 @@ function parseAnswerKey(text: string) {
     }
   }
 
-  if (answers.size === 0) throw new LessonDraftValidationError("答案区未识别到题号答案，请使用 `1. answer` 格式");
+  if (answers.size === 0)
+    throw new LessonDraftValidationError(
+      "答案区未识别到题号答案，请使用 `1. answer` 格式",
+    );
   return { answers, labelAnswers };
 }
 
@@ -127,26 +180,43 @@ function parseStages(text: string): ParsedStage[] {
   if (markers.length > 0) {
     return markers.map((marker, index) => {
       const start = (marker.index ?? 0) + marker[0].length;
-      const end = index + 1 < markers.length ? markers[index + 1].index! : beforeClosing.length;
+      const end =
+        index + 1 < markers.length
+          ? markers[index + 1].index!
+          : beforeClosing.length;
       const block = beforeClosing.slice(start, end);
-      const title = block.match(/^Title\s*[:：]\s*(.+)$/im)?.[1]?.trim() || `Stage ${marker[1]}`;
-      const englishTitle = block.match(/^English Title\s*[:：]\s*(.+)$/im)?.[1]?.trim() || title;
-      const readingBlock = sectionAfter(block, /(?:【\s*Reading\s*】|^Reading\s*[:：]?\s*$)/im) || block;
+      const title =
+        block.match(/^Title\s*[:：]\s*(.+)$/im)?.[1]?.trim() ||
+        `Stage ${marker[1]}`;
+      const englishTitle =
+        block.match(/^English Title\s*[:：]\s*(.+)$/im)?.[1]?.trim() || title;
+      const readingBlock =
+        sectionAfter(block, /(?:【\s*Reading\s*】|^Reading\s*[:：]?\s*$)/im) ||
+        block;
       const readingLines = readingBlock
         .split(/\r?\n/)
         .map(stripSentenceLabel)
         .map(normalizeLine)
-        .filter((line) => line && !/^(Title|English Title|Teacher Tip)\s*[:：]/i.test(line));
+        .filter(
+          (line) =>
+            line && !/^(Title|English Title|Teacher Tip)\s*[:：]/i.test(line),
+        );
 
       return { index: Number(marker[1]), title, englishTitle, readingLines };
     });
   }
 
-  const legacyParts = beforeClosing.split(/第([一二三四五六七八九十\d]+)阶段[:：]/).slice(1);
+  const legacyParts = beforeClosing
+    .split(/第([一二三四五六七八九十\d]+)阶段[:：]/)
+    .slice(1);
   const stages: ParsedStage[] = [];
   for (let index = 0; index < legacyParts.length; index += 2) {
     const block = legacyParts[index + 1] ?? "";
-    const firstLine = block.split(/\r?\n/).find((line) => line.trim())?.trim() ?? `第${stages.length + 1}阶段`;
+    const firstLine =
+      block
+        .split(/\r?\n/)
+        .find((line) => line.trim())
+        ?.trim() ?? `第${stages.length + 1}阶段`;
     const titleMatch = firstLine.match(/^(.+?)(?:\(([^)]+)\))?$/);
     const readingLines = block
       .split(/\r?\n/)
@@ -156,7 +226,8 @@ function parseStages(text: string): ParsedStage[] {
     stages.push({
       index: stages.length + 1,
       title: titleMatch?.[1]?.trim() || firstLine,
-      englishTitle: titleMatch?.[2]?.trim() || titleMatch?.[1]?.trim() || firstLine,
+      englishTitle:
+        titleMatch?.[2]?.trim() || titleMatch?.[1]?.trim() || firstLine,
       readingLines,
     });
   }
@@ -164,14 +235,92 @@ function parseStages(text: string): ParsedStage[] {
 }
 
 function parseClosingReading(text: string) {
-  const closingText = sectionAfter(text, closingPattern).split(answerKeyPattern)[0] ?? "";
+  const closingText =
+    sectionAfter(text, closingPattern).split(answerKeyPattern)[0] ?? "";
   const lines = closingText
     .split(/\r?\n/)
     .map(stripSentenceLabel)
     .map(normalizeLine)
     .filter(Boolean);
-  if (lines.length === 0) throw new LessonDraftValidationError("缺少【Closing Reading】正文");
+  if (lines.length === 0)
+    throw new LessonDraftValidationError("缺少【Closing Reading】正文");
   return lines;
+}
+
+export function collectLessonChatDraftFormatIssues(
+  draftText: string,
+): LessonChatDraftFormatIssue[] {
+  const issues: LessonChatDraftFormatIssue[] = [];
+  let answers: Map<number, string> | null = null;
+  try {
+    answers = parseAnswerKey(draftText).answers;
+  } catch {
+    answers = null;
+  }
+
+  let currentStage: number | undefined;
+
+  draftText.split(/\r?\n/).forEach((rawLine, index) => {
+    const stageMatch = rawLine.match(/【\s*Stage\s*(\d+)\s*】/i);
+    if (stageMatch) currentStage = Number(stageMatch[1]);
+
+    const sLineMatch = rawLine.match(/^\s*(S\d+)\s*[:：]\s*(.+)$/i);
+    if (!sLineMatch) return;
+
+    const [, sLabel, line] = sLineMatch;
+    const matches = [...line.matchAll(exerciseTokenPattern)];
+    if (matches.length > 1) {
+      const questionNumbers = matches.map((match) => Number(match[1]));
+      issues.push({
+        code: "multiple_questions_in_s_line",
+        message: `Stage ${currentStage ?? "?"} ${sLabel} 一行包含 ${matches.length} 道题：${questionNumbers.map((number) => `(${number})`).join("、")}`,
+        lineNumber: index + 1,
+        stage: currentStage,
+        sLabel,
+        line: rawLine.trim(),
+        questionNumbers,
+      });
+    }
+
+    if (answers) {
+      for (const match of matches) {
+        const questionNumber = Number(match[1]);
+        if (!answers.has(questionNumber)) {
+          issues.push({
+            code: "missing_answer",
+            message: `第 ${questionNumber} 题在答案区缺少答案`,
+            lineNumber: index + 1,
+            stage: currentStage,
+            sLabel,
+            line: rawLine.trim(),
+            questionNumbers: [questionNumber],
+          });
+          continue;
+        }
+
+        const answer = answers.get(questionNumber)?.trim() ?? "";
+        const answerOccurrences = countAnswerOccurrences(
+          line.slice(0, match.index ?? 0) +
+            answer +
+            line.slice((match.index ?? 0) + match[0].length),
+          answer,
+        );
+        if (answerOccurrences !== 1) {
+          issues.push({
+            code: "answer_occurs_multiple_times",
+            message: `第 ${questionNumber} 题答案“${answer}”在所在句子中出现 ${answerOccurrences} 次，应恰好出现 1 次`,
+            lineNumber: index + 1,
+            stage: currentStage,
+            sLabel,
+            line: rawLine.trim(),
+            questionNumbers: [questionNumber],
+          });
+        }
+      }
+    }
+  });
+
+  return issues;
 }
 
 function hintFromToken(token: string) {
@@ -214,7 +363,8 @@ function buildExerciseMeta(
     };
   }
 
-  const prompt = token.match(/_{3,}\s*[（(]([^()（）]+)[）)]/)?.[1]?.trim() || answer;
+  const prompt =
+    token.match(/_{3,}\s*[（(]([^()（）]+)[）)]/)?.[1]?.trim() || answer;
   const choices = choicesFromPrompt(prompt);
   if (choices.length >= 2 && choices.includes(answer)) {
     return {
@@ -234,12 +384,23 @@ function buildExerciseMeta(
   };
 }
 
-function exercisePartFromMeta(meta: ExerciseMeta, context: LessonChatStructureContext): Exclude<AiSentencePart, { type: "text" }> {
+function exercisePartFromMeta(
+  meta: ExerciseMeta,
+  context: LessonChatStructureContext,
+): Exclude<AiSentencePart, { type: "text" }> {
   if (meta.type === "vocab_hint") {
-    return { type: "vocab_hint", answer: meta.answer, hint: meta.hint || "词汇提示" };
+    return {
+      type: "vocab_hint",
+      answer: meta.answer,
+      hint: meta.hint || "词汇提示",
+    };
   }
   if (meta.type === "phrase_hint") {
-    return { type: "phrase_hint", answer: meta.answer, hint: meta.hint || "短语提示" };
+    return {
+      type: "phrase_hint",
+      answer: meta.answer,
+      hint: meta.hint || "短语提示",
+    };
   }
   if (meta.type === "choice_blank") {
     return {
@@ -264,18 +425,32 @@ function parseSentenceLine(
   labelAnswers: Map<string, { answer: string; hint?: string }>,
   context: LessonChatStructureContext,
 ): AiSentence {
-  const tokenPattern =
-    /\((\d{1,3})\)\s*(?:\[[VP]\d+\s*:[^\]]+\]|_{3,}\s*[（(][^()（）]+[）)](?:\s*[（(]提示[:：][^()（）]+[）)])?)/gi;
-  const matches = [...line.matchAll(tokenPattern)];
+  const matches = [...line.matchAll(exerciseTokenPattern)];
   if (matches.length > 1) {
-    throw new LessonDraftValidationError("程序友好模板要求每个 S 行最多包含 1 道题，请把多题拆成多行");
+    throw new LessonDraftValidationError(
+      "程序友好模板要求每个 S 行最多包含 1 道题，请把多题拆成多行",
+    );
   }
   if (matches.length === 0) return { parts: [{ type: "text", text: line }] };
 
-  const match = matches[0];
+  const match = matches[0]!;
   const start = match.index ?? 0;
   const end = start + match[0].length;
-  const meta = buildExerciseMeta(Number(match[1]), match[0], answers, labelAnswers);
+  const meta = buildExerciseMeta(
+    Number(match[1]),
+    match[0],
+    answers,
+    labelAnswers,
+  );
+  const answerOccurrences = countAnswerOccurrences(
+    line.slice(0, start) + meta.answer + line.slice(end),
+    meta.answer,
+  );
+  if (answerOccurrences !== 1) {
+    throw new LessonDraftValidationError(
+      `第 ${meta.order} 题答案“${meta.answer}”在所在句子中出现 ${answerOccurrences} 次，应恰好出现 1 次`,
+    );
+  }
   const parts: AiSentencePart[] = [];
   const before = line.slice(0, start);
   const after = line.slice(end);
@@ -285,10 +460,30 @@ function parseSentenceLine(
   return { parts };
 }
 
-function splitIntoTwoParagraphs(sentences: AiSentence[]): [AiParagraph, AiParagraph] {
-  if (sentences.length < 2) return [{ sentences }, { sentences: [{ parts: [{ type: "text", text: "The story continued with courage and care." }] }] }];
+function splitIntoTwoParagraphs(
+  sentences: AiSentence[],
+): [AiParagraph, AiParagraph] {
+  if (sentences.length < 2)
+    return [
+      { sentences },
+      {
+        sentences: [
+          {
+            parts: [
+              {
+                type: "text",
+                text: "The story continued with courage and care.",
+              },
+            ],
+          },
+        ],
+      },
+    ];
   const midpoint = Math.ceil(sentences.length / 2);
-  return [{ sentences: sentences.slice(0, midpoint) }, { sentences: sentences.slice(midpoint) }];
+  return [
+    { sentences: sentences.slice(0, midpoint) },
+    { sentences: sentences.slice(midpoint) },
+  ];
 }
 
 function summarize(lines: string[]) {
@@ -307,22 +502,33 @@ export async function structureLessonChatDraft(
   storyOption: StoryOption;
   draft: LessonDraft;
 }> {
-  if (!draftText.trim()) throw new LessonDraftValidationError("请先生成或填写最终文案");
+  if (!draftText.trim())
+    throw new LessonDraftValidationError("请先生成或填写最终文案");
 
   const { answers, labelAnswers } = parseAnswerKey(draftText);
   const stages = parseStages(draftText);
-  if (stages.length === 0) throw new LessonDraftValidationError("未识别到阶段，请使用 `【Stage 1】` 格式");
+  if (stages.length === 0)
+    throw new LessonDraftValidationError(
+      "未识别到阶段，请使用 `【Stage 1】` 格式",
+    );
 
   const expected = expectedChapterCount(context.course.durationMinutes);
   if (stages.length !== expected) {
-    throw new LessonDraftValidationError(`阶段数量应为 ${expected} 个，当前识别到 ${stages.length} 个`);
+    throw new LessonDraftValidationError(
+      `阶段数量应为 ${expected} 个，当前识别到 ${stages.length} 个`,
+    );
   }
 
   const plan: AiLessonContentPlan = {
     title: parseStoryTitle(draftText, context.course.title),
     chapters: stages.map((stage) => {
-      if (stage.readingLines.length === 0) throw new LessonDraftValidationError(`Stage ${stage.index} 缺少【Reading】正文`);
-      const sentences = stage.readingLines.map((line) => parseSentenceLine(line, answers, labelAnswers, context));
+      if (stage.readingLines.length === 0)
+        throw new LessonDraftValidationError(
+          `Stage ${stage.index} 缺少【Reading】正文`,
+        );
+      const sentences = stage.readingLines.map((line) =>
+        parseSentenceLine(line, answers, labelAnswers, context),
+      );
       return {
         title: stage.englishTitle || stage.title,
         paragraphs: splitIntoTwoParagraphs(sentences),
@@ -338,13 +544,20 @@ export async function structureLessonChatDraft(
     id: "chat-final",
     variant: "enhanced",
     title: plan.title,
-    storyline: summarize(stages.flatMap((stage) => stage.readingLines)) || `围绕 ${context.course.title} 展开的课堂故事。`,
+    storyline:
+      summarize(stages.flatMap((stage) => stage.readingLines)) ||
+      `围绕 ${context.course.title} 展开的课堂故事。`,
     chapters: stages.map((stage) => ({
       title: stage.title,
       summary: summarize(stage.readingLines) || `${stage.title} 推动故事继续。`,
     })),
   };
 
-  const draft = compileLessonContentDraft(plan, storyOption, [], castAliases(context));
+  const draft = compileLessonContentDraft(
+    plan,
+    storyOption,
+    [],
+    castAliases(context),
+  );
   return { storyOption, draft };
 }

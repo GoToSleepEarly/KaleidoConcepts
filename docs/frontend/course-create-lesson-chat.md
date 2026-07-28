@@ -96,6 +96,14 @@ S1: ...
 
 The final text must not contain the confirmed outline, image URLs, image prompts, resource state, or non-lesson explanations.
 
+Exercise placement rules:
+
+- Blanks and hints must be embedded at the missing-word position inside the sentence.
+- Correct: `ZiXuan smiled and said, "You (3) ________ (ask) (提示：现在完成时) a question that many psychologists study."`
+- Incorrect: `ZiXuan smiled and said, "You ________ a question that many psychologists study." (3) ________ (ask) (提示：现在完成时)`
+- Question distribution should follow the course duration budget: vocabulary labels, verb phrases, and grammar/choice blanks must be spread across stages instead of clustered.
+- Each stage Reading should target 130-145 English words and stay within 120-160 words.
+
 ## Structuring Rules
 
 Step 2 -> Step 3 only validates lesson content:
@@ -148,6 +156,20 @@ Events:
 - `done`: saved chat state.
 - `error`: failure message.
 
+Refresh behavior:
+
+- Step2 final-text generation is still request-bound SSE in the MVP; refreshing the page stops the active browser request.
+- To avoid losing everything, the server saves a recoverable chat state before streaming and persists partial `draftText` during the stream.
+- After refresh, the teacher sees the latest saved partial text and can continue revising or regenerate from the confirmed outline.
+
+Side effect:
+
+- Every AI call writes one `AiGenerationLog` row when the database is reachable.
+- Logs are request-level, not message-level. One row records the resolved intent, model, input snapshot, output text, status, error message, and latency.
+- Logging failure must not block the teacher's current generation flow; the server reports it to application logs and continues.
+- `input` stores the course constraints, teacher/student profiles, prior Step2 messages, current draft snapshot, teacher message, requested intent, and resolved intent. This is enough to replay and compare future prompt/model changes without depending on mutable UI state.
+- Failed calls record the same available input snapshot plus the error message and any partial output collected before failure.
+
 ### `POST /api/courses/:id/lesson-chat/structure`
 
 Request:
@@ -168,6 +190,6 @@ Behavior:
 
 ## Implementation Status
 
-- Status: implemented.
+- Status: implemented. 2026-07-28 updated right-side empty state into an outline workspace, added persistent AI generation logs, added partial stream persistence, moved Step3 entry to the page header, and tightened inline exercise placement / distribution prompt rules.
 - Validation commands: `pnpm exec vitest run lib/server/ai/lesson-chat-structure.test.ts lib/server/ai/resource-plan-generator.test.ts`, `pnpm exec eslint ...`, `pnpm exec prisma validate`.
 - Commit: pending.
