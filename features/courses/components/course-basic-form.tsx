@@ -242,7 +242,7 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
     <form className="space-y-6" onSubmit={handleSubmit}>
       <CourseCreateSteps courseId={courseId} currentStep={1} />
 
-      <div className="flex items-start justify-between gap-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
         <div>
           <Button asChild className="mb-4 h-9 px-3 text-sm" variant="outline">
             <Link href="/courses">
@@ -253,13 +253,13 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
           <h2 className="text-xl font-semibold tracking-tight text-slate-950">基础信息</h2>
           <p className="mt-2 text-sm text-slate-500">{courseId ? "保存基础信息后继续进入 AI 教案共创。" : "保存后会创建课程，并进入 AI 教案共创。"}</p>
         </div>
-        <Button className="bg-violet-600 text-white hover:bg-violet-700" disabled={isSaving} type="submit">
+        <Button className="w-full bg-violet-600 text-white hover:bg-violet-700 sm:w-auto" disabled={isSaving} type="submit">
           {isSaving ? <Loader2 className="size-4 animate-spin" /> : null}
           {submitLabel}
         </Button>
       </div>
 
-      <section className="rounded-lg border border-[#E5E7EB] bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-[#E5E7EB] bg-white p-4 shadow-sm sm:p-6">
         <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
           <TextField label="课程标题" onChange={(value) => setForm((current) => ({ ...current, title: value }))} required value={form.title} />
           <SegmentedField
@@ -282,7 +282,7 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
       </section>
 
       <PeopleSection title="选择老师" description="单选，后续生成会引用老师形象。">
-        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
           {teachers.map((teacher) => (
             <PersonChoiceCard
               key={teacher.id}
@@ -295,7 +295,7 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
       </PeopleSection>
 
       <PeopleSection title="选择学生" description="至少选择 1 个学生，AI 会结合学生画像生成教案。">
-        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
           {students.map((student) => (
             <PersonChoiceCard
               key={student.id}
@@ -307,7 +307,7 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
         </div>
       </PeopleSection>
 
-      <section className="rounded-lg border border-[#E5E7EB] bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-[#E5E7EB] bg-white p-4 shadow-sm sm:p-6">
         <FieldHeader description="选择本课要覆盖的语法或语言点，可跨类别累加。" title="语法点" />
 
         {form.grammar.length ? (
@@ -373,7 +373,7 @@ export function CourseBasicForm({ courseId }: { courseId?: string }) {
 
       {error ? <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div> : null}
 
-      <div className="flex justify-end gap-3">
+      <div className="grid gap-3 sm:flex sm:justify-end">
         <Button asChild type="button" variant="outline">
           <Link href="/courses">取消</Link>
         </Button>
@@ -397,7 +397,7 @@ function FieldHeader({ title, description }: { title: string; description: strin
 
 function PeopleSection({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-[#E5E7EB] bg-white p-6 shadow-sm">
+    <section className="rounded-lg border border-[#E5E7EB] bg-white p-4 shadow-sm sm:p-6">
       <FieldHeader description={description} title={title} />
       <div className="mt-4">{children}</div>
     </section>
@@ -417,7 +417,7 @@ function PersonChoiceCard({ person, selected, onClick }: { person: PersonProfile
   return (
     <button
       className={cn(
-        "relative flex min-h-32 w-full items-start gap-4 rounded-lg border border-[#E5E7EB] bg-white p-4 text-left transition duration-200 hover:border-violet-200 hover:bg-violet-50/40",
+        "relative flex min-h-32 w-full items-start gap-3 rounded-lg border border-[#E5E7EB] bg-white p-3 text-left transition duration-200 hover:border-violet-200 hover:bg-violet-50/40 sm:gap-4 sm:p-4",
         selected && "border-violet-500 bg-violet-50 ring-2 ring-violet-100",
       )}
       onClick={onClick}
@@ -457,7 +457,7 @@ function TextField({
         {label} {required ? <span className="text-red-500">*</span> : null}
       </span>
       <input
-        className="h-10 w-full rounded-lg border border-[#E5E7EB] px-3 text-sm outline-none transition duration-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
+        className="min-h-11 w-full rounded-lg border border-[#E5E7EB] px-3 text-base outline-none transition duration-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 sm:min-h-10 sm:text-sm"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       />
@@ -485,7 +485,7 @@ function SegmentedField<T extends string | number>({
         {options.map((option) => (
           <button
             className={cn(
-              "h-9 rounded-lg border border-[#E5E7EB] px-3 text-sm font-medium text-slate-600 transition-colors duration-200 hover:border-violet-200 hover:text-violet-700",
+              "min-h-10 rounded-lg border border-[#E5E7EB] px-3 text-sm font-medium text-slate-600 transition-colors duration-200 hover:border-violet-200 hover:text-violet-700 sm:min-h-9",
               value === option && "border-violet-500 bg-violet-50 text-violet-700",
             )}
             key={String(option)}
@@ -504,7 +504,7 @@ function ChoiceChip({ selected, onClick, children }: { selected: boolean; onClic
   return (
     <button
       className={cn(
-        "inline-flex h-8 items-center gap-2 rounded-full border border-[#E5E7EB] px-3 text-xs font-medium text-slate-600 transition-colors duration-200 hover:border-violet-200 hover:text-violet-700",
+        "inline-flex min-h-9 items-center gap-2 rounded-full border border-[#E5E7EB] px-3 text-xs font-medium text-slate-600 transition-colors duration-200 hover:border-violet-200 hover:text-violet-700",
         selected && "border-violet-500 bg-violet-50 text-violet-700",
       )}
       onClick={onClick}

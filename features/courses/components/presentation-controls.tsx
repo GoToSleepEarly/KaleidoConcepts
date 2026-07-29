@@ -26,7 +26,7 @@ export function PresentationControls({
   const isPresenter = variant === "presenter";
 
   const base =
-    "flex items-center gap-3 px-4 py-2 rounded-full shadow-lg transition-opacity duration-300";
+    "flex max-w-full items-center justify-center gap-2 rounded-full px-3 py-2 shadow-lg transition-opacity duration-300 sm:gap-3 sm:px-4";
   const style = isPresenter
     ? "bg-black/50 text-white backdrop-blur-md presentation-controls-hover"
     : "bg-white/90 text-slate-800 border border-slate-200 shadow";
@@ -34,8 +34,8 @@ export function PresentationControls({
   const disabledPrev = currentSlide === 0;
   const disabledNext = currentSlide >= totalSlides - 1;
 
-  const btnBase = "p-2 rounded-full transition hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed";
-  const btnEditor = "p-2 rounded-lg transition hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed";
+  const btnBase = "flex min-h-10 min-w-10 items-center justify-center rounded-full p-2 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30";
+  const btnEditor = "flex min-h-10 min-w-10 items-center justify-center rounded-lg p-2 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-30";
   const btn = isPresenter ? btnBase : btnEditor;
 
   return (

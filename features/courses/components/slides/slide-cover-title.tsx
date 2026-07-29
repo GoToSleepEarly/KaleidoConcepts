@@ -28,7 +28,7 @@ export function SlideCoverTitle({
         : "bg-gradient-to-t from-black/80 via-black/30 to-transparent";
 
   const textColor = coverTheme === "light" ? "text-slate-900" : "text-white";
-  const titleSize = `clamp(2.5rem, 6vw * ${titleFontScale}, 5.5rem)`;
+  const titleSize = `clamp(1.5rem, ${6 * titleFontScale}cqw, 5.5rem)`;
 
   return (
     <div
@@ -44,14 +44,14 @@ export function SlideCoverTitle({
         className="absolute inset-0"
       />
       <div className={`absolute inset-0 ${overlayClass}`} />
-      <div className="absolute inset-0 flex flex-col items-center justify-end pb-16 px-8">
+      <div className="absolute inset-0 flex flex-col items-center justify-end slide-cover-title-content">
         <h1
           className={`${textColor} font-bold text-center leading-tight tracking-tight mb-4 max-w-full`}
           style={{ fontSize: titleSize }}
         >
           {page.title}
         </h1>
-        <div className={`${textColor} text-center opacity-90 space-y-1 text-lg`}>
+        <div className={`${textColor} text-center opacity-90 space-y-1 slide-cover-title-meta`}>
           {page.teacherName && <p>{page.teacherName}</p>}
           {page.studentNames.length > 0 && (
             <p className="opacity-80">{page.studentNames.join(" · ")}</p>

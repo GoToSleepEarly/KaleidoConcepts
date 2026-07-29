@@ -369,14 +369,26 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
     <div className="space-y-6">
       <CourseCreateSteps courseId={courseId} currentStep={3} />
 
-      <div className="flex items-start justify-between gap-6">
-        <div>
-          <Button asChild className="mb-4 h-9 px-3 text-sm" variant="outline">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+        <div className="min-w-0">
+          <div className="mb-4 grid grid-cols-2 gap-2 lg:block">
+          <Button asChild className="h-9 px-3 text-sm lg:w-auto" variant="outline">
             <Link href={`/courses/${courseId}/create/story-options`}>
               <ArrowLeft className="size-4" />
               返回 AI 教案共创
             </Link>
           </Button>
+          {draft && !isEditing ? (
+            <Button
+              asChild
+              className="h-9 bg-slate-950 px-3 text-sm text-white hover:bg-slate-800 lg:hidden"
+            >
+              <Link href={`/courses/${courseId}/create/resources`}>
+                进入资源生成
+              </Link>
+            </Button>
+          ) : null}
+          </div>
           <h2 className="text-xl font-semibold tracking-tight text-slate-950">
             标准教案
           </h2>
@@ -385,7 +397,7 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
           </p>
         </div>
         {draft ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="grid gap-2 sm:flex sm:flex-wrap lg:justify-end">
             {isEditing ? (
               <>
                 <Button
@@ -419,7 +431,7 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
                 </Button>
                 <Button
                   asChild
-                  className="bg-slate-950 text-white hover:bg-slate-800"
+                  className="hidden h-9 bg-slate-950 px-3 text-sm text-white hover:bg-slate-800 lg:inline-flex"
                 >
                   <Link href={`/courses/${courseId}/create/resources`}>
                     进入资源生成
@@ -455,13 +467,13 @@ export function LessonDraftManager({ courseId }: { courseId: string }) {
           <EmptyStandardLessonPanel courseId={courseId} />
         )
       ) : workingDraft ? (
-        <div className="grid gap-5 xl:grid-cols-[220px_1fr_300px]">
+        <div className="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)_300px] xl:gap-5">
           <ChapterNav
             activeChapterId={activeChapterId}
             draft={workingDraft}
             onSelect={setActiveChapterId}
           />
-          <section className="min-h-[560px] rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm">
+          <section className="min-h-[420px] rounded-2xl border border-[#E5E7EB] bg-white p-4 shadow-sm sm:p-6 xl:min-h-[560px]">
             {isClosingActive ? (
               <ClosingReadingPanel
                 draft={workingDraft}
@@ -536,7 +548,7 @@ function ChapterNav({
       <div className="px-2 pb-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
         章节
       </div>
-      <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2 xl:block xl:space-y-2">
         {draft.chapters.map((chapter, index) => (
           <button
             className={cn(
@@ -605,14 +617,14 @@ function ReadingPanel({
           </div>
           {isEditing ? (
             <input
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-2xl font-semibold leading-9 text-slate-950 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xl font-semibold leading-8 text-slate-950 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100 sm:text-2xl sm:leading-9"
               onChange={(event) =>
                 onChangeTitle(chapter.id, event.target.value)
               }
               value={chapter.title}
             />
           ) : (
-            <h3 className="text-2xl font-semibold leading-9 text-slate-950">
+            <h3 className="text-xl font-semibold leading-8 text-slate-950 sm:text-2xl sm:leading-9">
               {chapter.title}
             </h3>
           )}
@@ -635,7 +647,7 @@ function ReadingPanel({
           ))}
         </div>
       ) : (
-        <div className="space-y-6 text-[17px] leading-9 text-slate-800">
+        <div className="space-y-5 text-base leading-8 text-slate-800 sm:space-y-6 sm:text-[17px] sm:leading-9">
           {chapter.paragraphs.map((paragraph) => (
             <p key={paragraph.id}>
               {paragraph.sentences.map((sentence) =>
@@ -1037,7 +1049,7 @@ function ClosingReadingPanel({
       {isEditing ? (
         <div className="space-y-4">
           <input
-            className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-2xl font-semibold leading-9 text-slate-950 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100"
+            className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xl font-semibold leading-8 text-slate-950 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100 sm:text-2xl sm:leading-9"
             onChange={(event) => onChangeTitle(event.target.value)}
             value={draft.closingReading.title}
           />
@@ -1058,10 +1070,10 @@ function ClosingReadingPanel({
         </div>
       ) : (
         <>
-          <h3 className="text-2xl font-semibold leading-9 text-slate-950">
+          <h3 className="text-xl font-semibold leading-8 text-slate-950 sm:text-2xl sm:leading-9">
             {replaceCastAliases(draft.closingReading.title, draft.castAliases)}
           </h3>
-          <p className="mt-5 text-[17px] leading-9 text-slate-800">
+          <p className="mt-5 text-base leading-8 text-slate-800 sm:text-[17px] sm:leading-9">
             {replaceCastAliases(
               draft.closingReading.sentences.join(" "),
               draft.castAliases,

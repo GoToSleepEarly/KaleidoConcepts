@@ -33,6 +33,7 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [draftPresentation, setDraftPresentation] = useState<CoursePresentationConfig | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"saved" | "unsaved" | "saving" | "error">("saved");
   const [publishing, setPublishing] = useState(false);
   const [showPublishConfirm, setShowPublishConfirm] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -54,6 +55,7 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
       const json = (await res.json()) as CoursePreviewResponse;
       setData(json);
       setDraftPresentation(json.presentation);
+      setSaveStatus("saved");
     } catch (e) {
       setError(e instanceof Error ? e.message : "加载失败");
     } finally {
@@ -81,11 +83,13 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
 
   const handlePresentationChange = (patch: Partial<CoursePresentationConfig>) => {
     if (!draftPresentation) return;
+    setSaveStatus("unsaved");
     setDraftPresentation({ ...draftPresentation, ...patch });
   };
 
   const handleSlideOverride = (pageId: string, override: SlideTextOverride) => {
     if (!draftPresentation) return;
+    setSaveStatus("unsaved");
     setDraftPresentation({
       ...draftPresentation,
       slideOverrides: {
@@ -97,20 +101,23 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
 
   const handleSlideReset = (pageId: string) => {
     if (!draftPresentation) return;
+    setSaveStatus("unsaved");
     const next = { ...draftPresentation.slideOverrides };
     delete next[pageId];
     setDraftPresentation({ ...draftPresentation, slideOverrides: next });
   };
 
-  const handleSave = async () => {
-    if (!courseId || !draftPresentation) return;
+  const savePresentation = useCallback(async (presentation: CoursePresentationConfig) => {
+    if (!courseId) return;
     setSaving(true);
+    setSaveStatus("saving");
+    setError(null);
     try {
       const body: CoursePresentationUpdate = {
-        coverTheme: draftPresentation.coverTheme,
-        coverTitleFontSize: draftPresentation.coverTitleFontSize,
-        chapterTheme: draftPresentation.chapterTheme,
-        slideOverrides: draftPresentation.slideOverrides,
+        coverTheme: presentation.coverTheme,
+        coverTitleFontSize: presentation.coverTitleFontSize,
+        chapterTheme: presentation.chapterTheme,
+        slideOverrides: presentation.slideOverrides,
       };
       const res = await fetch(`/api/courses/${courseId}/presentation`, {
         method: "PUT",
@@ -118,13 +125,29 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error("保存失败");
-      await loadPreview(courseId);
+      const json = (await res.json()) as { presentation: CoursePresentationConfig };
+      setData((current) => current ? { ...current, presentation: json.presentation } : current);
+      setSaveStatus("saved");
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存失败");
+      setSaveStatus("error");
     } finally {
       setSaving(false);
     }
+  }, [courseId]);
+
+  const handleSave = () => {
+    if (!draftPresentation) return;
+    void savePresentation(draftPresentation);
   };
+
+  useEffect(() => {
+    if (!draftPresentation || !hasUnsavedChanges || saving) return;
+    const timer = window.setTimeout(() => {
+      void savePresentation(draftPresentation);
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [draftPresentation, hasUnsavedChanges, savePresentation, saving]);
 
   const handlePublish = async () => {
     if (!courseId || !draftPresentation) return;
@@ -226,12 +249,12 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
 
   return (
     <ProtectedLayout>
-      <div className="mx-auto max-w-6xl space-y-6">
+      <div className="mx-auto max-w-6xl space-y-5 sm:space-y-6">
         <CourseCreateSteps currentStep={5} courseId={courseId} />
 
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
           <div>
-            <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="mb-4 grid gap-2 sm:flex sm:flex-wrap sm:items-center">
               <Button asChild variant="outline" size="sm">
                 <Link href={`/courses/${courseId}/create/resources`}>
                   <ArrowLeft className="size-4" />
@@ -248,13 +271,25 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
               检查课件版式与文本框，确认无误后发布进入授课模式。
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex overflow-hidden rounded-lg border border-border text-sm">
+          <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <span
+              className={cn(
+                "inline-flex min-h-9 items-center justify-center rounded-lg border px-3 text-xs font-medium",
+                saveStatus === "saved" && !hasUnsavedChanges && "border-emerald-200 bg-emerald-50 text-emerald-700",
+                (saveStatus === "unsaved" || hasUnsavedChanges) && saveStatus !== "saving" && saveStatus !== "error" && "border-amber-200 bg-amber-50 text-amber-700",
+                saveStatus === "saving" && "border-sky-200 bg-sky-50 text-sky-700",
+                saveStatus === "error" && "border-red-200 bg-red-50 text-red-700",
+              )}
+            >
+              {saveStatus === "saving" ? "自动保存中" : saveStatus === "error" ? "保存失败" : hasUnsavedChanges ? "有未保存更改" : "已自动保存"}
+            </span>
+            <div className="inline-flex w-full overflow-hidden rounded-lg border border-border text-sm sm:w-auto">
               <button
+                aria-pressed={mode === "html"}
                 type="button"
                 onClick={() => setMode("html")}
                 className={cn(
-                  "px-3 py-1.5 transition-colors duration-200",
+                  "min-h-10 flex-1 px-3 py-1.5 transition-colors duration-200 sm:flex-none",
                   mode === "html"
                     ? "bg-primary text-primary-foreground"
                     : "bg-card text-muted-foreground hover:bg-secondary",
@@ -263,10 +298,11 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
                 课件预览
               </button>
               <button
+                aria-pressed={mode === "pdf"}
                 type="button"
                 onClick={() => setMode("pdf")}
                 className={cn(
-                  "px-3 py-1.5 transition-colors duration-200",
+                  "min-h-10 flex-1 px-3 py-1.5 transition-colors duration-200 sm:flex-none",
                   mode === "pdf"
                     ? "bg-primary text-primary-foreground"
                     : "bg-card text-muted-foreground hover:bg-secondary",
@@ -295,7 +331,7 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
               loading={saving}
             >
               <Save className="size-4" />
-              保存草稿
+              立即保存
             </Button>
             <Button
               size="sm"
@@ -316,9 +352,9 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
         ) : null}
 
         {mode === "html" ? (
-          <div className="flex min-h-[520px] gap-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-            <main className="flex-1 overflow-auto p-6">
-              <div className="mx-auto h-[calc(100vh-22rem)] min-h-[440px] max-w-4xl">
+          <div className="grid min-h-[520px] overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:grid-cols-[minmax(0,1fr)_20rem]">
+            <main className="min-w-0 overflow-auto p-3 sm:p-5 xl:p-6">
+              <div className="mx-auto h-[min(58vh,520px)] min-h-[260px] max-w-4xl sm:min-h-[360px] xl:h-[calc(100vh-22rem)] xl:min-h-[440px]">
                 <CourseSlideDeck
                   pages={data.pages}
                   mode="html"
@@ -331,7 +367,7 @@ export default function CreatePreviewPage({ params }: { params: Promise<{ id: st
                 />
               </div>
             </main>
-            <aside className="w-80 shrink-0 border-l border-border">
+            <aside className="min-h-[360px] border-t border-border xl:min-h-0 xl:border-l xl:border-t-0">
               <PropertyPanel
                 selectedPage={selectedPage}
                 presentation={draftPresentation}

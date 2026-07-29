@@ -320,6 +320,23 @@ describe("toPreviewPages", () => {
     expect(shotText.textBox.fontSize).toBeCloseTo(1.0, 2);
   });
 
+  test("keeps server default fontSize at 100% for text-heavy slides", () => {
+    const draft = makeDraft();
+    const plan = makePlan();
+    const coverImg = succeededImage();
+    draft.chapters[0].paragraphs[0].sentences = Array.from({ length: 8 }, (_, idx) =>
+      makeSentence(
+        `long-${idx}`,
+        "The students read a longer classroom paragraph with several descriptive phrases, questions, and answers.",
+      ),
+    );
+
+    const pages = toPreviewPages("c1", draft, [], plan, defaultPresentation, "ready", coverImg);
+
+    const shotText = pages.find((p) => p.id === "ch1-shot-1-text") as Extract<(typeof pages)[number], { type: "shot_text" }>;
+    expect(shotText.textBox.fontSize).toBeCloseTo(1.0, 2);
+  });
+
   test("applies textBox overrides from presentation (opacity and fontSize)", () => {
     const draft = makeDraft();
     const plan = makePlan();

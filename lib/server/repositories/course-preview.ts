@@ -281,6 +281,7 @@ export function toPreviewPages(
       const shotImg = imagesBySlot.get(shot.shotId) ?? missingPreviewImage();
       const overrideKey = `${shot.shotId}-text`;
       const override = presentation.slideOverrides[overrideKey];
+      const paragraphs = paragraph ? paragraphsForShot(chapter, paragraph, draft.castAliases) : [];
 
       pages.push({
         id: `${shot.shotId}-image`,
@@ -299,7 +300,7 @@ export function toPreviewPages(
         chapterIndex: chapter.sourceOutlineChapterIndex,
         shotOrder: shot.shotOrder,
         image: shotImg,
-        paragraphs: paragraph ? paragraphsForShot(chapter, paragraph, draft.castAliases) : [],
+        paragraphs,
         textBox: { ...DEFAULT_TEXT_BOX, ...(override?.textBox ?? {}) },
         editable,
       });
@@ -314,12 +315,13 @@ export function toPreviewPages(
   });
 
   const closingOverride = presentation.slideOverrides["closing-text"];
+  const closingParagraphData = closingParagraphs(draft.closingReading);
   pages.push({
     id: "closing-text",
     type: "closing_text",
     image: coverImage,
     title: draft.closingReading.title,
-    paragraphs: closingParagraphs(draft.closingReading),
+    paragraphs: closingParagraphData,
     textBox: { ...DEFAULT_TEXT_BOX, ...(closingOverride?.textBox ?? {}) },
     editable,
   });

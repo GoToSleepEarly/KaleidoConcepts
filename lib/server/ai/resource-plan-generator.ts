@@ -153,8 +153,8 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
     "- imagePrompt must be concrete but concise, ideally 450-800 characters, never over 1200 characters.",
     '- Each imagePrompt must explicitly identify itself as a GPT Image 2 prompt and start with "GPT Image 2 prompt: Horizontal 16:9 ...".',
     "- Each imagePrompt must include only: visible cast with stable identity anchors, lesson outfit, concrete background, story action, composition, style, mood, and safety constraints.",
-    "- Avoid redundant wording. Mention the no-text safety constraint once at the end.",
-    "- Do not include readable text, letters, numbers, signs, speech bubbles, logos, or watermarks in any visual description or imagePrompt.",
+    "- Avoid redundant wording. Do not write no-text/no-logo/no-watermark clauses inside imagePrompt; the backend appends one standard safety suffix before image generation.",
+    "- The scene itself must not contain readable text, letters, numbers, signs, speech bubbles, logos, or watermarks.",
     "",
     "Return JSON only with this shape:",
     JSON.stringify(
@@ -163,7 +163,7 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
         coverBrief: {
           description: "pure image cover reference description...",
           storyElements: ["object"],
-          imagePrompt: "GPT Image 2 prompt: Horizontal 16:9 children's picture-book cover with concrete character appearance, setting, story hook, style, and no readable text...",
+          imagePrompt: "GPT Image 2 prompt: Horizontal 16:9 children's picture-book cover with concrete character appearance, setting, story hook, style...",
         },
         shots: [
           {
@@ -173,7 +173,7 @@ export function buildCourseResourcePlanPrompt(context: ResourcePlanGenerationCon
             sourceParagraphId: "chapter-1-paragraph-1",
             focus: "single visual action...",
             keyObjects: ["object"],
-            imagePrompt: "GPT Image 2 prompt: Horizontal 16:9 children's picture-book illustration with concrete visible character appearance, scene-specific clothing, setting, action, composition, style, and no readable text...",
+            imagePrompt: "GPT Image 2 prompt: Horizontal 16:9 children's picture-book illustration with concrete visible character appearance, scene-specific clothing, setting, action, composition, style...",
           },
         ],
       },
@@ -239,7 +239,7 @@ function mockResourcePlan(context: ResourcePlanGenerationContext): CourseResourc
       keyObjects: [context.storyOption.title],
       imagePrompt: `GPT Image 2 prompt: Horizontal 16:9 hand-drawn children's picture-book illustration. ${firstAlias} uses this exact stable appearance: ${firstProfile}. ${
         index === 0 ? "Show the character discovering the story world." : "Show the character acting on the clue."
-      } Set in ${context.storyOption.title}, warm colors, clean expressive linework, soft watercolor texture, safe centered composition. Pure image only. No title, captions, subtitles, readable text, letters, numbers, speech bubbles, logo, or watermark.`,
+      } Set in ${context.storyOption.title}, warm colors, clean expressive linework, soft watercolor texture, safe centered composition.`,
     })),
   );
 
@@ -248,7 +248,7 @@ function mockResourcePlan(context: ResourcePlanGenerationContext): CourseResourc
     coverBrief: {
       description: `All main characters stand together in the ${context.storyOption.title} story world, showing the visual style for the whole course.`,
       storyElements: [context.storyOption.title],
-      imagePrompt: `GPT Image 2 prompt: Horizontal 16:9 hand-drawn children's picture-book cover. Main cast uses these exact stable appearances: ${castSummary}. They stand in a ${context.storyOption.title} story world with one clear central visual hook, warm colors, clean expressive linework, soft watercolor texture. Pure image only. No title, captions, subtitles, readable text, letters, numbers, speech bubbles, logo, or watermark.`,
+      imagePrompt: `GPT Image 2 prompt: Horizontal 16:9 hand-drawn children's picture-book cover. Main cast uses these exact stable appearances: ${castSummary}. They stand in a ${context.storyOption.title} story world with one clear central visual hook, warm colors, clean expressive linework, soft watercolor texture.`,
     },
     shots,
     version: 1,

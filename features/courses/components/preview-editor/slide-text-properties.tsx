@@ -34,8 +34,8 @@ export function SlideTextProperties({ pageId, textBox, override, onChange, onRes
         </label>
         <input
           type="range"
-          min={0.7}
-          max={1.3}
+          min={0.6}
+          max={1.25}
           step={0.05}
           value={currentTextBox.fontSize}
           onChange={(e) => updateTextBox({ fontSize: parseFloat(e.target.value) })}

@@ -94,7 +94,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-dvh bg-[#F3F5FA] text-slate-950">
-      <aside className="print-hidden fixed inset-y-0 left-0 z-sticky flex w-[260px] flex-col border-r border-[#151B2A] bg-[#070B16] text-white">
+      <aside className="print-hidden fixed inset-y-0 left-0 z-sticky hidden w-[260px] flex-col border-r border-[#151B2A] bg-[#070B16] text-white lg:flex">
         <Link className="flex h-[76px] items-center gap-3 px-5" href="/courses">
           <span className="flex size-10 items-center justify-center rounded-lg border border-white/12 bg-white/8 text-white">
             <Sparkles className="size-5" />
@@ -139,17 +139,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="flex min-h-dvh flex-1 flex-col pl-[260px]">
-        <header className="print-hidden sticky top-0 z-sticky flex h-[72px] items-center justify-between border-b border-slate-200 bg-white/90 px-8 backdrop-blur-md">
+      <div className="flex min-h-dvh min-w-0 flex-1 flex-col lg:pl-[260px]">
+        <header className="print-hidden sticky top-0 z-sticky flex min-h-[64px] items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-md sm:px-6 lg:h-[72px] lg:px-8 lg:py-0">
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold text-slate-950">{routeMeta.title}</h1>
-            <p className="mt-1 truncate text-sm text-slate-500">{routeMeta.subtitle}</p>
+            <h1 className="truncate text-base font-semibold text-slate-950 sm:text-lg">{routeMeta.title}</h1>
+            <p className="mt-1 line-clamp-1 text-xs text-slate-500 sm:text-sm">{routeMeta.subtitle}</p>
           </div>
 
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               aria-label="用户菜单"
-              className="flex h-10 items-center gap-3 rounded-full border border-slate-200 bg-white px-2.5 pr-3 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
+              className="flex min-h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 pr-3 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 sm:gap-3"
               onClick={() => setIsMenuOpen((value) => !value)}
               type="button"
             >
@@ -173,7 +173,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 p-8">{children}</main>
+        <main className="flex-1 px-4 py-5 pb-24 sm:px-6 lg:p-8">{children}</main>
+
+        <nav className="print-hidden fixed inset-x-0 bottom-0 z-sticky border-t border-slate-200 bg-white/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-md lg:hidden" aria-label="Mobile navigation">
+          <div className="mx-auto grid max-w-md grid-cols-4 gap-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = item.key === routeMeta.activeKey;
+
+              return (
+                <Link
+                  className={cn(
+                    "flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors duration-200",
+                    isActive
+                      ? "bg-primary-50 text-primary"
+                      : "text-slate-500 active:bg-slate-100",
+                  )}
+                  href={item.href}
+                  key={item.href}
+                >
+                  <Icon className="size-5" />
+                  <span className="max-w-full truncate">{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
       </div>
     </div>
   );

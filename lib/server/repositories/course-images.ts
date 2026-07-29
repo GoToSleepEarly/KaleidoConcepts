@@ -162,7 +162,7 @@ function compactText(value: string, maxLength: number) {
 
 export function capImagePrompt(value: string, suffix = imagePromptSafetySuffix) {
   const normalizedSuffix = suffix.replace(/\s+/g, " ").trim();
-  const normalized = value.replace(/\s+/g, " ").trim();
+  const normalized = stripImagePromptSafetyText(value).replace(/\s+/g, " ").trim();
 
   if (normalized.length <= maxImagePromptLength && normalized.endsWith(normalizedSuffix)) {
     return normalized;
@@ -173,6 +173,19 @@ export function capImagePrompt(value: string, suffix = imagePromptSafetySuffix) 
   const bodyLimit = Math.max(0, maxImagePromptLength - normalizedSuffix.length - separator.length);
   const cappedBody = compactText(body, bodyLimit);
   return `${cappedBody}${separator}${normalizedSuffix}`.trim();
+}
+
+function stripImagePromptSafetyText(value: string) {
+  return value
+    .replace(/\bPure image only\.\s*/gi, "")
+    .replace(/\bNo readable text\.\s*/gi, "")
+    .replace(/\bNo text\.\s*/gi, "")
+    .replace(/\bNo readable text,?\s*(?:letters,?\s*)?(?:numbers,?\s*)?(?:signs,?\s*)?(?:speech bubbles,?\s*)?(?:logos?,?\s*)?(?:or\s*)?watermarks?\.\s*/gi, "")
+    .replace(/\bNo title,?\s*captions?,?\s*subtitles?,?\s*readable text,?\s*letters,?\s*numbers,?\s*speech bubbles,?\s*logos?,?\s*or\s*watermarks?\.\s*/gi, "")
+    .replace(/\bNo title,?\s*captions?,?\s*subtitles?,?\s*readable text,?\s*letters,?\s*numbers,?\s*speech bubbles,?\s*logos?,?\s*or\s*watermark\.\s*/gi, "")
+    .replace(/\s+([,.])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 export function hashImageSource(slot: Omit<PlannedImageSlot, "sourceHash"> | PlannedImageSlot) {

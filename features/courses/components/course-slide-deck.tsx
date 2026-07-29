@@ -74,6 +74,14 @@ export function CourseSlideDeck({
     return () => window.removeEventListener("keydown", handler);
   }, [current, goTo, total, showAllPages]);
 
+  useEffect(() => {
+    if (showAllPages || !onSelectPage) return;
+    const page = pages[current];
+    if (page && selectedPageId !== page.id) {
+      onSelectPage(page.id);
+    }
+  }, [current, onSelectPage, pages, selectedPageId, showAllPages]);
+
   const enterFullscreen = () => {
     const el = document.documentElement;
     if (document.fullscreenElement) {
@@ -111,21 +119,23 @@ export function CourseSlideDeck({
         return <SlideShotImage key={page.id} page={page} {...common} />;
       case "shot_text": {
         const override = presentation?.slideOverrides[page.id];
+        const hasFontOverride = typeof override?.textBox?.fontSize === "number";
         const effectivePage = {
           ...page,
           textBox: { ...page.textBox, ...(override?.textBox ?? {}) },
         };
-        return <SlideShotText key={page.id} page={effectivePage} {...common} />;
+        return <SlideShotText key={page.id} page={effectivePage} autoFitScaleMax={hasFontOverride ? 1 : 1.25} {...common} />;
       }
       case "closing_image":
         return <SlideClosingImage key={page.id} page={page} {...common} />;
       case "closing_text": {
         const override = presentation?.slideOverrides[page.id];
+        const hasFontOverride = typeof override?.textBox?.fontSize === "number";
         const effectivePage = {
           ...page,
           textBox: { ...page.textBox, ...(override?.textBox ?? {}) },
         };
-        return <SlideClosingText key={page.id} page={effectivePage} {...common} />;
+        return <SlideClosingText key={page.id} page={effectivePage} autoFitScaleMax={hasFontOverride ? 1 : 1.25} {...common} />;
       }
       default:
         return null;
@@ -147,11 +157,11 @@ export function CourseSlideDeck({
   }
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center">
-      <div className="w-full aspect-video shadow-2xl relative overflow-hidden rounded-lg bg-black">
+    <div className="relative flex h-full w-full items-center justify-center pb-16 sm:pb-0">
+      <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-black shadow-2xl">
         {pages[current] && renderPage(pages[current])}
       </div>
-      <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-20 ${variant === "presenter" ? "presentation-controls-hover-target" : ""}`}>
+      <div className={`absolute inset-x-2 bottom-2 z-20 flex justify-center sm:inset-x-auto sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2 ${variant === "presenter" ? "presentation-controls-hover-target" : ""}`}>
         <PresentationControls
           currentSlide={current}
           totalSlides={total}

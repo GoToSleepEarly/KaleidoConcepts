@@ -77,6 +77,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
   const [ideaText, setIdeaText] = useState("");
   const [lessonDraftExists, setLessonDraftExists] = useState(false);
   const [editorMode, setEditorMode] = useState<"preview" | "edit">("preview");
+  const [mobileWorkspacePanel, setMobileWorkspacePanel] = useState<"chat" | "draft">("chat");
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [activeIntent, setActiveIntent] = useState<ChatIntent | null>(null);
@@ -338,10 +339,12 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
             streamedDraft += data.text;
             updateDraftText(streamedDraft);
             setStreamedCharCount(streamedDraft.length);
+            setMobileWorkspacePanel("draft");
           } else if (event === "draft" && typeof data.draftText === "string") {
             streamedDraft = data.draftText;
             updateDraftText(data.draftText);
             setStreamedCharCount(data.draftText.length);
+            setMobileWorkspacePanel("draft");
           } else if (
             event === "assistant" &&
             typeof data.message === "string"
@@ -590,14 +593,31 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
     <div className="space-y-4">
       <CourseCreateSteps courseId={courseId} currentStep={2} />
 
-      <div className="flex items-start justify-between gap-6">
-        <div>
-          <Button asChild className="mb-4 h-9 px-3 text-sm" variant="outline">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+        <div className="min-w-0">
+          <div className="mb-4 grid grid-cols-2 gap-2 lg:block">
+          <Button asChild className="h-9 px-3 text-sm lg:w-auto" variant="outline">
             <Link href={`/courses/${courseId}/create/basic`}>
               <ArrowLeft className="size-4" />
               返回基础信息
             </Link>
           </Button>
+          <Button
+            className="h-9 bg-slate-950 px-3 text-sm text-white hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-500 lg:hidden"
+            disabled={
+              (!hasDraft && !lessonDraftExists) || isSending || isStructuring
+            }
+            onClick={structureDraft}
+            type="button"
+          >
+            {isStructuring ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Sparkles className="size-4" />
+            )}
+            {lessonDraftExists ? "查看 Step3" : "进入 Step3"}
+          </Button>
+          </div>
           <h2 className="text-balance text-xl font-semibold text-slate-950">
             AI 教案共创
           </h2>
@@ -607,7 +627,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
           </p>
         </div>
         <Button
-          className="mt-12 h-9 shrink-0 bg-slate-950 px-4 text-sm text-white hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-500"
+          className="hidden h-9 shrink-0 bg-slate-950 px-3 text-sm text-white hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-500 lg:inline-flex"
           disabled={
             (!hasDraft && !lessonDraftExists) || isSending || isStructuring
           }
@@ -634,17 +654,56 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
         </div>
       ) : null}
 
+      {showStoryWorkspace ? (
+        <div className="sticky top-[76px] z-30 rounded-xl border border-slate-200 bg-white p-1 shadow-sm xl:hidden">
+          <div className="grid grid-cols-2 gap-1">
+            <button
+              aria-pressed={mobileWorkspacePanel === "chat"}
+              className={cn(
+                "min-h-11 rounded-lg px-3 text-sm font-semibold transition-colors",
+                mobileWorkspacePanel === "chat"
+                  ? "bg-slate-950 text-white"
+                  : "text-slate-600 active:bg-slate-100",
+              )}
+              onClick={() => setMobileWorkspacePanel("chat")}
+              type="button"
+            >
+              对话修改
+            </button>
+            <button
+              aria-pressed={mobileWorkspacePanel === "draft"}
+              className={cn(
+                "min-h-11 rounded-lg px-3 text-sm font-semibold transition-colors",
+                mobileWorkspacePanel === "draft"
+                  ? "bg-slate-950 text-white"
+                  : "text-slate-600 active:bg-slate-100",
+              )}
+              onClick={() => setMobileWorkspacePanel("draft")}
+              type="button"
+            >
+              文案确认
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div
         className={cn(
-          "grid h-[calc(100vh-230px)] min-h-[620px] gap-5",
+          "grid min-h-0 gap-5 lg:h-[calc(100vh-230px)] lg:min-h-[620px]",
           showStoryWorkspace
-            ? "xl:grid-cols-[400px_minmax(0,1fr)]"
+            ? "min-h-[calc(100vh-285px)] xl:grid-cols-[400px_minmax(0,1fr)]"
             : "mx-auto max-w-4xl",
         )}
       >
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <section
+          className={cn(
+            "flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm xl:min-h-0",
+            showStoryWorkspace ? "min-h-[calc(100vh-285px)] xl:min-h-0" : "min-h-[520px]",
+            showStoryWorkspace && mobileWorkspacePanel !== "chat" && "hidden xl:flex",
+          )}
+        >
           <div className="shrink-0 border-b border-slate-100 bg-white p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
               <div>
                 <div className="text-sm font-semibold text-slate-950">
                   {showStoryWorkspace ? "对话与改稿" : "讨论故事大纲"}
@@ -657,7 +716,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
                       : "选择灵感库或输入你的想法，先生成一个可确认的大纲。"}
                 </p>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex shrink-0 items-center justify-between gap-2 sm:justify-start">
                 <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
                   {llmModelOptions.map((option) => (
                     <button
@@ -690,7 +749,9 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
           </div>
 
           <div
-            className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-slate-50/60 p-4"
+            className={cn(
+              "min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-slate-50/60 p-4",
+            )}
             ref={chatScrollRef}
           >
             {showStartForm ? (
@@ -753,7 +814,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
             <div className="shrink-0 border-t border-slate-100 bg-white p-4">
               <div className="flex gap-2">
                 <textarea
-                  className="min-h-20 flex-1 resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm leading-6 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                  className="min-h-24 flex-1 resize-none rounded-lg border border-slate-200 px-3 py-2 text-base leading-6 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100 sm:min-h-20 sm:text-sm"
                   ref={inputRef}
                   onChange={(event) => setInput(event.target.value)}
                   placeholder={
@@ -781,9 +842,14 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
         </section>
 
         {showStoryWorkspace ? (
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <section
+            className={cn(
+              "flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm xl:min-h-0",
+              mobileWorkspacePanel !== "draft" && "hidden xl:flex",
+            )}
+          >
             <div className="shrink-0 border-b border-slate-100 bg-white p-4">
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="text-sm font-semibold text-slate-950">
@@ -797,7 +863,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
                     当前最终文案。这里确认无误后，再进入 Step3 生成标准教案。
                   </p>
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
                   <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
                     <button
                       className={cn(
@@ -898,7 +964,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
 
             {hasDraft && editorMode === "edit" ? (
               <textarea
-                className="min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-slate-50/40 p-6 font-mono text-sm leading-7 text-slate-800 outline-none"
+                className="min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-slate-50/40 p-4 font-mono text-base leading-7 text-slate-800 outline-none sm:p-6 sm:text-sm"
                 onChange={(event) => updateDraftText(event.target.value)}
                 placeholder="最终文案会显示在这里，也可以手动微调。"
                 value={draftText}
@@ -925,7 +991,7 @@ function ChatStatusBubble({
   guide?: string;
 }) {
   return (
-    <div className="mr-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-800">
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-800 sm:mr-3">
       <div className="mb-1 text-[11px] font-medium text-slate-400">AI</div>
       <div className="flex items-center gap-2 font-medium text-emerald-700">
         <Loader2 className="size-3.5 shrink-0 animate-spin" />
@@ -957,8 +1023,8 @@ function ChatBubble({
       className={cn(
         "rounded-lg px-3 py-2 text-pretty text-sm leading-6",
         message.role === "user"
-          ? "ml-10 bg-slate-950 text-white shadow-sm"
-          : "mr-3 border border-slate-200 bg-white text-slate-800",
+          ? "bg-slate-950 text-white shadow-sm sm:ml-10"
+          : "border border-slate-200 bg-white text-slate-800 sm:mr-3",
       )}
     >
       <div
@@ -977,7 +1043,7 @@ function ChatBubble({
         <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-200 pt-3">
           {message.actions.map((action) => (
             <button
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:opacity-50"
+              className="min-h-9 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-left text-xs font-medium leading-5 text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:opacity-50"
               disabled={disabled}
               key={action.id}
               onClick={() => onAction(action)}
@@ -1402,8 +1468,8 @@ function LessonTextPreview({ text }: { text: string }) {
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50/50 p-6">
-      <article className="mx-auto max-w-4xl rounded-lg bg-white px-7 py-6 text-sm leading-7 text-slate-700 shadow-sm ring-1 ring-slate-200">
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50/50 p-3 sm:p-6">
+      <article className="mx-auto max-w-4xl rounded-lg bg-white px-4 py-5 text-sm leading-7 text-slate-700 ring-1 ring-slate-200 sm:px-7 sm:py-6">
         {text.split("\n").map((line, index) => (
           <PreviewLine key={`${index}-${line}`} line={line} />
         ))}

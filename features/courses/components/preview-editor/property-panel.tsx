@@ -39,6 +39,14 @@ function PageBadge({ type }: { type: string }) {
   );
 }
 
+function ScopeNote({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+      {children}
+    </div>
+  );
+}
+
 export function PropertyPanel({
   selectedPage,
   presentation,
@@ -48,7 +56,7 @@ export function PropertyPanel({
   hasUnsavedChanges,
 }: Props) {
   return (
-    <div className="h-full overflow-y-auto p-5">
+    <div className="touch-scroll h-full overflow-y-auto p-4 sm:p-5">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-base font-bold text-slate-900">课件样式</h2>
         {hasUnsavedChanges && (
@@ -60,7 +68,7 @@ export function PropertyPanel({
         <div className="space-y-6">
           <div>
             <SectionTitle>全局设置</SectionTitle>
-            <p className="text-xs text-slate-500 mb-3">点击预览中的元素可编辑对应属性</p>
+            <ScopeNote>影响范围：所有未单独覆盖的课件页面。点击左侧预览页后，可切换为当前页设置。</ScopeNote>
           </div>
           <div>
             <SectionTitle>默认封面样式</SectionTitle>
@@ -83,6 +91,7 @@ export function PropertyPanel({
       {selectedPage && selectedPage.type === "cover_title" && (
         <div>
           <PageBadge type={selectedPage.type} />
+          <ScopeNote>正在编辑：封面标题页。影响范围：封面主题和标题字号属于全局封面设置。</ScopeNote>
           <SectionTitle>封面标题设置</SectionTitle>
           <CoverTitleProperties
             value={presentation.coverTheme}
@@ -95,6 +104,7 @@ export function PropertyPanel({
       {selectedPage && selectedPage.type === "chapter_divider" && (
         <div>
           <PageBadge type={selectedPage.type} />
+          <ScopeNote>正在编辑：章节标题页。影响范围：所有章节标题页共用此配色。</ScopeNote>
           <SectionTitle>章节配色（所有章节共用）</SectionTitle>
           <ChapterDividerProperties
             value={presentation.chapterTheme}
@@ -106,6 +116,7 @@ export function PropertyPanel({
       {selectedPage && (selectedPage.type === "shot_text" || selectedPage.type === "closing_text") && (
         <div>
           <PageBadge type={selectedPage.type} />
+          <ScopeNote>正在编辑：当前文本页。影响范围：仅当前页文本框；翻页后会自动切换到新页面。</ScopeNote>
           <SectionTitle>文本框样式</SectionTitle>
           <SlideTextProperties
             pageId={selectedPage.id}
@@ -120,6 +131,7 @@ export function PropertyPanel({
       {selectedPage && (selectedPage.type === "cover_pure" || selectedPage.type === "shot_image" || selectedPage.type === "closing_image") && (
         <div>
           <PageBadge type={selectedPage.type} />
+          <ScopeNote>正在查看：当前纯图片页。影响范围：此页没有样式控件。</ScopeNote>
           <p className="text-sm text-slate-500">纯图片页无可编辑样式。如需替换图片请返回 Step 4。</p>
         </div>
       )}

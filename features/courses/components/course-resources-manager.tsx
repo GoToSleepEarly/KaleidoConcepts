@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CheckCircle2, ImageIcon, RefreshCcw, WandSparkles } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ImageIcon, RefreshCcw, WandSparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
@@ -21,7 +21,7 @@ const planGenerationSteps = ["分析课文结构", "规划画面分配", "撰写
 
 const planTips = [
   "AI 正在分析课文段落结构，确定每个场景的视觉重点...",
-  "正在为封面和每个段落设计最合适的画面构图。",
+  "正在为封面和每个段落设计合适的画面构图。",
   "撰写英文插图 Prompt，确保风格统一、人物一致。",
   "资源方案生成中，预计需要 1-2 分钟，请稍候。",
 ];
@@ -130,7 +130,7 @@ function PlanGenerationProgress() {
   return (
     <Card className="border-primary/20 bg-primary-50/50">
       <CardContent className="p-5">
-        <div className="flex items-start gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
             <Spinner size="sm" className="text-primary" />
           </div>
@@ -142,7 +142,7 @@ function PlanGenerationProgress() {
             <div className="mt-4">
               <Progress value={progress} className="h-2" />
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-4">
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {planGenerationSteps.map((step) => {
                 const isActive = step === activeStep;
                 const isDone = planGenerationSteps.indexOf(step) < planGenerationSteps.indexOf(activeStep);
@@ -177,7 +177,7 @@ function StageHeader({ data, courseId, pendingAction, onAction }: { data: Course
   return (
     <Card>
       <CardHeader className="pb-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
           <div>
             <p className="text-sm font-medium text-primary">Step 4</p>
             <CardTitle className="mt-1 text-2xl">绘本资源</CardTitle>
@@ -206,7 +206,7 @@ function StageHeader({ data, courseId, pendingAction, onAction }: { data: Course
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-3">
           <StagePill active={stage === "needs_plan"} done={Boolean(data?.plan)} label="1 · 资源方案" value={data?.plan ? "已生成" : "待生成"} />
           <StagePill
             active={stage === "needs_cover"}
@@ -263,7 +263,7 @@ function ResourcePlanSummary({ data, pendingAction, onAction }: { data: CourseRe
             <WandSparkles className="size-7" />
           </div>
           <h2 className="text-lg font-semibold text-foreground">第一步：生成资源方案</h2>
-          <p className="mt-2 max-w-md text-sm text-muted-foreground">AI 将分析课文内容，为封面和每个段落生成专用的插图提示词。</p>
+          <p className="mt-2 max-w-md text-sm text-muted-foreground">AI 将分析课文内容，为封面和每个段落生成专用插图提示词。</p>
           <p className="mt-1 text-xs text-muted-foreground/80">预计需要 1-2 分钟，生成过程中请保持页面打开。</p>
           <Button
             className="mt-6"
@@ -291,10 +291,10 @@ function ResourcePlanSummary({ data, pendingAction, onAction }: { data: CourseRe
     <Card>
       <CardHeader className="pb-4">
         <CardTitle className="text-base">资源方案</CardTitle>
-        <CardDescription>封面和每个正文段落都已生成插图 Prompt；生成图片前可在对应卡片核对原文。</CardDescription>
+        <CardDescription>封面和每个正文段落都会生成插图 Prompt；生成图片前可在对应卡片核对原文。</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-border bg-secondary/50 px-4 py-3">
             <p className="text-xs font-medium text-muted-foreground">封面</p>
             <p className="mt-1 text-sm font-semibold text-foreground">1 张主视觉</p>
@@ -352,7 +352,7 @@ function CoverPanel({
   onTogglePrompt: () => void;
 }) {
   // A cover slot is always present in the plan (status "missing" before it is ever generated), so button state must
-  // key off whether a record actually exists — not off `cover` being non-null — otherwise it shows "重新生成封面"
+  // key off whether a record actually exists, not off `cover` being non-null, otherwise it shows "重新生成封面"
   // before the first generation.
   const coverExists = Boolean(cover && cover.status !== "missing");
   const coverActive = cover ? activeStatuses.has(cover.status) : false;
@@ -362,7 +362,7 @@ function CoverPanel({
   return (
     <Card>
       <CardHeader className="pb-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
           <div>
             <CardTitle className="text-base">第二步：视觉封面</CardTitle>
             <CardDescription>先生成课程主视觉；章节图可以并行或批量生成。每张图片约需 1-3 分钟。</CardDescription>
@@ -392,7 +392,7 @@ function CoverPanel({
         {cover?.failureReason ? (
           <p className="mt-3 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{cover.failureReason}</p>
         ) : null}
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap">
           <Button
             variant={coverExists ? "outline" : "default"}
             size="sm"
@@ -439,8 +439,10 @@ function ChapterImagesPanel({
   pendingAction,
   hasMissingAny,
   hasAnyActive,
+  activeChapterId,
   promptExpanded,
   onTogglePrompt,
+  onSelectChapter,
   onGenerateAll,
   onGenerateSlot,
   onGenerateChapter,
@@ -451,8 +453,10 @@ function ChapterImagesPanel({
   pendingAction: string | null;
   hasMissingAny: boolean;
   hasAnyActive: boolean;
+  activeChapterId: string;
   promptExpanded: ReadonlySet<string>;
   onTogglePrompt: (slotId: string) => void;
+  onSelectChapter: (chapterId: string) => void;
   onGenerateAll: () => void;
   onGenerateSlot: (slotId: string) => void;
   onGenerateChapter: (chapterId: string) => void;
@@ -461,21 +465,31 @@ function ChapterImagesPanel({
 }) {
   const grouped = new Map<string, CourseResourceImage[]>();
   images.forEach((image) => {
-    if (!image.chapterId) {
-      return;
-    }
+    if (!image.chapterId) return;
     const current = grouped.get(image.chapterId) ?? [];
     current.push(image);
     grouped.set(image.chapterId, current);
   });
 
+  const groups = Array.from(grouped.entries());
+  const selectedChapter = groups.find(([chapterId]) => chapterId === activeChapterId) ?? groups[0];
+  const selectedChapterId = selectedChapter?.[0] ?? "";
+  const selectedImages = selectedChapter?.[1] ?? [];
+  const selectedTitle = selectedImages[0]?.chapterTitle ?? selectedChapterId;
+  const selectedHasActive = selectedImages.some((image) => activeStatuses.has(image.status));
+  const selectedHasMissing = selectedImages.some((image) => image.status === "missing");
+  const selectedDone = selectedImages.filter((image) => image.status === "succeeded" && !image.stale).length;
+  const selectedProgress = selectedImages.length ? (selectedDone / selectedImages.length) * 100 : 0;
+
   return (
     <Card>
       <CardHeader className="pb-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
           <div>
             <CardTitle className="text-base">第三步：章节插图</CardTitle>
-            <CardDescription>每段一张图。可以单张生成、本章生成，或一次创建全部缺失图片。</CardDescription>
+            <CardDescription>
+              下方是图片处理范围切换，不会修改课程章节；选择某一章后，只显示该章需要生成或重试的图片。
+            </CardDescription>
           </div>
           <Button
             size="sm"
@@ -488,58 +502,99 @@ function ChapterImagesPanel({
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {Array.from(grouped.entries()).map(([chapterId, chapterImages]) => {
-          const chapterTitle = chapterImages[0]?.chapterTitle ?? chapterId;
-          const hasActive = chapterImages.some((image) => activeStatuses.has(image.status));
-          const hasMissing = chapterImages.some((image) => image.status === "missing");
-          const done = chapterImages.filter((image) => image.status === "succeeded" && !image.stale).length;
-          const chapterProgress = (done / chapterImages.length) * 100;
+      <CardContent className="space-y-5">
+        <div className="rounded-2xl border border-border bg-secondary/30 p-3">
+          <div className="mb-3 flex flex-col gap-1 px-1 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm font-semibold text-foreground">选择要处理的章节</div>
+            <div className="text-xs text-muted-foreground">点击后切换下方图片列表</div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {groups.map(([chapterId, chapterImages]) => {
+            const chapterTitle = chapterImages[0]?.chapterTitle ?? chapterId;
+            const hasActive = chapterImages.some((image) => activeStatuses.has(image.status));
+            const hasIssue = chapterImages.some((image) => image.status === "failed" || image.stale || image.status === "missing");
+            const done = chapterImages.filter((image) => image.status === "succeeded" && !image.stale).length;
 
-          return (
-            <div key={chapterId} className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">{chapterTitle}</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {done}/{chapterImages.length} 张完成
-                    {hasActive && <span className="ml-2 text-primary">· 生成中</span>}
-                  </p>
+            return (
+              <button
+                aria-pressed={selectedChapterId === chapterId}
+                className={cn(
+                  "rounded-xl border bg-card px-3 py-3 text-left transition-colors",
+                  selectedChapterId === chapterId
+                    ? "border-primary bg-primary-50 text-primary shadow-sm"
+                    : hasIssue
+                      ? "border-amber-200 text-amber-900 hover:bg-amber-50"
+                      : "border-success/30 text-success hover:bg-success-50",
+                )}
+                key={chapterId}
+                onClick={() => onSelectChapter(chapterId)}
+                type="button"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="line-clamp-1 text-sm font-semibold">{chapterTitle}</div>
+                    <div className="mt-1 text-xs opacity-80">
+                      {done}/{chapterImages.length} 张完成
+                      {hasActive ? " · 生成中" : hasIssue ? " · 待处理" : " · 已完成"}
+                    </div>
+                  </div>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold",
+                      selectedChapterId === chapterId ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground",
+                    )}
+                  >
+                    查看
+                  </span>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onGenerateChapter(chapterId)}
-                  disabled={hasActive || !hasMissing || pendingAction !== null}
-                  loading={hasActive || pendingAction === `generate:${chapterId}`}
-                >
-                  <WandSparkles className="size-4" />
-                  生成本章
-                </Button>
+              </button>
+            );
+          })}
+          </div>
+        </div>
+
+        {selectedChapter ? (
+          <div className="space-y-4 rounded-2xl border border-border bg-card p-3 sm:p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">{selectedTitle}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  当前章节 {selectedDone}/{selectedImages.length} 张完成
+                  {selectedHasActive ? <span className="ml-2 text-primary">· 生成中</span> : null}
+                </p>
               </div>
-              {hasActive ? <Progress value={chapterProgress} className="h-1" /> : null}
-              <div className="grid gap-4 lg:grid-cols-2">
-                {chapterImages.map((image) => (
-                  <ChapterImageCard
-                    key={image.slotId}
-                    image={image}
-                    pendingAction={pendingAction}
-                    promptExpanded={promptExpanded.has(image.slotId)}
-                    onTogglePrompt={() => onTogglePrompt(image.slotId)}
-                    onGenerateSlot={onGenerateSlot}
-                    onRetry={onRetry}
-                    onKeep={onKeep}
-                  />
-                ))}
-              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onGenerateChapter(selectedChapterId)}
+                disabled={selectedHasActive || !selectedHasMissing || pendingAction !== null}
+                loading={selectedHasActive || pendingAction === `generate:${selectedChapterId}`}
+              >
+                <WandSparkles className="size-4" />
+                生成本章
+              </Button>
             </div>
-          );
-        })}
+            {selectedHasActive ? <Progress value={selectedProgress} className="h-1" /> : null}
+            <div className="grid gap-4 md:grid-cols-2">
+              {selectedImages.map((image) => (
+                <ChapterImageCard
+                  key={image.slotId}
+                  image={image}
+                  pendingAction={pendingAction}
+                  promptExpanded={promptExpanded.has(image.slotId)}
+                  onTogglePrompt={() => onTogglePrompt(image.slotId)}
+                  onGenerateSlot={onGenerateSlot}
+                  onRetry={onRetry}
+                  onKeep={onKeep}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
 }
-
 function ChapterImageCard({
   image,
   pendingAction,
@@ -596,7 +651,7 @@ function ChapterImageCard({
         {image.failureReason ? (
           <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">{image.failureReason}</p>
         ) : null}
-        <div className="flex flex-wrap gap-2">
+        <div className="grid gap-2 sm:flex sm:flex-wrap">
           {canGenerate ? (
             <Button
               size="sm"
@@ -642,6 +697,7 @@ export function CourseResourcesManager({ courseId }: { courseId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [expandedPrompts, setExpandedPrompts] = useState<Set<string>>(() => new Set());
+  const [activeResourceChapterId, setActiveResourceChapterId] = useState("");
 
   const fetchResources = useCallback(
     async () => (await readJson(await fetch(`/api/courses/${courseId}/resources`, { cache: "no-store" }))) as CourseResourcesResponse,
@@ -692,6 +748,8 @@ export function CourseResourcesManager({ courseId }: { courseId: string }) {
   const { cover, chapterImages } = useMemo(() => splitResourceImages(data?.images ?? []), [data]);
   const hasMissingAny = Boolean(data?.images.some((image) => image.status === "missing"));
   const hasAnyActive = Boolean(data?.images.some((image) => activeStatuses.has(image.status)));
+  const firstChapterImage = chapterImages.find((image) => image.chapterId);
+  const selectedResourceChapterId = activeResourceChapterId || firstChapterImage?.chapterId || "";
 
   function togglePrompt(slotId: string) {
     setExpandedPrompts((current) => {
@@ -737,6 +795,22 @@ export function CourseResourcesManager({ courseId }: { courseId: string }) {
     <div className="mx-auto max-w-6xl space-y-6">
       <CourseCreateSteps currentStep={4} courseId={courseId} />
 
+      <div className="grid grid-cols-2 gap-2 lg:flex lg:items-center lg:justify-between">
+        <Button asChild className="h-9 px-3 text-sm" variant="outline">
+          <Link href={`/courses/${courseId}/create/lesson-draft`}>
+            <ArrowLeft className="size-4" />
+            返回标准教案
+          </Link>
+        </Button>
+        {data?.plan ? (
+          <Button asChild className="h-9 bg-slate-950 px-3 text-sm text-white hover:bg-slate-800 lg:justify-self-end">
+            <Link href={`/courses/${courseId}/create/preview`}>
+              进入课程预览
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+
       <StageHeader data={data} courseId={courseId} pendingAction={pendingAction} onAction={(path) => void mutate(path)} />
 
       {error ? (
@@ -763,8 +837,10 @@ export function CourseResourcesManager({ courseId }: { courseId: string }) {
           pendingAction={pendingAction}
           hasMissingAny={hasMissingAny}
           hasAnyActive={hasAnyActive}
+          activeChapterId={selectedResourceChapterId}
           promptExpanded={expandedPrompts}
           onTogglePrompt={togglePrompt}
+          onSelectChapter={setActiveResourceChapterId}
           onGenerateAll={() => void mutate("generate", { scope: "all" }, "generate:all")}
           onGenerateSlot={(slotId) => void mutate("generate", { scope: "slot", slotId }, `generate:${slotId}`)}
           onGenerateChapter={(chapterId) => void mutate("generate", { scope: "chapter", chapterId }, `generate:${chapterId}`)}
@@ -774,7 +850,7 @@ export function CourseResourcesManager({ courseId }: { courseId: string }) {
       ) : null}
 
       {data?.plan ? (
-        <div className="flex flex-wrap items-center justify-end gap-3">
+        <div className="grid gap-3 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
           {!isReady ? (
             <p className="text-sm text-muted-foreground">
               图片可稍后继续生成，随时可进入预览调整版式。

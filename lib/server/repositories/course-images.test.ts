@@ -374,6 +374,43 @@ describe("resource image slot derivation", () => {
     expect(slots[1].prompt).not.toContain("EXACT CAST ONLY");
   });
 
+  test("deduplicates no-text safety wording before appending the standard suffix", () => {
+    const slots = deriveResourceImageSlots(
+      "course-1",
+      draft,
+      plan({
+        shots: [
+          {
+            ...plan().shots[0],
+            imagePrompt:
+              "Horizontal 16:9 picture-book scene. No readable text, letters, numbers, signs, speech bubbles, logos, or watermarks. Pure image only. No title, captions, subtitles, readable text, letters, numbers, speech bubbles, logo, or watermark.",
+          },
+          plan().shots[1],
+        ],
+      }),
+    );
+
+    expect(slots[1].prompt.match(/No readable text/gi)).toBeNull();
+    expect(slots[1].prompt.match(/Pure image only/gi)).toHaveLength(1);
+    expect(slots[1].prompt).toContain("Pure image only. No title, captions, subtitles, readable text, letters, numbers, speech bubbles, logo, or watermark.");
+  });
+
+  test("removes short no-readable-text safety wording before appending the standard suffix", () => {
+    const slots = deriveResourceImageSlots(
+      "course-1",
+      draft,
+      plan({
+        coverBrief: {
+          ...plan().coverBrief,
+          imagePrompt: "Horizontal 16:9 picture-book cover. Warm watercolor style. no readable text.",
+        },
+      }),
+    );
+
+    expect(slots[0].prompt.match(/no readable text/gi)).toBeNull();
+    expect(slots[0].prompt).toContain("Pure image only. No title, captions, subtitles, readable text, letters, numbers, speech bubbles, logo, or watermark.");
+  });
+
   test("marks all planned images missing before paid image tasks are created", () => {
     const slots = deriveResourceImageSlots("course-1", draft, plan());
     const images = slots.map((slot) => ({
