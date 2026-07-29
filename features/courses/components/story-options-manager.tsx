@@ -189,12 +189,12 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
   useEffect(() => {
     if (showStartForm) return;
     const frame = window.requestAnimationFrame(() => {
-      chatBottomRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "end",
-      });
       const scrollArea = chatScrollRef.current;
-      if (scrollArea) scrollArea.scrollTop = scrollArea.scrollHeight;
+      if (!scrollArea) return;
+      scrollArea.scrollTo({
+        top: scrollArea.scrollHeight,
+        behavior: "smooth",
+      });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [
@@ -282,6 +282,7 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
     setStreamedCharCount(0);
     setActiveIntent(inferredIntent);
     setIsSending(true);
+    setMobileWorkspacePanel("chat");
 
     const localMessage: LessonChatMessage = {
       id: `local-${Date.now()}`,
@@ -339,12 +340,10 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
             streamedDraft += data.text;
             updateDraftText(streamedDraft);
             setStreamedCharCount(streamedDraft.length);
-            setMobileWorkspacePanel("draft");
           } else if (event === "draft" && typeof data.draftText === "string") {
             streamedDraft = data.draftText;
             updateDraftText(data.draftText);
             setStreamedCharCount(data.draftText.length);
-            setMobileWorkspacePanel("draft");
           } else if (
             event === "assistant" &&
             typeof data.message === "string"
@@ -391,6 +390,9 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
       setIsSending(false);
       setActiveIntent(null);
       setSendingSeconds(0);
+      window.setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
     }
   }
 
@@ -419,6 +421,10 @@ export function StoryOptionsManager({ courseId }: { courseId: string }) {
   function handleAction(action: LessonChatAction) {
     if (action.id === "revise_outline" || action.id === "add_reference") {
       setInput(action.message);
+      setMobileWorkspacePanel("chat");
+      window.setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
       return;
     }
     void sendMessage(action.message, action.intent);

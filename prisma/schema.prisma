@@ -45,7 +45,7 @@ model Course {
   englishLevel            EnglishLevel
   durationMinutes         Int                  @default(45)
   grammar                 String[]
-  llmModel                LlmModel             @default(deepseek_chat)
+  llmModel                LlmModel             @default(gpt_5_5)
   selectedStoryOptionId   String?
   status                  CourseStatus         @default(draft)
   lessonDraftGenStatus    LessonDraftGenStatus @default(idle)

@@ -130,10 +130,19 @@ export async function getLessonChatDraft(
   if (!course) throw new LessonChatNotFoundError();
 
   const draft = await db.lessonChatDraft.findUnique?.({ where: { courseId } });
+  const messages = parseMessages(draft?.messages);
+  const draftText = draft?.draftText ?? "";
+  const isEmptyStep2 = messages.length === 0 && !draftText.trim() && !course.lessonDraft;
+  const llmModel = isEmptyStep2 ? "gpt_5_5" : course.llmModel;
+
+  if (isEmptyStep2 && course.llmModel !== llmModel) {
+    await db.course.update?.({ where: { id: courseId }, data: { llmModel } });
+  }
+
   return {
-    messages: parseMessages(draft?.messages),
-    draftText: draft?.draftText ?? "",
-    llmModel: course.llmModel,
+    messages,
+    draftText,
+    llmModel,
     lessonDraftExists: Boolean(course.lessonDraft),
   };
 }

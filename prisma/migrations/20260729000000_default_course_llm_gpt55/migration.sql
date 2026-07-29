@@ -1,0 +1,1 @@
+ALTER TABLE "Course" ALTER COLUMN "llmModel" SET DEFAULT 'gpt_5_5';
