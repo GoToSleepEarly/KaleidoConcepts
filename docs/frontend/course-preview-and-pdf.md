@@ -215,7 +215,7 @@ Step 5 在创建流中支持编辑课件展示层配置（不修改原文和图�
 - 缺图/失败图片显示占位符，但不显示编辑入口
 - 打印通过浏览器自带功能（Ctrl/CMD+P），打印样式同PDF预览
 
-### PDF打印
+### PDF打印与下载
 
 PDF打印通过浏览器 `window.print()` 实现：
 - 每个slide使用16:9横屏比例
@@ -223,6 +223,11 @@ PDF打印通过浏览器 `window.print()` 实现：
 - 每个slide使用 `break-after: page` 强制分页
 - 图片和缺图占位都保持slide版式稳定，避免打印版式跳动
 - 打印时隐藏所有控制栏、按钮、编辑面板、操作区
+
+PDF下载通过浏览器端 `html2canvas` + `jsPDF` 生成，必须与Step5预览组件保持兼容：
+- 修改Step5页面、slide组件、全局样式、Tailwind主题变量或打印样式时，必须同时验证「打印预览」里的「下载 PDF」。
+- 导出链路不得把不兼容 `html2canvas` 的颜色函数（例如 `oklch()`）直接暴露给截图阶段；如使用现代CSS颜色，必须提供导出期 `rgb/rgba` 兼容转换或等价回退。
+- PDF导出前后的兼容样式必须是临时的，不得改变真实页面预览、编辑态或授课页渲染。
 
 PDF打印永远隐藏：
 - 答案
@@ -500,6 +505,7 @@ type CoursePreviewBlock =
 - 所有slide按正确顺序渲染：纯封面->标题封面->章节标题->纯图->文本（循环）->课后阅读图->课后阅读文本。
 - 所有文本自动适配字号，不溢出文本框。
 - PDF/打印预览所有填空只显示横线，答案和交互全部隐藏，16:9横版分页正确。
+- 每次修改Step5预览、slide组件或相关全局样式后，必须验证 PDF 下载不报错，尤其要覆盖 `html2canvas` 不支持的现代CSS颜色函数兼容性。
 - 课后阅读复用封面图，不额外生成图片，文本页无填空无词汇。
 - 未保存更改离开页面有提示。
 - 资源未完成（有缺失/失败图片）时仍能预览和发布，缺图位置显示占位符。
@@ -535,3 +541,8 @@ type CoursePreviewBlock =
   - **发布跳转**：发布成功后新标签打开授课页、当前标签返回 `/courses`（原为仅新标签打开、当前页停留）。
   - **已发布可编辑（后端放开护栏）**：删除 `CoursePublishStatusError` 与 `assertEditable`；`upsertPresentation` 不再拒绝 published；`publishCourse` 对已发布幂等（不重复写状态）；`toPreviewPages` 的 `editable` 恒为 true。发布确认弹窗文案更新为“发布后仍可回本页继续编辑版式”。
   - 验证：`pnpm vitest run` 126 passed；改动文件 `pnpm eslint` 无报错；`pnpm tsc` 错误数 11→10（均为预先存在的测试 mock 类型问题，非本次引入）。
+- 2026-07-31：修复 PDF 下载阶段 `html2canvas` 无法解析 `oklch()` 的问题：
+  - **导出兼容层**：PDF导出前临时注入 `rgb/rgba` 版主题变量，避免 `html2canvas` 在 clone 前读取 root/body 计算样式时报 `Attempting to parse an unsupported color function "oklch"`；导出结束后自动移除兼容样式。
+  - **克隆清理**：在 `html2canvas` clone 文档后清理 `<style>` 和 slide DOM 的 `oklch()` 颜色，覆盖内联样式、class/computed style、阴影、边框、背景和SVG颜色等来源。
+  - **回归测试**：新增 `lib/utils/pdf-export.test.ts`，覆盖内联 `oklch()`、class/computed style、cloned stylesheet、root/body导出前兼容变量。
+  - 验证：`pnpm vitest run lib/utils/pdf-export.test.ts`（4 passed）；`pnpm lint` 通过。
