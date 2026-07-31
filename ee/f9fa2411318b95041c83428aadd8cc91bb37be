@@ -1,0 +1,23 @@
+lib/utils/pdf-export.test.ts
+  s_5f845b24a1e988::t_c1f46981f32fb5 1-85
+lib/utils/pdf-export.ts
+  s_5f845b24a1e988::t_17cfbb3b4dc6c9 6-157,224,226-229,231-233,235-261,264-303,306-310,312-319,321-322
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "eef9fa2411318b95041c83428aadd8cc91bb37be",
+  "prompts": {},
+  "sessions": {
+    "s_5f845b24a1e988": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb6c3-b86c-7a62-85e8-c56070e8b891",
+        "model": "unknown"
+      },
+      "human_author": "xiezongting <xiezongting@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
