@@ -1,0 +1,25 @@
+docs/frontend/course-preview-and-pdf.md
+  s_5f845b24a1e988::t_879d138a9b56a7 232-247,501-502,527-528,569-573
+lib/utils/pdf-export.test.ts
+  s_5f845b24a1e988::t_97e8c7a22c180d 1-2,5-8,10,15-37,114-161
+lib/utils/pdf-export.ts
+  s_5f845b24a1e988::t_2cf47e62c55c42 27-30,162-195,247,259,264-266,276,295-296,305,343
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "acf458f80f91d9c73f5ec74f48ca438bda0a0fb2",
+  "prompts": {},
+  "sessions": {
+    "s_5f845b24a1e988": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb6c3-b86c-7a62-85e8-c56070e8b891",
+        "model": "unknown"
+      },
+      "human_author": "xiezongting <xiezongting@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
