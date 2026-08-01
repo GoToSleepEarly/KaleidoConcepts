@@ -1,10 +1,39 @@
-import { describe, expect, test } from "vitest";
+import html2canvas from "html2canvas";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
+  PDF_EXPORT_SLIDE_HEIGHT,
+  PDF_EXPORT_SLIDE_WIDTH,
+  createFixedSizePdfExportWrapper,
+  exportSlidesToPDF,
   installPdfExportColorCompatibilityStyles,
+  resolvePdfExportScale,
   sanitizeUnsupportedPdfColorFunctions,
   sanitizeUnsupportedPdfColorStylesheets,
 } from "./pdf-export";
+
+vi.mock("html2canvas", () => ({
+  default: vi.fn(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1600;
+    canvas.height = 900;
+    return canvas;
+  }),
+}));
+
+vi.mock("jspdf", () => ({
+  default: vi.fn().mockImplementation(() => ({
+    addImage: vi.fn(),
+    addPage: vi.fn(),
+    save: vi.fn(),
+  })),
+}));
+
+beforeEach(() => {
+  document.head.innerHTML = "";
+  document.body.innerHTML = "";
+  vi.clearAllMocks();
+});
 
 describe("sanitizeUnsupportedPdfColorFunctions", () => {
   test("replaces oklch colors before html2canvas parses cloned slide styles", () => {
@@ -81,5 +110,53 @@ describe("sanitizeUnsupportedPdfColorFunctions", () => {
     cleanup();
 
     expect(document.querySelector("style[data-pdf-export-color-compat]")).toBeNull();
+  });
+
+  test("creates an offscreen fixed-size slide wrapper independent of responsive viewport size", () => {
+    document.body.innerHTML = `
+      <div class="preview-slide-wrapper" style="width: 360px; height: 202.5px;">
+        <div class="preview-slide">Slide</div>
+      </div>
+    `;
+    const source = document.querySelector<HTMLElement>(".preview-slide-wrapper");
+    expect(source).not.toBeNull();
+
+    const exportWrapper = createFixedSizePdfExportWrapper(source!);
+
+    expect(exportWrapper).not.toBe(source);
+    expect(exportWrapper.style.width).toBe(`${PDF_EXPORT_SLIDE_WIDTH}px`);
+    expect(exportWrapper.style.height).toBe(`${PDF_EXPORT_SLIDE_HEIGHT}px`);
+    expect(exportWrapper.style.position).toBe("fixed");
+    expect(exportWrapper.style.left).toBe("-10000px");
+    expect(exportWrapper.querySelector(".preview-slide")).not.toBeNull();
+  });
+
+  test("caps export scale so mobile Safari does not exceed the canvas pixel budget", () => {
+    const scale = resolvePdfExportScale(1600, 900, 2);
+
+    expect(scale).toBeLessThan(2);
+    expect(1600 * 900 * scale * scale).toBeLessThanOrEqual(3_500_000);
+  });
+
+  test("exports from fixed-size offscreen wrappers instead of responsive onscreen slide dimensions", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,test");
+    document.body.innerHTML = `
+      <div class="preview-deck-pdf">
+        <div class="preview-slide-wrapper" style="width: 360px; height: 202.5px;">
+          <div class="preview-slide">Slide</div>
+        </div>
+      </div>
+    `;
+
+    await exportSlidesToPDF(".preview-deck-pdf", "mobile-safe.pdf");
+
+    const mockedHtml2canvas = vi.mocked(html2canvas);
+    const [element, options] = mockedHtml2canvas.mock.calls[0];
+
+    expect(element).toBeInstanceOf(HTMLElement);
+    expect((element as HTMLElement).style.width).toBe(`${PDF_EXPORT_SLIDE_WIDTH}px`);
+    expect((element as HTMLElement).style.height).toBe(`${PDF_EXPORT_SLIDE_HEIGHT}px`);
+    expect(options?.scale).toBe(resolvePdfExportScale(PDF_EXPORT_SLIDE_WIDTH, PDF_EXPORT_SLIDE_HEIGHT));
+    expect(document.querySelector('body > .preview-slide-wrapper[style*="-10000px"]')).toBeNull();
   });
 });

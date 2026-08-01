@@ -24,6 +24,10 @@ const PDF_COLOR_STYLE_PROPERTIES = [
   "-webkit-tap-highlight-color",
 ];
 const PDF_EXPORT_COLOR_COMPAT_STYLE_ATTR = "data-pdf-export-color-compat";
+export const PDF_EXPORT_SLIDE_WIDTH = 1600;
+export const PDF_EXPORT_SLIDE_HEIGHT = 900;
+const PDF_EXPORT_MAX_CANVAS_PIXELS = 3_500_000;
+const PDF_EXPORT_DEFAULT_SCALE = 2;
 
 function clamp(value: number, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value));
@@ -155,6 +159,40 @@ export function installPdfExportColorCompatibilityStyles(doc: Document): () => v
   };
 }
 
+export function resolvePdfExportScale(
+  width: number,
+  height: number,
+  preferredScale = PDF_EXPORT_DEFAULT_SCALE,
+): number {
+  const maxScale = Math.sqrt(PDF_EXPORT_MAX_CANVAS_PIXELS / (width * height));
+  return Math.max(1, Math.min(preferredScale, maxScale));
+}
+
+export function createFixedSizePdfExportWrapper(sourceWrapper: HTMLElement): HTMLElement {
+  const exportWrapper = sourceWrapper.cloneNode(true) as HTMLElement;
+  exportWrapper.style.position = "fixed";
+  exportWrapper.style.left = "-10000px";
+  exportWrapper.style.top = "0";
+  exportWrapper.style.width = `${PDF_EXPORT_SLIDE_WIDTH}px`;
+  exportWrapper.style.height = `${PDF_EXPORT_SLIDE_HEIGHT}px`;
+  exportWrapper.style.margin = "0";
+  exportWrapper.style.borderRadius = "0";
+  exportWrapper.style.boxShadow = "none";
+  exportWrapper.style.overflow = "hidden";
+  exportWrapper.style.pointerEvents = "none";
+  exportWrapper.style.zIndex = "-1";
+
+  const slide = exportWrapper.querySelector<HTMLElement>(".preview-slide");
+  if (slide) {
+    slide.style.width = "100%";
+    slide.style.height = "100%";
+    slide.style.borderRadius = "0";
+    slide.style.boxShadow = "none";
+  }
+
+  return exportWrapper;
+}
+
 async function renderImageToFit(
   src: string,
   targetWidth: number,
@@ -206,11 +244,7 @@ export async function exportSlidesToPDF(
     throw new Error("No slides found");
   }
 
-  const firstSlide = slideWrappers[0];
-  const rect = firstSlide.getBoundingClientRect();
-  const slideWidth = rect.width;
-  const slideHeight = rect.height;
-  const aspectRatio = slideWidth / slideHeight;
+  const aspectRatio = PDF_EXPORT_SLIDE_WIDTH / PDF_EXPORT_SLIDE_HEIGHT;
 
   const pdfWidth = 297;
   const pdfHeight = pdfWidth / aspectRatio;
@@ -222,17 +256,14 @@ export async function exportSlidesToPDF(
   });
 
   const cleanupColorCompatibilityStyles = installPdfExportColorCompatibilityStyles(document);
+  const exportScale = resolvePdfExportScale(PDF_EXPORT_SLIDE_WIDTH, PDF_EXPORT_SLIDE_HEIGHT);
 
   try {
     for (let i = 0; i < slideWrappers.length; i++) {
       const wrapper = slideWrappers[i];
-      const wrapperIndex = i;
-
-      const origMargin = wrapper.style.margin;
-      const origBorderRadius = wrapper.style.borderRadius;
-      const origBoxShadow = wrapper.style.boxShadow;
-
-      const wrapperRect = wrapper.getBoundingClientRect();
+      const exportWrapper = createFixedSizePdfExportWrapper(wrapper);
+      document.body.appendChild(exportWrapper);
+      const wrapperRect = exportWrapper.getBoundingClientRect();
 
       const imgInfos: Array<{
         dataUrl: string;
@@ -242,7 +273,7 @@ export async function exportSlidesToPDF(
         height: number;
       }> = [];
 
-      const imgs = wrapper.querySelectorAll("img");
+      const imgs = exportWrapper.querySelectorAll("img");
       for (const img of imgs) {
         if (!img.src) continue;
         try {
@@ -261,12 +292,8 @@ export async function exportSlidesToPDF(
       }
 
       try {
-        wrapper.style.margin = "0";
-        wrapper.style.borderRadius = "0";
-        wrapper.style.boxShadow = "none";
-
-        const canvas = await html2canvas(wrapper, {
-          scale: 2,
+        const canvas = await html2canvas(exportWrapper, {
+          scale: exportScale,
           useCORS: true,
           allowTaint: true,
           backgroundColor: "#ffffff",
@@ -275,7 +302,7 @@ export async function exportSlidesToPDF(
             sanitizeUnsupportedPdfColorStylesheets(clonedDoc);
 
             const clonedWrappers = clonedDoc.querySelectorAll<HTMLElement>(".preview-slide-wrapper");
-            const clonedWrapper = clonedWrappers[wrapperIndex];
+            const clonedWrapper = clonedWrappers[clonedWrappers.length - 1];
             if (!clonedWrapper) return;
 
             sanitizeUnsupportedPdfColorFunctions(clonedWrapper);
@@ -313,9 +340,7 @@ export async function exportSlidesToPDF(
         const imgHeight = (canvas.height / canvas.width) * pdfWidth;
         pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
       } finally {
-        wrapper.style.margin = origMargin;
-        wrapper.style.borderRadius = origBorderRadius;
-        wrapper.style.boxShadow = origBoxShadow;
+        exportWrapper.remove();
       }
     }
   } finally {
