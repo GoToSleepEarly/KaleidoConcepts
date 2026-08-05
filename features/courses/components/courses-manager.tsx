@@ -1,379 +1,93 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
-import { AlertCircle, ChevronLeft, ChevronRight, FileText, Plus, RefreshCw, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, BookOpen, Clock3, ExternalLink, Plus, UsersRound } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Spinner } from "@/components/ui/spinner";
 import { EmptyState } from "@/components/ui/empty-state";
-import type { CourseListItem, CourseStatus } from "@/lib/contracts/api";
+import type { CourseListItem } from "@/lib/contracts/api";
 
-const statusCopy: Record<CourseStatus, string> = {
-  draft: "草稿",
-  building_resources: "生成资源中",
-  ready: "待发布",
-  build_failed: "生成失败",
-  published: "已发布",
+const stageLabels: Record<CourseListItem["currentStage"], string> = {
+  audience: "授课对象",
+  story_outline: "故事大纲",
+  teaching_plan: "教学规划",
+  content: "文案与练习",
+  visual_resources: "视觉资源",
+  preview: "预览发布",
 };
 
-const statusVariant: Record<CourseStatus, "secondary" | "info" | "warning" | "destructive" | "success"> = {
-  draft: "secondary",
-  building_resources: "info",
-  ready: "warning",
-  build_failed: "destructive",
-  published: "success",
-};
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function coursePrimaryPath(course: CourseListItem) {
-  return course.status === "published" ? `/courses/${course.id}/create/preview` : course.nextEditPath;
-}
-
-export function CoursesManager() {
+export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
   const [courses, setCourses] = useState<CourseListItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [pendingDelete, setPendingDelete] = useState<CourseListItem | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState("");
-  const courseCount = courses.length;
-
-  async function loadCourses() {
-    setIsLoading(true);
-    setError("");
-
-    try {
-      const response = await fetch("/api/courses");
-      if (!response.ok) {
-        throw new Error("课程列表加载失败");
-      }
-
-      const data = (await response.json()) as { courses: CourseListItem[] };
-      setCourses(data.courses);
-    } catch {
-      setError("课程列表加载失败，请稍后重试。");
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  async function handleDelete() {
-    if (!pendingDelete) {
-      return;
-    }
-
-    setIsDeleting(true);
-    setDeleteError("");
-
-    try {
-      const response = await fetch(`/api/courses/${pendingDelete.id}`, { method: "DELETE" });
-      if (!response.ok) {
-        throw new Error("课程删除失败");
-      }
-
-      setCourses((current) => current.filter((course) => course.id !== pendingDelete.id));
-      setPendingDelete(null);
-    } catch {
-      setDeleteError("课程删除失败，请稍后重试。");
-    } finally {
-      setIsDeleting(false);
-    }
-  }
 
   useEffect(() => {
-    let isActive = true;
-
-    async function loadInitialCourses() {
-      try {
-        const response = await fetch("/api/courses");
-        if (!response.ok) {
-          throw new Error("课程列表加载失败");
-        }
-
-        const data = (await response.json()) as { courses: CourseListItem[] };
-
-        if (isActive) {
-          setCourses(data.courses);
-        }
-      } catch {
-        if (isActive) {
-          setError("课程列表加载失败，请稍后重试。");
-        }
-      } finally {
-        if (isActive) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void loadInitialCourses();
-
-    return () => {
-      isActive = false;
-    };
+    const controller = new AbortController();
+    fetch("/api/courses", { signal: controller.signal })
+      .then(async (response) => {
+        const data = (await response.json()) as { courses?: CourseListItem[]; message?: string };
+        if (!response.ok) throw new Error(data.message || "课程列表加载失败");
+        return data.courses ?? [];
+      })
+      .then(setCourses)
+      .catch((caught) => {
+        if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : "课程列表加载失败");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, []);
 
   return (
-    <section className="space-y-5 sm:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-        <div>
-          <p className="text-sm text-muted-foreground">管理已生成和制作中的课程。</p>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <section className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="max-w-2xl">
+          <p className="text-sm font-medium text-primary">课程工作台</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-foreground">从授课对象开始，逐步完成一门课程</h2>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">新系统只显示新课程。旧课程保留在冻结的 V1 系统中。</p>
         </div>
-        <Button asChild className="w-full sm:w-auto">
-          <Link href="/courses/new">
-            <Plus className="size-4" />
-            新建课程
-          </Link>
-        </Button>
-      </div>
+        <div className="flex flex-wrap gap-2">
+          {legacyUrl ? <Button asChild variant="outline"><a href={legacyUrl} rel="noreferrer" target="_blank"><ExternalLink className="size-4" />旧版课程</a></Button> : null}
+          <Button asChild><Link href="/courses/new"><Plus className="size-4" />新建课程</Link></Button>
+        </div>
+      </section>
 
-      {isLoading ? (
-        <Card>
-          <CardContent className="flex items-center justify-center py-12">
-            <div className="flex items-center gap-3 text-muted-foreground">
-              <Spinner size="sm" />
-              <span className="text-sm">正在加载课程列表...</span>
-            </div>
-          </CardContent>
-        </Card>
-      ) : error ? (
-        <Card>
-          <CardContent className="flex flex-col items-center py-12 text-center">
-            <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-              <AlertCircle className="size-6" />
-            </div>
-            <h2 className="text-lg font-semibold text-foreground">课程列表加载失败</h2>
-            <p className="mt-2 text-sm text-muted-foreground">{error}</p>
-            <Button className="mt-6" onClick={() => void loadCourses()} type="button" variant="outline">
-              <RefreshCw className="size-4" />
-              重试
-            </Button>
-          </CardContent>
-        </Card>
-      ) : courses.length === 0 ? (
-        <EmptyState
-          icon={FileText}
-          title="还没有课程"
-          description="创建课程后，即可在这里编辑和预览。"
-          action={
-            <Button asChild>
-              <Link href="/courses/new">新建课程</Link>
-            </Button>
-          }
-        />
-      ) : (
-        <>
-        <div className="grid gap-3 lg:hidden">
-          {courses.map((course) => (
-            <Card className="overflow-hidden" key={course.id}>
-              <CardContent className="space-y-4 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <h2 className="line-clamp-2 text-base font-semibold text-foreground">{course.title}</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">{formatDate(course.updatedAt)}</p>
-                  </div>
-                  <Badge variant={statusVariant[course.status]}>{statusCopy[course.status]}</Badge>
+      {error ? <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div> : null}
+
+      <section className="overflow-hidden rounded-lg bg-card shadow-sm">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center border-b border-border px-5 py-3 text-xs font-medium text-muted-foreground sm:grid-cols-[minmax(0,1fr)_160px_180px_auto]">
+          <span>课程</span><span className="hidden sm:block">授课对象</span><span className="hidden sm:block">当前阶段</span><span className="sr-only">操作</span>
+        </div>
+        <div className="divide-y divide-border">
+          {loading ? Array.from({ length: 3 }).map((_, index) => <div className="flex items-center gap-4 px-5 py-5" key={index}><div className="skeleton size-10 rounded-md" /><div className="flex-1 space-y-2"><div className="skeleton h-4 w-48 rounded" /><div className="skeleton h-3 w-72 max-w-full rounded" /></div></div>) : null}
+          {!loading && courses.map((course) => (
+            <article className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-5 py-5 transition-colors hover:bg-muted/35 sm:grid-cols-[minmax(0,1fr)_160px_180px_auto]" key={course.id}>
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-50 text-primary"><BookOpen className="size-5" /></span>
+                <div className="min-w-0">
+                  <h3 className="truncate text-sm font-semibold text-foreground">{course.title}</h3>
+                  <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><Clock3 className="size-3.5" />{course.durationMinutes} 分钟 · 更新于 {new Date(course.updatedAt).toLocaleDateString("zh-CN")}</p>
                 </div>
-
-                <dl className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="min-w-0 rounded-lg bg-violet-50 p-3 ring-1 ring-violet-100">
-                    <dt className="text-xs text-muted-foreground">老师</dt>
-                    <dd className="mt-1 truncate font-semibold text-violet-950">{course.teacherName || "未选择老师"}</dd>
-                  </div>
-                  <div className="min-w-0 rounded-lg bg-emerald-50 p-3 ring-1 ring-emerald-100">
-                    <dt className="text-xs text-muted-foreground">等级</dt>
-                    <dd className="mt-1 truncate font-semibold text-emerald-950">{course.englishLevel}</dd>
-                  </div>
-                  <div className="col-span-2 min-w-0 rounded-lg bg-sky-50 p-3 ring-1 ring-sky-100">
-                    <dt className="text-xs text-muted-foreground">学生</dt>
-                    <dd className="mt-1 truncate font-semibold text-sky-950">{course.studentNames.join(" / ") || "未选择学生"}</dd>
-                  </div>
-                  <div className="col-span-2 min-w-0 rounded-lg bg-amber-50 p-3 ring-1 ring-amber-100">
-                    <dt className="text-xs text-muted-foreground">故事题目</dt>
-                    <dd className="mt-1 line-clamp-2 font-semibold text-amber-950">{course.storyTitle || "未生成故事"}</dd>
-                  </div>
-                </dl>
-
-                <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={coursePrimaryPath(course)}>编辑</Link>
-                  </Button>
-                  {course.status === "published" ? (
-                    <Button asChild size="sm">
-                      <Link href={`/courses/${course.id}`}>授课</Link>
-                    </Button>
-                  ) : course.lessonDraftExists ? (
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={`/courses/${course.id}/create/preview`}>预览</Link>
-                    </Button>
-                  ) : (
-                    <Button size="sm" variant="outline" disabled>
-                      预览
-                    </Button>
-                  )}
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label={`删除课程 ${course.title}`}
-                    className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => {
-                      setDeleteError("");
-                      setPendingDelete(course);
-                    }}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+              <div className="hidden min-w-0 sm:block">
+                <p className="truncate text-sm text-foreground">{course.teacherName || "未选择老师"}</p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">{course.studentNames.join("、") || "未选择学生"}</p>
+              </div>
+              <div className="hidden sm:block">
+                <span className="inline-flex rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700">{stageLabels[course.currentStage]}</span>
+              </div>
+              <Button asChild size="sm" variant="ghost"><Link href={course.nextEditPath}>继续<ArrowRight className="size-4" /></Link></Button>
+            </article>
           ))}
         </div>
-
-        <Card className="hidden overflow-hidden lg:block">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] border-collapse text-left text-sm">
-              <thead className="bg-secondary/50 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-5 py-3">课程</th>
-                  <th className="px-5 py-3">老师</th>
-                  <th className="px-5 py-3">学生</th>
-                  <th className="px-5 py-3">等级</th>
-                  <th className="px-5 py-3">故事题目</th>
-                  <th className="px-5 py-3">状态</th>
-                  <th className="px-5 py-3">更新时间</th>
-                  <th className="px-5 py-3 text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {courses.map((course) => (
-                  <tr className="transition-colors duration-200 hover:bg-secondary/30" key={course.id}>
-                    <td className="max-w-[260px] px-5 py-4">
-                      <div className="truncate font-medium text-foreground">{course.title}</div>
-                    </td>
-                    <td className="px-5 py-4"><span className="inline-flex max-w-[150px] items-center rounded-lg bg-violet-50 px-2.5 py-1.5 font-semibold text-violet-950 ring-1 ring-violet-100"><span className="truncate">{course.teacherName || "未选择老师"}</span></span></td>
-                    <td className="px-5 py-4"><span className="inline-flex max-w-[190px] items-center rounded-lg bg-sky-50 px-2.5 py-1.5 font-semibold text-sky-950 ring-1 ring-sky-100"><span className="truncate">{course.studentNames.join(" / ") || "未选择学生"}</span></span></td>
-                    <td className="px-5 py-4"><span className="inline-flex max-w-[120px] items-center rounded-lg bg-emerald-50 px-2.5 py-1.5 font-semibold text-emerald-950 ring-1 ring-emerald-100"><span className="truncate">{course.englishLevel}</span></span></td>
-                    <td className="max-w-[220px] px-5 py-4"><div className="rounded-lg bg-amber-50 px-2.5 py-1.5 font-semibold text-amber-950 ring-1 ring-amber-100"><div className="truncate">{course.storyTitle || "未生成故事"}</div></div></td>
-                    <td className="px-5 py-4">
-                      <Badge variant={statusVariant[course.status]}>
-                        {statusCopy[course.status]}
-                      </Badge>
-                    </td>
-                    <td className="px-5 py-4 text-muted-foreground">{formatDate(course.updatedAt)}</td>
-                    <td className="px-5 py-4">
-                      <div className="flex justify-end gap-2">
-                        <Button asChild size="sm" variant="outline">
-                          <Link
-                            href={
-                              coursePrimaryPath(course)
-                            }
-                          >
-                            编辑
-                          </Link>
-                        </Button>
-                        {course.status === "published" ? (
-                          <Button asChild size="sm">
-                            <Link href={`/courses/${course.id}`}>授课</Link>
-                          </Button>
-                        ) : course.lessonDraftExists ? (
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={`/courses/${course.id}/create/preview`}>预览</Link>
-                          </Button>
-                        ) : (
-                          <span title="请先生成课文草稿">
-                            <Button size="sm" variant="outline" disabled>
-                              预览
-                            </Button>
-                          </span>
-                        )}
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={`删除课程 ${course.title}`}
-                          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          onClick={() => {
-                            setDeleteError("");
-                            setPendingDelete(course);
-                          }}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {!loading && !courses.length ? (
+          <div className="p-8">
+            <EmptyState action={<Button asChild><Link href="/courses/new"><Plus className="size-4" />创建第一门课程</Link></Button>} description="先确认这节课由谁上、给谁上以及上多久。" icon={UsersRound} title="还没有新系统课程" />
           </div>
-        </Card>
-
-        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <span className="font-medium text-foreground">第 1 页</span>
-            <span className="mx-2 text-slate-300">/</span>
-            <span>共 1 页</span>
-            <span className="mx-2 text-slate-300">·</span>
-            <span>已显示 {courseCount} 门课程</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:flex">
-            <Button size="sm" variant="outline" disabled>
-              <ChevronLeft className="size-4" />
-              上一页
-            </Button>
-            <Button size="sm" variant="outline" disabled>
-              下一页
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
-        </div>
-        </>
-      )}
-
-      {pendingDelete ? (
-        <div className="fixed inset-0 z-modal flex items-center justify-center bg-foreground/40 p-4">
-          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-lg">
-            <div className="mb-4 flex size-11 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-              <Trash2 className="size-5" />
-            </div>
-            <h3 className="text-lg font-semibold text-foreground">删除课程“{pendingDelete.title}”？</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              删除后将同时清除该课程的故事方案、课文草稿、资源方案、版式配置和已生成图片，且无法恢复。
-            </p>
-            {deleteError ? (
-              <p className="mt-3 text-sm text-destructive">{deleteError}</p>
-            ) : null}
-            <div className="mt-6 flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setPendingDelete(null)}
-                disabled={isDeleting}
-              >
-                取消
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => void handleDelete()}
-                disabled={isDeleting}
-                loading={isDeleting}
-              >
-                确认删除
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </section>
+        ) : null}
+      </section>
+    </div>
   );
 }

@@ -16,165 +16,88 @@ model User {
 }
 
 model Person {
-  id           String         @id @default(cuid())
-  role         PersonRole
-  name         String
-  chineseName  String?
-  englishName  String?
-  age          Int?
-  gender       Gender?
-  appearance   String?
-  interests    String[]
-  learningGoal String?
-  notes        String?
-  avatarUrl    String?
-  archivedAt   DateTime?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  courses      CoursePerson[]
+  id                  String              @id @default(cuid())
+  role                PersonRole
+  chineseName         String
+  englishName         String
+  age                 Int
+  gender              Gender
+  notes               String?
+  activeVisualAssetId String?
+  archivedAt          DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  activeVisualAsset   PersonVisualAsset?  @relation("ActivePersonVisual", fields: [activeVisualAssetId], references: [id], onDelete: SetNull)
+  visualAssets        PersonVisualAsset[] @relation("PersonVisualAssets")
+  coursePeople        CoursePerson[]
+
+  @@index([role, archivedAt])
+  @@index([chineseName])
+  @@index([englishName])
 }
 
-enum LlmModel {
-  deepseek_chat
-  gpt_5_5
+model PersonVisualAsset {
+  id                  String                  @id @default(cuid())
+  personId            String
+  parentAssetId       String?
+  sourceMode          PersonVisualSourceMode
+  appearanceConfig    Json?
+  userInstruction     String?
+  compiledPrompt      String
+  sourceHash          String
+  idempotencyKey      String
+  status              PersonVisualStatus      @default(pending)
+  provider            PersonVisualProvider
+  providerImageUrl    String?
+  storagePath         String?
+  publicUrl            String?
+  temporarySourcePath String?
+  failureReason       String?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  person              Person                   @relation("PersonVisualAssets", fields: [personId], references: [id], onDelete: Cascade)
+  parentAsset         PersonVisualAsset?       @relation("PersonVisualVersions", fields: [parentAssetId], references: [id], onDelete: Restrict)
+  childAssets         PersonVisualAsset[]      @relation("PersonVisualVersions")
+  selectedBy          Person[]                 @relation("ActivePersonVisual")
+  courseSnapshots     CoursePerson[]
+
+  @@unique([personId, idempotencyKey])
+  @@index([personId, createdAt])
+  @@index([status, updatedAt])
 }
 
 model Course {
-  id                      String               @id @default(cuid())
-  title                   String
-  englishLevel            EnglishLevel
-  durationMinutes         Int                  @default(45)
-  grammar                 String[]
-  llmModel                LlmModel             @default(gpt_5_5)
-  selectedStoryOptionId   String?
-  status                  CourseStatus         @default(draft)
-  lessonDraftGenStatus    LessonDraftGenStatus @default(idle)
-  lessonDraftGenStartedAt DateTime?
-  lessonDraftGenError     String?
-  createdAt               DateTime             @default(now())
-  updatedAt               DateTime             @updatedAt
-  people                  CoursePerson[]
-  storyOptions            CourseStoryOption[]
-  lessonChatDraft         LessonChatDraft?
-  lessonDraft             CourseLessonDraft?
-  resourcePlan            CourseResourcePlan?
-  presentation            CoursePresentation?
-  images                  CourseImage[]
-  aiGenerationLogs        AiGenerationLog[]
+  id              String          @id @default(cuid())
+  title           String
+  durationMinutes Int
+  lifecycleStatus CourseLifecycle @default(draft)
+  currentStage    CourseStage     @default(audience)
+  idempotencyKey  String          @unique
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  people          CoursePerson[]
+
+  @@index([lifecycleStatus, updatedAt])
 }
 
 model CoursePerson {
-  courseId String
-  personId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  person   Person @relation(fields: [personId], references: [id], onDelete: Restrict)
+  id                      String             @id @default(cuid())
+  courseId                String
+  personId                String
+  role                    PersonRole
+  chineseNameSnapshot     String
+  englishNameSnapshot     String
+  ageSnapshot             Int
+  genderSnapshot          Gender
+  visualAssetIdSnapshot   String?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  course                  Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  person                  Person             @relation(fields: [personId], references: [id], onDelete: Restrict)
+  visualAssetSnapshot     PersonVisualAsset? @relation(fields: [visualAssetIdSnapshot], references: [id], onDelete: Restrict)
 
-  @@id([courseId, personId])
-}
-
-model CourseStoryOption {
-  id        String
-  courseId  String
-  variant   String
-  title     String
-  storyline String
-  chapters  Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-
-  @@id([courseId, id])
-  @@index([courseId])
-}
-
-model LessonChatDraft {
-  courseId  String   @id
-  messages  Json
-  draftText String   @default("")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-}
-
-model AiGenerationLog {
-  id           String              @id @default(cuid())
-  courseId     String
-  feature      AiGenerationFeature
-  intent       String
-  llmModel     LlmModel
-  input        Json
-  outputText   String              @default("")
-  status       AiGenerationStatus
-  errorMessage String?
-  latencyMs    Int
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  course       Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
-
-  @@index([courseId, createdAt])
-  @@index([feature, createdAt])
-  @@index([status, createdAt])
-}
-
-model CourseLessonDraft {
-  courseId            String   @id
-  sourceStoryOptionId String
-  content             Json
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  course              Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-}
-
-model CourseResourcePlan {
-  courseId  String   @id
-  plan      Json
-  version   Int      @default(1)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-}
-
-model CoursePresentation {
-  courseId           String   @id
-  coverTheme         String   @default("dark")
-  coverTitleFontSize Float    @default(1.0)
-  chapterTheme       String   @default("blue-purple")
-  slideOverrides     Json     @default("{}")
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  course             Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-}
-
-model CourseImage {
-  id                String              @id @default(cuid())
-  courseId          String
-  chapterId         String?
-  shotId            String
-  slotId            String
-  slotType          CourseImageSlotType
-  slotIndex         Int
-  sourceParagraphId String?
-  sourceExcerpt     String              @default("")
-  prompt            String
-  promptVersion     String              @default("step4-resource-plan-v1")
-  referenceImageIds Json                @default("[]")
-  width             Int                 @default(1280)
-  height            Int                 @default(720)
-  format            String              @default("webp")
-  sourceHash        String
-  status            CourseImageStatus
-  provider          CourseImageProvider
-  providerTaskId    String?
-  providerImageUrl  String?
-  storagePath       String?
-  publicUrl         String?
-  failureReason     String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  course            Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
-
-  @@unique([courseId, slotId])
-  @@index([courseId, status])
+  @@unique([courseId, personId])
+  @@index([personId, createdAt])
 }
 
 model PresetOption {
@@ -191,11 +114,6 @@ model PresetOption {
   @@index([kind, archivedAt])
 }
 
-enum PresetOptionKind {
-  theme
-  grammar
-}
-
 enum PersonRole {
   student
   teacher
@@ -206,52 +124,39 @@ enum Gender {
   female
 }
 
-enum EnglishLevel {
-  A1
-  A2
-  B1
-  B2
-  C1
-  C2
+enum PersonVisualSourceMode {
+  photo
+  description
+  revision
 }
 
-enum CourseStatus {
-  draft
-  building_resources
-  ready
-  build_failed
-  published
-}
-
-enum LessonDraftGenStatus {
-  idle
-  running
-  succeeded
-  failed
-}
-
-enum CourseImageStatus {
+enum PersonVisualStatus {
   pending
   submitting
-  generating
   succeeded
   failed
 }
 
-enum CourseImageSlotType {
-  visual_cover
-  lesson_shot
+enum PersonVisualProvider {
+  quickrouter_gpt_image_2
 }
 
-enum CourseImageProvider {
-  tencent_hunyuan
+enum CourseLifecycle {
+  draft
+  published
+  archived
 }
 
-enum AiGenerationFeature {
-  lesson_chat
+enum CourseStage {
+  audience
+  story_outline
+  teaching_plan
+  content
+  visual_resources
+  preview
 }
 
-enum AiGenerationStatus {
-  succeeded
-  failed
+enum PresetOptionKind {
+  theme
+  grammar
 }

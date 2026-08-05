@@ -24,7 +24,7 @@ const routeInfo: Record<string, { title: string; subtitle: string; activeKey: st
   },
   people: {
     title: "人物档案",
-    subtitle: "维护老师和学生画像",
+    subtitle: "老师与学生",
     activeKey: "people",
   },
   themes: {
@@ -55,7 +55,7 @@ function getRouteMeta(pathname: string) {
   if (pathname === "/courses/new" || (pathname.includes("/create/") && pathname.startsWith("/courses/"))) {
     return {
       title: "新建课程",
-      subtitle: "创建故事、草稿、资源和预览",
+      subtitle: "先确定授课对象，再进入故事创作",
       activeKey: "courses",
     };
   }

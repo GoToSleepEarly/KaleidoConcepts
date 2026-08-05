@@ -1,42 +1,61 @@
-import type { Gender, PersonInput, PersonProfile, PersonRole } from "@/lib/contracts/api";
+import type {
+  Gender,
+  PeopleListResponse,
+  PersonCreateInput,
+  PersonProfile,
+  PersonRole,
+  PersonUpdateInput,
+  PersonVisualSourceMode,
+  PersonVisualStatus,
+} from "@/lib/contracts/api";
 
-type DbPerson = {
+type DbVisualSummary = {
   id: string;
-  role: PersonRole;
-  name: string;
-  chineseName: string | null;
-  englishName: string | null;
-  age: number | null;
-  gender: Gender | null;
-  appearance: string | null;
-  interests: string[];
-  learningGoal: string | null;
-  notes: string | null;
-  avatarUrl: string | null;
+  publicUrl: string | null;
+  sourceMode: PersonVisualSourceMode;
+  status: PersonVisualStatus;
   createdAt: Date;
   updatedAt: Date;
 };
 
-type PersonData = Omit<DbPerson, "id" | "createdAt" | "updatedAt">;
+type DbPerson = {
+  id: string;
+  role: PersonRole;
+  chineseName: string;
+  englishName: string;
+  age: number;
+  gender: Gender;
+  notes: string | null;
+  activeVisualAssetId: string | null;
+  archivedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  activeVisualAsset?: DbVisualSummary | null;
+  visualAssets?: Array<Pick<DbVisualSummary, "status" | "updatedAt">>;
+  coursePeople?: Array<{ createdAt: Date }>;
+};
 
-type PersonFindManyQuery = {
-  where: { archivedAt: null; role?: PersonRole };
-  orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }];
+type PersonWhere = {
+  archivedAt?: Date | null | { not: null };
+  role?: PersonRole;
+  id?: { in: string[] };
+  OR?: Array<{
+    chineseName?: { contains: string; mode: "insensitive" };
+    englishName?: { contains: string; mode: "insensitive" };
+  }>;
 };
 
 type PersonDelegate = {
-  findMany: (query: PersonFindManyQuery) => Promise<DbPerson[]>;
-  create: (query: { data: PersonData }) => Promise<DbPerson>;
+  findMany: (query: { where: PersonWhere; include?: unknown }) => Promise<DbPerson[]>;
+  findUnique: (query: { where: { id: string }; include?: unknown }) => Promise<DbPerson | null>;
+  create: (query: { data: Omit<PersonCreateInput, "notes"> & { notes: string | null } }) => Promise<DbPerson>;
   update: (query: {
     where: { id: string };
-    data: PersonData | { archivedAt: Date };
+    data: Partial<Omit<PersonUpdateInput, "notes">> & { notes?: string | null; archivedAt?: Date | null };
   }) => Promise<DbPerson>;
-  findUnique: (query: { where: { id: string } }) => Promise<DbPerson | null>;
 };
 
-export type PeopleDb = {
-  person: PersonDelegate;
-};
+export type PeopleDb = { person: PersonDelegate };
 
 export class PersonNotFoundError extends Error {
   constructor(message = "人物不存在") {
@@ -45,105 +64,132 @@ export class PersonNotFoundError extends Error {
   }
 }
 
-function normalizeOptionalText(value: string | undefined) {
+function optionalText(value: string | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
 }
 
-function optionalNumber(value: number | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
+function profileWithRelations(person: DbPerson): PersonProfile {
+  const active = person.activeVisualAsset;
+  const latest = person.visualAssets?.[0];
+  const lastUsedAt = person.coursePeople?.[0]?.createdAt;
+  const visualStatus = active?.status === "succeeded" && active.publicUrl
+    ? "ready"
+    : latest?.status === "pending" || latest?.status === "submitting"
+      ? "generating"
+      : latest?.status === "failed"
+        ? "failed"
+        : "missing";
 
-function toPersonProfile(person: DbPerson): PersonProfile {
   return {
     id: person.id,
     role: person.role,
-    name: person.name,
-    chineseName: person.chineseName ?? undefined,
-    englishName: person.englishName ?? undefined,
-    age: person.age ?? undefined,
-    gender: person.gender ?? undefined,
-    appearance: person.appearance ?? undefined,
-    interests: person.interests,
-    learningGoal: person.learningGoal ?? undefined,
+    chineseName: person.chineseName,
+    englishName: person.englishName,
+    age: person.age,
+    gender: person.gender,
     notes: person.notes ?? undefined,
-    avatarUrl: person.avatarUrl ?? undefined,
+    archivedAt: person.archivedAt?.toISOString(),
+    activeVisual: active?.status === "succeeded" && active.publicUrl
+      ? { id: active.id, publicUrl: active.publicUrl, sourceMode: active.sourceMode, createdAt: active.createdAt.toISOString() }
+      : null,
+    visualStatus,
+    lastUsedAt: lastUsedAt?.toISOString(),
     createdAt: person.createdAt.toISOString(),
     updatedAt: person.updatedAt.toISOString(),
   };
 }
 
-function toPersonData(input: PersonInput): PersonData {
-  if (input.role === "teacher") {
-    const englishName = input.englishName.trim();
-
-    return {
-      role: "teacher",
-      name: englishName,
-      chineseName: input.chineseName.trim(),
-      englishName,
-      age: optionalNumber(input.age),
-      gender: input.gender,
-      appearance: normalizeOptionalText(input.appearance),
-      interests: [],
-      learningGoal: null,
-      notes: normalizeOptionalText(input.notes),
-      avatarUrl: normalizeOptionalText(input.avatarUrl),
-    };
-  }
-
-  const englishName = input.englishName.trim();
-
-  return {
-    role: "student",
-    name: englishName,
-    chineseName: input.chineseName.trim(),
-    englishName,
-    age: optionalNumber(input.age),
-    gender: input.gender,
-    appearance: normalizeOptionalText(input.appearance),
-    interests: input.interests.map((interest) => interest.trim()).filter(Boolean),
-    learningGoal: normalizeOptionalText(input.learningGoal),
-    notes: normalizeOptionalText(input.notes),
-    avatarUrl: normalizeOptionalText(input.avatarUrl),
-  };
+function profileWithoutRelations(person: DbPerson) {
+  return profileWithRelations({ ...person, activeVisualAsset: null, visualAssets: [], coursePeople: [] });
 }
 
-export async function listPeople(db: PeopleDb, options: { role?: PersonRole } = {}) {
+export async function listPeople(
+  db: PeopleDb,
+  options: {
+    role?: PersonRole;
+    query?: string;
+    status?: "active" | "archived";
+    sort?: "recent" | "name";
+    cursor?: string;
+    limit?: number;
+  } = {},
+): Promise<PeopleListResponse> {
+  const query = options.query?.trim();
   const people = await db.person.findMany({
     where: {
-      archivedAt: null,
+      archivedAt: options.status === "archived" ? { not: null } : null,
       ...(options.role ? { role: options.role } : {}),
+      ...(query
+        ? {
+            OR: [
+              { chineseName: { contains: query, mode: "insensitive" as const } },
+              { englishName: { contains: query, mode: "insensitive" as const } },
+            ],
+          }
+        : {}),
     },
-    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    include: {
+      activeVisualAsset: true,
+      visualAssets: { select: { status: true, updatedAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
+      coursePeople: { select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
+    },
   });
 
-  return people.map(toPersonProfile);
+  const mapped = people.map(profileWithRelations);
+  mapped.sort((a, b) => {
+    if (options.sort === "name") return a.chineseName.localeCompare(b.chineseName, "zh-CN");
+    const recentDifference = (b.lastUsedAt ? Date.parse(b.lastUsedAt) : 0) - (a.lastUsedAt ? Date.parse(a.lastUsedAt) : 0);
+    return recentDifference || a.chineseName.localeCompare(b.chineseName, "zh-CN");
+  });
+
+  const start = options.cursor ? Math.max(mapped.findIndex((person) => person.id === options.cursor) + 1, 0) : 0;
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  const page = mapped.slice(start, start + limit);
+  return { people: page, nextCursor: start + limit < mapped.length ? page.at(-1)?.id ?? null : null };
 }
 
-export async function createPerson(db: PeopleDb, input: PersonInput) {
-  const person = await db.person.create({ data: toPersonData(input) });
-  return toPersonProfile(person);
+export async function createPerson(db: PeopleDb, input: PersonCreateInput) {
+  const person = await db.person.create({
+    data: {
+      role: input.role,
+      chineseName: input.chineseName.trim(),
+      englishName: input.englishName.trim(),
+      age: input.age,
+      gender: input.gender,
+      notes: optionalText(input.notes),
+    },
+  });
+  return profileWithoutRelations(person);
 }
 
-export async function updatePerson(db: PeopleDb, id: string, input: PersonInput) {
+export async function updatePerson(db: PeopleDb, id: string, input: PersonUpdateInput) {
+  const current = await db.person.findUnique({ where: { id } });
+  if (!current) throw new PersonNotFoundError();
+
   const person = await db.person.update({
     where: { id },
-    data: toPersonData(input),
+    data: {
+      chineseName: input.chineseName.trim(),
+      englishName: input.englishName.trim(),
+      age: input.age,
+      gender: input.gender,
+      notes: optionalText(input.notes),
+    },
   });
-
-  return toPersonProfile(person);
+  return profileWithoutRelations(person);
 }
 
-export async function archivePerson(db: PeopleDb, id: string) {
+async function setArchived(db: PeopleDb, id: string, archivedAt: Date | null) {
   const current = await db.person.findUnique({ where: { id } });
+  if (!current) throw new PersonNotFoundError();
+  await db.person.update({ where: { id }, data: { archivedAt } });
+}
 
-  if (!current) {
-    throw new PersonNotFoundError();
-  }
+export function archivePerson(db: PeopleDb, id: string) {
+  return setArchived(db, id, new Date());
+}
 
-  await db.person.update({
-    where: { id },
-    data: { archivedAt: new Date() },
-  });
+export function restorePerson(db: PeopleDb, id: string) {
+  return setArchived(db, id, null);
 }

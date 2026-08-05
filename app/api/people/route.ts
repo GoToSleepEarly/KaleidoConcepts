@@ -1,65 +1,33 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-
 import { getDb } from "@/lib/server/db";
 import { createPerson, listPeople } from "@/lib/server/repositories/people";
-import type { PersonRole } from "@/lib/contracts/api";
-
-const genderSchema = z.enum(["male", "female"]);
-
-const personInputSchema = z.discriminatedUnion("role", [
-  z.object({
-    role: z.literal("teacher"),
-    chineseName: z.string().trim().min(1),
-    englishName: z.string().trim().min(1),
-    age: z.number().int(),
-    gender: genderSchema,
-    appearance: z.string().optional(),
-    notes: z.string().optional(),
-    avatarUrl: z.string().optional(),
-  }),
-  z.object({
-    role: z.literal("student"),
-    chineseName: z.string().trim().min(1),
-    englishName: z.string().trim().min(1),
-    age: z.number().int(),
-    gender: genderSchema,
-    appearance: z.string().trim().min(1),
-    interests: z.array(z.string()).default([]),
-    learningGoal: z.string().optional(),
-    notes: z.string().optional(),
-    avatarUrl: z.string().optional(),
-  }),
-]);
+import { personCreateSchema } from "@/lib/server/validation/people";
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const roleParam = searchParams.get("role");
-
-  if (roleParam && roleParam !== "teacher" && roleParam !== "student") {
-    return NextResponse.json({ message: "人物类型无效" }, { status: 400 });
-  }
-
-  const role = roleParam as PersonRole | null;
+  const params = new URL(request.url).searchParams;
+  const parsed = z.object({
+    role: z.enum(["teacher", "student"]).optional(),
+    query: z.string().max(80).optional(),
+    status: z.enum(["active", "archived"]).default("active"),
+    sort: z.enum(["recent", "name"]).default("recent"),
+    cursor: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  }).safeParse(Object.fromEntries(params));
+  if (!parsed.success) return NextResponse.json({ message: "人物查询参数无效" }, { status: 400 });
 
   try {
-    const people = await listPeople(getDb(), role ? { role } : {});
-    return NextResponse.json({ people });
+    return NextResponse.json(await listPeople(getDb(), parsed.data));
   } catch {
     return NextResponse.json({ message: "人物档案加载失败" }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
-  const payload = personInputSchema.safeParse(await request.json());
-
-  if (!payload.success) {
-    return NextResponse.json({ message: "人物信息不完整" }, { status: 400 });
-  }
-
+  const payload = personCreateSchema.safeParse(await request.json());
+  if (!payload.success) return NextResponse.json({ message: "请完整填写中文名、英文名、年龄和性别" }, { status: 400 });
   try {
-    const person = await createPerson(getDb(), payload.data);
-    return NextResponse.json({ person }, { status: 201 });
+    return NextResponse.json({ person: await createPerson(getDb(), payload.data) }, { status: 201 });
   } catch {
     return NextResponse.json({ message: "人物保存失败" }, { status: 500 });
   }

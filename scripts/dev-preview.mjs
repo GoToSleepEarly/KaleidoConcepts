@@ -9,7 +9,10 @@ import { cleanNextCache } from "./next-cache.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(scriptDir, "..");
-const databaseUrl = process.env.DATABASE_URL || "postgres://postgres:postgres@localhost:51214/template1?sslmode=disable";
+const databasePort = Number(process.env.DEV_DATABASE_PORT || "51215");
+const databaseName = process.env.DEV_DATABASE_NAME || "postgres";
+const databaseUrl = process.env.DATABASE_URL || `postgres://postgres:postgres@localhost:${databasePort}/${databaseName}?sslmode=disable`;
+const storageDir = process.env.STORAGE_DIR || path.join(rootDir, ".local", "storage-v2");
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -20,6 +23,7 @@ function run(command, args, options = {}) {
       env: {
         ...process.env,
         DATABASE_URL: databaseUrl,
+        STORAGE_DIR: storageDir,
         ...options.env,
       },
     });
@@ -69,6 +73,8 @@ async function main() {
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl,
+      DEV_DATABASE_PORT: String(databasePort),
+      STORAGE_DIR: storageDir,
     },
   });
 
@@ -96,7 +102,7 @@ async function main() {
     }
   });
 
-  await waitForPort(51214, "127.0.0.1", 30_000);
+  await waitForPort(databasePort, "127.0.0.1", 30_000);
   await run("pnpm", ["prisma:generate"]);
   await run("pnpm", ["prisma:deploy"]);
   await run("pnpm", ["prisma:seed"]);

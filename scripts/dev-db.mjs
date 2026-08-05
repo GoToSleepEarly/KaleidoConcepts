@@ -8,8 +8,8 @@ import EmbeddedPostgres from "embedded-postgres";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(scriptDir, "..");
-const databaseDir = process.env.DEV_DATABASE_DIR || path.join(rootDir, ".local", "postgres");
-const port = Number(process.env.DEV_DATABASE_PORT || "51214");
+const databaseDir = process.env.DEV_DATABASE_DIR || path.join(rootDir, ".local", "postgres-v2");
+const port = Number(process.env.DEV_DATABASE_PORT || "51215");
 const user = process.env.DEV_DATABASE_USER || "postgres";
 const password = process.env.DEV_DATABASE_PASSWORD || "postgres";
 const database = process.env.DEV_DATABASE_NAME || "postgres";

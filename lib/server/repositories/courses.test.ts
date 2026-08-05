@@ -1,285 +1,218 @@
 import { describe, expect, test } from "vitest";
 
-import { CourseNotFoundError, createCourseBasic, deleteCourse, getCourseBasic, listCourses, updateCourseBasic } from "./courses";
+import {
+  CourseAudienceConflictError,
+  createCourse,
+  getCourseAudience,
+  listCourses,
+  updateCourseAudience,
+  type CoursesDb,
+} from "./courses";
 
-describe("listCourses", () => {
-  test("maps database courses to management list items", async () => {
-    const courses = await listCourses({
+const teacher = {
+  id: "teacher-1",
+  role: "teacher" as const,
+  chineseName: "林老师",
+  englishName: "Ms. Lin",
+  age: 32,
+  gender: "female" as const,
+  archivedAt: null,
+  activeVisualAssetId: "visual-teacher",
+};
+
+const student = {
+  id: "student-1",
+  role: "student" as const,
+  chineseName: "夏天",
+  englishName: "Summer",
+  age: 9,
+  gender: "female" as const,
+  archivedAt: null,
+  activeVisualAssetId: null,
+};
+
+const input = {
+  title: "海底图书馆",
+  teacherId: "teacher-1",
+  studentIds: ["student-1"],
+  durationMinutes: 45 as const,
+};
+
+describe("course audience repository", () => {
+  test("creates a course atomically with identity and visual snapshots", async () => {
+    const db = {
+      person: { findMany: async () => [teacher, student] },
       course: {
-        findMany: async (query) => {
-          expect(query).toEqual({
-            orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-            include: {
-              people: {
-                include: {
-                  person: true,
-                },
-              },
-              _count: {
-                select: {
-                  storyOptions: true,
-                },
-              },
-              lessonDraft: {
-                select: {
-                  courseId: true,
-                },
-              },
-              storyOptions: {
-                select: {
-                  id: true,
-                  title: true,
-                },
-              },
-            },
+        findUnique: async () => null,
+        create: async ({ data }: { data: Record<string, unknown> & { people: { create: unknown } } }) => {
+          expect(data).toMatchObject({
+            title: "海底图书馆",
+            durationMinutes: 45,
+            lifecycleStatus: "draft",
+            currentStage: "story_outline",
           });
-
-          return [
+          expect(data.people.create).toEqual([
             {
-              id: "course-1",
-              title: "The Brave Little Rabbit",
-              englishLevel: "A1",
-              status: "ready",
-              selectedStoryOptionId: "option-1",
-              createdAt: new Date("2026-07-01T09:00:00.000Z"),
-              updatedAt: new Date("2026-07-03T09:00:00.000Z"),
-              lessonDraft: {
-                courseId: "course-1",
-              },
-              storyOptions: [
-                {
-                  id: "option-1",
-                  title: "The Forest Gate",
-                },
-              ],
-              people: [
-                { person: { role: "student", englishName: "Summer", chineseName: "夏天", name: "Summer" } },
-                { person: { role: "student", englishName: "Tom", chineseName: "汤姆", name: "Tom" } },
-                { person: { role: "teacher", englishName: null, chineseName: null, name: "Ms. Lin" } },
-              ],
-              _count: {
-                storyOptions: 3,
-              },
+              personId: "teacher-1",
+              role: "teacher",
+              chineseNameSnapshot: "林老师",
+              englishNameSnapshot: "Ms. Lin",
+              ageSnapshot: 32,
+              genderSnapshot: "female",
+              visualAssetIdSnapshot: "visual-teacher",
             },
-          ];
+            {
+              personId: "student-1",
+              role: "student",
+              chineseNameSnapshot: "夏天",
+              englishNameSnapshot: "Summer",
+              ageSnapshot: 9,
+              genderSnapshot: "female",
+              visualAssetIdSnapshot: null,
+            },
+          ]);
+          return { id: "course-1", lifecycleStatus: "draft", currentStage: "story_outline" };
         },
       },
-    });
-
-    expect(courses).toEqual([
-      {
-        id: "course-1",
-        title: "The Brave Little Rabbit",
-        teacherName: "Ms. Lin",
-        studentNames: ["Summer", "Tom"],
-        englishLevel: "A1",
-        storyTitle: "The Forest Gate",
-        status: "ready",
-        storyOptionsCount: 3,
-        selectedStoryOptionId: "option-1",
-        lessonDraftExists: true,
-        currentStep: "resources",
-        nextEditPath: "/courses/course-1/create/resources",
-        updatedAt: "2026-07-03T09:00:00.000Z",
-      },
-    ]);
-  });
-});
-
-describe("course basic info", () => {
-  const input = {
-    title: "Space Adventure",
-    teacherId: "teacher-1",
-    studentIds: ["student-1", "student-2"],
-    englishLevel: "B2" as const,
-    durationMinutes: 45 as const,
-    grammar: ["Past Simple", "There be"],
-    llmModel: "deepseek_chat" as const,
-  };
-
-  const roleValidationDb = {
-    person: {
-      findMany: async () => [
-        { id: "teacher-1", role: "teacher" as const },
-        { id: "student-1", role: "student" as const },
-        { id: "student-2", role: "student" as const },
-      ],
-    },
-  };
-
-  test("creates a draft course with one teacher and selected students", async () => {
-    const course = await createCourseBasic(
-      {
-        ...roleValidationDb,
-        course: {
-          create: async ({ data }) => {
-            expect(data).toEqual({
-              title: "Space Adventure",
-              englishLevel: "B2",
-              durationMinutes: 45,
-              grammar: ["Past Simple", "There be"],
-              llmModel: "deepseek_chat",
-              status: "draft",
-              people: {
-                create: [
-                  { person: { connect: { id: "teacher-1" } } },
-                  { person: { connect: { id: "student-1" } } },
-                  { person: { connect: { id: "student-2" } } },
-                ],
-              },
-            });
-
-            return { id: "course-1", status: "draft" };
-          },
-        },
-      },
+    } as unknown as CoursesDb;
+    db.$transaction = async (callback) => callback(db);
+    const course = await createCourse(
+      db,
       input,
+      "create-course-key",
     );
 
-    expect(course).toEqual({ id: "course-1", status: "draft" });
+    expect(course).toEqual({ id: "course-1", lifecycleStatus: "draft", currentStage: "story_outline" });
   });
 
-  test("does not depend on the removed Step1 theme field when creating a course", async () => {
-    await createCourseBasic(
+  test("returns the original course for an idempotent retry", async () => {
+    let createCalled = false;
+    const course = await createCourse(
       {
-        ...roleValidationDb,
         course: {
-          create: async ({ data }) => {
-            expect(data).not.toHaveProperty("theme");
-            expect(data).not.toHaveProperty("storyIdeaMode");
-            expect(data).not.toHaveProperty("storyIdea");
-            return { id: "course-1", status: "draft" };
+          findUnique: async () => ({ id: "course-existing", lifecycleStatus: "draft", currentStage: "story_outline" }),
+          create: async () => {
+            createCalled = true;
+            return {} as never;
           },
         },
-      },
+      } as unknown as CoursesDb,
       input,
-    );
-  });
-
-  test("updates existing basic info without creating a second course", async () => {
-    const course = await updateCourseBasic(
-      {
-        ...roleValidationDb,
-        course: {
-          update: async ({ where, data }) => {
-            expect(where).toEqual({ id: "course-1" });
-            expect(data).toMatchObject({
-              title: "Space Adventure",
-              people: {
-                deleteMany: {},
-                create: [
-                  { person: { connect: { id: "teacher-1" } } },
-                  { person: { connect: { id: "student-1" } } },
-                  { person: { connect: { id: "student-2" } } },
-                ],
-              },
-            });
-
-            return { id: "course-1", status: "draft" };
-          },
-        },
-      },
-      "course-1",
-      input,
+      "same-key",
     );
 
-    expect(course).toEqual({ id: "course-1", status: "draft" });
+    expect(createCalled).toBe(false);
+    expect(course.id).toBe("course-existing");
   });
 
-  test("maps saved basic info for editing", async () => {
-    const course = await getCourseBasic(
-      {
-        course: {
-          findUnique: async ({ where, include }) => {
-            expect(where).toEqual({ id: "course-1" });
-            expect(include).toEqual({ people: { include: { person: true } } });
-
-            return {
-              id: "course-1",
-              title: "Space Adventure",
-              englishLevel: "B2",
-              durationMinutes: 45,
-              grammar: ["Past Simple"],
-              llmModel: "deepseek_chat",
-              status: "draft",
-              people: [
-                { personId: "teacher-1", person: { role: "teacher" } },
-                { personId: "student-1", person: { role: "student" } },
-              ],
-            };
-          },
-        },
-      },
-      "course-1",
-    );
-
-    expect(course).toEqual({
-      id: "course-1",
-      title: "Space Adventure",
-      teacherId: "teacher-1",
-      studentIds: ["student-1"],
-      englishLevel: "B2",
-      durationMinutes: 45,
-      grammar: ["Past Simple"],
-      llmModel: "deepseek_chat",
-      status: "draft",
-    });
-  });
-});
-
-describe("deleteCourse", () => {
-  test("deletes an existing course after verifying it exists", async () => {
-    const calls: string[] = [];
-
-    const result = await deleteCourse(
-      {
-        course: {
-          findUnique: async ({ where }) => {
-            calls.push("findUnique");
-            expect(where).toEqual({ id: "course-1" });
-            return {
-              id: "course-1",
-              title: "Space Adventure",
-              englishLevel: "B2",
-              durationMinutes: 45,
-              grammar: ["Past Simple"],
-              llmModel: "deepseek_chat",
-              status: "draft",
-              people: [],
-            };
-          },
-          delete: async ({ where }) => {
-            calls.push("delete");
-            expect(where).toEqual({ id: "course-1" });
-            return { id: "course-1" };
-          },
-        },
-      },
-      "course-1",
-    );
-
-    expect(result).toEqual({ id: "course-1" });
-    expect(calls).toEqual(["findUnique", "delete"]);
-  });
-
-  test("throws when the course does not exist and never calls delete", async () => {
-    let deleteCalled = false;
-
+  test("requires reset confirmation when people or duration change after downstream work", async () => {
     await expect(
-      deleteCourse(
+      updateCourseAudience(
         {
           course: {
-            findUnique: async () => null,
-            delete: async () => {
-              deleteCalled = true;
-              return { id: "course-1" };
-            },
+            findUnique: async () => ({
+              id: "course-1",
+              title: "旧名称",
+              durationMinutes: 30,
+              currentStage: "content",
+              people: [
+                { personId: "teacher-1", role: "teacher" },
+                { personId: "student-1", role: "student" },
+              ],
+            }),
+          },
+        } as unknown as CoursesDb,
+        "course-1",
+        input,
+        false,
+      ),
+    ).rejects.toBeInstanceOf(CourseAudienceConflictError);
+  });
+
+  test("updates title without resetting downstream content", async () => {
+    const updates: unknown[] = [];
+    await updateCourseAudience(
+      {
+        course: {
+          findUnique: async () => ({
+            id: "course-1",
+            title: "旧名称",
+            durationMinutes: 45,
+            currentStage: "content",
+            people: [
+              { personId: "teacher-1", role: "teacher" },
+              { personId: "student-1", role: "student" },
+            ],
+          }),
+          update: async ({ data }: { data: Record<string, unknown> }) => {
+            updates.push(data);
+            return { id: "course-1", lifecycleStatus: "draft", currentStage: "content" };
           },
         },
-        "missing-course",
-      ),
-    ).rejects.toBeInstanceOf(CourseNotFoundError);
+      } as unknown as CoursesDb,
+      "course-1",
+      { ...input, title: "新名称" },
+      false,
+    );
 
-    expect(deleteCalled).toBe(false);
+    expect(updates).toEqual([{ title: "新名称" }]);
+  });
+
+  test("lists courses from immutable person snapshots", async () => {
+    const courses = await listCourses({
+      course: {
+        findMany: async () => [
+          {
+            id: "course-1",
+            title: "海底图书馆",
+            durationMinutes: 45,
+            lifecycleStatus: "draft",
+            currentStage: "story_outline",
+            updatedAt: new Date("2026-08-05T08:00:00.000Z"),
+            people: [
+              { role: "teacher", chineseNameSnapshot: "林老师", englishNameSnapshot: "Ms. Lin" },
+              { role: "student", chineseNameSnapshot: "夏天", englishNameSnapshot: "Summer" },
+            ],
+          },
+        ],
+      },
+    } as unknown as CoursesDb);
+
+    expect(courses[0]).toMatchObject({
+      teacherName: "林老师",
+      studentNames: ["夏天"],
+      nextEditPath: "/courses/course-1/create/story-outline",
+    });
+  });
+
+  test("reports when the current profile differs from the saved snapshot", async () => {
+    const audience = await getCourseAudience(
+      {
+        course: {
+          findUnique: async () => ({
+            id: "course-1",
+            title: "海底图书馆",
+            durationMinutes: 45,
+            lifecycleStatus: "draft",
+            currentStage: "story_outline",
+            people: [
+              {
+                personId: "teacher-1",
+                role: "teacher",
+                chineseNameSnapshot: "林老师",
+                englishNameSnapshot: "Ms. Lin",
+                ageSnapshot: 31,
+                genderSnapshot: "female",
+                visualAssetIdSnapshot: null,
+                person: teacher,
+              },
+            ],
+          }),
+        },
+      } as unknown as CoursesDb,
+      "course-1",
+    );
+
+    expect(audience.people[0]?.profileChanged).toBe(true);
   });
 });

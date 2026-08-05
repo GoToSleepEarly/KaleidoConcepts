@@ -1,261 +1,180 @@
 import { describe, expect, test } from "vitest";
 
-import { archivePerson, createPerson, listPeople, PersonNotFoundError, updatePerson, type PeopleDb } from "./people";
+import {
+  archivePerson,
+  createPerson,
+  listPeople,
+  PersonNotFoundError,
+  restorePerson,
+  updatePerson,
+  type PeopleDb,
+} from "./people";
+
+const createdAt = new Date("2026-08-01T09:00:00.000Z");
+const updatedAt = new Date("2026-08-02T09:00:00.000Z");
+
+function dbPerson(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "person-1",
+    role: "student" as const,
+    chineseName: "夏天",
+    englishName: "Summer",
+    age: 9,
+    gender: "female" as const,
+    notes: "喜欢主动表达",
+    activeVisualAssetId: null,
+    archivedAt: null,
+    createdAt,
+    updatedAt,
+    activeVisualAsset: null,
+    visualAssets: [],
+    coursePeople: [],
+    ...overrides,
+  };
+}
 
 describe("people repository", () => {
-  test("lists active people with optional role filtering", async () => {
-    const people = await listPeople(
-      ({
+  test("creates teachers and students with the same required profile fields", async () => {
+    const person = await createPerson(
+      {
         person: {
-          findMany: async (query: Parameters<PeopleDb["person"]["findMany"]>[0]) => {
-            expect(query).toEqual({
-              where: { archivedAt: null, role: "teacher" },
-              orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+          create: async ({ data }: { data: Record<string, unknown> }) => {
+            expect(data).toEqual({
+              role: "teacher",
+              chineseName: "林老师",
+              englishName: "Ms. Lin",
+              age: 32,
+              gender: "female",
+              notes: "语气自然",
             });
+            return dbPerson({ id: "teacher-1", ...data });
+          },
+        },
+      } as unknown as PeopleDb,
+      {
+        role: "teacher",
+        chineseName: "  林老师  ",
+        englishName: " Ms. Lin ",
+        age: 32,
+        gender: "female",
+        notes: " 语气自然 ",
+      },
+    );
 
+    expect(person).toMatchObject({
+      id: "teacher-1",
+      role: "teacher",
+      chineseName: "林老师",
+      englishName: "Ms. Lin",
+      visualStatus: "missing",
+      activeVisual: null,
+    });
+  });
+
+  test("lists active people by search and sorts recently used people first", async () => {
+    const people = await listPeople(
+      {
+        person: {
+          findMany: async ({ where }: { where: Record<string, unknown> }) => {
+            expect(where).toEqual({
+              archivedAt: null,
+              role: "student",
+              OR: [
+                { chineseName: { contains: "su", mode: "insensitive" } },
+                { englishName: { contains: "su", mode: "insensitive" } },
+              ],
+            });
             return [
-              {
-                id: "teacher-1",
-                role: "teacher",
-                name: "Ms. Lin",
-                chineseName: null,
-                englishName: null,
-                age: null,
-                gender: "female",
-                appearance: "黑色长发，圆框眼镜，浅色针织衫",
-                interests: [],
-                learningGoal: null,
-                notes: "语气亲切自然",
-                avatarUrl: null,
-                createdAt: new Date("2026-07-01T09:00:00.000Z"),
-                updatedAt: new Date("2026-07-02T09:00:00.000Z"),
-              },
+              dbPerson({ id: "older", chineseName: "苏西", englishName: "Susie" }),
+              dbPerson({
+                id: "recent",
+                chineseName: "苏阳",
+                englishName: "Sunny",
+                coursePeople: [{ createdAt: new Date("2026-08-04T10:00:00.000Z") }],
+              }),
             ];
           },
         },
-      } as never),
-      { role: "teacher" },
+      } as unknown as PeopleDb,
+      { role: "student", query: " su ", status: "active", sort: "recent", limit: 20 },
     );
 
-    expect(people).toEqual([
-      {
-        id: "teacher-1",
-        role: "teacher",
-        name: "Ms. Lin",
-        gender: "female",
-        appearance: "黑色长发，圆框眼镜，浅色针织衫",
-        interests: [],
-        notes: "语气亲切自然",
-        avatarUrl: undefined,
-        createdAt: "2026-07-01T09:00:00.000Z",
-        updatedAt: "2026-07-02T09:00:00.000Z",
-      },
-    ]);
+    expect(people.people.map((person) => person.id)).toEqual(["recent", "older"]);
+    expect(people.people[0]?.lastUsedAt).toBe("2026-08-04T10:00:00.000Z");
   });
 
-  test("creates a teacher profile aligned with student fields and derived display name", async () => {
-    const teacher = await createPerson(
-      ({
+  test("maps the latest generation state without treating a missing image as missing profile data", async () => {
+    const result = await listPeople(
+      {
         person: {
-          create: async ({ data }: Parameters<PeopleDb["person"]["create"]>[0]) => {
+          findMany: async () => [
+            dbPerson({
+              visualAssets: [{ status: "failed", updatedAt: new Date("2026-08-03T10:00:00.000Z") }],
+            }),
+          ],
+        },
+      } as unknown as PeopleDb,
+      {},
+    );
+
+    expect(result.people[0]).toMatchObject({ visualStatus: "failed", activeVisual: null });
+  });
+
+  test("updates profile fields without accepting a role change", async () => {
+    await updatePerson(
+      {
+        person: {
+          findUnique: async () => dbPerson({ role: "teacher" }),
+          update: async ({ data }: { data: Record<string, unknown> }) => {
             expect(data).toEqual({
-              role: "teacher",
-              name: "Ms. Lin",
               chineseName: "林老师",
-              englishName: "Ms. Lin",
-              age: 30,
+              englishName: "Ms. Lynn",
+              age: 33,
               gender: "female",
-              appearance: "黑色长发，圆框眼镜",
-              interests: [],
-              learningGoal: null,
-              notes: "课堂氛围温柔",
-              avatarUrl: null,
+              notes: null,
             });
-
-            return {
-              id: "teacher-1",
-              ...data,
-              createdAt: new Date("2026-07-01T10:00:00.000Z"),
-              updatedAt: new Date("2026-07-01T10:00:00.000Z"),
-            };
+            expect(data).not.toHaveProperty("role");
+            return dbPerson({ role: "teacher", ...data });
           },
         },
-      } as never),
+      } as unknown as PeopleDb,
+      "person-1",
       {
-        role: "teacher",
         chineseName: "林老师",
-        englishName: "Ms. Lin",
-        age: 30,
+        englishName: "Ms. Lynn",
+        age: 33,
         gender: "female",
-        appearance: "黑色长发，圆框眼镜",
-        notes: "课堂氛围温柔",
-      },
-    );
-
-    expect(teacher.role).toBe("teacher");
-    expect(teacher.name).toBe("Ms. Lin");
-    expect(teacher.chineseName).toBe("林老师");
-    expect(teacher.age).toBe(30);
-    expect(teacher.appearance).toBe("黑色长发，圆框眼镜");
-    expect(teacher.avatarUrl).toBeUndefined();
-  });
-
-  test("creates a student profile without a default avatar and derived display name", async () => {
-    const student = await createPerson(
-      ({
-        person: {
-          create: async ({ data }: Parameters<PeopleDb["person"]["create"]>[0]) => {
-            expect(data).toMatchObject({
-              role: "student",
-              name: "Tom",
-              chineseName: "汤姆",
-              englishName: "Tom",
-              age: 8,
-              gender: "male",
-              appearance: "短发，喜欢穿蓝色外套",
-              interests: ["森林"],
-              avatarUrl: null,
-            });
-
-            return {
-              id: "student-1",
-              ...data,
-              createdAt: new Date("2026-07-01T10:00:00.000Z"),
-              updatedAt: new Date("2026-07-01T10:00:00.000Z"),
-            };
-          },
-        },
-      } as never),
-      {
-        role: "student",
-        chineseName: "汤姆",
-        englishName: "Tom",
-        age: 8,
-        gender: "male",
-        appearance: "短发，喜欢穿蓝色外套",
-        interests: ["森林"],
-        learningGoal: "",
         notes: "",
       },
     );
-
-    expect(student.name).toBe("Tom");
-    expect(student.appearance).toBe("短发，喜欢穿蓝色外套");
-    expect(student.avatarUrl).toBeUndefined();
   });
 
-  test("updates a person without changing the role", async () => {
-    const updated = await updatePerson(
-      ({
-        person: {
-          update: async ({ where, data }: Parameters<PeopleDb["person"]["update"]>[0]) => {
-            expect(where).toEqual({ id: "teacher-1" });
-            expect(data).toMatchObject({
-              role: "teacher",
-              name: "Ms. Lin",
-              chineseName: "林老师",
-              englishName: "Ms. Lin",
-              age: 32,
-              gender: "female",
-              appearance: "浅色针织衫",
-            });
-
-            return {
-              id: "teacher-1",
-              role: "teacher",
-              name: "Ms. Lin",
-              chineseName: "林老师",
-              englishName: "Ms. Lin",
-              age: 32,
-              gender: "female",
-              appearance: "浅色针织衫",
-              interests: [],
-              learningGoal: null,
-              notes: null,
-              avatarUrl: null,
-              createdAt: new Date("2026-07-01T09:00:00.000Z"),
-              updatedAt: new Date("2026-07-03T09:00:00.000Z"),
-            };
-          },
+  test("archives and restores a person without deleting assets", async () => {
+    const updates: Array<Date | null> = [];
+    const db = {
+      person: {
+        findUnique: async () => dbPerson(),
+        update: async ({ data }: { data: { archivedAt: Date | null } }) => {
+          updates.push(data.archivedAt);
+          return dbPerson({ archivedAt: data.archivedAt });
         },
-      } as never),
-      "teacher-1",
-      {
-        role: "teacher",
-        chineseName: "林老师",
-        englishName: "Ms. Lin",
-        age: 32,
-        gender: "female",
-        appearance: "浅色针织衫",
-        notes: "",
       },
-    );
+    } as unknown as PeopleDb;
 
-    expect(updated.updatedAt).toBe("2026-07-03T09:00:00.000Z");
+    await archivePerson(db, "person-1");
+    await restorePerson(db, "person-1");
+
+    expect(updates[0]).toBeInstanceOf(Date);
+    expect(updates[1]).toBeNull();
   });
 
-  test("archives an existing person via soft delete", async () => {
-    const calls: string[] = [];
-    let archivedAt: Date | null = null;
-
-    await archivePerson(
-      {
-        person: {
-          findUnique: async ({ where }: { where: { id: string } }) => {
-            calls.push("findUnique");
-            expect(where).toEqual({ id: "student-1" });
-            return {
-              id: "student-1",
-              role: "student",
-              name: "Tom",
-              chineseName: "汤姆",
-              englishName: "Tom",
-              age: 8,
-              gender: "male",
-              appearance: "短发",
-              interests: [],
-              learningGoal: null,
-              notes: null,
-              avatarUrl: null,
-              archivedAt: null,
-              createdAt: new Date("2026-07-01T09:00:00.000Z"),
-              updatedAt: new Date("2026-07-01T09:00:00.000Z"),
-            };
-          },
-          update: async ({ where, data }: { where: { id: string }; data: { archivedAt: Date } }) => {
-            calls.push("update");
-            expect(where).toEqual({ id: "student-1" });
-            expect(data).toHaveProperty("archivedAt");
-            archivedAt = (data as { archivedAt: Date }).archivedAt;
-            return {} as never;
-          },
-        },
-      } as never,
-      "student-1",
-    );
-
-    expect(calls).toEqual(["findUnique", "update"]);
-    expect(archivedAt).toBeInstanceOf(Date);
-  });
-
-  test("throws when archiving a missing person and never calls update", async () => {
-    let updateCalled = false;
-
+  test("rejects updates to a missing person", async () => {
     await expect(
-      archivePerson(
-        {
-          person: {
-            findUnique: async () => null,
-            update: async () => {
-              updateCalled = true;
-              return {} as never;
-            },
-          },
-        } as never,
-        "missing-person",
+      updatePerson(
+        { person: { findUnique: async () => null } } as unknown as PeopleDb,
+        "missing",
+        { chineseName: "夏天", englishName: "Summer", age: 9, gender: "female", notes: "" },
       ),
     ).rejects.toBeInstanceOf(PersonNotFoundError);
-
-    expect(updateCalled).toBe(false);
   });
 });

@@ -1,755 +1,154 @@
 "use client";
 
-import { FormEvent, MouseEvent, useEffect, useMemo, useState } from "react";
-import { Edit3, Plus, Trash2, UserRound, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Pencil, Plus, Search, UsersRound } from "lucide-react";
 
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
-import type { Gender, PersonInput, PersonProfile, PersonRole } from "@/lib/contracts/api";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PersonEditorDialog } from "@/features/people/components/person-form-drawer";
+import type { PeopleListResponse, PersonProfile, PersonRole } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
-type PersonFormState = {
-  role: PersonRole;
-  chineseName: string;
-  englishName: string;
-  age: string;
-  gender: Gender | "";
-  appearance: string;
-  interests: string[];
-  learningGoal: string;
-  notes: string;
-};
-
-const emptyForm: PersonFormState = {
-  role: "student",
-  chineseName: "",
-  englishName: "",
-  age: "",
-  gender: "female",
-  appearance: "",
-  interests: [],
-  learningGoal: "",
-  notes: "",
-};
-
-const filters: Array<{ label: string; value: PersonRole }> = [
-  { label: "学生", value: "student" },
-  { label: "老师", value: "teacher" },
-];
-
-function toFormState(person?: PersonProfile): PersonFormState {
-  if (!person) {
-    return emptyForm;
-  }
-
-  return {
-    role: person.role,
-    chineseName: person.chineseName ?? "",
-    englishName: person.englishName ?? "",
-    age: person.age ? String(person.age) : "",
-    gender: person.gender ?? "",
-    appearance: person.appearance ?? "",
-    interests: person.interests,
-    learningGoal: person.learningGoal ?? "",
-    notes: person.notes ?? "",
-  };
-}
-
-function toPersonPayload(form: PersonFormState): PersonInput {
-  if (form.role === "teacher") {
-    return {
-      role: "teacher",
-      chineseName: form.chineseName.trim(),
-      englishName: form.englishName.trim(),
-      age: Number(form.age),
-      gender: (form.gender || "female") as Gender,
-      appearance: form.appearance.trim(),
-      notes: form.notes.trim(),
-    };
-  }
-
-  return {
-    role: "student",
-    chineseName: form.chineseName.trim(),
-    englishName: form.englishName.trim(),
-    age: Number(form.age),
-    gender: (form.gender || "female") as Gender,
-    appearance: form.appearance.trim(),
-    interests: form.interests,
-    learningGoal: form.learningGoal.trim(),
-    notes: form.notes.trim(),
-  };
-}
-
-function hasRequiredFields(form: PersonFormState) {
-  const sharedRequired = Boolean(
-    form.chineseName.trim() &&
-      form.englishName.trim() &&
-      form.age.trim() &&
-      Number.isFinite(Number(form.age)) &&
-      form.gender,
-  );
-
-  if (form.role === "teacher") {
-    return sharedRequired;
-  }
-
-  return Boolean(sharedRequired && form.appearance.trim());
-}
-
 export function PeopleManager() {
+  const [role, setRole] = useState<PersonRole>("student");
+  const [query, setQuery] = useState("");
   const [people, setPeople] = useState<PersonProfile[]>([]);
-  const [activeFilter, setActiveFilter] = useState<PersonRole>("student");
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [editingPerson, setEditingPerson] = useState<PersonProfile | null>(null);
-  const [form, setForm] = useState<PersonFormState>(emptyForm);
-  const [initialForm, setInitialForm] = useState<PersonFormState>(emptyForm);
-  const [interestInput, setInterestInput] = useState("");
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<PersonProfile | null>(null);
 
-  async function loadPeople() {
-    setIsLoading(true);
-    setLoadError("");
-
+  const load = useCallback(async (signal?: AbortSignal) => {
+    setLoading(true);
+    setError("");
     try {
-      const response = await fetch("/api/people");
-      if (!response.ok) {
-        throw new Error("人物档案加载失败");
-      }
-
-      const data = (await response.json()) as { people: PersonProfile[] };
+      const params = new URLSearchParams({ role, status: "active", sort: "recent", limit: "100" });
+      if (query.trim()) params.set("query", query.trim());
+      const response = await fetch(`/api/people?${params}`, { signal });
+      const data = (await response.json()) as PeopleListResponse & { message?: string };
+      if (!response.ok) throw new Error(data.message || "人物档案加载失败");
       setPeople(data.people);
-    } catch {
-      setLoadError("人物档案加载失败，请稍后重试。");
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
+      setError(caught instanceof Error ? caught.message : "人物档案加载失败");
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
-  }
+  }, [query, role]);
 
   useEffect(() => {
-    let isActive = true;
-
-    async function loadInitialPeople() {
-      try {
-        const response = await fetch("/api/people");
-        if (!response.ok) {
-          throw new Error("人物档案加载失败");
-        }
-
-        const data = (await response.json()) as { people: PersonProfile[] };
-
-        if (isActive) {
-          setPeople(data.people);
-        }
-      } catch {
-        if (isActive) {
-          setLoadError("人物档案加载失败，请稍后重试。");
-        }
-      } finally {
-        if (isActive) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void loadInitialPeople();
-
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => void load(controller.signal), 220);
     return () => {
-      isActive = false;
+      window.clearTimeout(timer);
+      controller.abort();
     };
-  }, []);
+  }, [load]);
 
-  const visiblePeople = useMemo(() => people.filter((person) => person.role === activeFilter), [activeFilter, people]);
-  const isDirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(initialForm), [form, initialForm]);
-
-  function openCreateDrawer(role: PersonRole = activeFilter) {
-    const nextForm = { ...emptyForm, role };
-    setEditingPerson(null);
-    setForm(nextForm);
-    setInitialForm(nextForm);
-    setInterestInput("");
-    setError("");
-    setIsDrawerOpen(true);
+  function openCreate() {
+    setEditing(null);
+    setFormOpen(true);
   }
 
-  function openEditDrawer(person: PersonProfile) {
-    const nextForm = toFormState(person);
-    setEditingPerson(person);
-    setForm(nextForm);
-    setInitialForm(nextForm);
-    setInterestInput("");
-    setError("");
-    setIsDrawerOpen(true);
-  }
-
-  function requestCloseDrawer() {
-    if (isDirty && !window.confirm("放弃未保存的修改？")) {
-      return;
-    }
-
-    setIsDrawerOpen(false);
-  }
-
-  function addInterest() {
-    const value = interestInput.trim();
-
-    if (!value || form.interests.includes(value)) {
-      setInterestInput("");
-      return;
-    }
-
-    setForm((current) => ({ ...current, interests: [...current.interests, value] }));
-    setInterestInput("");
-  }
-
-  function removeInterest(value: string) {
-    setForm((current) => ({ ...current, interests: current.interests.filter((item) => item !== value) }));
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!hasRequiredFields(form)) {
-      setError(form.role === "teacher" ? "请填写中文名、英文名、年龄和性别" : "请填写中文名、英文名、年龄、性别和外貌描述");
-      return;
-    }
-
-    setError("");
-    setIsSaving(true);
-
-    try {
-      const response = await fetch(editingPerson ? `/api/people/${editingPerson.id}` : "/api/people", {
-        method: editingPerson ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(toPersonPayload(form)),
-      });
-
-      if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(data?.message ?? "人物保存失败");
-      }
-
-      const data = (await response.json()) as { person: PersonProfile };
-
-      if (editingPerson) {
-        setPeople((current) => current.map((person) => (person.id === editingPerson.id ? data.person : person)));
-      } else {
-        setPeople((current) => [data.person, ...current]);
-      }
-
-      setIsDrawerOpen(false);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "人物保存失败");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleDelete(person: PersonProfile) {
-    const roleLabel = person.role === "teacher" ? "教师" : "学生";
-    if (!window.confirm(`确认删除${roleLabel}「${person.chineseName ?? person.name}」？删除后新建课程将不再出现该人物。`)) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/people/${person.id}`, { method: "DELETE" });
-      if (!response.ok) {
-        throw new Error("人物删除失败");
-      }
-
-      setPeople((current) => current.filter((item) => item.id !== person.id));
-    } catch {
-      window.alert("人物删除失败，请稍后重试。");
-    }
+  function openEdit(person: PersonProfile) {
+    setEditing(person);
+    setFormOpen(true);
   }
 
   return (
-    <>
-      <section className="space-y-6">
-        <div className="flex items-center justify-between gap-6">
-          <p className="text-sm text-slate-500">维护教案和插图生成会引用的人物资料。</p>
-          <Button className="bg-violet-600 text-white hover:bg-violet-700" onClick={() => openCreateDrawer()} type="button">
-            <Plus className="size-4" />
-            新增人物
-          </Button>
-        </div>
-
-        <div className="inline-flex rounded-lg bg-slate-100 p-1">
-          {filters.map((filter) => (
-            <button
-              className={cn(
-                "h-9 rounded-md px-4 text-sm font-medium text-slate-600 transition-colors duration-200",
-                activeFilter === filter.value && "bg-white text-violet-700 shadow-sm",
-              )}
-              key={filter.value}
-              onClick={() => setActiveFilter(filter.value)}
-              type="button"
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-
-        {isLoading ? (
-          <div className="rounded-lg border border-[#E5E7EB] bg-white p-6 text-sm text-slate-500">正在加载人物档案...</div>
-        ) : loadError ? (
-          <div className="flex min-h-[260px] flex-col items-center justify-center rounded-lg border border-dashed border-red-200 bg-white text-center">
-            <h2 className="text-lg font-semibold text-slate-950">人物档案加载失败</h2>
-            <p className="mt-2 text-sm text-slate-500">{loadError}</p>
-            <Button className="mt-6" onClick={() => void loadPeople()} type="button" variant="outline">
-              重试
-            </Button>
-          </div>
-        ) : visiblePeople.length > 0 ? (
-          <div className="grid grid-cols-2 gap-5 2xl:grid-cols-3">
-            {visiblePeople.map((person) => (
-              <PersonCard key={person.id} onDelete={handleDelete} onEdit={openEditDrawer} person={person} />
-            ))}
-          </div>
-        ) : (
-          <div className="flex min-h-[360px] flex-col items-center justify-center rounded-lg border border-dashed border-[#E5E7EB] bg-white text-center">
-            <div className="mb-4 flex size-16 items-center justify-center rounded-full bg-violet-50 text-violet-700">
-              <UserRound className="size-7" />
-            </div>
-            <h2 className="text-lg font-semibold text-slate-950">还没有人物档案</h2>
-            <p className="mt-2 text-sm text-slate-500">新增教师或学生后，即可在教案生成时引用。</p>
-            <Button className="mt-6 bg-violet-600 text-white hover:bg-violet-700" onClick={() => openCreateDrawer()} type="button">
-              新增人物
-            </Button>
-          </div>
-        )}
-      </section>
-
-      {isDrawerOpen ? (
-        <div className="fixed inset-0 z-50">
-          <button aria-label="关闭抽屉" className="absolute inset-0 bg-slate-950/20" onClick={requestCloseDrawer} type="button" />
-          <aside className="absolute right-0 top-0 flex h-full w-[460px] flex-col border-l border-[#E5E7EB] bg-white shadow-xl">
-            <header className="flex h-[72px] items-center justify-between border-b border-[#E5E7EB] px-6">
-              <h2 className="text-lg font-semibold text-slate-950">{editingPerson ? "编辑人物" : "新增人物"}</h2>
+    <div className="mx-auto max-w-6xl">
+      <section className="rounded-lg bg-card shadow-sm">
+        <div className="flex flex-col gap-4 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex rounded-md bg-muted p-1" role="tablist" aria-label="人物类型">
+            {(["student", "teacher"] as const).map((value) => (
               <button
-                aria-label="关闭"
-                className="flex size-9 items-center justify-center rounded-md text-slate-400 transition-colors duration-200 hover:bg-slate-100 hover:text-slate-700"
-                onClick={requestCloseDrawer}
+                aria-selected={role === value}
+                className={cn("min-h-9 rounded px-4 text-sm font-medium transition-colors", role === value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                key={value}
+                onClick={() => setRole(value)}
+                role="tab"
                 type="button"
               >
-                <X className="size-4" />
+                {value === "student" ? "学生" : "老师"}
               </button>
-            </header>
+            ))}
+          </div>
 
-            <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
-              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-6">
-                <RoleSelector disabled={Boolean(editingPerson)} onChange={(role) => setForm({ ...emptyForm, role })} value={form.role} />
-
-                {form.role === "teacher" ? (
-                  <>
-                    <TextField label="中文名" onChange={(value) => setForm((current) => ({ ...current, chineseName: value }))} required value={form.chineseName} />
-                    <TextField label="英文名" onChange={(value) => setForm((current) => ({ ...current, englishName: value }))} required value={form.englishName} />
-                    <TextField label="年龄" onChange={(value) => setForm((current) => ({ ...current, age: value }))} required type="number" value={form.age} />
-                    <GenderSelector onChange={(gender) => setForm((current) => ({ ...current, gender }))} value={form.gender} />
-                    <AppearancePresetField
-                      onChange={(appearance) => setForm((current) => ({ ...current, appearance }))}
-                      role={form.role}
-                      value={form.appearance}
-                    />
-                    <TextAreaField label="外貌描述" onChange={(value) => setForm((current) => ({ ...current, appearance: value }))} value={form.appearance} />
-                    <TextAreaField label="备注" onChange={(value) => setForm((current) => ({ ...current, notes: value }))} value={form.notes} />
-                  </>
-                ) : (
-                  <>
-                    <TextField label="中文名" onChange={(value) => setForm((current) => ({ ...current, chineseName: value }))} required value={form.chineseName} />
-                    <TextField label="英文名" onChange={(value) => setForm((current) => ({ ...current, englishName: value }))} required value={form.englishName} />
-                    <TextField label="年龄" onChange={(value) => setForm((current) => ({ ...current, age: value }))} required type="number" value={form.age} />
-                    <GenderSelector onChange={(gender) => setForm((current) => ({ ...current, gender }))} value={form.gender} />
-                    <AppearancePresetField
-                      onChange={(appearance) => setForm((current) => ({ ...current, appearance }))}
-                      role={form.role}
-                      value={form.appearance}
-                    />
-                    <TextAreaField label="外貌描述" onChange={(value) => setForm((current) => ({ ...current, appearance: value }))} required value={form.appearance} />
-                    <InterestsField
-                      addInterest={addInterest}
-                      interestInput={interestInput}
-                      interests={form.interests}
-                      removeInterest={removeInterest}
-                      setInterestInput={setInterestInput}
-                    />
-                    <TextAreaField label="学习目标" onChange={(value) => setForm((current) => ({ ...current, learningGoal: value }))} value={form.learningGoal} />
-                    <TextAreaField label="备注" onChange={(value) => setForm((current) => ({ ...current, notes: value }))} value={form.notes} />
-                  </>
-                )}
-
-                {error ? <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div> : null}
-              </div>
-
-              <footer className="flex justify-end gap-3 border-t border-[#E5E7EB] px-6 py-4">
-                <Button onClick={requestCloseDrawer} type="button" variant="outline">取消</Button>
-                <Button className="bg-violet-600 text-white hover:bg-violet-700" disabled={isSaving} type="submit">
-                  {isSaving ? "保存中..." : "保存"}
-                </Button>
-              </footer>
-            </form>
-          </aside>
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-function PersonCard({
-  person,
-  onEdit,
-  onDelete,
-}: {
-  person: PersonProfile;
-  onEdit: (person: PersonProfile) => void;
-  onDelete: (person: PersonProfile) => void;
-}) {
-  function handleEditClick(event: MouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
-    onEdit(person);
-  }
-
-  function handleDeleteClick(event: MouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
-    onDelete(person);
-  }
-
-  return (
-    <article
-      className="group cursor-pointer rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-violet-200 hover:shadow-md"
-      onClick={() => onEdit(person)}
-    >
-      <div className="mb-5 flex items-start justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <PersonAvatar
-            avatarUrl={person.avatarUrl}
-            gender={person.gender}
-            name={person.chineseName ?? person.name}
-            seed={person.id}
-          />
-          <div>
-            <div className="mb-1 inline-flex h-6 items-center rounded-full bg-slate-100 px-2 text-xs font-medium text-slate-600">
-              {person.role === "teacher" ? "教师" : "学生"}
-            </div>
-            <h2 className="text-lg font-semibold text-slate-950">{person.chineseName ?? person.name}</h2>
-            <p className="text-sm text-slate-500">{person.englishName ?? person.name}</p>
-            <p className="mt-1 text-xs text-slate-500">{person.age ? `${person.age} 岁 · ` : ""}{genderCopy(person.gender)}</p>
+          <div className="flex flex-1 gap-3 sm:max-w-xl sm:justify-end">
+            <label className="relative flex-1 sm:max-w-sm">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <span className="sr-only">搜索人物</span>
+              <input
+                className="min-h-10 w-full rounded-md border border-input bg-muted/40 pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary-100"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="搜索中文名或英文名"
+                value={query}
+              />
+            </label>
+            <Button className="shrink-0" onClick={openCreate} type="button"><Plus className="size-4" />新增{role === "student" ? "学生" : "老师"}</Button>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            aria-label="编辑人物"
-            className="flex size-9 items-center justify-center rounded-md text-slate-400 transition-colors duration-200 hover:bg-violet-50 hover:text-violet-700"
-            onClick={handleEditClick}
-            type="button"
-          >
-            <Edit3 className="size-4" />
-          </button>
-          <button
-            aria-label="删除人物"
-            className="flex size-9 items-center justify-center rounded-md text-slate-400 transition-colors duration-200 hover:bg-red-50 hover:text-red-600"
-            onClick={handleDeleteClick}
-            type="button"
-          >
-            <Trash2 className="size-4" />
-          </button>
-        </div>
-      </div>
 
-      {person.role === "teacher" ? (
-        <>
-          <InfoBlock label="外貌描述" value={person.appearance || "暂无外貌描述"} />
-          <InfoBlock label="备注" value={person.notes || "暂无备注"} />
-        </>
-      ) : (
-        <>
-          <InfoBlock label="外貌描述" value={person.appearance || "暂无外貌描述"} />
-          <InterestTags interests={person.interests} />
-          <InfoBlock label="学习目标" value={person.learningGoal || "暂无学习目标"} />
-          <InfoBlock label="备注" value={person.notes || "暂无备注"} />
-        </>
-      )}
-    </article>
-  );
-}
+        {error ? <div className="m-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div> : null}
 
-function RoleSelector({ value, onChange, disabled }: { value: PersonRole; onChange: (role: PersonRole) => void; disabled?: boolean }) {
-  return (
-    <div>
-      <div className="mb-2 text-sm font-medium text-slate-700">类型</div>
-      <div className={cn("grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1", disabled && "opacity-70")}>
-        {[
-          { label: "学生", value: "student" },
-          { label: "教师", value: "teacher" },
-        ].map((item) => (
-          <button
-            className={cn(
-              "h-9 rounded-md text-sm font-medium text-slate-600 transition-colors duration-200",
-              value === item.value && "bg-white text-violet-700 shadow-sm",
-            )}
-            disabled={disabled}
-            key={item.value}
-            onClick={() => onChange(item.value as PersonRole)}
-            type="button"
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
+        <div className="divide-y divide-border">
+          {loading ? Array.from({ length: 3 }).map((_, index) => <PersonRowSkeleton key={index} />) : null}
+          {!loading && people.map((person) => (
+            <article className="group flex flex-col gap-4 px-4 py-5 transition-colors hover:bg-muted/35 sm:flex-row sm:items-center sm:px-5" key={person.id}>
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <div className="shrink-0">
+                  <PersonAvatar avatarUrl={person.role === "teacher" ? person.activeVisual?.publicUrl : undefined} gender={person.gender} name={person.chineseName} seed={person.id} size={56} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <h3 className="truncate text-base font-semibold text-foreground">{person.chineseName}</h3>
+                    <span className="truncate text-sm text-muted-foreground">{person.englishName}</span>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{person.age} 岁 · {person.gender === "female" ? "女" : "男"}</span>
+                  </div>
+                  {person.notes ? <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">{person.notes}</p> : null}
+                </div>
+              </div>
 
-function GenderSelector({ value, onChange, optional }: { value: Gender | ""; onChange: (gender: Gender | "") => void; optional?: boolean }) {
-  return (
-    <div>
-      <div className="mb-2 text-sm font-medium text-slate-700">性别 {optional ? null : <span className="text-red-500">*</span>}</div>
-      <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
-        {[
-          { label: "女", value: "female" },
-          { label: "男", value: "male" },
-        ].map((item) => (
-          <button
-            className={cn(
-              "h-9 rounded-md text-sm font-medium text-slate-600 transition-colors duration-200",
-              value === item.value && "bg-white text-violet-700 shadow-sm",
-            )}
-            key={item.value}
-            onClick={() => onChange(item.value as Gender)}
-            type="button"
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const appearancePresetGroups = [
-  {
-    label: "发型",
-    placeholder: "选择发型",
-    options: ["短发", "齐肩发", "马尾辫", "黑色长发", "自然卷发", "刘海明显"],
-  },
-  {
-    label: "眼镜",
-    placeholder: "选择眼镜",
-    options: ["不戴眼镜", "圆框眼镜", "黑框眼镜", "细框眼镜"],
-  },
-  {
-    label: "脸型",
-    placeholder: "选择脸型",
-    options: ["圆脸", "鹅蛋脸", "长脸", "方脸", "小脸"],
-  },
-  {
-    label: "体型",
-    placeholder: "选择体型",
-    options: ["偏瘦", "匀称", "结实", "高个子", "小个子"],
-  },
-  {
-    label: "整体气质",
-    placeholder: "选择气质",
-    options: ["安静内向", "活泼外向", "认真专注", "爱笑", "好奇心强", "运动感"],
-  },
-] as const;
-
-function appendAppearanceToken(value: string, token: string) {
-  const normalizedParts = value
-    .split(/[，,、\n]/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  if (normalizedParts.includes(token)) {
-    return normalizedParts.filter((part) => part !== token).join("，");
-  }
-
-  return [...normalizedParts, token].join("，");
-}
-
-function AppearancePresetField({
-  value,
-  role,
-  onChange,
-}: {
-  value: string;
-  role: PersonRole;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <section className="rounded-lg border border-violet-100 bg-violet-50/50 p-3">
-      <div className="text-sm font-medium text-slate-800">身份锚点</div>
-      <p className="mt-1 text-xs leading-5 text-slate-500">
-        可选。用于快速补充长期稳定特征，添加后仍可在外貌描述里自由编辑。
-      </p>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {appearancePresetGroups.map((group) => (
-          <label className="block" key={group.label}>
-            <span className="mb-1 block text-xs font-medium text-slate-500">{group.label}</span>
-            <select
-              className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
-              onChange={(event) => {
-                if (!event.target.value) return;
-                onChange(appendAppearanceToken(value, event.target.value));
-                event.currentTarget.value = "";
-              }}
-              value=""
-            >
-              <option value="">{group.placeholder}</option>
-              {group.options.map((option) => (
-                <option disabled={value.split(/[，,、\n]/).map((part) => part.trim()).includes(option)} key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-        ))}
-      </div>
-      {role === "teacher" ? (
-        <p className="mt-3 text-xs leading-5 text-slate-500">老师可少选，优先固定发型、眼镜或一个容易识别的小特征。</p>
-      ) : null}
-    </section>
-  );
-}
-
-function InterestsField({
-  interests,
-  interestInput,
-  setInterestInput,
-  addInterest,
-  removeInterest,
-}: {
-  interests: string[];
-  interestInput: string;
-  setInterestInput: (value: string) => void;
-  addInterest: () => void;
-  removeInterest: (value: string) => void;
-}) {
-  return (
-    <div>
-      <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="interest-input">
-        兴趣爱好
-      </label>
-      <div className="flex gap-2">
-        <input
-          className="h-10 min-w-0 flex-1 rounded-lg border border-[#E5E7EB] px-3 text-sm outline-none transition duration-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
-          id="interest-input"
-          onChange={(event) => setInterestInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              addInterest();
-            }
-          }}
-          placeholder="输入后回车添加"
-          value={interestInput}
-        />
-        <Button onClick={addInterest} type="button" variant="outline">添加</Button>
-      </div>
-      {interests.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {interests.map((interest) => (
-            <button
-              className="inline-flex h-7 items-center gap-1 rounded-full bg-violet-50 px-3 text-xs font-medium text-violet-700"
-              key={interest}
-              onClick={() => removeInterest(interest)}
-              type="button"
-            >
-              {interest}
-              <X className="size-3" />
-            </button>
+              <div className="shrink-0 sm:justify-end">
+                <Button className="border-border bg-card shadow-sm hover:border-primary hover:bg-primary-50 hover:text-primary-700" onClick={() => openEdit(person)} size="sm" type="button" variant="outline"><Pencil className="size-4" />编辑</Button>
+              </div>
+            </article>
           ))}
         </div>
-      ) : null}
-    </div>
-  );
-}
 
-function InterestTags({ interests }: { interests: string[] }) {
-  const visibleInterests = interests.slice(0, 3);
-  const hiddenInterestCount = Math.max(interests.length - visibleInterests.length, 0);
+        {!loading && !people.length ? (
+          <div className="p-8">
+            <EmptyState
+              action={<Button onClick={openCreate}><Plus className="size-4" />新增人物</Button>}
+              description={query ? "试试其他关键词。" : "新增后即可在课程中选择。"}
+              icon={UsersRound}
+              title={query ? "没有找到人物" : "还没有人物"}
+            />
+          </div>
+        ) : null}
+      </section>
 
-  return (
-    <div className="mb-4 flex min-h-7 flex-wrap gap-2">
-      {visibleInterests.length > 0 ? (
-        <>
-          {visibleInterests.map((interest) => (
-            <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700" key={interest}>
-              {interest}
-            </span>
-          ))}
-          {hiddenInterestCount > 0 ? <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">+{hiddenInterestCount}</span> : null}
-        </>
-      ) : (
-        <span className="text-xs text-slate-400">暂无兴趣爱好</span>
-      )}
-    </div>
-  );
-}
-
-function InfoBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="mt-4">
-      <div className="mb-1 text-xs font-medium text-slate-400">{label}</div>
-      <p className="line-clamp-2 min-h-10 text-sm leading-5 text-slate-700">{value}</p>
-    </div>
-  );
-}
-
-function TextField({
-  label,
-  value,
-  onChange,
-  type = "text",
-  required,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-  required?: boolean;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-sm font-medium text-slate-700">
-        {label} {required ? <span className="text-red-500">*</span> : null}
-      </span>
-      <input
-        className="h-10 w-full rounded-lg border border-[#E5E7EB] px-3 text-sm outline-none transition duration-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
-        onChange={(event) => onChange(event.target.value)}
-        type={type}
-        value={value}
+      <PersonEditorDialog
+        defaultRole={role}
+        key={formOpen ? editing?.id ?? `new-${role}` : "closed-person-form"}
+        onClose={() => setFormOpen(false)}
+        onSaved={() => void load()}
+        open={formOpen}
+        person={editing}
       />
-    </label>
+    </div>
   );
 }
 
-function TextAreaField({ label, value, onChange, required }: { label: string; value: string; onChange: (value: string) => void; required?: boolean }) {
+function PersonRowSkeleton() {
   return (
-    <label className="block">
-      <span className="mb-2 block text-sm font-medium text-slate-700">
-        {label} {required ? <span className="text-red-500">*</span> : null}
-      </span>
-      <textarea
-        className="min-h-24 w-full resize-none rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm leading-6 outline-none transition duration-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
-      />
-    </label>
+    <div className="flex items-center gap-4 px-5 py-5">
+      <div className="skeleton size-14 rounded-full" />
+      <div className="flex-1 space-y-2">
+        <div className="skeleton h-4 w-40 rounded" />
+        <div className="skeleton h-3 w-64 max-w-full rounded" />
+      </div>
+    </div>
   );
-}
-
-function genderCopy(gender?: Gender) {
-  if (gender === "male") {
-    return "男";
-  }
-
-  if (gender === "female") {
-    return "女";
-  }
-
-  return "未填写";
 }

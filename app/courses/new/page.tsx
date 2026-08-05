@@ -1,10 +1,6 @@
 import { ProtectedLayout } from "@/components/protected-layout";
-import { CourseBasicForm } from "@/features/courses/components/course-basic-form";
+import { CourseAudienceForm } from "@/features/courses/components/course-audience-form";
 
 export default function NewCoursePage() {
-  return (
-    <ProtectedLayout>
-      <CourseBasicForm />
-    </ProtectedLayout>
-  );
+  return <ProtectedLayout><CourseAudienceForm /></ProtectedLayout>;
 }

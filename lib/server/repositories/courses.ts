@@ -1,86 +1,73 @@
 import type {
-  CourseBasicDetail,
-  CourseBasicInput,
-  CourseCreateStep,
+  CourseAudienceDetail,
+  CourseAudienceInput,
+  CourseLifecycleStatus,
   CourseListItem,
-  CourseStatus,
-  EnglishLevel,
-  LlmModel,
-  PersonProfile,
+  CourseStage,
+  Gender,
   PersonRole,
 } from "@/lib/contracts/api";
+
+type DbSnapshotPerson = {
+  id: string;
+  role: PersonRole;
+  chineseName: string;
+  englishName: string;
+  age: number;
+  gender: Gender;
+  archivedAt: Date | null;
+  activeVisualAssetId: string | null;
+  activeVisualAsset?: { publicUrl: string | null } | null;
+};
+
+type DbCoursePerson = {
+  personId: string;
+  role: PersonRole;
+  chineseNameSnapshot: string;
+  englishNameSnapshot: string;
+  ageSnapshot: number;
+  genderSnapshot: Gender;
+  visualAssetIdSnapshot: string | null;
+  person?: DbSnapshotPerson;
+  visualAssetSnapshot?: { publicUrl: string | null } | null;
+};
 
 type DbCourse = {
   id: string;
   title: string;
-  englishLevel: EnglishLevel;
-  status: CourseStatus;
-  selectedStoryOptionId: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  lessonDraft?: {
-    courseId: string;
-  } | null;
-  storyOptions?: Array<{
-    id: string;
-    title: string;
-  }>;
-  people: Array<{
-    person: {
-      role: "student" | "teacher";
-      englishName: string | null;
-      chineseName: string | null;
-      name: string;
-    };
-  }>;
-  _count?: {
-    storyOptions: number;
-  };
+  durationMinutes: number;
+  lifecycleStatus: CourseLifecycleStatus;
+  currentStage: CourseStage;
+  idempotencyKey?: string;
+  updatedAt?: Date;
+  people?: DbCoursePerson[];
 };
 
-type DbCourseBasic = {
-  id: string;
+type CourseCreateData = {
   title: string;
-  englishLevel: EnglishLevel;
-  durationMinutes: 30 | 45 | 60;
-  grammar: string[];
-  llmModel: LlmModel;
-  status: CourseStatus;
-  people: Array<{
-    personId: string;
-    person: {
-      role: PersonRole;
-      id?: string;
-      name?: string;
-      chineseName?: string | null;
-      englishName?: string | null;
-      age?: number | null;
-      gender?: "male" | "female" | null;
-      appearance?: string | null;
-      interests?: string[];
-      learningGoal?: string | null;
-      notes?: string | null;
-      avatarUrl?: string | null;
-      createdAt?: Date;
-      updatedAt?: Date;
-    };
-  }>;
+  durationMinutes: number;
+  lifecycleStatus: "draft";
+  currentStage: "story_outline";
+  idempotencyKey: string;
+  people: { create: Array<Omit<DbCoursePerson, "person" | "visualAssetSnapshot">> };
 };
 
-type CourseBasicWriteData = {
-  title: string;
-  englishLevel: EnglishLevel;
-  durationMinutes: 30 | 45 | 60;
-  grammar: string[];
-  llmModel: LlmModel;
+type CourseDelegate = {
+  findUnique: (query: { where: { id?: string; idempotencyKey?: string }; include?: unknown }) => Promise<DbCourse | null>;
+  findMany: (query: { where?: unknown; include?: unknown; orderBy?: unknown }) => Promise<DbCourse[]>;
+  create: (query: { data: CourseCreateData }) => Promise<DbCourse>;
+  update: (query: { where: { id: string }; data: Record<string, unknown> }) => Promise<DbCourse>;
 };
 
-export class CourseBasicValidationError extends Error {
-  constructor(message = "课程基础信息不完整") {
-    super(message);
-    this.name = "CourseBasicValidationError";
-  }
-}
+type CoursePersonLookup = {
+  findMany: (query: { where: { id: { in: string[] }; archivedAt: null }; include?: unknown }) => Promise<DbSnapshotPerson[]>;
+};
+
+export type CoursesDb = {
+  course: CourseDelegate;
+  person: CoursePersonLookup;
+  $transaction?: <T>(callback: (tx: CoursesDb) => Promise<T>) => Promise<T>;
+};
 
 export class CourseNotFoundError extends Error {
   constructor(message = "课程不存在") {
@@ -89,450 +76,174 @@ export class CourseNotFoundError extends Error {
   }
 }
 
-export type CoursesDb = {
-  course: {
-    findMany?: (query: {
-      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }];
-      include: {
-        people: {
-          include: {
-            person: true;
-          };
-        };
-        _count: {
-          select: {
-            storyOptions: true;
-          };
-        };
-        lessonDraft: {
-          select: {
-            courseId: true;
-          };
-        };
-        storyOptions: {
-          select: {
-            id: true;
-            title: true;
-          };
-        };
-      };
-    }) => Promise<DbCourse[]>;
-    create?: (query: {
-      data: CourseBasicWriteData & {
-        status: "draft";
-        people: {
-          create: Array<{ person: { connect: { id: string } } }>;
-        };
-      };
-    }) => Promise<{ id: string; status: CourseStatus }>;
-    update?: (query: {
-      where: { id: string };
-      data: CourseBasicWriteData & {
-        people: {
-          deleteMany: Record<string, never>;
-          create: Array<{ person: { connect: { id: string } } }>;
-        };
-      };
-    }) => Promise<{ id: string; status: CourseStatus }>;
-    findUnique?: (query: {
-      where: { id: string };
-      include: {
-        people: {
-          include: {
-            person: true;
-          };
-        };
-      };
-    }) => Promise<DbCourseBasic | null>;
-    delete?: (query: { where: { id: string } }) => Promise<{ id: string }>;
-  };
-  person?: {
-    findMany: (query: {
-      where: {
-        archivedAt: null;
-        OR: Array<
-          | { id: string; role: "teacher" }
-          | {
-              id: {
-                in: string[];
-              };
-              role: "student";
-            }
-        >;
-      };
-      select: {
-        id: true;
-        role: true;
-      };
-    }) => Promise<Array<{ id: string; role: PersonRole }>>;
-  };
-};
-
-function dbPersonToProfile(
-  person: NonNullable<DbCourseBasic["people"][number]["person"]>,
-): PersonProfile {
-  return {
-    id: person.id ?? "",
-    role: person.role,
-    name: person.name ?? "",
-    chineseName: person.chineseName ?? undefined,
-    englishName: person.englishName ?? undefined,
-    age: person.age ?? undefined,
-    gender: person.gender ?? undefined,
-    appearance: person.appearance ?? undefined,
-    interests: person.interests ?? [],
-    learningGoal: person.learningGoal ?? undefined,
-    notes: person.notes ?? undefined,
-    avatarUrl: person.avatarUrl ?? undefined,
-    createdAt: person.createdAt?.toISOString() ?? "",
-    updatedAt: person.updatedAt?.toISOString() ?? "",
-  };
-}
-
-function normalizeText(value: string | undefined) {
-  return value?.trim() ?? "";
-}
-
-function uniqueValues(values: string[]) {
-  return Array.from(new Set(values));
-}
-
-function toCourseBasicWriteData(input: CourseBasicInput): CourseBasicWriteData {
-  return {
-    title: normalizeText(input.title),
-    englishLevel: input.englishLevel,
-    durationMinutes: input.durationMinutes,
-    grammar: uniqueValues(input.grammar.map(normalizeText).filter(Boolean)),
-    llmModel: input.llmModel ?? "gpt_5_5",
-  };
-}
-
-function validateCourseBasicShape(input: CourseBasicInput) {
-  const data = toCourseBasicWriteData(input);
-
-  if (
-    !data.title ||
-    !input.teacherId ||
-    input.studentIds.length < 1 ||
-    data.grammar.length < 1
-  ) {
-    throw new CourseBasicValidationError();
+export class CoursePersonValidationError extends Error {
+  constructor(message = "授课人物无效") {
+    super(message);
+    this.name = "CoursePersonValidationError";
   }
-
-  return data;
 }
 
-async function validatePeople(db: CoursesDb, input: CourseBasicInput) {
-  if (!db.person) {
-    throw new CourseBasicValidationError();
+export class CourseAudienceConflictError extends Error {
+  constructor(message = "修改授课对象会重置后续内容") {
+    super(message);
+    this.name = "CourseAudienceConflictError";
   }
+}
 
-  const studentIds = uniqueValues(input.studentIds);
+function uniqueIds(ids: string[]) {
+  return [...new Set(ids)];
+}
+
+async function snapshots(db: CoursesDb, input: CourseAudienceInput) {
+  const studentIds = uniqueIds(input.studentIds);
+  const ids = [input.teacherId, ...studentIds];
   const people = await db.person.findMany({
-    where: {
-      archivedAt: null,
-      OR: [
-        { id: input.teacherId, role: "teacher" },
-        {
-          id: {
-            in: studentIds,
-          },
-          role: "student",
-        },
-      ],
-    },
-    select: {
-      id: true,
-      role: true,
-    },
+    where: { id: { in: ids }, archivedAt: null },
+    include: { activeVisualAsset: { select: { publicUrl: true } } },
   });
+  const teacher = people.find((person) => person.id === input.teacherId && person.role === "teacher");
+  const students = studentIds.map((id) => people.find((person) => person.id === id && person.role === "student"));
+  if (!teacher || students.some((person) => !person)) throw new CoursePersonValidationError();
 
-  const hasTeacher = people.some(
-    (person) => person.id === input.teacherId && person.role === "teacher",
-  );
-  const foundStudentIds = new Set(
-    people
-      .filter((person) => person.role === "student")
-      .map((person) => person.id),
-  );
-  const hasAllStudents = studentIds.every((studentId) =>
-    foundStudentIds.has(studentId),
-  );
-
-  if (!hasTeacher || !hasAllStudents) {
-    throw new CourseBasicValidationError();
-  }
-
-  return studentIds;
-}
-
-function toPeopleCreate(teacherId: string, studentIds: string[]) {
-  return [teacherId, ...studentIds].map((personId) => ({
-    person: {
-      connect: {
-        id: personId,
-      },
-    },
+  return [teacher, ...(students as DbSnapshotPerson[])].map((person) => ({
+    personId: person.id,
+    role: person.role,
+    chineseNameSnapshot: person.chineseName,
+    englishNameSnapshot: person.englishName,
+    ageSnapshot: person.age,
+    genderSnapshot: person.gender,
+    visualAssetIdSnapshot: person.activeVisualAssetId,
   }));
 }
 
-function toCourseBasicDetail(course: DbCourseBasic): CourseBasicDetail {
-  const teacher = course.people.find(({ person }) => person.role === "teacher");
-  const studentIds = course.people
-    .filter(({ person }) => person.role === "student")
-    .map(({ personId }) => personId);
+function mutationResult(course: DbCourse) {
+  return { id: course.id, lifecycleStatus: course.lifecycleStatus, currentStage: course.currentStage };
+}
 
-  if (!teacher) {
-    throw new CourseBasicValidationError("课程缺少老师");
+export async function createCourse(db: CoursesDb, input: CourseAudienceInput, idempotencyKey: string) {
+  const existing = await db.course.findUnique({ where: { idempotencyKey } });
+  if (existing) return mutationResult(existing);
+
+  const create = async (tx: CoursesDb) => {
+    const people = await snapshots(tx, input);
+    const course = await tx.course.create({
+      data: {
+        title: input.title.trim(),
+        durationMinutes: input.durationMinutes,
+        lifecycleStatus: "draft",
+        currentStage: "story_outline",
+        idempotencyKey,
+        people: { create: people },
+      },
+    });
+    return mutationResult(course);
+  };
+
+  return db.$transaction ? db.$transaction(create) : create(db);
+}
+
+function sameIds(left: string[], right: string[]) {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+export async function updateCourseAudience(
+  db: CoursesDb,
+  id: string,
+  input: CourseAudienceInput,
+  resetDownstream: boolean,
+) {
+  const current = await db.course.findUnique({ where: { id }, include: { people: true } });
+  if (!current) throw new CourseNotFoundError();
+  const currentPeople = current.people ?? [];
+  const currentTeacher = currentPeople.find((person) => person.role === "teacher")?.personId;
+  const currentStudents = currentPeople.filter((person) => person.role === "student").map((person) => person.personId).sort();
+  const nextStudents = uniqueIds(input.studentIds).sort();
+  const keyInputsChanged = current.durationMinutes !== input.durationMinutes
+    || currentTeacher !== input.teacherId
+    || !sameIds(currentStudents, nextStudents);
+  const hasDownstream = !["audience", "story_outline"].includes(current.currentStage);
+
+  if (keyInputsChanged && hasDownstream && !resetDownstream) throw new CourseAudienceConflictError();
+  if (!keyInputsChanged) {
+    const course = await db.course.update({ where: { id }, data: { title: input.title.trim() } });
+    return mutationResult(course);
   }
+
+  const update = async (tx: CoursesDb) => {
+    const people = await snapshots(tx, input);
+    const course = await tx.course.update({
+      where: { id },
+      data: {
+        title: input.title.trim(),
+        durationMinutes: input.durationMinutes,
+        currentStage: "story_outline",
+        people: { deleteMany: {}, create: people },
+      },
+    });
+    return mutationResult(course);
+  };
+  return db.$transaction ? db.$transaction(update) : update(db);
+}
+
+function stagePath(id: string, stage: CourseStage) {
+  return `/courses/${id}/create/${stage.replaceAll("_", "-")}`;
+}
+
+export async function listCourses(db: CoursesDb): Promise<CourseListItem[]> {
+  const courses = await db.course.findMany({
+    where: { lifecycleStatus: { not: "archived" } },
+    include: { people: true },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+  });
+  return courses.map((course) => {
+    const people = course.people ?? [];
+    const teacher = people.find((person) => person.role === "teacher");
+    return {
+      id: course.id,
+      title: course.title,
+      durationMinutes: course.durationMinutes,
+      lifecycleStatus: course.lifecycleStatus,
+      currentStage: course.currentStage,
+      teacherName: teacher?.chineseNameSnapshot ?? null,
+      studentNames: people.filter((person) => person.role === "student").map((person) => person.chineseNameSnapshot),
+      nextEditPath: stagePath(course.id, course.currentStage),
+      updatedAt: course.updatedAt?.toISOString() ?? new Date(0).toISOString(),
+    };
+  });
+}
+
+export async function getCourseAudience(db: CoursesDb, id: string): Promise<CourseAudienceDetail> {
+  const course = await db.course.findUnique({
+    where: { id },
+    include: { people: { include: { person: { include: { activeVisualAsset: true } }, visualAssetSnapshot: true } } },
+  });
+  if (!course) throw new CourseNotFoundError();
 
   return {
     id: course.id,
     title: course.title,
-    teacherId: teacher.personId,
-    studentIds,
-    englishLevel: course.englishLevel,
-    durationMinutes: course.durationMinutes,
-    grammar: course.grammar,
-    llmModel: course.llmModel,
-    status: course.status,
-  };
-}
-
-function getCourseProgress(course: DbCourse): {
-  currentStep: CourseCreateStep;
-  nextEditPath: string;
-  lessonDraftExists: boolean;
-  storyOptionsCount: number;
-} {
-  const storyOptionsCount = course._count?.storyOptions ?? 0;
-  const lessonDraftExists = Boolean(course.lessonDraft);
-
-  if (lessonDraftExists) {
-    return {
-      currentStep: "resources",
-      nextEditPath: `/courses/${course.id}/create/resources`,
-      lessonDraftExists,
-      storyOptionsCount,
-    };
-  }
-
-  if (course.selectedStoryOptionId) {
-    return {
-      currentStep: "lesson_draft",
-      nextEditPath: `/courses/${course.id}/create/lesson-draft`,
-      lessonDraftExists,
-      storyOptionsCount,
-    };
-  }
-
-  if (storyOptionsCount > 0) {
-    return {
-      currentStep: "story_options",
-      nextEditPath: `/courses/${course.id}/create/story-options`,
-      lessonDraftExists,
-      storyOptionsCount,
-    };
-  }
-
-  return {
-    currentStep: "story_options",
-    nextEditPath: `/courses/${course.id}/create/story-options`,
-    lessonDraftExists,
-    storyOptionsCount,
-  };
-}
-
-export async function listCourses(db: CoursesDb): Promise<CourseListItem[]> {
-  if (!db.course.findMany) {
-    return [];
-  }
-
-  const courses = await db.course.findMany({
-    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-    include: {
-      people: {
-        include: {
-          person: true,
-        },
-      },
-      _count: {
-        select: {
-          storyOptions: true,
-        },
-      },
-      lessonDraft: {
-        select: {
-          courseId: true,
-        },
-      },
-      storyOptions: {
-        select: {
-          id: true,
-          title: true,
-        },
-      },
-    },
-  });
-
-  return courses.map((course) => {
-    const teacher = course.people.find(
-      ({ person }) => person.role === "teacher",
-    )?.person;
-    const progress = getCourseProgress(course);
-    const storyTitle =
-      course.storyOptions?.find(
-        (option) => option.id === course.selectedStoryOptionId,
-      )?.title ?? null;
-
-    return {
-      id: course.id,
-      title: course.title,
-      teacherName: teacher?.name ?? null,
-      studentNames: course.people
-        .filter(({ person }) => person.role === "student")
-        .map(
-          ({ person }) =>
-            person.englishName || person.chineseName || person.name,
-        ),
-      englishLevel: course.englishLevel,
-      storyTitle,
-      status: course.status,
-      storyOptionsCount: progress.storyOptionsCount,
-      selectedStoryOptionId: course.selectedStoryOptionId,
-      lessonDraftExists: progress.lessonDraftExists,
-      currentStep: progress.currentStep,
-      nextEditPath: progress.nextEditPath,
-      updatedAt: course.updatedAt.toISOString(),
-    };
-  });
-}
-
-export async function createCourseBasic(
-  db: CoursesDb,
-  input: CourseBasicInput,
-) {
-  if (!db.course.create) {
-    throw new CourseBasicValidationError();
-  }
-
-  const data = validateCourseBasicShape(input);
-  const studentIds = await validatePeople(db, input);
-
-  const course = await db.course.create({
-    data: {
-      ...data,
-      status: "draft",
-      people: {
-        create: toPeopleCreate(input.teacherId, studentIds),
-      },
-    },
-  });
-
-  return { id: course.id, status: course.status };
-}
-
-export async function updateCourseBasic(
-  db: CoursesDb,
-  id: string,
-  input: CourseBasicInput,
-) {
-  if (!db.course.update) {
-    throw new CourseBasicValidationError();
-  }
-
-  const data = validateCourseBasicShape(input);
-  const studentIds = await validatePeople(db, input);
-
-  const course = await db.course.update({
-    where: { id },
-    data: {
-      ...data,
-      people: {
-        deleteMany: {},
-        create: toPeopleCreate(input.teacherId, studentIds),
-      },
-    },
-  });
-
-  return { id: course.id, status: course.status };
-}
-
-export async function getCourseBasic(db: CoursesDb, id: string) {
-  if (!db.course.findUnique) {
-    return null;
-  }
-
-  const course = await db.course.findUnique({
-    where: { id },
-    include: {
-      people: {
-        include: {
-          person: true,
-        },
-      },
-    },
-  });
-
-  return course ? toCourseBasicDetail(course) : null;
-}
-
-export async function deleteCourse(db: CoursesDb, id: string) {
-  if (!db.course.findUnique || !db.course.delete) {
-    throw new CourseNotFoundError();
-  }
-
-  const existing = await db.course.findUnique({
-    where: { id },
-    include: {
-      people: {
-        include: {
-          person: true,
-        },
-      },
-    },
-  });
-
-  if (!existing) {
-    throw new CourseNotFoundError();
-  }
-
-  await db.course.delete({ where: { id } });
-
-  return { id };
-}
-
-export async function getStoryGenerationContext(db: CoursesDb, id: string) {
-  const course = await db.course.findUnique?.({
-    where: { id },
-    include: {
-      people: {
-        include: {
-          person: true,
-        },
-      },
-    },
-  });
-
-  if (!course) {
-    return null;
-  }
-
-  const basic = toCourseBasicDetail(course);
-  const teacherRecord = course.people.find(
-    ({ person }) => person.role === "teacher",
-  )?.person;
-  const studentRecords = course.people
-    .filter(({ person }) => person.role === "student")
-    .map(({ person }) => person);
-
-  if (!teacherRecord || studentRecords.length < 1) {
-    throw new CourseBasicValidationError();
-  }
-
-  return {
-    course: basic,
-    teacher: dbPersonToProfile(teacherRecord),
-    students: studentRecords.map(dbPersonToProfile),
+    durationMinutes: course.durationMinutes as 30 | 45 | 60,
+    lifecycleStatus: course.lifecycleStatus,
+    currentStage: course.currentStage,
+    people: (course.people ?? []).map((snapshot) => {
+      const current = snapshot.person;
+      const profileChanged = !current
+        || current.chineseName !== snapshot.chineseNameSnapshot
+        || current.englishName !== snapshot.englishNameSnapshot
+        || current.age !== snapshot.ageSnapshot
+        || current.gender !== snapshot.genderSnapshot
+        || current.activeVisualAssetId !== snapshot.visualAssetIdSnapshot;
+      return {
+        personId: snapshot.personId,
+        role: snapshot.role,
+        chineseName: snapshot.chineseNameSnapshot,
+        englishName: snapshot.englishNameSnapshot,
+        age: snapshot.ageSnapshot,
+        gender: snapshot.genderSnapshot,
+        visualAssetId: snapshot.visualAssetIdSnapshot,
+        visualUrl: snapshot.visualAssetSnapshot?.publicUrl ?? null,
+        profileChanged,
+      };
+    }),
   };
 }
