@@ -273,7 +273,6 @@ describe("story outline repository", () => {
       assistantMessage: "这个想法需要更多参考资料。",
       referenceName: "特朗普",
       researchPlan,
-      afterResearchAction: "generate_directions" as const,
     }));
     const state = await handleStoryOutlineMessage(createDb(), "course-1", {
       message: "我希望参考特朗普的一生讲个课程",
@@ -283,7 +282,6 @@ describe("story outline repository", () => {
     expect(state.outline).toBeNull();
     expect(state.chatMessages.at(-1)?.actions.map((action) => action.action)).toEqual(["supply_reference_material", "choose_reference_search"]);
     expect(state.chatMessages.at(-1)?.actions[1].researchPlan).toEqual(researchPlan);
-    expect(state.chatMessages.at(-1)?.actions[1].afterResearchAction).toBe("generate_directions");
   });
 
   test("waits for teacher confirmation after researching a broad idea", async () => {
@@ -300,8 +298,8 @@ describe("story outline repository", () => {
     expect(state.directions).toEqual([]);
     expect(state.chatMessages.at(-1)?.content).toBe("资料已整理，请确认后继续。");
     expect(state.chatMessages.at(-1)?.actions[0]).toMatchObject({
-      action: "generate_directions",
-      label: "确认资料并生成故事方向",
+      action: "confirm_reference_materials",
+      label: "确认参考资料并继续",
     });
   });
 
@@ -321,7 +319,6 @@ describe("story outline repository", () => {
       assistantMessage: "我先整理已有的角色背景知识。",
       referenceName: "Jett 与 Sage",
       researchPlan,
-      afterResearchAction: "generate_directions" as const,
     }));
     const generateReferenceFromKnowledge = vi.fn(deps.generateReferenceFromKnowledge);
 
@@ -339,26 +336,80 @@ describe("story outline repository", () => {
     expect(state.outline).toBeNull();
     expect(state.chatMessages.at(-1)?.content).toBe("参考资料已整理，请确认后继续。");
     expect(state.chatMessages.at(-1)?.actions[0]).toMatchObject({
-      action: "generate_directions",
-      label: "确认资料并生成故事方向",
+      action: "confirm_reference_materials",
+      label: "确认参考资料并继续",
     });
   });
 
-  test("waits for teacher confirmation before generating an outline for an explicit mainline", async () => {
-    const state = await handleStoryOutlineMessage(createDb(), "course-1", {
+  test("asks how to use a complete source story only after references are confirmed", async () => {
+    const db = createDb();
+    await handleStoryOutlineMessage(db, "course-1", {
       message: "",
       mode: "idea",
       action: "request_reference_search",
-      targetId: "Jett",
-      afterResearchAction: "generate_outline",
+      targetId: "某网络小说",
     }, deps);
+    const decideFreeInput = vi.fn(async () => ({
+      decision: "ask_story_usage" as const,
+      assistantMessage: "资料中包含完整原剧情。你希望怎么讲这个故事？",
+    }));
+    const state = await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "confirm_reference_materials",
+    }, { ...deps, decideFreeInput });
 
     expect(state.directions).toEqual([]);
     expect(state.outline).toBeNull();
-    expect(state.chatMessages.at(-1)?.actions[0]).toMatchObject({
-      action: "generate_from_reference",
-      label: "确认资料并生成故事大纲",
-    });
+    expect(decideFreeInput).toHaveBeenCalledWith(expect.objectContaining({
+      references: expect.arrayContaining([expect.objectContaining({ name: "特朗普" })]),
+    }));
+    expect(state.chatMessages.at(-1)?.actions.map((action) => action.label)).toEqual(["按原剧情讲", "创作新剧情", "我有具体想法"]);
+  });
+
+  test("uses the complete source plot after the teacher chooses to follow the original story", async () => {
+    const db = createDb();
+    const decideFreeInput = vi.fn(async () => ({
+      decision: "generate_outline" as const,
+      assistantMessage: "按原剧情生成大纲。",
+    }));
+    const generateOutline = vi.fn(deps.generateOutline);
+
+    const state = await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "choose_story_usage",
+      targetId: "follow_original",
+    }, { ...deps, decideFreeInput, generateOutline });
+
+    expect(state.chatMessages.map((message) => message.content)).toContain("我选择按原剧情讲，保留原作主线、关键转折和结局。");
+    expect(generateOutline).toHaveBeenCalledWith(expect.objectContaining({
+      conversationHistory: expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining("按原剧情讲") })]),
+    }));
+    expect(state.outline).not.toBeNull();
+  });
+
+  test("rejects incomplete search results and asks the teacher to supply material", async () => {
+    const db = createDb();
+    const searchReference = vi.fn(async () => [{
+      name: "冷门网络小说",
+      type: "ip" as const,
+      sourceStatus: "insufficient" as const,
+      summary: "只能找到零散简介，无法确认完整剧情。",
+      usableFacts: [],
+      avoidTopics: [],
+      adaptationBoundary: "缺少可靠原文信息。",
+    }]);
+    const state = await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "request_reference_search",
+      targetId: "冷门网络小说",
+    }, { ...deps, searchReference });
+
+    expect(state.referenceMaterials).toEqual([]);
+    expect(state.chatMessages.at(-1)?.content).toContain("没有找到足够可靠");
+    expect(state.chatMessages.at(-1)?.actions.map((action) => action.action)).toEqual(["supply_reference_material"]);
   });
 
   test("generates directions only after the teacher confirms researched material", async () => {
@@ -513,6 +564,64 @@ describe("story outline repository", () => {
     expect(state.outline).toBeNull();
     expect(state.directions.length).toBeGreaterThan(0);
     expect(state.chatMessages.at(-1)?.content).toBe("我生成了 3 个故事方向，你可以选一个继续。");
+  });
+
+  test("replaces unselected directions when the teacher adds direction requirements", async () => {
+    const db = createDb();
+    db.state.directions.push(record({
+      courseId: "course-1",
+      title: "旧方向",
+      hook: "旧剧情",
+      whyFits: "旧说明",
+      mainCharacters: [],
+      classroomValue: "旧价值",
+      seedPrompt: "old",
+      selectedAt: null,
+    }));
+    const decideFreeInput = vi.fn(async () => ({
+      decision: "generate_directions" as const,
+      assistantMessage: "我会按新要求重新生成方向。",
+    }));
+    const generateDirections = vi.fn(async () => [{
+      title: "新的太空方向",
+      hook: "按老师的新要求展开。",
+      whyFits: "符合最新要求。",
+      mainCharacters: ["原作主角"],
+      classroomValue: "理解剧情",
+      seedPrompt: "new",
+    }]);
+
+    const state = await handleStoryOutlineMessage(db, "course-1", {
+      message: "我希望故事方向更忠于原作",
+      mode: "idea",
+    }, { ...deps, decideFreeInput, generateDirections });
+
+    expect(decideFreeInput).toHaveBeenCalledWith(expect.objectContaining({
+      currentDirections: expect.arrayContaining([expect.objectContaining({ title: "旧方向" })]),
+    }));
+    expect(state.directions.map((direction) => direction.title)).toEqual(["新的太空方向"]);
+  });
+
+  test("removes stale unselected directions when free input directly generates an outline", async () => {
+    const db = createDb();
+    db.state.directions.push(record({
+      courseId: "course-1",
+      title: "旧方向",
+      hook: "旧剧情",
+      whyFits: "旧说明",
+      mainCharacters: [],
+      classroomValue: "旧价值",
+      seedPrompt: "old",
+      selectedAt: null,
+    }));
+
+    const state = await handleStoryOutlineMessage(db, "course-1", {
+      message: "不用再选方向，直接按原剧情生成大纲",
+      mode: "idea",
+    }, deps);
+
+    expect(state.outline).not.toBeNull();
+    expect(state.directions).toEqual([]);
   });
 
   test("saves teacher supplied reference and directly generates outline when AI says it is enough", async () => {

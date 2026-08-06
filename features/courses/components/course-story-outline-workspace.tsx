@@ -133,7 +133,7 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
     }
   }
 
-  function continueModify(prefix: "帮我修改：" | "我补充资料：") {
+  function continueModify(prefix: string) {
     setMessage(prefix);
     requestAnimationFrame(() => inputRef.current?.focus());
   }
@@ -147,9 +147,16 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
       continueModify("我补充资料：");
       return;
     }
+    if (action.action === "describe_story_usage") {
+      continueModify("我希望这样讲这个故事：");
+      return;
+    }
     const isReferenceSearch = action.action === "choose_reference_search" || action.action === "request_reference_search";
+    const isFlowDecision = action.action === "confirm_reference_materials" || action.action === "choose_story_usage";
     const label = isReferenceSearch
       ? "正在整理参考资料..."
+      : isFlowDecision
+        ? "正在分析故事要求..."
       : action.action === "generate_directions"
         ? "正在生成故事方向..."
         : "正在生成故事大纲...";
@@ -161,7 +168,6 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
       action: action.action,
       targetId: action.targetId,
       researchPlan: action.researchPlan,
-      afterResearchAction: action.afterResearchAction,
     }, label, { optimisticMessage, restoreMessage: draft });
   }
 
@@ -334,6 +340,7 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
         </section>
 
         <ResultPanel
+          onDescribeDirection={() => continueModify("我希望的故事方向：")}
           onChooseDirection={(direction) => postMessage(
             { message: "", mode: "idea", action: "choose_direction", targetId: direction.id },
             "正在生成故事大纲...",
@@ -376,6 +383,10 @@ function actionHistoryMessage(action: CourseStoryChatAction) {
     return `请联网整理参考资料：${action.targetId || "当前引用对象"}`;
   }
   if (action.action === "generate_from_reference") return "请用已确认的参考资料生成故事大纲。";
+  if (action.action === "confirm_reference_materials") return "我确认参考资料，请继续判断故事生成方式。";
+  if (action.action === "choose_story_usage") return action.targetId === "follow_original"
+    ? "我选择按原剧情讲，保留原作主线、关键转折和结局。"
+    : "我选择创作新剧情，使用原作人物、世界观或主题重新创作。";
   if (action.action === "generate_directions") return "我确认参考资料，请生成 3 个故事方向。";
   if (action.action === "regenerate_outline") return "请基于当前全部要求重新生成故事大纲。";
   return action.label;
@@ -429,6 +440,7 @@ function ResultPanel({
   resultTab,
   setResultTab,
   onChooseDirection,
+  onDescribeDirection,
   onConfirm,
   pending,
 }: {
@@ -440,13 +452,14 @@ function ResultPanel({
   resultTab: "outline" | "characters" | "references";
   setResultTab: (tab: "outline" | "characters" | "references") => void;
   onChooseDirection: (direction: CourseStoryDirection) => void;
+  onDescribeDirection: () => void;
   onConfirm: () => void;
   pending: boolean;
 }) {
   const hasNewDirections = state.directions.length > 0 && !state.directions.some((direction) => direction.selectedAt);
 
   if (hasNewDirections) {
-    return <DirectionsPanel directions={state.directions} onChooseDirection={onChooseDirection} />;
+    return <DirectionsPanel directions={state.directions} onChooseDirection={onChooseDirection} onDescribeDirection={onDescribeDirection} />;
   }
 
   if (outline) {
@@ -488,7 +501,7 @@ function ResultPanel({
   }
 
   if (state.directions.length) {
-    return <DirectionsPanel directions={state.directions} onChooseDirection={onChooseDirection} />;
+    return <DirectionsPanel directions={state.directions} onChooseDirection={onChooseDirection} onDescribeDirection={onDescribeDirection} />;
   }
 
   return (
@@ -507,9 +520,11 @@ function ResultPanel({
 function DirectionsPanel({
   directions,
   onChooseDirection,
+  onDescribeDirection,
 }: {
   directions: CourseStoryDirection[];
   onChooseDirection: (direction: CourseStoryDirection) => void;
+  onDescribeDirection: () => void;
 }) {
   return (
     <section className="space-y-4 rounded-lg bg-card p-5 shadow-sm">
@@ -522,6 +537,10 @@ function DirectionsPanel({
           <Button className="mt-3" onClick={() => onChooseDirection(direction)} size="sm" type="button">选择这个方向</Button>
         </article>
       ))}
+      <div className="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-muted-foreground">都不合适？告诉我你希望的故事方向，我会重新生成。</p>
+        <Button onClick={onDescribeDirection} size="sm" type="button" variant="outline">描述我想要的方向</Button>
+      </div>
     </section>
   );
 }

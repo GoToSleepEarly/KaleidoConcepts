@@ -33,6 +33,9 @@ export const storyOutlineMessageSchema = z.object({
       z.literal("request_reference_search"),
       z.literal("supply_reference_material"),
       z.literal("choose_reference_search"),
+      z.literal("confirm_reference_materials"),
+      z.literal("choose_story_usage"),
+      z.literal("describe_story_usage"),
       z.literal("generate_directions"),
       z.literal("generate_from_reference"),
       z.literal("regenerate_outline"),
@@ -40,7 +43,6 @@ export const storyOutlineMessageSchema = z.object({
     .optional(),
   targetId: z.string().optional(),
   researchPlan: researchPlanSchema.optional(),
-  afterResearchAction: z.union([z.literal("generate_directions"), z.literal("generate_outline")]).optional(),
   chapterCount: z.number().int().min(1).max(8).optional(),
   writingProvider: storyWritingProviderSchema.optional(),
 });

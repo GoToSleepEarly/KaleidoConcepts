@@ -54,6 +54,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("约 50 字");
     expect(prompt).toContain("不要返回英文或中英双语");
     expect(prompt).toContain("老师点名且要求出场的每个角色");
+    expect(prompt).toContain("学生与老师不得自动进入 characters 或正文");
     expect(prompt).toContain("characters 是后续视觉资产名单");
     expect(prompt).toContain("机构、公司、团队、部门、监管方和其他背景群体不得进入 characters");
     expect(prompt).toContain("外部真实人物或已有作品角色实际出场时，sourceType 必须为 referenced");
@@ -88,6 +89,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("只设计可供老师选择的故事走向");
     expect(prompt).toContain("mainCharacters 只列具体且需要保持视觉一致性的角色");
     expect(prompt).toContain("机构、团队和背景群体只能写进 hook 或 seedPrompt");
+    expect(prompt).toContain("Step 1 人物快照描述的是课程参与者，不等于故事角色");
   });
 
   test("parses a fenced reference response and fills safe array defaults", async () => {
@@ -119,6 +121,31 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("能力和动机是什么？");
     expect(prompt).toContain("让角色参与冒险");
     expect(prompt).toContain("只做资料研究");
+    expect(prompt).toContain("无法确认完整且准确的核心信息、来源相互冲突");
+    expect(prompt).toContain("必须返回 insufficient");
+    expect(prompt).toContain("多个独立可靠来源相互印证");
+  });
+
+  test("does not treat a search result with no explicit status as confirmed", async () => {
+    searchReferenceMock.mockResolvedValueOnce({
+      text: JSON.stringify([{ name: "冷门作品", type: "ip", summary: "只有零散信息。", usableFacts: [] }]),
+    });
+
+    const references = await createStoryOutlineGenerationDeps().searchReference({
+      task: "整理参考资料",
+      chapterCount: 4,
+      coursePeople: [],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentOutline: null,
+      researchPlan: {
+        researchGoal: "确认完整剧情",
+        packets: [{ title: "冷门作品", subjects: [{ name: "冷门作品" }], researchQuestions: ["完整主线是什么？"], storyUseGoals: ["忠实讲述原剧情"] }],
+      },
+    });
+
+    expect(references[0].sourceStatus).toBe("insufficient");
   });
 
   test("routes known background knowledge to reference preparation without requesting internet", async () => {
@@ -127,7 +154,6 @@ describe("createStoryOutlineGenerationDeps", () => {
         decision: "prepare_reference_material",
         assistantMessage: "我会先整理可用于故事的角色设定。",
         referenceName: "Jett 与 Sage",
-        afterResearchAction: "generate_directions",
         researchPlan: {
           researchGoal: "设计两人共同参与的冒险",
           packets: [{
@@ -154,7 +180,6 @@ describe("createStoryOutlineGenerationDeps", () => {
       title: "Jett 与 Sage 的共同设定",
       subjects: [{ name: "Jett", context: "《瓦罗兰特》" }, { name: "Sage", context: "《瓦罗兰特》" }],
     });
-    expect(decision.afterResearchAction).toBe("generate_directions");
     const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
     expect(prompt).toContain("不要套用固定知识分类");
     expect(prompt).toContain("同一作品且需要共同参与故事");
@@ -165,6 +190,33 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("自身已有可靠、稳定知识时返回 prepare_reference_material");
     expect(prompt).toContain("自身知识不足时才返回 request_reference_material");
     expect(prompt).toContain("现有资料已经覆盖本轮所需背景时");
+    expect(prompt).toContain("只有确认参考资料后");
+    expect(prompt).toContain("ask_story_usage");
+  });
+
+  test("recognizes a complete source story only after references are available", async () => {
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        decision: "ask_story_usage",
+        assistantMessage: "资料中包含完整原剧情。你希望怎么讲这个故事？",
+      }),
+    });
+
+    const decision = await createStoryOutlineGenerationDeps().decideFreeInput({
+      task: "确认资料后判断下一步。",
+      chapterCount: 4,
+      coursePeople: [],
+      conversationHistory: [{ role: "teacher", content: "我确认参考资料，请继续。" }],
+      references: [{ name: "某网络小说", summary: "包含开端、转折、高潮和结局。" }],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+    });
+
+    expect(decision.decision).toBe("ask_story_usage");
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain("按原剧情讲");
+    expect(prompt).toContain("学生默认只是课程学习者");
   });
 
   test("generates teacher-facing reference cards from reliable model knowledge", async () => {

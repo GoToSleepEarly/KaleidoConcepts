@@ -148,7 +148,7 @@ describe("CourseStoryOutlineWorkspace", () => {
           courseId: "course-1",
           role: "assistant",
           content: "这个想法涉及真实人物或已有角色。我先整理参考资料，避免设定编错。",
-          actions: [{ id: "a1", label: "整理参考资料", action: "request_reference_search", targetId: "特朗普", researchPlan, afterResearchAction: "generate_directions" }],
+          actions: [{ id: "a1", label: "整理参考资料", action: "request_reference_search", targetId: "特朗普", researchPlan }],
           createdAt: "2026-08-06T08:00:00.000Z",
         },
       ],
@@ -157,7 +157,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByText("这个想法涉及真实人物或已有角色。我先整理参考资料，避免设定编错。")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "整理参考资料" }));
 
-    await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({ researchPlan, afterResearchAction: "generate_directions" }));
+    await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({ researchPlan }));
   });
 
   test("shows only the useful read-only reference content", () => {
@@ -438,6 +438,25 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByRole("heading", { name: "故事方向" })).toBeInTheDocument();
     expect(screen.getByText("新的中文方向")).toBeInTheDocument();
     expect(screen.queryByText("剧情概述")).not.toBeInTheDocument();
+    expect(screen.getByText("都不合适？告诉我你希望的故事方向，我会重新生成。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "描述我想要的方向" })).toBeInTheDocument();
+  });
+
+  test("lets the teacher describe a specific way to use the source story", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      chatMessages: [{
+        id: "m-usage",
+        courseId: "course-1",
+        role: "assistant",
+        content: "你希望怎么讲这个故事？",
+        actions: [{ id: "custom-usage", label: "我有具体想法", action: "describe_story_usage" }],
+        createdAt: "2026-08-07T08:00:00.000Z",
+      }],
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "我有具体想法" }));
+    expect(screen.getByRole("textbox", { name: "故事想法" })).toHaveValue("我希望这样讲这个故事：");
   });
 
   test("shows loading message while a request is pending", async () => {

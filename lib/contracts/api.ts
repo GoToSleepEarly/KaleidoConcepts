@@ -126,8 +126,6 @@ export type CourseSourceReferenceType =
   | "other";
 export type CourseSourceStatus = "confirmed" | "insufficient" | "teacher_supplied";
 export type CourseCharacterSourceType = "person" | "referenced" | "original";
-export type CourseAfterResearchAction = "generate_directions" | "generate_outline";
-
 export type CourseResearchPlan = {
   researchGoal: string;
   packets: Array<{
@@ -150,12 +148,14 @@ export type CourseStoryChatAction = {
     | "request_reference_search"
     | "supply_reference_material"
     | "choose_reference_search"
+    | "confirm_reference_materials"
+    | "choose_story_usage"
+    | "describe_story_usage"
     | "generate_directions"
     | "generate_from_reference"
     | "regenerate_outline";
   targetId?: string;
   researchPlan?: CourseResearchPlan;
-  afterResearchAction?: CourseAfterResearchAction;
 };
 
 export type CourseStoryChatMessage = {
@@ -267,7 +267,6 @@ export type CourseStoryMessageInput = {
   action?: CourseStoryChatAction["action"];
   targetId?: string;
   researchPlan?: CourseResearchPlan;
-  afterResearchAction?: CourseAfterResearchAction;
   chapterCount?: number;
   writingProvider?: StoryWritingProvider;
 };

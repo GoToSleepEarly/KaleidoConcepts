@@ -1,7 +1,6 @@
 import type {
   CourseCharacter,
   CourseAudiencePerson,
-  CourseAfterResearchAction,
   CourseResearchPlan,
   CourseSourceReference,
   CourseSourceReferenceType,
@@ -164,17 +163,17 @@ type StoryOutlineAiContext = {
   conversationHistory: StoryOutlinePromptMessage[];
   references: CourseSourceReference[];
   selectedDirection: CourseStoryDirection | null;
+  currentDirections: CourseStoryDirection[];
   currentOutline: CourseStoryOutline | null;
 };
 
 export type StoryOutlineGenerationDeps = {
   decideFreeInput: (input: StoryOutlineAiContext & { task: string }) => Promise<{
-    decision: "ask_clarification" | "prepare_reference_material" | "request_reference_material" | "generate_directions" | "generate_outline";
+    decision: "ask_clarification" | "ask_story_usage" | "prepare_reference_material" | "request_reference_material" | "generate_directions" | "generate_outline";
     assistantMessage: string;
     referenceName?: string;
     referenceType?: CourseSourceReferenceType;
     researchPlan?: CourseResearchPlan;
-    afterResearchAction?: CourseAfterResearchAction;
     teacherReference?: Omit<GeneratedReference, "sourceStatus">;
     teacherReferences?: Array<Omit<GeneratedReference, "sourceStatus">>;
   }>;
@@ -514,6 +513,7 @@ async function storyAiContext(
       .filter((message) => message.role !== "system")
       .map((message) => ({ role: message.role, content: message.content })),
     references: mappedReferences,
+    currentDirections: directions.map(toDirection).filter((direction) => !direction.selectedAt),
     selectedDirection: selectedDirectionOverride === undefined
       ? directions.map(toDirection).find((direction) => direction.selectedAt) ?? null
       : selectedDirectionOverride,
@@ -531,7 +531,12 @@ async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task
       task,
       writingProvider: resolved.writingProvider,
     });
-    await writeOutline(db, course, outline, resolved.writingProvider, resolved.chapterCount);
+    const persistOutline = async (tx: StoryOutlineDb) => {
+      await writeOutline(tx, course, outline, resolved.writingProvider, resolved.chapterCount);
+      await tx.courseStoryDirection.deleteMany({ where: { courseId: course.id, selectedAt: null } });
+    };
+    if (db.$transaction) await db.$transaction(persistOutline);
+    else await persistOutline(db);
     await addMessage(db, course.id, "assistant", "故事大纲已生成。", [
       { id: "regenerate-outline", label: "重新生成", action: "regenerate_outline" },
       { id: "continue-modify", label: "继续修改", action: "confirm_reference_object" },
@@ -575,8 +580,12 @@ async function generateAndSaveDirections(
     ...context,
     task: "根据老师当前要求和已确认资料生成 3 个故事方向。",
   });
-  await db.courseStoryDirection.deleteMany({ where: { courseId: course.id } });
-  await db.courseStoryDirection.createMany({ data: directions.map((direction) => ({ courseId: course.id, ...direction })) });
+  const replaceDirections = async (tx: StoryOutlineDb) => {
+    await tx.courseStoryDirection.deleteMany({ where: { courseId: course.id } });
+    await tx.courseStoryDirection.createMany({ data: directions.map((direction) => ({ courseId: course.id, ...direction })) });
+  };
+  if (db.$transaction) await db.$transaction(replaceDirections);
+  else await replaceDirections(db);
   await addMessage(db, course.id, "assistant", assistantMessage);
 }
 
@@ -589,6 +598,18 @@ export async function handleStoryOutlineMessage(
   const course = await getCourse(db, courseId);
   const setting = await currentSetting(db, course, input);
   if (input.message.trim()) await addMessage(db, courseId, "teacher", input.message.trim());
+  if (input.action === "confirm_reference_materials" && !input.message.trim()) {
+    await addMessage(db, courseId, "teacher", "我确认参考资料，请继续判断故事生成方式。");
+  }
+  if (input.action === "choose_story_usage" && !input.message.trim()) {
+    if (input.targetId !== "follow_original" && input.targetId !== "create_new") {
+      throw new CourseStoryOutlineValidationError("请选择一种故事讲述方式");
+    }
+    const usageMessage = input.targetId === "follow_original"
+      ? "我选择按原剧情讲，保留原作主线、关键转折和结局。"
+      : "我选择创作新剧情，使用原作人物、世界观或主题重新创作。";
+    await addMessage(db, courseId, "teacher", usageMessage);
+  }
 
   if (input.action === "request_reference_search" || input.action === "choose_reference_search") {
     if (!input.message.trim()) {
@@ -603,6 +624,20 @@ export async function handleStoryOutlineMessage(
       task: "按照研究计划联网整理可直接用于当前故事的参考资料。",
       researchPlan,
     });
+    const incompletePackets = researchPlan.packets.filter((_, index) => {
+      const reference = generatedReferences[index];
+      return !reference
+        || reference.sourceStatus === "insufficient"
+        || !reference.summary?.trim()
+        || !reference.usableFacts?.length;
+    });
+    if (generatedReferences.length !== researchPlan.packets.length || incompletePackets.length) {
+      const missingNames = incompletePackets.map((packet) => packet.title).join("、") || objectName;
+      await addMessage(db, courseId, "assistant", `联网搜索没有找到足够可靠的“${missingNames}”资料。请手动补充原文梗概、主要角色和关键剧情。`, [
+        { id: "supply-missing-reference-material", label: "我来补充资料", action: "supply_reference_material", targetId: missingNames, researchPlan },
+      ]);
+      return getStoryOutlineState(db, courseId);
+    }
     for (const [index, generatedReference] of generatedReferences.entries()) {
       const packet = researchPlan.packets[index];
       const reference = safeReferenceForWrite(
@@ -621,10 +656,9 @@ export async function handleStoryOutlineMessage(
         },
       });
     }
-    const nextAction: CourseStoryChatAction = input.afterResearchAction === "generate_outline"
-      ? { id: "confirm-reference-for-outline", label: "确认资料并生成故事大纲", action: "generate_from_reference" }
-      : { id: "confirm-reference-for-directions", label: "确认资料并生成故事方向", action: "generate_directions" };
-    await addMessage(db, courseId, "assistant", "资料已整理，请确认后继续。", [nextAction]);
+    await addMessage(db, courseId, "assistant", "资料已整理，请确认后继续。", [
+      { id: "confirm-reference-materials", label: "确认参考资料并继续", action: "confirm_reference_materials" },
+    ]);
     return getStoryOutlineState(db, courseId);
   }
 
@@ -670,8 +704,38 @@ export async function handleStoryOutlineMessage(
   const context = await storyAiContext(db, course, setting.chapterCount);
   const decision = await deps.decideFreeInput({
     ...context,
-    task: "判断老师最新输入后，Step 2 下一步应该执行什么。",
+    task: input.action === "confirm_reference_materials"
+      ? "参考资料已由老师确认。请根据实际资料判断是否存在完整原剧情、是否需要询问使用方式，以及主线是否完整。"
+      : input.action === "choose_story_usage"
+        ? "老师已经选择如何使用原剧情。请根据该选择和主线完整度判断下一步。"
+        : "判断老师最新输入后，Step 2 下一步应该执行什么。",
   });
+  const teacherReferences = decision.teacherReferences?.length
+    ? decision.teacherReferences
+    : decision.teacherReference
+      ? [decision.teacherReference]
+      : [];
+  const shouldSaveTeacherReferences = decision.decision === "ask_story_usage"
+    || decision.decision === "generate_directions"
+    || decision.decision === "generate_outline";
+  if (shouldSaveTeacherReferences) {
+    for (const [index, rawTeacherReference] of teacherReferences.entries()) {
+      const teacherReference = safeReferenceForWrite(
+        rawTeacherReference,
+        decision.referenceName || `老师补充资料${teacherReferences.length > 1 ? ` ${index + 1}` : ""}`,
+        input.message,
+        "teacher_supplied",
+      );
+      await db.courseSourceReference.create({
+        data: {
+          courseId,
+          ...teacherReference,
+          researchProvider: "none",
+          confirmedAt: new Date(),
+        },
+      });
+    }
+  }
 
   if (decision.decision === "ask_clarification") {
     await addMessage(db, courseId, "assistant", decision.assistantMessage || "请补充一下具体要求。");
@@ -680,8 +744,17 @@ export async function handleStoryOutlineMessage(
 
   if (decision.decision === "request_reference_material") {
     await addMessage(db, courseId, "assistant", decision.assistantMessage || "这个想法需要更多参考资料。", [
-      { id: "supply-reference-material", label: "我来补充资料", action: "supply_reference_material", targetId: decision.referenceName, researchPlan: decision.researchPlan, afterResearchAction: decision.afterResearchAction },
-      { id: "choose-reference-search", label: "联网整理资料", action: "choose_reference_search", targetId: decision.referenceName, researchPlan: decision.researchPlan, afterResearchAction: decision.afterResearchAction },
+      { id: "supply-reference-material", label: "我来补充资料", action: "supply_reference_material", targetId: decision.referenceName, researchPlan: decision.researchPlan },
+      { id: "choose-reference-search", label: "联网整理资料", action: "choose_reference_search", targetId: decision.referenceName, researchPlan: decision.researchPlan },
+    ]);
+    return getStoryOutlineState(db, courseId);
+  }
+
+  if (decision.decision === "ask_story_usage") {
+    await addMessage(db, courseId, "assistant", decision.assistantMessage || "资料中包含完整原剧情。你希望怎么讲这个故事？", [
+      { id: "follow-original-story", label: "按原剧情讲", action: "choose_story_usage", targetId: "follow_original" },
+      { id: "create-new-story", label: "创作新剧情", action: "choose_story_usage", targetId: "create_new" },
+      { id: "describe-story-usage", label: "我有具体想法", action: "describe_story_usage" },
     ]);
     return getStoryOutlineState(db, courseId);
   }
@@ -712,33 +785,10 @@ export async function handleStoryOutlineMessage(
         },
       });
     }
-    const nextAction: CourseStoryChatAction = decision.afterResearchAction === "generate_outline"
-      ? { id: "confirm-known-reference-for-outline", label: "确认资料并生成故事大纲", action: "generate_from_reference" }
-      : { id: "confirm-known-reference-for-directions", label: "确认资料并生成故事方向", action: "generate_directions" };
-    await addMessage(db, courseId, "assistant", "参考资料已整理，请确认后继续。", [nextAction]);
+    await addMessage(db, courseId, "assistant", "参考资料已整理，请确认后继续。", [
+      { id: "confirm-known-reference-materials", label: "确认参考资料并继续", action: "confirm_reference_materials" },
+    ]);
     return getStoryOutlineState(db, courseId);
-  }
-
-  const teacherReferences = decision.teacherReferences?.length
-    ? decision.teacherReferences
-    : decision.teacherReference
-      ? [decision.teacherReference]
-      : [];
-  for (const [index, rawTeacherReference] of teacherReferences.entries()) {
-    const teacherReference = safeReferenceForWrite(
-      rawTeacherReference,
-      decision.referenceName || `老师补充资料${teacherReferences.length > 1 ? ` ${index + 1}` : ""}`,
-      input.message,
-      "teacher_supplied",
-    );
-    await db.courseSourceReference.create({
-      data: {
-        courseId,
-        ...teacherReference,
-        researchProvider: "none",
-        confirmedAt: new Date(),
-      },
-    });
   }
 
   if (decision.decision === "generate_directions") {
@@ -746,7 +796,13 @@ export async function handleStoryOutlineMessage(
     return getStoryOutlineState(db, courseId);
   }
 
-  await generateAndSaveOutline(db, course, input.message, deps, setting);
+  const outlineTask = input.message.trim()
+    || (input.action === "confirm_reference_materials"
+      ? "根据老师已确认的参考资料和完整历史生成故事大纲。"
+      : input.action === "choose_story_usage"
+        ? "根据老师选择的原剧情使用方式生成故事大纲。"
+        : "根据老师当前完整要求生成故事大纲。");
+  await generateAndSaveOutline(db, course, outlineTask, deps, setting);
   return getStoryOutlineState(db, courseId);
 }
 
