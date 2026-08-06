@@ -1,5 +1,7 @@
 import type { StoryWritingProvider } from "@/lib/contracts/api";
 
+import { devAiLog } from "./dev-ai-log";
+
 type ProviderConfig = {
   apiKey: string;
   gptModel: string;
@@ -47,7 +49,9 @@ function outputText(data: ResponsesData) {
 }
 
 export function createStoryOutlineProvider(config = configFromEnvironment()) {
-  async function request(body: Record<string, unknown>) {
+  async function request(operation: string, body: Record<string, unknown>) {
+    const startedAt = Date.now();
+    devAiLog({ operation, phase: "request", payload: body });
     let response: Response;
     try {
       response = await fetch("https://api.quickrouter.ai/v1/responses", {
@@ -61,6 +65,7 @@ export function createStoryOutlineProvider(config = configFromEnvironment()) {
         signal: AbortSignal.timeout(config.timeoutMs),
       });
     } catch (error) {
+      devAiLog({ operation, phase: "error", latencyMs: Date.now() - startedAt, error });
       if (
         error instanceof Error &&
         (error.name === "TimeoutError" || error.name === "AbortError")
@@ -71,16 +76,32 @@ export function createStoryOutlineProvider(config = configFromEnvironment()) {
     }
 
     let data: ResponsesData;
+    let rawResponse: string;
     try {
-      data = (await response.json()) as ResponsesData;
-    } catch {
-      throw new Error("故事大纲服务返回异常");
+      rawResponse = await response.text();
+      devAiLog({
+        operation,
+        phase: "response",
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        payload: rawResponse,
+      });
+      data = JSON.parse(rawResponse) as ResponsesData;
+    } catch (error) {
+      devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+      throw new Error("故事大纲服务返回异常", { cause: error });
     }
     if (!response.ok) {
-      throw new Error(data.error?.message || data.message || "故事大纲生成失败");
+      const error = new Error(data.error?.message || data.message || "故事大纲生成失败");
+      devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+      throw error;
     }
     const text = outputText(data);
-    if (!text) throw new Error("故事大纲服务未返回内容");
+    if (!text) {
+      const error = new Error("故事大纲服务未返回内容");
+      devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+      throw error;
+    }
     return { text };
   }
 
@@ -88,19 +109,21 @@ export function createStoryOutlineProvider(config = configFromEnvironment()) {
     generateOutline: ({
       writingProvider,
       prompt,
+      operation,
     }: {
       writingProvider: StoryWritingProvider;
       prompt: string;
+      operation?: string;
     }) =>
-      request({
+      request(operation || "story_outline", {
         model:
           writingProvider === "quickrouter_deepseek"
             ? config.deepseekModel
             : config.gptModel,
         input: prompt,
       }),
-    searchReference: ({ prompt }: { prompt: string }) =>
-      request({
+    searchReference: ({ prompt, operation = "search_reference" }: { prompt: string; operation?: string }) =>
+      request(operation, {
         model: config.researchModel,
         input: prompt,
         tools: [{ type: "web_search" }],

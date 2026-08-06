@@ -2,9 +2,10 @@
 
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, Loader2, MessageSquareText, RotateCcw, Search, Sparkles } from "lucide-react";
+import { ArrowRight, BookOpen, Loader2, RotateCcw, Search, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
 import type {
   CourseSourceReference,
@@ -12,6 +13,7 @@ import type {
   CourseStoryMessageInput,
   CourseStoryOutline,
   CourseStoryOutlineState,
+  CourseStoryDirection,
   CourseAudiencePerson,
   StoryWritingProvider,
 } from "@/lib/contracts/api";
@@ -22,6 +24,7 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
   const [state, setState] = useState(initialState);
   const [mode, setMode] = useState<"idea" | "random">("idea");
   const [message, setMessage] = useState("");
+  const [randomSupplement, setRandomSupplement] = useState("");
   const [chapterCount, setChapterCount] = useState(initialState.settings.chapterCount);
   const [writingProvider, setWritingProvider] = useState<StoryWritingProvider>(initialState.settings.writingProvider);
   const [theme, setTheme] = useState("任意主题");
@@ -32,7 +35,11 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
   const [pendingSeconds, setPendingSeconds] = useState(0);
   const [resultTab, setResultTab] = useState<"outline" | "characters" | "references">("outline");
   const [error, setError] = useState("");
+  const [resetOpen, setResetOpen] = useState(false);
+  const [optimisticTeacherMessage, setOptimisticTeacherMessage] = useState("");
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const hasStepContent = Boolean(state.chatMessages.length || state.directions.length || state.referenceMaterials.length || state.outline);
+  const conversationStarted = hasStepContent || pending || Boolean(optimisticTeacherMessage);
 
   useEffect(() => {
     if (!pending) return;
@@ -43,11 +50,19 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
     return () => window.clearInterval(timer);
   }, [pending]);
 
-  async function postMessage(input: CourseStoryMessageInput, label = "正在处理...") {
+  async function postMessage(
+    input: CourseStoryMessageInput,
+    label = "正在处理...",
+    options: { optimisticMessage?: string; restoreMessage?: string; restoreRandomSupplement?: string } = {},
+  ) {
+    const optimisticMessage = options.optimisticMessage ?? input.message.trim();
     setPendingSeconds(0);
     setPending(true);
     setPendingLabel(label);
     setError("");
+    setOptimisticTeacherMessage(optimisticMessage);
+    setMessage("");
+    if (input.mode === "random") setRandomSupplement("");
     try {
       const response = await fetch(`/api/courses/${state.course.id}/story-outline/message`, {
         method: "POST",
@@ -56,27 +71,53 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
       });
       const data = (await response.json()) as CourseStoryOutlineState & { message?: string };
       if (!response.ok) throw new Error(data.message || "故事大纲生成失败");
+      const hasNewReferences = data.referenceMaterials.length > state.referenceMaterials.length;
       setState(data);
+      if (hasNewReferences) setResultTab("references");
+      if (input.mode === "random") setMode("idea");
       setMessage("");
+      setRandomSupplement("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "故事大纲生成失败");
+      if (options.restoreMessage) setMessage(options.restoreMessage);
+      if (options.restoreRandomSupplement) setRandomSupplement(options.restoreRandomSupplement);
     } finally {
       setPending(false);
       setPendingSeconds(0);
       setPendingLabel("");
+      setOptimisticTeacherMessage("");
     }
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (mode === "idea" && !message.trim()) return;
-    const randomPrompt = mode === "random" ? [`主题：${theme}`, `故事类型：${storyType}`, `氛围：${tone}`, message.trim()].filter(Boolean).join("\n") : message.trim();
-    await postMessage({ message: randomPrompt, mode }, mode === "random" ? "正在生成故事方向..." : "正在分析故事要求...");
+    const teacherMessage = mode === "random"
+      ? [
+        "请帮我生成随机故事方向。",
+        "",
+        `主题：${theme}`,
+        `故事类型：${storyType}`,
+        `故事氛围：${tone}`,
+        randomSupplement.trim() ? `补充要求：${randomSupplement.trim()}` : "",
+      ].filter((line, index) => index === 1 || Boolean(line)).join("\n")
+      : hasStepContent
+        ? message.trim()
+        : `我的故事想法：\n${message.trim()}`;
+    await postMessage(
+      { message: teacherMessage, mode },
+      mode === "random" ? "正在生成故事方向..." : "正在分析故事要求...",
+      {
+        restoreMessage: mode === "idea" ? message : undefined,
+        restoreRandomSupplement: mode === "random" ? randomSupplement : undefined,
+      },
+    );
   }
 
   async function confirm() {
     setPendingSeconds(0);
     setPending(true);
+    setPendingLabel("正在确认故事大纲...");
     setError("");
     try {
       const response = await fetch(`/api/courses/${state.course.id}/story-outline/confirm`, { method: "POST" });
@@ -88,6 +129,7 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
     } finally {
       setPending(false);
       setPendingSeconds(0);
+      setPendingLabel("");
     }
   }
 
@@ -105,19 +147,25 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
       continueModify("我补充资料：");
       return;
     }
-    const label = action.action === "choose_reference_search" || action.action === "request_reference_search"
+    const isReferenceSearch = action.action === "choose_reference_search" || action.action === "request_reference_search";
+    const label = isReferenceSearch
       ? "正在整理参考资料..."
-      : "正在生成故事大纲...";
+      : action.action === "generate_directions"
+        ? "正在生成故事方向..."
+        : "正在生成故事大纲...";
+    const draft = message.trim();
+    const optimisticMessage = draft || actionHistoryMessage(action);
     await postMessage({
-      message: message.trim(),
+      message: draft,
       mode: action.action === "regenerate_outline" ? "revise" : "idea",
       action: action.action,
       targetId: action.targetId,
-    }, label);
+      researchPlan: action.researchPlan,
+      afterResearchAction: action.afterResearchAction,
+    }, label, { optimisticMessage, restoreMessage: draft });
   }
 
   async function resetStep() {
-    if (!window.confirm("重新开始会清空 Step 2 当前聊天历史、参考资料和故事大纲，是否继续？")) return;
     setPendingSeconds(0);
     setPending(true);
     setPendingLabel("正在重新开始...");
@@ -128,31 +176,12 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
       if (!response.ok) throw new Error(data.message || "故事大纲重置失败");
       setState(data);
       setMessage("");
+      setRandomSupplement("");
+      setMode("idea");
+      setResultTab("outline");
+      setResetOpen(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "故事大纲重置失败");
-    } finally {
-      setPending(false);
-      setPendingSeconds(0);
-      setPendingLabel("");
-    }
-  }
-
-  async function saveReference(referenceId: string, payload: Pick<CourseSourceReference, "name" | "type" | "sourceStatus" | "summary" | "usableFacts" | "avoidTopics" | "adaptationBoundary">) {
-    setPendingSeconds(0);
-    setPending(true);
-    setPendingLabel("正在保存参考资料...");
-    setError("");
-    try {
-      const response = await fetch(`/api/courses/${state.course.id}/story-outline/reference-materials/${referenceId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = (await response.json()) as CourseStoryOutlineState & { message?: string };
-      if (!response.ok) throw new Error(data.message || "参考资料保存失败");
-      setState(data);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "参考资料保存失败");
     } finally {
       setPending(false);
       setPendingSeconds(0);
@@ -167,21 +196,25 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
         <div>
           <h2 className="text-2xl font-semibold text-foreground">故事大纲</h2>
         </div>
-        <Button disabled={!state.outline || pending} onClick={confirm} type="button">确认进入教学规划</Button>
+        <div className="flex items-center gap-2">
+          {hasStepContent ? (
+            <Button disabled={pending} onClick={() => setResetOpen(true)} type="button" variant="outline">
+              <RotateCcw className="size-4" />
+              重新开始本轮构思
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)]">
         <section className="flex min-h-[680px] flex-col rounded-lg bg-card shadow-sm">
           <div className="border-b border-border p-4">
-            <div className="flex items-center gap-2">
-              <div className="grid flex-1 grid-cols-2 gap-2 rounded-lg bg-muted p-1">
+            {!conversationStarted ? (
+              <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted p-1">
                 <button className={modeClass(mode === "idea")} onClick={() => setMode("idea")} type="button">我有想法</button>
                 <button className={modeClass(mode === "random")} onClick={() => setMode("random")} type="button">随机灵感</button>
               </div>
-              <Button aria-label="重置 Step2" disabled={pending} onClick={resetStep} size="icon" title="重置 Step2" type="button" variant="outline">
-                <RotateCcw className="size-4" />
-              </Button>
-            </div>
+            ) : null}
             <div className="mt-3 grid grid-cols-2 gap-3">
               <label className="block">
                 <span className="text-xs text-muted-foreground">章节数</span>
@@ -197,43 +230,64 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
                 </select>
               </label>
             </div>
-            {mode === "random" ? (
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                <label className="block">
-                  <span className="text-xs text-muted-foreground">主题灵感</span>
-                  <select aria-label="主题灵感" className="mt-1 h-10 w-full rounded-md border border-input bg-background px-2 text-sm" onChange={(event) => setTheme(event.target.value)} value={theme}>
-                    <option>任意主题</option>
-                    <option>海底世界</option>
-                    <option>太空学校</option>
-                    <option>时间旅行</option>
-                    <option>魔法图书馆</option>
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="text-xs text-muted-foreground">故事类型</span>
-                  <select aria-label="故事类型" className="mt-1 h-10 w-full rounded-md border border-input bg-background px-2 text-sm" onChange={(event) => setStoryType(event.target.value)} value={storyType}>
-                    <option>冒险解谜</option>
-                    <option>校园生活</option>
-                    <option>科学探索</option>
-                    <option>人物成长</option>
-                    <option>奇幻任务</option>
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="text-xs text-muted-foreground">故事氛围</span>
-                  <select aria-label="故事氛围" className="mt-1 h-10 w-full rounded-md border border-input bg-background px-2 text-sm" onChange={(event) => setTone(event.target.value)} value={tone}>
-                    <option>温暖合作</option>
-                    <option>轻松幽默</option>
-                    <option>紧张刺激</option>
-                    <option>安静治愈</option>
-                  </select>
-                </label>
-              </div>
-            ) : null}
           </div>
 
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-            {state.chatMessages.length ? state.chatMessages.map((chat) => (
+            {!conversationStarted && mode === "random" ? (
+              <form className="mx-auto w-full max-w-xl space-y-4 rounded-lg border border-border bg-muted/30 p-4" onSubmit={submit}>
+                <div>
+                  <h3 className="font-medium text-foreground">生成故事方向</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">选择基本方向，也可以补充一个特别要求。</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="block">
+                    <span className="text-xs text-muted-foreground">主题灵感</span>
+                    <select aria-label="主题灵感" className="mt-1 h-10 w-full rounded-md border border-input bg-background px-2 text-sm" onChange={(event) => setTheme(event.target.value)} value={theme}>
+                      <option>任意主题</option>
+                      <option>海底世界</option>
+                      <option>太空学校</option>
+                      <option>时间旅行</option>
+                      <option>魔法图书馆</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-muted-foreground">故事类型</span>
+                    <select aria-label="故事类型" className="mt-1 h-10 w-full rounded-md border border-input bg-background px-2 text-sm" onChange={(event) => setStoryType(event.target.value)} value={storyType}>
+                      <option>冒险解谜</option>
+                      <option>校园生活</option>
+                      <option>科学探索</option>
+                      <option>人物成长</option>
+                      <option>奇幻任务</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-muted-foreground">故事氛围</span>
+                    <select aria-label="故事氛围" className="mt-1 h-10 w-full rounded-md border border-input bg-background px-2 text-sm" onChange={(event) => setTone(event.target.value)} value={tone}>
+                      <option>温暖合作</option>
+                      <option>轻松幽默</option>
+                      <option>紧张刺激</option>
+                      <option>安静治愈</option>
+                    </select>
+                  </label>
+                </div>
+                <label className="block">
+                  <span className="text-sm font-medium text-foreground">补充要求（可选）</span>
+                  <input
+                    aria-label="补充要求（可选）"
+                    className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100"
+                    onChange={(event) => setRandomSupplement(event.target.value)}
+                    placeholder="例如：希望学生和老师共同参与"
+                    value={randomSupplement}
+                  />
+                </label>
+                {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+                <Button className="w-full" disabled={pending} type="submit">
+                  <Sparkles className="size-4" />
+                  生成 3 个故事方向
+                </Button>
+              </form>
+            ) : null}
+            {state.chatMessages.map((chat) => (
               <article className={cn("rounded-lg px-3 py-2 text-sm", chat.role === "teacher" ? "ml-10 bg-primary text-primary-foreground" : "mr-10 bg-muted text-foreground")} key={chat.id}>
                 <p className="whitespace-pre-wrap leading-6">{chat.content}</p>
                 {chat.actions.length ? (
@@ -247,30 +301,24 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
                   </div>
                 ) : null}
               </article>
-            )) : (
-              <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                <MessageSquareText className="mx-auto mb-2 size-5" />
-                输入故事想法，或让系统先给出几个方向。
-              </div>
-            )}
-            {pending && pendingLabel ? (
-              <article className="mr-10 rounded-lg bg-muted px-3 py-2 text-sm text-foreground">
-                <p className="flex items-center gap-2 leading-6">
-                  <Loader2 className="size-4 animate-spin" />
-                  {loadingText(pendingLabel, pendingSeconds)}
-                </p>
+            ))}
+            {optimisticTeacherMessage ? (
+              <article className="ml-10 rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground">
+                <p className="whitespace-pre-wrap leading-6">{optimisticTeacherMessage}</p>
               </article>
             ) : null}
+            {pending && pendingLabel ? <LoadingCard className="mr-10" label={pendingLabel} seconds={pendingSeconds} /> : null}
           </div>
 
-          <form className="border-t border-border p-4" onSubmit={submit}>
+          {mode === "idea" || conversationStarted ? <form className="border-t border-border p-4" onSubmit={submit}>
             <label className="block">
-              <span className="sr-only">故事想法</span>
+              <span className={conversationStarted ? "sr-only" : "text-sm font-medium text-foreground"}>{conversationStarted ? "故事想法" : "说说你的故事想法"}</span>
+              {!conversationStarted ? <span className="mt-1 block text-xs leading-5 text-muted-foreground">可以写人物、角色、故事类型，以及希望学生如何参与。例如：参考《瓦罗兰特》的 Jett 和 Sage，让他们和学生一起经历一场冒险。</span> : null}
               <textarea
                 aria-label="故事想法"
-                className="min-h-24 w-full resize-none rounded-md border border-input bg-background p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100"
+                className="mt-2 min-h-24 w-full resize-none rounded-md border border-input bg-background p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100"
                 onChange={(event) => setMessage(event.target.value)}
-                placeholder={mode === "idea" ? "例如：参考特朗普的一生讲个课程" : "可选补充：更想让学生参与、避开某类情节"}
+                placeholder={conversationStarted ? "继续补充故事要求，或说明希望如何修改" : "输入你的故事想法"}
                 ref={inputRef}
                 value={message}
               />
@@ -279,23 +327,42 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
             <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
               <Button disabled={pending || (mode === "idea" && !message.trim())} type="submit">
                 {pending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-                {pending ? "处理中" : "发送"}
+                {pending ? "处理中" : conversationStarted ? "发送" : "开始讨论故事"}
               </Button>
             </div>
-          </form>
+          </form> : null}
         </section>
 
         <ResultPanel
-          onChooseDirection={(directionId) => postMessage({ message: "", mode: "idea", action: "choose_direction", targetId: directionId }, "正在生成故事大纲...")}
-          onSaveReference={saveReference}
+          onChooseDirection={(direction) => postMessage(
+            { message: "", mode: "idea", action: "choose_direction", targetId: direction.id },
+            "正在生成故事大纲...",
+            { optimisticMessage: `我选择故事方向：${direction.title}\n${direction.hook}` },
+          )}
+          onConfirm={confirm}
           outline={state.outline}
-          pendingLabel={loadingText(pendingLabel, pendingSeconds)}
+          pending={pending}
+          pendingLabel={pendingLabel}
+          pendingSeconds={pendingSeconds}
           references={state.referenceMaterials}
           resultTab={resultTab}
           setResultTab={setResultTab}
           state={state}
         />
       </div>
+      <Dialog onClose={() => setResetOpen(false)} open={resetOpen} title="重新开始本轮构思？">
+        <div className="space-y-5 p-5 sm:p-6">
+          <p className="text-sm leading-6 text-muted-foreground">将清空本轮 Step 2 的聊天记录、故事方向、参考资料和故事大纲。</p>
+          {error && resetOpen ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button disabled={pending} onClick={() => setResetOpen(false)} type="button" variant="outline">保留当前内容</Button>
+            <Button disabled={pending} onClick={() => void resetStep()} type="button">
+              {pending ? <Loader2 className="size-4 animate-spin" /> : null}
+              清空并重新开始
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
@@ -304,11 +371,46 @@ function modeClass(active: boolean) {
   return cn("min-h-10 rounded-md px-3 text-sm font-medium", active ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70");
 }
 
-function loadingText(label: string, seconds: number) {
-  if (!label) return "";
-  const suffix = seconds > 0 ? ` · ${seconds}s` : "";
-  const hint = seconds >= 15 ? "，仍在生成，请不要关闭页面" : "";
-  return `${label}${suffix}${hint}`;
+function actionHistoryMessage(action: CourseStoryChatAction) {
+  if (action.action === "request_reference_search" || action.action === "choose_reference_search") {
+    return `请联网整理参考资料：${action.targetId || "当前引用对象"}`;
+  }
+  if (action.action === "generate_from_reference") return "请用已确认的参考资料生成故事大纲。";
+  if (action.action === "generate_directions") return "我确认参考资料，请生成 3 个故事方向。";
+  if (action.action === "regenerate_outline") return "请基于当前全部要求重新生成故事大纲。";
+  return action.label;
+}
+
+function loadingStatus(label: string, seconds: number) {
+  const elapsed = seconds > 0 ? `${seconds}s` : "刚刚开始";
+  if (label.includes("分析")) {
+    if (seconds < 6) return { title: "正在理解你的故事想法", detail: `识别人物、类型和学生参与方式 · ${elapsed}` };
+    if (seconds < 14) return { title: "正在梳理故事上下文", detail: `结合历史对话和人物信息 · ${elapsed}` };
+    return { title: "正在准备下一步内容", detail: `可能返回澄清问题、故事方向或完整大纲 · ${elapsed}` };
+  }
+  if (label.includes("故事方向")) return { title: "正在构思 3 个故事方向", detail: `拉开任务、冲突和冒险路径的差异 · ${elapsed}` };
+  if (label.includes("故事大纲")) {
+    if (seconds < 10) return { title: "正在搭建故事主线", detail: `保持人物和故事类型要求 · ${elapsed}` };
+    return { title: "正在安排角色与章节", detail: `让每章都推进具体事件 · ${elapsed}` };
+  }
+  if (label.includes("参考资料")) return { title: "正在整理参考资料", detail: `提取可用要点和改编边界 · ${elapsed}` };
+  if (label.includes("重新开始")) return { title: "正在清空本轮内容", detail: elapsed };
+  return { title: label.replace(/\.\.\.$/, ""), detail: elapsed };
+}
+
+function LoadingCard({ label, seconds, className }: { label: string; seconds: number; className?: string }) {
+  const status = loadingStatus(label, seconds);
+  return (
+    <article aria-live="polite" className={cn("rounded-lg bg-muted px-3 py-3 text-sm text-foreground", className)}>
+      <div className="flex items-start gap-2">
+        <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-primary" />
+        <div>
+          <p className="font-medium leading-5">{status.title}</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{status.detail}</p>
+        </div>
+      </div>
+    </article>
+  );
 }
 
 function tabClass(active: boolean) {
@@ -323,20 +425,30 @@ function ResultPanel({
   references,
   outline,
   pendingLabel,
+  pendingSeconds,
   resultTab,
   setResultTab,
   onChooseDirection,
-  onSaveReference,
+  onConfirm,
+  pending,
 }: {
   state: CourseStoryOutlineState;
   references: CourseSourceReference[];
   outline: CourseStoryOutline | null;
   pendingLabel: string;
+  pendingSeconds: number;
   resultTab: "outline" | "characters" | "references";
   setResultTab: (tab: "outline" | "characters" | "references") => void;
-  onChooseDirection: (directionId: string) => void;
-  onSaveReference: (referenceId: string, payload: Pick<CourseSourceReference, "name" | "type" | "sourceStatus" | "summary" | "usableFacts" | "avoidTopics" | "adaptationBoundary">) => void;
+  onChooseDirection: (direction: CourseStoryDirection) => void;
+  onConfirm: () => void;
+  pending: boolean;
 }) {
+  const hasNewDirections = state.directions.length > 0 && !state.directions.some((direction) => direction.selectedAt);
+
+  if (hasNewDirections) {
+    return <DirectionsPanel directions={state.directions} onChooseDirection={onChooseDirection} />;
+  }
+
   if (outline) {
     return (
       <section className="space-y-4 rounded-lg bg-card p-5 shadow-sm">
@@ -350,10 +462,18 @@ function ResultPanel({
         {resultTab === "references" ? (
           <div className="space-y-4">
             {references.length || outline.sourceReferences.length ? [...references, ...outline.sourceReferences.filter((reference) => !references.some((item) => item.id === reference.id))].map((reference) => (
-              <ReferenceEditor key={reference.id} onSave={onSaveReference} reference={reference} />
+              <ReferenceCard key={reference.id} reference={reference} />
             )) : <p className="text-sm text-muted-foreground">暂无参考资料</p>}
           </div>
         ) : null}
+        <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">确认后将进入教学规划，继续设计每章教学内容。</p>
+          <Button disabled={pending} onClick={onConfirm} type="button">
+            {pending && pendingLabel === "正在确认故事大纲..." ? <Loader2 className="size-4 animate-spin" /> : null}
+            确认故事大纲并进入教学规划
+            {!pending ? <ArrowRight className="size-4" /> : null}
+          </Button>
+        </div>
       </section>
     );
   }
@@ -362,30 +482,46 @@ function ResultPanel({
     return (
       <section className="space-y-4 rounded-lg bg-card p-5 shadow-sm">
         <h3 className="text-lg font-semibold text-foreground">参考资料</h3>
-        {references.map((reference) => <ReferenceEditor key={reference.id} onSave={onSaveReference} reference={reference} />)}
+        {references.map((reference) => <ReferenceCard key={reference.id} reference={reference} />)}
       </section>
     );
   }
 
   if (state.directions.length) {
-    return (
-      <section className="space-y-4 rounded-lg bg-card p-5 shadow-sm">
-        <h3 className="text-lg font-semibold text-foreground">故事方向</h3>
-        {state.directions.map((direction) => (
-          <article className="rounded-md border border-border p-4" key={direction.id}>
-            <h4 className="text-sm font-semibold text-foreground">{direction.title}</h4>
-            <p className="mt-2 text-sm text-muted-foreground">{direction.hook}</p>
-            <p className="mt-2 text-xs text-muted-foreground">{direction.whyFits}</p>
-            <Button className="mt-3" onClick={() => onChooseDirection(direction.id)} size="sm" type="button">选择这个方向</Button>
-          </article>
-        ))}
-      </section>
-    );
+    return <DirectionsPanel directions={state.directions} onChooseDirection={onChooseDirection} />;
   }
 
   return (
     <section className="flex min-h-[680px] items-center justify-center rounded-lg bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
-      {pendingLabel ? <span className="inline-flex items-center gap-2"><Loader2 className="size-4 animate-spin" />{pendingLabel}</span> : "还没有生成结果"}
+      {pendingLabel ? (
+        <div className="space-y-2">
+          <Loader2 className="mx-auto size-5 animate-spin text-primary" />
+          <p className="font-medium text-foreground">结果生成后会显示在这里</p>
+          <p className="text-xs text-muted-foreground">已处理 {pendingSeconds}s</p>
+        </div>
+      ) : "还没有生成结果"}
+    </section>
+  );
+}
+
+function DirectionsPanel({
+  directions,
+  onChooseDirection,
+}: {
+  directions: CourseStoryDirection[];
+  onChooseDirection: (direction: CourseStoryDirection) => void;
+}) {
+  return (
+    <section className="space-y-4 rounded-lg bg-card p-5 shadow-sm">
+      <h3 className="text-lg font-semibold text-foreground">故事方向</h3>
+      {directions.map((direction) => (
+        <article className="rounded-md border border-border p-4" key={direction.id}>
+          <h4 className="text-sm font-semibold text-foreground">{splitBilingual(direction.title).zh}</h4>
+          <p className="mt-2 text-sm text-muted-foreground">{splitBilingual(direction.hook).zh}</p>
+          <p className="mt-2 text-xs text-muted-foreground">{splitBilingual(direction.whyFits).zh}</p>
+          <Button className="mt-3" onClick={() => onChooseDirection(direction)} size="sm" type="button">选择这个方向</Button>
+        </article>
+      ))}
     </section>
   );
 }
@@ -476,45 +612,27 @@ function CharacterCard({ character }: { character: CourseStoryOutline["character
   );
 }
 
-function referenceSourceLabel(reference: CourseSourceReference) {
-  if (reference.sourceStatus === "teacher_supplied" || reference.researchProvider === "none") return "老师补充";
-  if (reference.researchProvider === "quickrouter_gpt") return "联网整理";
-  return "信息不足";
-}
-
-function ReferenceEditor({
-  reference,
-  onSave,
-}: {
-  reference: CourseSourceReference;
-  onSave: (referenceId: string, payload: Pick<CourseSourceReference, "name" | "type" | "sourceStatus" | "summary" | "usableFacts" | "avoidTopics" | "adaptationBoundary">) => void;
-}) {
-  const [name, setName] = useState(reference.name);
-  const [summary, setSummary] = useState(reference.summary);
-  const [adaptationBoundary, setAdaptationBoundary] = useState(reference.adaptationBoundary);
-  const [usableFacts, setUsableFacts] = useState(reference.usableFacts.join("\n"));
-  const [avoidTopics, setAvoidTopics] = useState(reference.avoidTopics.join("\n"));
-  const lines = (value: string) => value.split("\n").map((item) => item.trim()).filter(Boolean);
+function ReferenceCard({ reference }: { reference: CourseSourceReference }) {
   return (
-    <article className="space-y-3 rounded-md border border-border p-4">
-      <div>
-        <h4 className="text-sm font-semibold text-foreground">{reference.name}</h4>
-        <p className="mt-1 text-xs text-muted-foreground">资料来源：{referenceSourceLabel(reference)}</p>
-      </div>
-      <label className="block"><span className="text-xs text-muted-foreground">引用对象</span><input aria-label="引用对象" className="mt-1 h-10 w-full rounded-md border border-input px-3 text-sm" onChange={(event) => setName(event.target.value)} value={name} /></label>
-      <label className="block"><span className="text-xs text-muted-foreground">资料摘要</span><textarea aria-label="资料摘要" className="mt-1 min-h-20 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => setSummary(event.target.value)} value={summary} /></label>
-      <label className="block"><span className="text-xs text-muted-foreground">可用要点</span><textarea aria-label="可用要点" className="mt-1 min-h-20 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => setUsableFacts(event.target.value)} value={usableFacts} /></label>
-      <label className="block"><span className="text-xs text-muted-foreground">避开内容</span><textarea aria-label="避开内容" className="mt-1 min-h-20 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => setAvoidTopics(event.target.value)} value={avoidTopics} /></label>
-      <label className="block"><span className="text-xs text-muted-foreground">改编边界</span><textarea aria-label="改编边界" className="mt-1 min-h-20 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => setAdaptationBoundary(event.target.value)} value={adaptationBoundary} /></label>
-      <Button onClick={() => onSave(reference.id, {
-        name,
-        type: reference.type,
-        sourceStatus: reference.sourceStatus,
-        summary,
-        usableFacts: lines(usableFacts),
-        avoidTopics: lines(avoidTopics),
-        adaptationBoundary,
-      })} size="sm" type="button">保存参考资料</Button>
+    <article className="space-y-5 rounded-lg border border-border bg-background p-5">
+      <h4 className="text-base font-semibold text-foreground">{reference.name}</h4>
+      <section className="space-y-2">
+        <h5 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">资料摘要</h5>
+        <p className="text-sm leading-6 text-foreground">{reference.summary}</p>
+      </section>
+      <section className="space-y-2">
+        <h5 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">故事可用要点</h5>
+        {reference.usableFacts.length ? (
+          <ul className="space-y-2 text-sm leading-6 text-foreground">
+            {reference.usableFacts.map((fact, index) => (
+              <li className="flex gap-2" key={`${reference.id}-${index}`}>
+                <span aria-hidden="true" className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" />
+                <span>{fact}</span>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="text-sm text-muted-foreground">暂未提取到可用要点</p>}
+      </section>
     </article>
   );
 }

@@ -1,19 +1,39 @@
-import type { CourseSourceReferenceType, CourseSourceStatus } from "@/lib/contracts/api";
-import type { StoryWritingProvider } from "@/lib/contracts/api";
+import type {
+  CourseAfterResearchAction,
+  CourseResearchPlan,
+  CourseSourceReferenceType,
+  CourseSourceStatus,
+  StoryWritingProvider,
+} from "@/lib/contracts/api";
 
 import { createStoryOutlineProvider } from "./story-outline-provider";
 
 function parseJson<T>(text: string, fallbackMessage: string): T {
-  try {
-    return JSON.parse(text) as T;
-  } catch (error) {
-    throw new Error(fallbackMessage, { cause: error });
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+  const firstObject = trimmed.indexOf("{");
+  const firstArray = trimmed.indexOf("[");
+  const startsWithArray = firstArray >= 0 && (firstObject < 0 || firstArray < firstObject);
+  const extracted = startsWithArray
+    ? trimmed.slice(firstArray, trimmed.lastIndexOf("]") + 1)
+    : firstObject >= 0
+      ? trimmed.slice(firstObject, trimmed.lastIndexOf("}") + 1)
+      : "";
+  let cause: unknown;
+  for (const candidate of [trimmed, fenced, extracted]) {
+    if (!candidate) continue;
+    try {
+      return JSON.parse(candidate) as T;
+    } catch (error) {
+      cause = error;
+    }
   }
+  throw new Error(fallbackMessage, { cause });
 }
 
 function bilingualText(value: string | { zh?: string; en?: string }) {
   if (typeof value === "string") return value;
-  return [value.zh, value.en].filter(Boolean).join(" / ");
+  return value.zh || value.en || "";
 }
 
 type CoursePersonPrompt = Array<{
@@ -24,11 +44,46 @@ type CoursePersonPrompt = Array<{
   gender: string;
 }>;
 
+type StoryPromptContext = {
+  chapterCount: number;
+  coursePeople: CoursePersonPrompt;
+  conversationHistory: Array<{ role: string; content: string }>;
+  references: unknown[];
+  selectedDirection: unknown;
+  currentOutline: unknown;
+};
+
+function contextPrompt(input: StoryPromptContext) {
+  const peopleSnapshots = input.coursePeople.map(({ role, chineseName, englishName, age, gender }) => ({
+    role,
+    chineseName,
+    englishName,
+    age,
+    gender,
+  }));
+  return [
+    "<course_context>",
+    `指定章节数：${input.chapterCount}`,
+    `老师和学生人物快照：${JSON.stringify(peopleSnapshots)}`,
+    "</course_context>",
+    "<conversation_history>",
+    JSON.stringify(input.conversationHistory),
+    "</conversation_history>",
+    "<current_state>",
+    `已选择故事方向：${JSON.stringify(input.selectedDirection)}`,
+    `已保存参考资料：${JSON.stringify(input.references)}`,
+    `当前故事大纲：${JSON.stringify(input.currentOutline)}`,
+    "</current_state>",
+  ];
+}
+
 type FreeInputDecision = {
-  decision: "ask_clarification" | "request_reference_material" | "generate_directions" | "generate_outline";
+  decision: "ask_clarification" | "prepare_reference_material" | "request_reference_material" | "generate_directions" | "generate_outline";
   assistantMessage: string;
   referenceName?: string;
   referenceType?: CourseSourceReferenceType;
+  researchPlan?: CourseResearchPlan;
+  afterResearchAction?: CourseAfterResearchAction;
   teacherReference?: {
     name: string;
     type: CourseSourceReferenceType;
@@ -37,55 +92,163 @@ type FreeInputDecision = {
     avoidTopics: string[];
     adaptationBoundary: string;
   };
+  teacherReferences?: Array<{
+    name: string;
+    type: CourseSourceReferenceType;
+    summary: string;
+    usableFacts: string[];
+    avoidTopics: string[];
+    adaptationBoundary: string;
+  }>;
 };
+
+const referenceTypes: CourseSourceReferenceType[] = [
+  "real_person",
+  "historical_person",
+  "public_figure",
+  "ip",
+  "game_character",
+  "fictional_character",
+  "other",
+];
+
+const sourceStatuses: CourseSourceStatus[] = ["confirmed", "insufficient", "teacher_supplied"];
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function stringArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map(stringValue).filter(Boolean);
+}
+
+function normalizeReference(value: unknown, fallbackName: string, fallbackSummary: string) {
+  const source = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
+  const name = stringValue(source.name) || fallbackName || "老师补充资料";
+  const summary = stringValue(source.summary) || fallbackSummary || `关于${name}的参考资料。`;
+  const type = referenceTypes.includes(source.type as CourseSourceReferenceType)
+    ? source.type as CourseSourceReferenceType
+    : "other";
+  const sourceStatus = sourceStatuses.includes(source.sourceStatus as CourseSourceStatus)
+    ? source.sourceStatus as CourseSourceStatus
+    : "confirmed";
+  return {
+    name,
+    type,
+    sourceStatus,
+    summary,
+    usableFacts: stringArray(source.usableFacts),
+    avoidTopics: stringArray(source.avoidTopics),
+    adaptationBoundary: stringValue(source.adaptationBoundary) || "仅使用已确认资料进行适合课堂的改编。",
+  };
+}
+
+function normalizeResearchPlan(value: unknown): CourseResearchPlan | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const source = value as Record<string, unknown>;
+  const researchGoal = stringValue(source.researchGoal);
+  if (!researchGoal || !Array.isArray(source.packets)) return undefined;
+  const packets = source.packets.flatMap((value) => {
+    if (typeof value !== "object" || value === null) return [];
+    const packet = value as Record<string, unknown>;
+    const title = stringValue(packet.title);
+    const subjects = Array.isArray(packet.subjects)
+      ? packet.subjects.flatMap((value) => {
+          if (typeof value !== "object" || value === null) return [];
+          const subject = value as Record<string, unknown>;
+          const name = stringValue(subject.name);
+          if (!name) return [];
+          const context = stringValue(subject.context);
+          return [{ name, ...(context ? { context } : {}) }];
+        })
+      : [];
+    const researchQuestions = stringArray(packet.researchQuestions);
+    const storyUseGoals = stringArray(packet.storyUseGoals);
+    if (!title || !subjects.length || !researchQuestions.length || !storyUseGoals.length) return [];
+    return [{ title, subjects, researchQuestions, storyUseGoals }];
+  });
+  return packets.length ? { researchGoal, packets } : undefined;
+}
 
 export function createStoryOutlineGenerationDeps() {
   let provider: ReturnType<typeof createStoryOutlineProvider> | null = null;
   const client = () => (provider ??= createStoryOutlineProvider());
   return {
     decideFreeInput: async (input: {
-      course: { title: string; durationMinutes: number };
+      task: string;
+      chapterCount: number;
       coursePeople: CoursePersonPrompt;
-      message: string;
+      conversationHistory: Array<{ role: string; content: string }>;
       references: unknown[];
-      outline: unknown;
+      selectedDirection: unknown;
+      currentOutline: unknown;
     }) => {
       const { text } = await client().generateOutline({
         writingProvider: "quickrouter_gpt",
+        operation: "story_decide_free_input",
         prompt: [
-          "你是 Step2 故事大纲流程判断助手。",
-          "只返回 JSON 对象，字段：decision, assistantMessage, referenceName, referenceType, teacherReference。",
-          "decision 只能是 ask_clarification, request_reference_material, generate_directions, generate_outline。",
-          "只有老师自由输入需要判断；固定按钮流程不经过你。",
-          "如果老师输入方向明确但主线不具体，例如只有故事类型、对象、主题或氛围，返回 generate_directions。",
-          "如果老师明确写了故事类型，后续方向必须保持这个类型。",
-          "如果老师写“冒险”，不要默认转成调查、推理或解谜。",
-          "如果信息已经足够生成章节主线，返回 generate_outline。",
-          "如果对象不明确或资料不足，返回 ask_clarification 或 request_reference_material。",
-          "如果老师以“我补充资料：”开头且资料足够，返回 generate_outline，并在 teacherReference 中整理老师补充资料。",
-          "不要决定联网搜索，只说明是否需要参考资料。",
-          `课程：${input.course.title}，时长：${input.course.durationMinutes} 分钟。`,
-          `授课人物：${JSON.stringify(input.coursePeople)}`,
-          `老师输入：${input.message}`,
-          `已保存参考资料：${JSON.stringify(input.references)}`,
-          `当前大纲：${JSON.stringify(input.outline)}`,
+          "你是 Step 2 的流程判断助手，只判断流程下一步，不创作故事方向或故事大纲。",
+          "只返回 JSON 对象，字段：decision, assistantMessage, referenceName, referenceType, researchPlan, afterResearchAction, teacherReferences。decision 只能是 ask_clarification, prepare_reference_material, request_reference_material, generate_directions, generate_outline。",
+          "按以下顺序判断：意图或关键对象有歧义时返回 ask_clarification；需要背景资料时先判断知识来源；不需要背景资料且主线仍宽泛时返回 generate_directions；只有老师已经明确给出主角目标、核心冲突和关键推进方式，或修改要求足够具体时，才返回 generate_outline。只给出人物、主题、类型、氛围或背景资料不算主线明确。",
+          "展示参考资料与是否联网是两个独立判断。故事依赖真实人物、历史背景、公众人物、既有作品角色、科学事实等背景知识时，应先为老师准备参考资料；你自身已有可靠、稳定知识时返回 prepare_reference_material，自身知识不足时才返回 request_reference_material。纯原创设定且不依赖外部背景知识时不需要资料。",
+          "先检查 current_state 中已保存参考资料。现有资料已经覆盖本轮所需背景时，不重复返回 prepare_reference_material 或 request_reference_material，直接按主线清晰度继续。只有新增对象或出现尚未覆盖的必要知识时才准备新资料。",
+          "只有对象冷门或有歧义、需要最新信息、精确时间线或专业细节、现有知识明显不足或老师明确要求核实时，才返回 request_reference_material。不得仅因对象属于真实人物、IP 或游戏角色就要求联网；例如你熟悉其稳定核心设定时应返回 prepare_reference_material。",
+          "assistantMessage 只用中文简要说明当前缺口或下一步，不复述全部需求。不要自行发起联网；仅在返回 request_reference_material 后，由老师选择手动补充或联网整理。",
+          "在 prepare_reference_material 或 request_reference_material 时返回 researchPlan 和 afterResearchAction。researchPlan 结构为 {researchGoal, packets:[{title, subjects:[{name, context?}], researchQuestions, storyUseGoals}]}。afterResearchAction 根据老师在准备资料前是否已经明确主线，只能是 generate_directions 或 generate_outline；拿不准时必须选择 generate_directions。",
+          "不要套用固定知识分类。根据完整对话和故事目标动态决定研究对象、问题和颗粒度；同一作品且需要共同参与故事、彼此有关联的多个角色通常放在同一个 packet，不相关对象可拆分。",
+          "老师手动补充的资料足够时，在 teacherReferences 中按可独立使用的资料组整理，并继续按主线清晰度返回 generate_directions 或 generate_outline；每项字段为 name, type, summary, usableFacts, avoidTopics, adaptationBoundary，数组字段无内容时返回空数组。",
+          ...contextPrompt(input),
+          "<current_task>",
+          input.task,
+          "</current_task>",
         ].join("\n"),
       });
-      return parseJson<FreeInputDecision>(text, "故事需求判断失败，请重试");
+      const parsed = parseJson<FreeInputDecision>(text, "故事需求判断失败，请重试");
+      const latestTeacherMessage = [...input.conversationHistory].reverse().find((message) => message.role === "teacher")?.content || "";
+      const rawTeacherReferences = parsed.teacherReferences?.length
+        ? parsed.teacherReferences
+        : parsed.teacherReference
+          ? [parsed.teacherReference]
+          : [];
+      const teacherReferences = rawTeacherReferences.map((reference) => {
+        const normalized = normalizeReference(reference, parsed.referenceName || "", latestTeacherMessage);
+        return {
+          name: normalized.name,
+          type: normalized.type,
+          summary: normalized.summary,
+          usableFacts: normalized.usableFacts,
+          avoidTopics: normalized.avoidTopics,
+          adaptationBoundary: normalized.adaptationBoundary,
+        };
+      });
+      const afterResearchAction: CourseAfterResearchAction | undefined = parsed.decision === "prepare_reference_material" || parsed.decision === "request_reference_material"
+        ? parsed.afterResearchAction === "generate_outline" ? "generate_outline" : "generate_directions"
+        : undefined;
+      return {
+        ...parsed,
+        researchPlan: normalizeResearchPlan(parsed.researchPlan),
+        afterResearchAction,
+        referenceName: parsed.referenceName || teacherReferences[0]?.name,
+        teacherReference: teacherReferences[0],
+        teacherReferences,
+      };
     },
-    generateDirections: async (input: { course: { title: string; durationMinutes: number }; message: string }) => {
+    generateDirections: async (input: StoryPromptContext & { task: string }) => {
       const { text } = await client().generateOutline({
         writingProvider: "quickrouter_gpt",
+        operation: "story_generate_directions",
         prompt: [
-          "你是英语 PBL 绘本课程故事方向策划助手。",
-          "请只返回 JSON 数组，包含 3 个故事方向。",
-          "每项字段：title, hook, whyFits, mainCharacters, classroomValue, seedPrompt。",
-          "方向卡只用于选择故事走向，不是完整大纲。",
-          "如果老师明确指定故事类型，3 个方向都必须保持该类型。",
-          "如果老师写冒险，方向必须是任务、旅程、挑战、选择和行动，不要默认写成调查、推理或解谜。",
-          "3 个方向要有明显差异：任务目标、冲突来源、主角视角或冒险路径至少一项不同。",
-          `课程：${input.course.title}，时长：${input.course.durationMinutes} 分钟。`,
-          `老师偏好：${input.message || "无"}`,
+          "你是英语 PBL 绘本课程的故事方向策划助手，只设计可供老师选择的故事走向，不生成章节大纲。",
+          "只返回包含 3 项的 JSON 数组；每项字段为 title, hook, whyFits, mainCharacters, classroomValue, seedPrompt，所有字段内容都只返回中文。",
+          "完整保留老师明确指定的故事类型、人物或角色、学生参与方式和已确认资料边界；不得用自行新增角色替换老师点名的角色。",
+          "mainCharacters 只列具体且需要保持视觉一致性的角色。机构、团队和背景群体只能写进 hook 或 seedPrompt，不得作为主要角色；参考资料提到某个实体不等于它必须成为角色。",
+          "老师要求冒险时，设计任务、旅程、挑战、选择和行动；只有老师明确要求时才使用调查、推理或解谜主线。",
+          "3 个方向必须在任务目标、冲突来源、主角视角或行动路径上形成明显差异，同时保持同一组硬性要求。",
+          ...contextPrompt(input),
+          "<current_task>",
+          input.task,
+          "</current_task>",
         ].join("\n"),
       });
       return parseJson<Array<{
@@ -97,17 +260,28 @@ export function createStoryOutlineGenerationDeps() {
         seedPrompt: string;
       }>>(text, "故事方向解析失败，请重试");
     },
-    searchReference: async (input: { objectName: string }) => {
-      const { text } = await client().searchReference({
+    generateReferenceFromKnowledge: async (input: StoryPromptContext & { task: string; researchPlan: CourseResearchPlan }) => {
+      const { text } = await client().generateOutline({
+        writingProvider: "quickrouter_gpt",
+        operation: "story_generate_reference_from_knowledge",
         prompt: [
-          "请联网整理适合儿童英语 PBL 课程改编的参考资料。",
-          "只返回 JSON 对象，字段：name, type, sourceStatus, summary, usableFacts, avoidTopics, adaptationBoundary。",
-          "type 只能是 real_person, historical_person, public_figure, ip, game_character, fictional_character, other。",
-          "sourceStatus 只能是 confirmed, insufficient, teacher_supplied。",
-          `引用对象：${input.objectName}`,
+          "你只负责把已有背景知识整理成老师可阅读、可用于故事创作的参考资料，不判断流程，不设计故事方向或大纲。",
+          "只使用你自身已有且有把握的稳定知识，不得联网。严格围绕 researchPlan 中每个 packet 的 researchQuestions 整理，并让结果能够完成 storyUseGoals。",
+          "不确定的细节不要编造，也不要用看似精确的日期、数字或情节填补记忆空白；可在 avoidTopics 或 adaptationBoundary 中明确知识边界。",
+          "只返回 JSON 数组，每个 packet 对应一个对象，顺序保持一致。字段：name, type, sourceStatus, summary, usableFacts, avoidTopics, adaptationBoundary。",
+          "不要使用 Markdown 代码块，不要在 JSON 前后添加说明。usableFacts 和 avoidTopics 必须是 JSON 字符串数组，没有内容时返回空数组。",
+          "type 只能是 real_person, historical_person, public_figure, ip, game_character, fictional_character, other；sourceStatus 返回 confirmed。",
+          "name 使用对应 packet 的 title。summary 用中文概括与故事目标直接相关的知识脉络；usableFacts 提取 4-10 条具体、带因果或规则、能直接转化为剧情的中文要点。",
+          ...contextPrompt(input),
+          "<research_plan>",
+          JSON.stringify(input.researchPlan),
+          "</research_plan>",
+          "<current_task>",
+          input.task,
+          "</current_task>",
         ].join("\n"),
       });
-      return parseJson<{
+      const parsed = parseJson<Array<{
         name: string;
         type: CourseSourceReferenceType;
         sourceStatus: CourseSourceStatus;
@@ -115,47 +289,79 @@ export function createStoryOutlineGenerationDeps() {
         usableFacts: string[];
         avoidTopics: string[];
         adaptationBoundary: string;
-      }>(text, "参考资料解析失败，请重试");
+      }>>(text, "参考资料解析失败，请重试");
+      const values = Array.isArray(parsed) ? parsed : [parsed];
+      return values.map((value, index) => {
+        const packet = input.researchPlan.packets[index];
+        const fallbackName = packet?.title || input.researchPlan.researchGoal;
+        return normalizeReference(value, fallbackName, `关于${fallbackName}的背景参考资料。`);
+      });
+    },
+    searchReference: async (input: StoryPromptContext & { task: string; researchPlan: CourseResearchPlan }) => {
+      const { text } = await client().searchReference({
+        operation: "story_search_reference",
+        prompt: [
+          "你只做资料研究，不判断流程、不设计故事方向或大纲。请联网整理真正能支撑儿童英语 PBL 故事创作的参考资料，不要只做对象简介。",
+          "严格围绕 researchPlan 中每个 packet 的 researchQuestions 查证信息，并让结果能够完成 storyUseGoals。",
+          "只返回 JSON 数组，每个 packet 对应一个对象，顺序保持一致。字段：name, type, sourceStatus, summary, usableFacts, avoidTopics, adaptationBoundary。",
+          "不要使用 Markdown 代码块，不要在 JSON 前后添加说明。usableFacts 和 avoidTopics 必须是 JSON 字符串数组，没有内容时返回空数组。",
+          "type 只能是 real_person, historical_person, public_figure, ip, game_character, fictional_character, other。",
+          "sourceStatus 只能是 confirmed, insufficient, teacher_supplied。",
+          "name 使用对应 packet 的 title。summary 用中文概括与研究目标直接相关的完整知识脉络；usableFacts 提取 6-12 条具体、可核验、带因果或规则、能直接转化为剧情的中文要点。",
+          "不要用空泛标签凑数。存在争议或儿童不宜内容时仍先保证事实完整，再放入 avoidTopics；adaptationBoundary 说明如何安全改编。",
+          ...contextPrompt(input),
+          "<research_plan>",
+          JSON.stringify(input.researchPlan),
+          "</research_plan>",
+          "<current_task>",
+          input.task,
+          "</current_task>",
+        ].join("\n"),
+      });
+      const parsed = parseJson<Array<{
+        name: string;
+        type: CourseSourceReferenceType;
+        sourceStatus: CourseSourceStatus;
+        summary: string;
+        usableFacts: string[];
+        avoidTopics: string[];
+        adaptationBoundary: string;
+      }>>(text, "参考资料解析失败，请重试");
+      const values = Array.isArray(parsed) ? parsed : [parsed];
+      return values.map((value, index) => {
+        const packet = input.researchPlan.packets[index];
+        const fallbackName = packet?.title || input.researchPlan.researchGoal;
+        return normalizeReference(value, fallbackName, `关于${fallbackName}的联网参考资料。`);
+      });
     },
     generateOutline: async (input: {
-      course: { title: string; durationMinutes: number };
-      message: string;
+      task: string;
       references: unknown[];
       chapterCount: number;
       writingProvider: StoryWritingProvider;
       coursePeople: CoursePersonPrompt;
+      conversationHistory: Array<{ role: string; content: string }>;
+      selectedDirection: unknown;
       currentOutline?: unknown;
     }) => {
       const { text } = await client().generateOutline({
         writingProvider: input.writingProvider,
+        operation: "story_generate_outline",
         prompt: [
-          "你是英语 PBL 绘本课程故事大纲助手。",
-          "请只返回 JSON 对象，字段：title, summary, narrativeType, characters, chapters。",
-          "title、summary 和 chapter.title 只返回中文，不要返回英文标题、英文概括或英文章节名。",
-          "本阶段只生成故事大纲，不生成语法指导、知识点、题型、练习、答案或图片 prompt。",
-          "characters 每项字段：displayName, sourceType, roleInStory, shortDescription, visualDescription, shouldAppearInImages。",
-          "sourceType 只能是 person, referenced, original。",
-          "chapters 每项字段：order, title, whatHappens, characterIds。",
-          "不要返回 setting、endingHook、图片提示、练习设计、语法点或复杂结构字段。",
-          "每章只保留一个中文剧情概述，写在 whatHappens，50字左右。",
-          "chapters 的数量必须等于指定章节数。",
-          "先根据授课人物年龄、老师要求和引用对象判断叙事类型，再决定主角来源。",
-          "学生不一定是主角；人物传记可让被讲述对象成为主角。",
-          "如果学生进入故事，必须有自然身份和剧情功能。",
-          "每个角色必须服务核心冲突；不要为热闹添加无关角色。",
-          "非必要不要引入新的原创角色；新增原创角色默认 0-1 个，除非老师明确要求群像故事。",
-          "避免增加会进入后续生图流程但不推动剧情的角色。",
-          "老师明确指定故事类型时必须保持该类型；冒险故事默认写任务、旅程、挑战、选择和行动。",
-          "只有老师明确要求解谜、侦探、调查、线索、推理时，才把主线写成调查或解谜。",
-          "课堂角色来自授课人物，不要为课堂角色编写外貌、性格或背景描述。",
-          "引用角色和原创角色才需要故事功能、简短描述和改编边界。",
-          "每章必须推进具体事件，章节之间要有因果关系。",
-          `课程：${input.course.title}，时长：${input.course.durationMinutes} 分钟。`,
-          `授课人物：${JSON.stringify(input.coursePeople)}`,
-          `指定章节数：${input.chapterCount}`,
-          `老师要求：${input.message || "基于当前已确认资料生成"}`,
-          `已确认参考资料：${JSON.stringify(input.references)}`,
-          `当前大纲：${JSON.stringify(input.currentOutline ?? null)}`,
+          "你是英语 PBL 绘本课程故事大纲助手，只负责生成可确认的故事大纲，不生成教学设计、练习、答案或图片提示。",
+          "只返回 JSON 对象，字段为 title, summary, narrativeType, characters, chapters。所有面向老师展示的自然语言字段都只返回中文，不要返回英文或中英双语。",
+          "characters 每项字段为 displayName, sourceType, roleInStory, shortDescription, visualDescription, shouldAppearInImages；sourceType 只能是 person, referenced, original。",
+          "characters 是后续视觉资产名单，不是所有被故事提到的实体清单。只保留具体、持续参与剧情、需要保持视觉一致性的角色；机构、公司、团队、部门、监管方和其他背景群体不得进入 characters，只能在 summary 或章节 whatHappens 中按需提及。参考资料中出现某个实体，不代表它是角色。",
+          "外部真实人物或已有作品角色实际出场时，sourceType 必须为 referenced，并在能够对应已保存参考资料时填写 sourceReferenceId；原创人物才使用 original。",
+          "课堂人物只能复用人物快照，不编造外貌、性格或背景。老师点名且要求出场的每个角色都必须进入 characters，并在至少一章通过实际行动推动剧情；每个角色都必须服务核心冲突，AI 自行新增的原创角色最多 1 个，群像要求除外。",
+          "chapters 每项字段为 order, title, whatHappens, characterIds；数量必须等于指定章节数。每章只在 whatHappens 中写约 50 字的中文剧情概述，必须推进具体事件，并与前后章节形成因果关系。",
+          "需求优先级从高到低为：老师历史中明确要求；已选择方向；已确认参考资料；当前大纲；通用创作建议。低优先级内容不得覆盖高优先级要求。",
+          "根据人物年龄、老师要求和引用对象选择叙事类型与主角；学生不强制成为主角，但如果进入故事，必须有自然身份和剧情功能。",
+          "保持老师明确指定的故事类型。冒险故事以任务、旅程、挑战、选择和行动推进；只有老师明确要求解谜、侦探、调查、线索或推理时，才使用相应主线。",
+          ...contextPrompt({ ...input, currentOutline: input.currentOutline ?? null }),
+          "<current_task>",
+          input.task,
+          "</current_task>",
         ].join("\n"),
       });
       const parsed = parseJson<{

@@ -10,6 +10,19 @@ export const storyOutlineSettingsSchema = z.object({
   writingProvider: storyWritingProviderSchema,
 });
 
+export const researchPlanSchema = z.object({
+  researchGoal: z.string().trim().min(1),
+  packets: z.array(z.object({
+    title: z.string().trim().min(1),
+    subjects: z.array(z.object({
+      name: z.string().trim().min(1),
+      context: z.string().trim().min(1).optional(),
+    })).min(1),
+    researchQuestions: z.array(z.string().trim().min(1)).min(1),
+    storyUseGoals: z.array(z.string().trim().min(1)).min(1),
+  })).min(1),
+});
+
 export const storyOutlineMessageSchema = z.object({
   message: z.string().default(""),
   mode: z.union([z.literal("idea"), z.literal("random"), z.literal("revise")]),
@@ -26,6 +39,8 @@ export const storyOutlineMessageSchema = z.object({
     ])
     .optional(),
   targetId: z.string().optional(),
+  researchPlan: researchPlanSchema.optional(),
+  afterResearchAction: z.union([z.literal("generate_directions"), z.literal("generate_outline")]).optional(),
   chapterCount: z.number().int().min(1).max(8).optional(),
   writingProvider: storyWritingProviderSchema.optional(),
 });

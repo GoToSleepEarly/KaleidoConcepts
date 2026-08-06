@@ -1,3 +1,5 @@
+import { devAiLog } from "./dev-ai-log";
+
 type ProviderConfig = {
   apiKey: string;
   model: string;
@@ -47,23 +49,39 @@ function imageBlob(dataUrl: string) {
 }
 
 export function createPersonVisualProvider(config = configFromEnvironment()) {
-  async function readResponse(response: Response) {
+  async function readResponse(response: Response, operation: string, startedAt: number) {
     let data: ProviderResponse;
     try {
-      data = (await response.json()) as ProviderResponse;
-    } catch {
-      throw new Error("人物形象服务返回异常");
+      const rawResponse = await response.text();
+      data = JSON.parse(rawResponse) as ProviderResponse;
+      devAiLog({
+        operation,
+        phase: "response",
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        payload: data,
+      });
+    } catch (error) {
+      devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+      throw new Error("人物形象服务返回异常", { cause: error });
     }
-    if (!response.ok)
-      throw new Error(
-        data.error?.message || data.message || "人物形象生成失败",
-      );
+    if (!response.ok) {
+      const error = new Error(data.error?.message || data.message || "人物形象生成失败");
+      devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+      throw error;
+    }
     const imageUrl = resultImage(data);
-    if (!imageUrl) throw new Error("人物形象服务未返回图片");
+    if (!imageUrl) {
+      const error = new Error("人物形象服务未返回图片");
+      devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+      throw error;
+    }
     return { imageUrl };
   }
 
-  async function request(path: string, body: BodyInit, headers: HeadersInit) {
+  async function request(operation: string, path: string, body: BodyInit, headers: HeadersInit, logPayload: unknown) {
+    const startedAt = Date.now();
+    devAiLog({ operation, phase: "request", payload: logPayload });
     let response: Response;
     try {
       response = await fetch(`https://api.quickrouter.ai${path}`, {
@@ -77,6 +95,7 @@ export function createPersonVisualProvider(config = configFromEnvironment()) {
         signal: AbortSignal.timeout(config.timeoutMs),
       });
     } catch (error) {
+      devAiLog({ operation, phase: "error", latencyMs: Date.now() - startedAt, error });
       if (
         error instanceof Error &&
         (error.name === "TimeoutError" || error.name === "AbortError")
@@ -85,12 +104,13 @@ export function createPersonVisualProvider(config = configFromEnvironment()) {
       }
       throw new Error("人物形象服务连接失败，请稍后重试", { cause: error });
     }
-    return readResponse(response);
+    return readResponse(response, operation, startedAt);
   }
 
   return {
     generate: ({ prompt }: { prompt: string }) =>
       request(
+        "person_visual_generate",
         "/v1/images/generations",
         JSON.stringify({
           model: config.model,
@@ -101,6 +121,7 @@ export function createPersonVisualProvider(config = configFromEnvironment()) {
           format: "webp",
         }),
         { "Content-Type": "application/json" },
+        { model: config.model, prompt, size: "1024x1536", quality: config.quality, format: "webp" },
       ),
     edit: ({
       prompt,
@@ -117,7 +138,20 @@ export function createPersonVisualProvider(config = configFromEnvironment()) {
       body.set("quality", config.quality);
       body.set("format", "webp");
       body.set("image", imageBlob(imageDataUrl), "person-reference.png");
-      return request("/v1/images/edits", body, {});
+      return request(
+        "person_visual_edit",
+        "/v1/images/edits",
+        body,
+        {},
+        {
+          model: config.model,
+          prompt,
+          size: "1024x1536",
+          quality: config.quality,
+          format: "webp",
+          imageDataUrl,
+        },
+      );
     },
   };
 }
