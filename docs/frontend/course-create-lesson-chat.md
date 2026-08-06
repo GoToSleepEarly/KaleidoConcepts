@@ -1,195 +1,291 @@
-# Course Create Step 2: AI Lesson Chat
+# Course Create Step 2: 故事大纲
 
-## Goal
+## 模块目标
 
-Step 2 is a unified AI co-writing chat workspace. It helps the teacher confirm the story direction before spending time generating the full lesson text.
+Step 2 负责把老师的自然语言想法、参考资料或随机灵感转成可确认、可编辑、可追溯的结构化故事大纲。
 
-The fixed flow is:
+本阶段只确认故事方向、引用资料、角色结构和章节大纲，不生成正式课文、练习、答案、图片 prompt 或视觉资源。
 
-`start input -> simple story outline -> teacher confirms outline -> final lesson text -> structure into Step 3`
+确认故事大纲后进入 Step 3 教学规划。
 
-Step 2 only handles story direction and final lesson text. It does not manage image prompts, reference images, or character visual bibles.
+## 当前优化目标
 
-## Product Flow
+本轮优化修复 Step 2 已暴露的问题：
 
-1. Step 1 saves hard classroom constraints only: title, teacher, students, level, duration, grammar targets, and model.
-2. Step 2 opens with two entry points:
-   - `Start from inspiration library`: the teacher selects one theme preset.
-   - `I already have an idea`: the teacher can enter an original idea, vague direction, reference story, historical person, game character, IP, or existing plot notes.
-3. The first AI response must be a simple story outline. AI must not generate the final lesson text before the teacher confirms the outline.
-4. The outline assistant message carries contextual action buttons. The frontend does not infer the current stage from AI text; it only renders `message.actions` when present.
-5. Clicking `Confirm and generate final text` sends the action message back to the same chat endpoint and generates the final lesson text into the right-side preview.
-6. After the final lesson text is generated, no extra assistant action buttons are shown. The teacher uses the page-level `Confirm and enter Step 3` button.
-7. Step 3 structures and edits only lesson content.
-8. Step 4 handles image resources and lightweight external-person/IP visual approximation from the final text.
+- 重新生成和重新开始混在一起，导致用户无法理解会保留哪些历史。
+- 生成过程缺少明确 Loading，长请求等待不友好。
+- 程序用本地规则硬编码判断是否需要联网搜索，不利于维护。
+- 故事生成 prompt 太弱，容易引入无关角色，故事缺少趣味和年龄适配。
+- 右侧结果区没有按业务模块组织，中英文字段渲染不稳定。
+- 参考资料右侧编辑没有真正保存。
+- 随机灵感方向卡缺少后续选择动作。
+- 写作模型传入后没有稳定作用到大纲生成。
 
-## Simple Outline Format
+## 页面布局
 
-AI must use this user-facing outline shape:
+桌面端继续采用左右布局。
 
-```text
-故事题目：
-参考来源：
-主要角色：
-故事目标：
-章节大纲：
-1. ...
-2. ...
-3. ...
-课堂适配：
-需要确认：
-```
+左侧是创作聊天框：
 
-Rules:
+- 展示老师输入、AI 状态、AI 说明和流程推进按钮。
+- 固定按钮流程由代码直接执行，不交给 AI 判断。
+- 自由文本输入才先交给 AI 判断下一步。
+- 生成中必须展示可见等待态，例如“正在分析故事要求...”“正在整理参考资料...”“正在生成故事大纲...”。
 
-- Keep the outline short.
-- Do not generate full reading paragraphs, exercises, answer keys, image prompts, story modes, or internal fields.
-- If the teacher mentions a reference work, historical person, real person, game, IP, or fixed character, explain the adaptation boundary in normal language.
+右侧是结果区：
 
-## Message Actions
+- 空状态：尚无结果。
+- 故事方向卡：随机灵感生成 3 个方向。
+- 参考资料卡：展示联网整理或老师补充的资料。
+- 故事大纲：按模块展示结构化大纲。
 
-`LessonChatMessage` may include:
+右侧不展示 prompt、JSON、provider、Responses、QuickRouter、原始网页内容或技术错误。
 
-```ts
-type LessonChatAction = {
-  id: string;
-  label: string;
-  message: string;
-  intent?: "outline" | "draft" | "revise";
-};
-```
+## 入口与固定流程
 
-The outline response uses four actions:
+入口保留两个：
 
-- `Confirm and generate final text`
-- `Revise outline`
-- `Try another direction`
-- `Add reference information`
+- 我有想法
+- 随机灵感
 
-The frontend renders these buttons under the assistant message. Buttons either send the action message directly or prefill the input for teacher edits.
+### 随机灵感
 
-## Final Text Format
+随机灵感是固定 UI 流程，不需要 AI 先判断下一步。
 
-The final lesson text must contain only lesson content:
+老师选择主题灵感、故事类型、故事氛围后，点击生成，后端直接生成 3 个故事方向卡。
 
-```text
-【Lesson Draft】
-Story Title: English story title
-Hello class! ...
+每张方向卡展示：
 
-【Lesson Meta】
-...
+- 方向标题
+- 一句话故事钩子
+- 为什么适合本课
+- 主要角色
+- 课堂价值
 
-【Stage 1】
-Title: ...
-English Title: ...
-Teacher Tip: ...
-【Reading】
-S1: ...
+方向卡必须有明确选择动作。老师选择某个方向后，后端直接基于该方向生成完整故事大纲。
 
-【Closing Reading】
-S1: ...
+### 资料生成大纲
 
-【教师答案区 / Answer Key】
-1. answer
-```
+点击“用这些资料生成大纲”是固定流程，不需要 AI 决策是否联网。后端直接读取当前已保存的参考资料卡并生成大纲。
 
-The final text must not contain the confirmed outline, image URLs, image prompts, resource state, or non-lesson explanations.
+### 重新生成与重新开始
 
-Exercise placement rules:
+重新生成和重新开始是两个不同动作。
 
-- Blanks and hints must be embedded at the missing-word position inside the sentence.
-- Correct: `ZiXuan smiled and said, "You (3) ________ (ask) (提示：现在完成时) a question that many psychologists study."`
-- Incorrect: `ZiXuan smiled and said, "You ________ a question that many psychologists study." (3) ________ (ask) (提示：现在完成时)`
-- Question distribution should follow the course duration budget: vocabulary labels, verb phrases, and grammar/choice blanks must be spread across stages instead of clustered.
-- Each stage Reading should target 130-145 English words and stay within 120-160 words.
+故事大纲生成成功后，聊天框中的“故事大纲已生成。”消息下方显示：
 
-## Structuring Rules
+- 重新生成：基于当前上下文重新生成整份故事大纲。
+- 继续修改：不调用后端，只聚焦输入框并预填 `帮我修改：`，等待老师补充修改要求。
 
-Step 2 -> Step 3 only validates lesson content:
+页面级提供“重新开始”：
 
-- final text exists
-- stages are parseable and match the expected course duration
-- each stage has reading text
-- exercises have answers
-- answer key covers the body question numbers
-- closing reading exists
-- no image resource data is stored in `CourseLessonDraft`
+- 清空当前 Step 2 聊天历史、方向卡、参考资料、故事大纲和角色。
+- 回到初始入口。
+- 必须二次确认，文案说明该操作会清空 Step 2 当前历史。
 
-Step 2 no longer blocks on reference story metadata or third-party character appearance.
+## 自由输入 AI 决策
 
-## API
+只有老师自由输入时，才先让 AI 判断下一步。
 
-### `GET /api/courses/:id/lesson-chat`
+自由输入包括：
 
-Returns:
+- 原创故事想法。
+- 真实人物、公众人物、历史人物。
+- IP、游戏角色、影视角色、虚拟角色。
+- 老师补充的参考资料。
+- 对当前大纲的自然语言修改要求。
+
+AI 决策只允许返回三类：
 
 ```ts
-{
-  messages: LessonChatMessage[];
-  draftText: string;
-  llmModel: LlmModel;
-  lessonDraftExists: boolean;
-}
+type FreeInputDecision =
+  | "ask_clarification"
+  | "request_reference_material"
+  | "generate_outline";
 ```
 
-### `POST /api/courses/:id/lesson-chat/message`
+代码不再硬编码判断什么词需要搜索、什么对象需要澄清、什么历史人物不需要搜索。这些判断由 AI 的决策说明给出。
 
-SSE endpoint. Request:
+如果 AI 决策返回格式错误、动作不在协议内或无法判断，系统不自行猜测，保留旧结果并提示老师换个说法或重试。
 
-```ts
-{
-  message: string;
-  draftText?: string;
-  intent?: "outline" | "draft" | "revise";
-  llmModel?: LlmModel;
-}
-```
+### 需要澄清
 
-Events:
+当 AI 判断对象不明确、资料不足或输入有歧义时，聊天框展示 AI 的中文问题，并给出可继续输入的引导。
 
-- `status`: generation status heartbeat.
-- `assistant`: assistant chat reply; may include `actions`.
-- `draft_reset`: clear preview before a new final-text stream.
-- `draft_delta`: streamed final text chunk.
-- `draft`: full current final text.
-- `done`: saved chat state.
-- `error`: failure message.
+右侧不展示未确认候选对象卡。
 
-Refresh behavior:
+### 需要参考资料
 
-- Step2 final-text generation is still request-bound SSE in the MVP; refreshing the page stops the active browser request.
-- To avoid losing everything, the server saves a recoverable chat state before streaming and persists partial `draftText` during the stream.
-- After refresh, the teacher sees the latest saved partial text and can continue revising or regenerate from the confirmed outline.
+当 AI 判断需要更多资料时，不直接联网。聊天框说明缺少什么资料，并提供两个按钮：
 
-Side effect:
+- 我来补充资料
+- 联网整理资料
 
-- Every AI call writes one `AiGenerationLog` row when the database is reachable.
-- Logs are request-level, not message-level. One row records the resolved intent, model, input snapshot, output text, status, error message, and latency.
-- Logging failure must not block the teacher's current generation flow; the server reports it to application logs and continues.
-- `input` stores the course constraints, teacher/student profiles, prior Step2 messages, current draft snapshot, teacher message, requested intent, and resolved intent. This is enough to replay and compare future prompt/model changes without depending on mutable UI state.
-- Failed calls record the same available input snapshot plus the error message and any partial output collected before failure.
+点击“我来补充资料”：
 
-### `POST /api/courses/:id/lesson-chat/structure`
+- 不联网。
+- 输入框聚焦并预填 `我补充资料：`。
+- 老师提交后，再由 AI 判断资料是否完善。
+- 如果资料足够，保存一张 `teacher_supplied` 参考资料卡，并直接生成故事大纲。
+- 如果仍不足，继续提示缺少内容，并再次提供“我来补充资料”和“联网整理资料”。
 
-Request:
+点击“联网整理资料”：
 
-```ts
-{
-  draftText: string;
-}
-```
+- 聊天框展示搜索 Loading。
+- 后端调用联网搜索整理参考资料。
+- 搜索成功后右侧展示可编辑参考资料卡。
+- 老师保存或确认后，可点击“用这些资料生成大纲”。
 
-Behavior:
+## 故事生成原则
 
-1. Parse stages, sentence lines, embedded exercises, answer key, and closing reading.
-2. Derive a synthetic `StoryOption` with id `chat-final` for existing Step3/Step4 pipeline compatibility.
-3. Compile to `lesson_content_v1`.
-4. Save `CourseStoryOption`, `Course.selectedStoryOptionId`, and `CourseLessonDraft`.
-5. Do not store image URL, image prompt, resource state, or character visual bible in `CourseLessonDraft`.
+生成大纲时，后端必须向 AI 提供：
 
-## Implementation Status
+- 课程标题。
+- 课程时长。
+- Step 1 选择的老师和学生信息，包括年龄。
+- 老师当前输入。
+- 已保存参考资料。
+- 当前故事大纲，若本轮是修改或重新生成。
+- 章节数量。
+- 写作模型选择。
 
-- Status: implemented. 2026-07-28 updated right-side empty state into an outline workspace, added persistent AI generation logs, added partial stream persistence, moved Step3 entry to the page header, and tightened inline exercise placement / distribution prompt rules.
-- Validation commands: `pnpm exec vitest run lib/server/ai/lesson-chat-structure.test.ts lib/server/ai/resource-plan-generator.test.ts`, `pnpm exec eslint ...`, `pnpm exec prisma validate`.
-- Commit: pending.
+AI 必须先判断叙事类型，再决定主角来源，不能机械要求学生一定是主角。
+
+叙事类型示例：
+
+- 人物传记或真实人物故事：被讲述对象可以是主角，学生可作为观察者、采访者、时空旅程参与者，也可以不进入故事正文。
+- IP、游戏或影视角色改编：引用角色可以是主角或关键伙伴，但必须写清改编边界。
+- 原创课堂冒险：默认优先让 Step 1 学生成为主角，老师作为引导者或任务发布者。
+- 主题寓言或科普故事：可以由原创角色主导，学生不强制出现。
+
+年龄适配规则：
+
+- 年龄较小的学生优先使用清晰、温和、线性的故事化传记或寓言化改编。
+- 年龄较大的学生可以使用采访、调查、时空任务、辩论、商业或科学挑战、冒险解谜等更有张力的结构。
+- 如果老师明确要求冒险、刺激、悬疑或闯关，真实人物故事也可以做成任务型故事，但事实边界必须清楚。
+- 敏感公众人物不做立场宣传，不展开现实争议，只抽取适合课堂的主题。
+
+角色控制规则：
+
+- 每个角色必须有明确剧情功能。
+- 不为热闹添加无关角色。
+- 新增原创角色默认控制在 1-2 个，除非老师明确要求群像故事。
+- 引用人物或角色不能无理由抢走老师想表达的故事重点。
+
+故事趣味规则：
+
+- 每份大纲必须有一个清晰钩子，例如谜题、任务、误会、倒计时、丢失物、选择困境或调查线索。
+- 每章必须推进具体事件，不能只写抽象成长目标。
+- 章节之间要有因果关系，避免松散罗列。
+
+## 结构化大纲
+
+AI 返回严格结构化数据，前端渲染为组件。
+
+故事标题、故事概括和章节标题必须中英双语。章节内容说明以中文为主，避免英文按句随意铺开。
+
+右侧故事大纲按以下模块展示：
+
+### 故事概览
+
+- 中文标题
+- 英文标题
+- 中文一句话概括
+- 英文一句话概括
+- 叙事类型
+- 核心故事钩子
+
+### 参考与边界
+
+如存在参考资料，展示：
+
+- 引用对象
+- 来源状态：联网整理 / 老师补充 / 信息不足
+- 可用要点
+- 避开内容
+- 改编边界
+
+参考资料卡必须可编辑并保存。生成大纲时使用数据库中已保存的当前资料，而不是未保存的输入框内容。
+
+### 角色结构
+
+按角色功能分组展示：
+
+- 核心主角
+- 重要配角
+- 课堂人物
+- 引用对象
+- 原创角色
+
+每个角色展示：
+
+- 角色名
+- 来源类型
+- 剧情功能
+- 简短描述
+- 是否建议进入后续图片
+
+### 章节大纲
+
+每章展示：
+
+- 中文章节标题
+- 英文章节标题
+- 剧情目标
+- 关键事件
+- 出场角色
+- 场景
+- 结尾推进点
+
+## API 边界
+
+现有正式路径继续使用：
+
+- `GET /api/courses/:id/story-outline`
+- `POST /api/courses/:id/story-outline/message`
+- `PUT /api/courses/:id/story-outline/settings`
+- `PUT /api/courses/:id/story-outline/reference-materials/:referenceId`
+- `PUT /api/courses/:id/story-outline`
+- `POST /api/courses/:id/story-outline/confirm`
+
+本轮需要补充一个重置 Step 2 的能力，可选择新增：
+
+- `POST /api/courses/:id/story-outline/reset`
+
+重置接口只清理 Step 2 当前状态，不删除 Step 1 基础信息，不影响生产持久化图片目录。
+
+## 失败恢复
+
+- AI 决策失败：保留聊天和右侧旧结果，提示老师重试或换个说法。
+- 方向生成失败：保留老师输入和筛选项，允许重试。
+- 联网搜索失败：不生成大纲，不覆盖旧参考资料，提示可重试或改为老师补充资料。
+- 老师补充资料仍不足：不生成大纲，继续提示缺少内容。
+- 参考资料保存失败：不进入大纲生成，保留当前编辑内容供老师重试。
+- 大纲生成失败：保留旧大纲、参考资料和聊天历史。
+- 重新开始失败：不清空本地 UI，提示重试。
+- 修改已确认故事大纲并影响后续步骤时，必须二次确认是否重置后续教学规划、文案与练习、视觉资源。
+
+## 验收标准
+
+- 老师自由输入时，是否澄清、是否需要资料、是否直接生成由 AI 决策，不再由程序硬编码关键词判断。
+- 随机灵感、选择方向、用资料生成、重新生成、继续修改、重新开始都是固定流程。
+- 需要资料时先让老师选择“我来补充资料”或“联网整理资料”。
+- 老师补充资料足够后，系统自动保存 `teacher_supplied` 参考资料卡并直接生成大纲。
+- 生成、搜索、重置等长操作都有明确 Loading。
+- 故事大纲生成后，聊天消息下方出现“重新生成”和“继续修改”。
+- “继续修改”只预填 `帮我修改：` 并聚焦输入框，不立即调用 AI。
+- “重新开始”清空 Step 2 状态，并有二次确认。
+- 大纲生成 prompt 使用课程人物和年龄信息。
+- 故事主角根据叙事类型决定，不强制学生一定是主角。
+- 新增角色有明确剧情功能，避免无关角色堆叠。
+- 右侧按故事概览、参考与边界、角色结构、章节大纲分模块渲染。
+- 标题、概括和章节标题稳定展示中英双语。
+- 参考资料编辑可以保存，后续生成使用已保存资料。
+- 写作模型选择真实作用于大纲生成。
+
+## 实现状态
+
+- 状态：待实现。
+- 本轮确认时间：2026-08-06。
+- 验证命令：待实现后记录。
+- 提交号：待实现后记录。
