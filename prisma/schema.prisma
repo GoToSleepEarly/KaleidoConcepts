@@ -30,6 +30,7 @@ model Person {
   activeVisualAsset   PersonVisualAsset?  @relation("ActivePersonVisual", fields: [activeVisualAssetId], references: [id], onDelete: SetNull)
   visualAssets        PersonVisualAsset[] @relation("PersonVisualAssets")
   coursePeople        CoursePerson[]
+  courseCharacters    CourseCharacter[]
 
   @@index([role, archivedAt])
   @@index([chineseName])
@@ -76,6 +77,13 @@ model Course {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   people          CoursePerson[]
+  storyOutline    CourseStoryOutline?
+  storySetting     CourseStorySetting?
+  storyDirections CourseStoryDirection[]
+  storyMessages   CourseStoryChatMessage[]
+  sourceReferences CourseSourceReference[]
+  characters      CourseCharacter[]
+  aiGenerationLogs AiGenerationLog[]
 
   @@index([lifecycleStatus, updatedAt])
 }
@@ -112,6 +120,133 @@ model PresetOption {
 
   @@unique([kind, label])
   @@index([kind, archivedAt])
+}
+
+model CourseStoryOutline {
+  id              String               @id @default(cuid())
+  courseId        String               @unique
+  chapterCount    Int
+  title           String
+  summary         String
+  writingProvider StoryWritingProvider @default(quickrouter_gpt)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  course          Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  chapters        CourseStoryOutlineChapter[]
+}
+
+model CourseStorySetting {
+  id              String               @id @default(cuid())
+  courseId        String               @unique
+  chapterCount    Int
+  writingProvider StoryWritingProvider @default(quickrouter_gpt)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  course          Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model CourseStoryDirection {
+  id              String   @id @default(cuid())
+  courseId        String
+  title           String
+  hook            String
+  whyFits         String
+  mainCharacters  Json
+  classroomValue  String
+  seedPrompt      String
+  selectedAt      DateTime?
+  createdAt       DateTime @default(now())
+  course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, createdAt])
+}
+
+model CourseStoryChatMessage {
+  id        String              @id @default(cuid())
+  courseId  String
+  role      CourseStoryChatRole
+  content   String
+  actions   Json?
+  createdAt DateTime            @default(now())
+  course    Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, createdAt])
+}
+
+model CourseSourceReference {
+  id                 String                    @id @default(cuid())
+  courseId           String
+  name               String
+  type               CourseSourceReferenceType
+  sourceStatus       CourseSourceStatus        @default(confirmed)
+  summary            String
+  usableFacts        Json
+  avoidTopics        Json
+  adaptationBoundary String
+  researchProvider   StoryResearchProvider     @default(none)
+  confirmedAt        DateTime?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  course             Course                    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  characters         CourseCharacter[]
+
+  @@index([courseId, name])
+}
+
+model CourseCharacter {
+  id                   String                    @id @default(cuid())
+  courseId             String
+  displayName          String
+  sourceType           CourseCharacterSourceType
+  sourcePersonId       String?
+  sourceReferenceId    String?
+  roleInStory          String
+  shortDescription     String
+  visualDescription    String?
+  shouldAppearInImages Boolean                   @default(true)
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  course               Course                    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  sourcePerson         Person?                   @relation(fields: [sourcePersonId], references: [id], onDelete: SetNull)
+  sourceReference      CourseSourceReference?    @relation(fields: [sourceReferenceId], references: [id], onDelete: SetNull)
+
+  @@index([courseId, sourceType])
+  @@index([sourcePersonId])
+  @@index([sourceReferenceId])
+}
+
+model CourseStoryOutlineChapter {
+  id          String             @id @default(cuid())
+  outlineId   String
+  order       Int
+  title       String
+  storyGoal   String
+  keyEvents   Json
+  characterIds Json
+  setting     String
+  endingHook  String
+  outline     CourseStoryOutline @relation(fields: [outlineId], references: [id], onDelete: Cascade)
+
+  @@unique([outlineId, order])
+}
+
+model AiGenerationLog {
+  id               String                  @id @default(cuid())
+  courseId         String?
+  stage            String
+  operation        String
+  status           AiGenerationStatus
+  writingProvider  StoryWritingProvider?
+  researchProvider StoryResearchProvider?
+  inputSnapshot    Json
+  outputSnapshot   Json?
+  errorMessage     String?
+  latencyMs        Int?
+  createdAt        DateTime                @default(now())
+  course           Course?                 @relation(fields: [courseId], references: [id], onDelete: SetNull)
+
+  @@index([courseId, createdAt])
+  @@index([stage, operation, createdAt])
 }
 
 enum PersonRole {
@@ -159,4 +294,47 @@ enum CourseStage {
 enum PresetOptionKind {
   theme
   grammar
+}
+
+enum StoryWritingProvider {
+  quickrouter_gpt
+  quickrouter_deepseek
+}
+
+enum StoryResearchProvider {
+  quickrouter_gpt
+  none
+}
+
+enum CourseStoryChatRole {
+  teacher
+  assistant
+  system
+}
+
+enum CourseSourceReferenceType {
+  real_person
+  historical_person
+  public_figure
+  ip
+  game_character
+  fictional_character
+  other
+}
+
+enum CourseSourceStatus {
+  confirmed
+  insufficient
+  teacher_supplied
+}
+
+enum CourseCharacterSourceType {
+  person
+  referenced
+  original
+}
+
+enum AiGenerationStatus {
+  succeeded
+  failed
 }

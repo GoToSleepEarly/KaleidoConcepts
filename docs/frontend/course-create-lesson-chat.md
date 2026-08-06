@@ -285,7 +285,7 @@ AI 返回严格结构化数据，前端渲染为组件。
 
 ## 实现状态
 
-- 状态：待实现。
+- 状态：已实现，待用户验收。
 - 本轮确认时间：2026-08-06。
-- 验证命令：待实现后记录。
-- 提交号：待实现后记录。
+- 验证命令：`pnpm test -- lib/server/repositories/story-outline.test.ts lib/server/ai/story-outline-provider.test.ts features/courses/components/course-story-outline-workspace.test.tsx`、`pnpm exec prisma validate`、`pnpm lint`、`pnpm build`。
+- 提交号：同本提交。

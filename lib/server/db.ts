@@ -6,8 +6,9 @@ import type { CoursesDb } from "@/lib/server/repositories/courses";
 import type { PeopleDb } from "@/lib/server/repositories/people";
 import type { PersonVisualsDb } from "@/lib/server/repositories/person-visuals";
 import type { PresetsDb } from "@/lib/server/repositories/presets";
+import type { StoryOutlineDb } from "@/lib/server/repositories/story-outline";
 
-export type AppDb = AuthDb & PeopleDb & PersonVisualsDb & PresetsDb & CoursesDb;
+export type AppDb = AuthDb & PeopleDb & PersonVisualsDb & PresetsDb & CoursesDb & StoryOutlineDb;
 
 let prisma: AppDb | null = null;
 

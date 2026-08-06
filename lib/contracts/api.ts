@@ -113,6 +113,143 @@ export type CourseListItem = {
   updatedAt: string;
 };
 
+export type StoryWritingProvider = "quickrouter_gpt" | "quickrouter_deepseek";
+export type StoryResearchProvider = "quickrouter_gpt" | "none";
+export type CourseStoryChatRole = "teacher" | "assistant" | "system";
+export type CourseSourceReferenceType =
+  | "real_person"
+  | "historical_person"
+  | "public_figure"
+  | "ip"
+  | "game_character"
+  | "fictional_character"
+  | "other";
+export type CourseSourceStatus = "confirmed" | "insufficient" | "teacher_supplied";
+export type CourseCharacterSourceType = "person" | "referenced" | "original";
+
+export type CourseStoryChatAction = {
+  id: string;
+  label: string;
+  action:
+    | "choose_direction"
+    | "confirm_reference_object"
+    | "request_reference_search"
+    | "supply_reference_material"
+    | "choose_reference_search"
+    | "generate_from_reference"
+    | "regenerate_outline";
+  targetId?: string;
+};
+
+export type CourseStoryChatMessage = {
+  id: string;
+  courseId: string;
+  role: CourseStoryChatRole;
+  content: string;
+  actions: CourseStoryChatAction[];
+  createdAt: string;
+};
+
+export type CourseStoryDirection = {
+  id: string;
+  courseId: string;
+  title: string;
+  hook: string;
+  whyFits: string;
+  mainCharacters: string[];
+  classroomValue: string;
+  seedPrompt: string;
+  selectedAt: string | null;
+  createdAt: string;
+};
+
+export type CourseSourceReference = {
+  id: string;
+  courseId: string;
+  name: string;
+  type: CourseSourceReferenceType;
+  sourceStatus: CourseSourceStatus;
+  summary: string;
+  usableFacts: string[];
+  avoidTopics: string[];
+  adaptationBoundary: string;
+  researchProvider: StoryResearchProvider;
+  confirmedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CourseCharacter = {
+  id: string;
+  courseId: string;
+  displayName: string;
+  sourceType: CourseCharacterSourceType;
+  sourcePersonId?: string | null;
+  sourceReferenceId?: string | null;
+  roleInStory: string;
+  shortDescription: string;
+  visualDescription?: string | null;
+  shouldAppearInImages: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CourseStoryOutlineChapter = {
+  id: string;
+  order: number;
+  title: string;
+  titleZh?: string;
+  titleEn?: string;
+  storyGoal: string;
+  keyEvents: string[];
+  characterIds: string[];
+  setting: string;
+  endingHook: string;
+};
+
+export type CourseStoryOutline = {
+  id: string;
+  courseId: string;
+  chapterCount: number;
+  title: string;
+  summary: string;
+  narrativeType?: string;
+  storyHook?: string;
+  writingProvider: StoryWritingProvider;
+  sourceReferences: CourseSourceReference[];
+  characters: CourseCharacter[];
+  chapters: CourseStoryOutlineChapter[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CourseStoryOutlineState = {
+  course: {
+    id: string;
+    title: string;
+    durationMinutes: 30 | 45 | 60;
+    currentStage: CourseStage;
+  };
+  chatMessages: CourseStoryChatMessage[];
+  settings: {
+    chapterCount: number;
+    writingProvider: StoryWritingProvider;
+  };
+  directions: CourseStoryDirection[];
+  referenceMaterials: CourseSourceReference[];
+  outline: CourseStoryOutline | null;
+  coursePeople: CourseAudiencePerson[];
+};
+
+export type CourseStoryMessageInput = {
+  message: string;
+  mode: "idea" | "random" | "revise";
+  action?: CourseStoryChatAction["action"];
+  targetId?: string;
+  chapterCount?: number;
+  writingProvider?: StoryWritingProvider;
+};
+
 export type PresetKind = "theme" | "grammar";
 
 export type PresetOption = {
