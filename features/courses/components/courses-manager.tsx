@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import type { CourseListItem } from "@/lib/contracts/api";
 
 const stageLabels: Record<CourseListItem["currentStage"], string> = {
-  audience: "授课对象",
+  audience: "基础信息",
   story_outline: "故事大纲",
   teaching_plan: "教学规划",
   content: "文案与练习",
@@ -45,7 +45,7 @@ export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
       <section className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="max-w-2xl">
           <p className="text-sm font-medium text-primary">课程工作台</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-foreground">从授课对象开始，逐步完成一门课程</h2>
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-foreground">从基础信息开始，逐步完成一门课程</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">新系统只显示新课程。旧课程保留在冻结的 V1 系统中。</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -58,7 +58,7 @@ export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
 
       <section className="overflow-hidden rounded-lg bg-card shadow-sm">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center border-b border-border px-5 py-3 text-xs font-medium text-muted-foreground sm:grid-cols-[minmax(0,1fr)_160px_180px_auto]">
-          <span>课程</span><span className="hidden sm:block">授课对象</span><span className="hidden sm:block">当前阶段</span><span className="sr-only">操作</span>
+          <span>课程</span><span className="hidden sm:block">老师与学生</span><span className="hidden sm:block">当前阶段</span><span className="sr-only">操作</span>
         </div>
         <div className="divide-y divide-border">
           {loading ? Array.from({ length: 3 }).map((_, index) => <div className="flex items-center gap-4 px-5 py-5" key={index}><div className="skeleton size-10 rounded-md" /><div className="flex-1 space-y-2"><div className="skeleton h-4 w-48 rounded" /><div className="skeleton h-3 w-72 max-w-full rounded" /></div></div>) : null}
@@ -84,7 +84,7 @@ export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
         </div>
         {!loading && !courses.length ? (
           <div className="p-8">
-            <EmptyState action={<Button asChild><Link href="/courses/new"><Plus className="size-4" />创建第一门课程</Link></Button>} description="先确认这节课由谁上、给谁上以及上多久。" icon={UsersRound} title="还没有新系统课程" />
+            <EmptyState action={<Button asChild><Link href="/courses/new"><Plus className="size-4" />创建第一门课程</Link></Button>} icon={UsersRound} title="还没有新系统课程" />
           </div>
         ) : null}
       </section>

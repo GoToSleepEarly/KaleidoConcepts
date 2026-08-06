@@ -8,6 +8,7 @@ storage/images
 prisma/dev.db
 .local
 .claude/
+.superpowers/
 .playwright-cli/
 output/
 tsconfig.tsbuildinfo

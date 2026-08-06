@@ -1,8 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Clock3, Loader2, Pencil, Plus, Search, UserRound, UsersRound, X } from "lucide-react";
+import { BookOpen, Check, Clock3, Loader2, Pencil, Plus, Search, UserRound, UsersRound, X } from "lucide-react";
 
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
@@ -121,51 +121,73 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <CourseCreateSteps currentStep={1} />
-      <div>
-        <p className="text-sm font-medium text-primary">阶段一 · 授课对象</p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-foreground">先确定这节课由谁上、给谁上</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">这里只保存课程硬约束，不需要思考故事、知识点或题型。</p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold text-foreground">基础信息</h2>
+        </div>
       </div>
 
       <form className="space-y-5" onSubmit={submit}>
         <section className="rounded-lg bg-card p-5 shadow-sm sm:p-6">
-          <label className="block max-w-2xl">
-            <span className="text-sm font-semibold text-foreground">课程名称</span>
-            <span className="mt-1 block text-xs text-muted-foreground">仅用于课程管理，后续故事标题不会覆盖它。</span>
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 items-center justify-center rounded-md bg-primary-50 text-primary" data-testid="course-title-icon"><BookOpen className="size-4" /></span>
+            <h3 className="text-sm font-semibold text-foreground">课程名称</h3>
+          </div>
+          <label className="block">
+            <span className="sr-only">课程名称</span>
             <input
+              aria-label="课程名称"
               autoFocus
-              className="mt-3 min-h-12 w-full rounded-md border border-input bg-muted/40 px-4 text-base font-medium outline-none placeholder:font-normal placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary-100"
+              className="mt-3 min-h-12 w-full rounded-md border border-input bg-background px-4 text-base font-medium outline-none placeholder:font-normal placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary-100"
               maxLength={120}
               onChange={(event) => setTitle(event.target.value)}
-              placeholder="例如：海底图书馆 · 45 分钟课"
+              placeholder="例如：海底图书馆"
               value={title}
             />
           </label>
         </section>
 
-        <AudienceSection description="一门课程只能选择一位老师。" icon={UserRound} title="授课老师">
-          {teacher ? <SelectedPerson person={teacher} onEdit={() => setEditing(teacher)} onRemove={() => setTeacher(null)} /> : <AddPersonButton label="添加老师" onClick={() => setPickerRole("teacher")} />}
-        </AudienceSection>
+        <section className="rounded-lg bg-card p-5 shadow-sm sm:p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="flex size-9 items-center justify-center rounded-md bg-primary-50 text-primary"><UserRound className="size-4" /></span>
+              <h3 className="text-sm font-semibold text-foreground">老师</h3>
+            </div>
+          </div>
+          <div className="mt-4">
+            {teacher ? <SelectedPerson person={teacher} onEdit={() => setEditing(teacher)} onRemove={() => setTeacher(null)} /> : <AddPersonButton label="添加老师" onClick={() => setPickerRole("teacher")} />}
+          </div>
+        </section>
 
-        <AudienceSection description="至少选择一位学生，可以继续添加多人。" icon={UsersRound} title="学生">
-          <div className="space-y-2">
+        <section className="rounded-lg bg-card p-5 shadow-sm sm:p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="flex size-9 items-center justify-center rounded-md bg-primary-50 text-primary"><UsersRound className="size-4" /></span>
+              <h3 className="text-sm font-semibold text-foreground">学生</h3>
+            </div>
+            <span className="text-xs text-muted-foreground">{students.length ? `${students.length} 位` : "未选择"}</span>
+          </div>
+          <div className="mt-4 space-y-2">
             {students.map((student) => <SelectedPerson key={student.id} person={student} onEdit={() => setEditing(student)} onRemove={() => setStudents((current) => current.filter((person) => person.id !== student.id))} />)}
             <AddPersonButton label={students.length ? "继续添加学生" : "添加学生"} onClick={() => setPickerRole("student")} />
           </div>
-        </AudienceSection>
+        </section>
 
         <section className="rounded-lg bg-card p-5 shadow-sm sm:p-6">
-          <div className="flex items-start gap-3"><span className="flex size-9 items-center justify-center rounded-md bg-primary-50 text-primary"><Clock3 className="size-4" /></span><div><h3 className="text-sm font-semibold text-foreground">课程时长</h3><p className="mt-1 text-xs text-muted-foreground">时长会影响后续章节数和内容密度。</p></div></div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {([30, 45, 60] as const).map((value) => <button aria-pressed={duration === value} className={cn("min-h-11 min-w-24 rounded-md border px-4 text-sm font-medium transition-colors", duration === value ? "border-primary bg-primary-50 text-primary-700" : "border-border text-muted-foreground hover:bg-muted")} key={value} onClick={() => setDuration(value)} type="button">{value} 分钟</button>)}
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 items-center justify-center rounded-md bg-primary-50 text-primary"><Clock3 className="size-4" /></span>
+            <h3 className="text-sm font-semibold text-foreground">课程时长</h3>
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-2 rounded-lg bg-muted p-1">
+            {([30, 45, 60] as const).map((value) => <button aria-pressed={duration === value} className={cn("min-h-11 rounded-md px-3 text-sm font-medium transition-colors", duration === value ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70 hover:text-foreground")} key={value} onClick={() => setDuration(value)} type="button">{value} 分钟</button>)}
           </div>
         </section>
 
         {error ? <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div> : null}
 
-        <div className="sticky bottom-4 flex items-center justify-between gap-4 rounded-lg bg-slate-950 px-4 py-3 text-white shadow-lg sm:px-5">
-          <p className="text-sm text-white/68">{disabledReason ? `还需：${disabledReason}` : `已选择 1 位老师、${students.length} 位学生`}</p>
-          <Button className="bg-white text-slate-950 hover:bg-slate-100" disabled={Boolean(disabledReason) || saving} type="submit">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{saving ? "保存中" : "下一步：故事大纲"}</Button>
+        <div className="sticky bottom-4 flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-md sm:px-5">
+          <p className="text-sm text-muted-foreground">{disabledReason ? `还需：${disabledReason}` : `已选择 1 位老师、${students.length} 位学生`}</p>
+          <Button disabled={Boolean(disabledReason) || saving} type="submit">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{saving ? "保存中" : "下一步：故事大纲"}</Button>
         </div>
       </form>
 
@@ -184,10 +206,6 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
       <PersonEditorDialog defaultRole={editing?.role ?? "student"} key={editing?.id ?? "closed-course-person-form"} onClose={() => setEditing(null)} onSaved={replacePerson} open={Boolean(editing)} person={editing} />
     </div>
   );
-}
-
-function AudienceSection({ title, description, icon: Icon, children }: { title: string; description: string; icon: typeof UserRound; children: React.ReactNode }) {
-  return <section className="rounded-lg bg-card p-5 shadow-sm sm:p-6"><div className="flex items-start gap-3"><span className="flex size-9 items-center justify-center rounded-md bg-primary-50 text-primary"><Icon className="size-4" /></span><div><h3 className="text-sm font-semibold text-foreground">{title}</h3><p className="mt-1 text-xs text-muted-foreground">{description}</p></div></div><div className="mt-4">{children}</div></section>;
 }
 
 function AddPersonButton({ label, onClick }: { label: string; onClick: () => void }) {

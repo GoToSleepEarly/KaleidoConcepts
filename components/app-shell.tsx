@@ -55,7 +55,7 @@ function getRouteMeta(pathname: string) {
   if (pathname === "/courses/new" || (pathname.includes("/create/") && pathname.startsWith("/courses/"))) {
     return {
       title: "新建课程",
-      subtitle: "先确定授课对象，再进入故事创作",
+      subtitle: "先填写基础信息，再进入故事创作",
       activeKey: "courses",
     };
   }
