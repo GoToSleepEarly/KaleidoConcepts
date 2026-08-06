@@ -29,7 +29,7 @@
 | 系统隔离与 V1 退役 | `docs/frontend-v2/system-architecture.md` | 已确认并实现当前边界 |
 | 人物档案 | `docs/frontend-v2/people-profiles.md` | 已实现，待用户验收 |
 | 基础信息 | `docs/frontend-v2/course-create-audience.md` | 已实现，待用户验收 |
-| 故事大纲 | `docs/frontend-v2/course-create-story-outline.md` | 契约已归档，待实现 |
+| 故事大纲 | `docs/frontend/course-create-lesson-chat.md` | 已实现，待用户验收 |
 | 教学规划 | `docs/frontend-v2/course-create-teaching-plan.md` | 旧草稿，待按新架构重新确认 |
 | 文案与练习 | `docs/frontend-v2/course-create-content-and-exercises.md` | 旧草稿，待按新架构重新确认 |
 | 视觉资源 | `docs/frontend-v2/course-create-visual-resources.md` | 旧草稿，待按新架构重新确认 |

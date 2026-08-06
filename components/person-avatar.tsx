@@ -1,4 +1,5 @@
 import Image from "next/image";
+import React from "react";
 
 import type { Gender } from "@/lib/contracts/api";
 import { avatarBackgroundColor, avatarInitial } from "@/lib/avatar";
