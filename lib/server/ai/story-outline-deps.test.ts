@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import { createStoryOutlineGenerationDeps } from "./story-outline-deps";
 
-const generateOutlineMock = vi.fn(async (_input: { prompt: string }) => ({
+const generateOutlineMock = vi.fn<({ prompt }: { prompt: string }) => Promise<{ text: string }>>(async () => ({
   text: JSON.stringify({
     title: { zh: "海底图书馆", en: "The Ocean Library" },
     summary: { zh: "学生合作完成任务。", en: "Students work together." },

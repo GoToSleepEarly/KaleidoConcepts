@@ -258,7 +258,19 @@ describe("CourseStoryOutlineWorkspace", () => {
   test("supports regenerating the whole outline from the chat controls", async () => {
     const fetchMock = vi.fn(async () => Response.json(outlineState));
     vi.stubGlobal("fetch", fetchMock);
-    render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      chatMessages: [
+        {
+          id: "m-generated",
+          courseId: "course-1",
+          role: "assistant",
+          content: "故事大纲已生成。",
+          actions: [{ id: "regenerate-outline", label: "重新生成", action: "regenerate_outline" }],
+          createdAt: "2026-08-06T08:00:00.000Z",
+        },
+      ],
+    }} />);
 
     expect(screen.getByRole("button", { name: "重新生成" })).toBeInTheDocument();
     fireEvent.change(screen.getByRole("textbox", { name: "故事想法" }), {
@@ -274,6 +286,12 @@ describe("CourseStoryOutlineWorkspace", () => {
         message: "整体换一个更轻松的方向",
       });
     });
+  });
+
+  test("does not show a persistent regenerate button outside generated chat actions", () => {
+    render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
+
+    expect(screen.queryByRole("button", { name: "重新生成" })).not.toBeInTheDocument();
   });
 
   test("continue modify prefills the input without calling the API", () => {
@@ -375,7 +393,8 @@ describe("CourseStoryOutlineWorkspace", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "重新开始" }));
+    expect(screen.queryByRole("button", { name: "重新开始" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重置 Step2" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       "/api/courses/course-1/story-outline/reset",

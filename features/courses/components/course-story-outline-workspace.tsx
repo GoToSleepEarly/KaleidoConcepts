@@ -2,7 +2,7 @@
 
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, Loader2, MessageSquareText, Search, Sparkles } from "lucide-react";
+import { BookOpen, Loader2, MessageSquareText, RotateCcw, Search, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
@@ -108,7 +108,12 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
     const label = action.action === "choose_reference_search" || action.action === "request_reference_search"
       ? "正在整理参考资料..."
       : "正在生成故事大纲...";
-    await postMessage({ message: message.trim(), mode: "idea", action: action.action, targetId: action.targetId }, label);
+    await postMessage({
+      message: message.trim(),
+      mode: action.action === "regenerate_outline" ? "revise" : "idea",
+      action: action.action,
+      targetId: action.targetId,
+    }, label);
   }
 
   async function resetStep() {
@@ -162,18 +167,20 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
         <div>
           <h2 className="text-2xl font-semibold text-foreground">故事大纲</h2>
         </div>
-        <div className="flex gap-2">
-          <Button disabled={pending} onClick={resetStep} type="button" variant="outline">重新开始</Button>
-          <Button disabled={!state.outline || pending} onClick={confirm} type="button">确认进入教学规划</Button>
-        </div>
+        <Button disabled={!state.outline || pending} onClick={confirm} type="button">确认进入教学规划</Button>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)]">
         <section className="flex min-h-[680px] flex-col rounded-lg bg-card shadow-sm">
           <div className="border-b border-border p-4">
-            <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted p-1">
-              <button className={modeClass(mode === "idea")} onClick={() => setMode("idea")} type="button">我有想法</button>
-              <button className={modeClass(mode === "random")} onClick={() => setMode("random")} type="button">随机灵感</button>
+            <div className="flex items-center gap-2">
+              <div className="grid flex-1 grid-cols-2 gap-2 rounded-lg bg-muted p-1">
+                <button className={modeClass(mode === "idea")} onClick={() => setMode("idea")} type="button">我有想法</button>
+                <button className={modeClass(mode === "random")} onClick={() => setMode("random")} type="button">随机灵感</button>
+              </div>
+              <Button aria-label="重置 Step2" disabled={pending} onClick={resetStep} size="icon" title="重置 Step2" type="button" variant="outline">
+                <RotateCcw className="size-4" />
+              </Button>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <label className="block">
@@ -274,11 +281,6 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
                 {pending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
                 {pending ? "处理中" : "发送"}
               </Button>
-              {state.outline ? (
-                <Button disabled={pending} onClick={() => postMessage({ message: message.trim(), mode: "revise", action: "regenerate_outline" }, "正在重新生成故事大纲...")} type="button" variant="outline">
-                  重新生成
-                </Button>
-              ) : null}
             </div>
           </form>
         </section>
