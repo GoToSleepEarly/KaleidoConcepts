@@ -58,8 +58,8 @@ const outlineState: CourseStoryOutlineState = {
       {
         id: "chapter-1",
         order: 1,
-        title: "发光地图",
-        storyGoal: "发现线索",
+        title: "发光地图 / The Glowing Map",
+        storyGoal: "夏天在海底图书馆发现发光地图，林老师引导大家确认任务，团队决定一起寻找失落的蓝色书页。",
         keyEvents: ["进入图书馆"],
         characterIds: [],
         setting: "海底图书馆",
@@ -425,11 +425,11 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByRole("button", { name: "故事大纲" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "角色" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "参考资料" })).toBeInTheDocument();
-    expect(screen.getByText("本章发生了什么")).toBeInTheDocument();
+    expect(screen.getByText("剧情概述")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "角色" }));
     expect(screen.getByText("课堂角色")).toBeInTheDocument();
-    expect(screen.queryByText("本章发生了什么")).not.toBeInTheDocument();
+    expect(screen.queryByText("剧情概述")).not.toBeInTheDocument();
   });
 
   test("classroom roles use course people snapshots without AI descriptions", () => {
@@ -457,20 +457,17 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.queryByText("喜欢观察线索。")).not.toBeInTheDocument();
   });
 
-  test("edits and saves concise outline fields", async () => {
-    const fetchMock = vi.fn(async () => Response.json(outlineState));
-    vi.stubGlobal("fetch", fetchMock);
+  test("renders a read-only Chinese outline for chat-based revision", () => {
     render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
 
-    fireEvent.change(screen.getByLabelText("中文主线概括"), {
-      target: { value: "更新后的主线。" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存故事大纲" }));
-
-    await waitFor(() => {
-      expect(fetchUrl(fetchMock)).toBe("/api/courses/course-1/story-outline");
-      const body = fetchBody(fetchMock);
-      expect(body.outline.summary).toContain("更新后的主线。");
-    });
+    expect(screen.getByText("海底图书馆")).toBeInTheDocument();
+    expect(screen.getByText("学生合作寻找线索。")).toBeInTheDocument();
+    expect(screen.getByText("发光地图")).toBeInTheDocument();
+    expect(screen.getByText("夏天在海底图书馆发现发光地图，林老师引导大家确认任务，团队决定一起寻找失落的蓝色书页。")).toBeInTheDocument();
+    expect(screen.queryByText("The Ocean Library")).not.toBeInTheDocument();
+    expect(screen.queryByText("Students solve clues together.")).not.toBeInTheDocument();
+    expect(screen.queryByText("The Glowing Map")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("中文主线概括")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "保存故事大纲" })).not.toBeInTheDocument();
   });
 });

@@ -10,7 +10,6 @@ import type {
   CourseSourceReference,
   CourseStoryChatAction,
   CourseStoryMessageInput,
-  CourseStoryOutlineChapter,
   CourseStoryOutline,
   CourseStoryOutlineState,
   CourseAudiencePerson,
@@ -156,29 +155,6 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
     }
   }
 
-  async function saveOutline(outline: CourseStoryOutline) {
-    setPendingSeconds(0);
-    setPending(true);
-    setPendingLabel("正在保存故事大纲...");
-    setError("");
-    try {
-      const response = await fetch(`/api/courses/${state.course.id}/story-outline`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outline }),
-      });
-      const data = (await response.json()) as CourseStoryOutlineState & { message?: string };
-      if (!response.ok) throw new Error(data.message || "故事大纲保存失败");
-      setState(data);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "故事大纲保存失败");
-    } finally {
-      setPending(false);
-      setPendingSeconds(0);
-      setPendingLabel("");
-    }
-  }
-
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <CourseCreateSteps courseId={state.course.id} currentStep={2} />
@@ -309,7 +285,6 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
 
         <ResultPanel
           onChooseDirection={(directionId) => postMessage({ message: "", mode: "idea", action: "choose_direction", targetId: directionId }, "正在生成故事大纲...")}
-          onSaveOutline={saveOutline}
           onSaveReference={saveReference}
           outline={state.outline}
           pendingLabel={loadingText(pendingLabel, pendingSeconds)}
@@ -349,7 +324,6 @@ function ResultPanel({
   resultTab,
   setResultTab,
   onChooseDirection,
-  onSaveOutline,
   onSaveReference,
 }: {
   state: CourseStoryOutlineState;
@@ -359,7 +333,6 @@ function ResultPanel({
   resultTab: "outline" | "characters" | "references";
   setResultTab: (tab: "outline" | "characters" | "references") => void;
   onChooseDirection: (directionId: string) => void;
-  onSaveOutline: (outline: CourseStoryOutline) => void;
   onSaveReference: (referenceId: string, payload: Pick<CourseSourceReference, "name" | "type" | "sourceStatus" | "summary" | "usableFacts" | "avoidTopics" | "adaptationBoundary">) => void;
 }) {
   if (outline) {
@@ -370,7 +343,7 @@ function ResultPanel({
           <button className={tabClass(resultTab === "characters")} onClick={() => setResultTab("characters")} type="button">角色</button>
           <button className={tabClass(resultTab === "references")} onClick={() => setResultTab("references")} type="button">参考资料</button>
         </div>
-        {resultTab === "outline" ? <OutlineEditor onSave={onSaveOutline} outline={outline} /> : null}
+        {resultTab === "outline" ? <OutlineSummary outline={outline} /> : null}
         {resultTab === "characters" ? <CharactersSection coursePeople={state.coursePeople} outline={outline} /> : null}
         {resultTab === "references" ? (
           <div className="space-y-4">
@@ -419,22 +392,9 @@ function CardGroup({ title, children }: { title: string; children: React.ReactNo
   return <div><h4 className="mb-2 text-sm font-semibold text-foreground">{title}</h4><div className="space-y-2">{children}</div></div>;
 }
 
-function OutlineEditor({ outline, onSave }: { outline: CourseStoryOutline; onSave: (outline: CourseStoryOutline) => void }) {
+function OutlineSummary({ outline }: { outline: CourseStoryOutline }) {
   const title = splitBilingual(outline.title);
   const summary = splitBilingual(outline.summary);
-  const [titleZh, setTitleZh] = useState(title.zh);
-  const [titleEn, setTitleEn] = useState(title.en);
-  const [summaryZh, setSummaryZh] = useState(summary.zh);
-  const [summaryEn, setSummaryEn] = useState(summary.en);
-  const [chapters, setChapters] = useState(outline.chapters.map((chapter) => ({
-    ...chapter,
-    whatHappens: chapter.whatHappens || chapter.storyGoal,
-    characterActions: chapter.characterActions || chapter.keyEvents[0] || "",
-    mainlineProgress: chapter.mainlineProgress || chapter.keyEvents[1] || "",
-  })));
-  const updateChapter = (id: string, patch: Partial<CourseStoryOutlineChapter>) => {
-    setChapters((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
-  };
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-primary-100 bg-primary-50/40 p-4">
@@ -442,71 +402,31 @@ function OutlineEditor({ outline, onSave }: { outline: CourseStoryOutline; onSav
           <BookOpen className="size-5 text-primary" />
           <h3 className="text-lg font-semibold text-foreground">{title.zh}</h3>
         </div>
-        {title.en ? <p className="mt-1 text-sm font-medium text-primary-700">{title.en}</p> : null}
+        <p className="mt-3 text-sm leading-6 text-foreground">{summary.zh}</p>
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
           {outline.narrativeType ? <span className="rounded-full bg-card px-2 py-1">叙事类型：{outline.narrativeType}</span> : null}
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block space-y-1">
-          <span className="text-xs text-muted-foreground">中文标题</span>
-          <input aria-label="中文标题" className="h-10 w-full rounded-md border border-input px-3 text-sm" onChange={(event) => setTitleZh(event.target.value)} value={titleZh} />
-        </label>
-        <label className="block space-y-1">
-          <span className="text-xs text-muted-foreground">英文标题</span>
-          <input aria-label="英文标题" className="h-10 w-full rounded-md border border-input px-3 text-sm" onChange={(event) => setTitleEn(event.target.value)} value={titleEn} />
-        </label>
-      </div>
-      <label className="block space-y-1">
-        <span className="text-xs text-muted-foreground">中文主线概括</span>
-        <textarea aria-label="中文主线概括" className="min-h-24 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => setSummaryZh(event.target.value)} value={summaryZh} />
-      </label>
-      <label className="block space-y-1">
-        <span className="text-xs text-muted-foreground">英文主线概括</span>
-        <textarea aria-label="英文主线概括" className="min-h-24 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => setSummaryEn(event.target.value)} value={summaryEn} />
-      </label>
       <CardGroup title="章节大纲">
         <div className="grid gap-3 xl:grid-cols-2">
-          {chapters.map((chapter) => {
+          {outline.chapters.map((chapter) => {
             const chapterTitle = splitBilingual(chapter.title);
+            const plotSummary = chapter.whatHappens || chapter.storyGoal;
             return (
-              <article className="space-y-3 rounded-md border border-border p-3" key={chapter.id}>
+              <article className="rounded-md border border-border p-3" key={chapter.id}>
                 <div className="flex items-start gap-2">
                   <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary">{chapter.order}</span>
                   <div className="min-w-0">
                     <h5 className="text-sm font-semibold text-foreground">{chapterTitle.zh}</h5>
-                    {chapterTitle.en ? <p className="mt-0.5 text-xs font-medium text-primary-700">{chapterTitle.en}</p> : null}
                   </div>
                 </div>
-                <label className="block space-y-1">
-                  <span className="text-xs text-muted-foreground">本章发生了什么</span>
-                  <textarea aria-label={`第 ${chapter.order} 章发生了什么`} className="min-h-20 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => updateChapter(chapter.id, { whatHappens: event.target.value })} value={chapter.whatHappens || ""} />
-                </label>
-                <label className="block space-y-1">
-                  <span className="text-xs text-muted-foreground">主要人物做了什么</span>
-                  <textarea aria-label={`第 ${chapter.order} 章人物行动`} className="min-h-20 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => updateChapter(chapter.id, { characterActions: event.target.value })} value={chapter.characterActions || ""} />
-                </label>
-                <label className="block space-y-1">
-                  <span className="text-xs text-muted-foreground">如何推动主线</span>
-                  <textarea aria-label={`第 ${chapter.order} 章推动主线`} className="min-h-20 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => updateChapter(chapter.id, { mainlineProgress: event.target.value })} value={chapter.mainlineProgress || ""} />
-                </label>
+                <p className="mt-3 text-xs font-medium text-muted-foreground">剧情概述</p>
+                <p className="mt-1 text-sm leading-6 text-foreground">{plotSummary}</p>
               </article>
             );
           })}
         </div>
       </CardGroup>
-      <Button onClick={() => onSave({
-        ...outline,
-        title: joinBilingual(titleZh, titleEn),
-        summary: joinBilingual(summaryZh, summaryEn),
-        chapters: chapters.map((chapter) => ({
-          ...chapter,
-          storyGoal: chapter.whatHappens || "",
-          keyEvents: [chapter.characterActions || "", chapter.mainlineProgress || ""].filter(Boolean),
-          setting: "",
-          endingHook: "",
-        })),
-      })} type="button">保存故事大纲</Button>
     </div>
   );
 }
@@ -552,10 +472,6 @@ function CharacterCard({ character }: { character: CourseStoryOutline["character
       <p className="mt-2 text-sm text-muted-foreground">{character.shortDescription}</p>
     </article>
   );
-}
-
-function joinBilingual(zh: string, en: string) {
-  return [zh.trim(), en.trim()].filter(Boolean).join(" / ");
 }
 
 function referenceSourceLabel(reference: CourseSourceReference) {
