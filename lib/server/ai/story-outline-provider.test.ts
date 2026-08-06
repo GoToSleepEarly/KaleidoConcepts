@@ -20,6 +20,11 @@ function mockTextResponse(text = "{\"ok\":true}") {
   );
 }
 
+function fetchBody(fetchMock: ReturnType<typeof vi.fn>, index = 0) {
+  const init = fetchMock.mock.calls[index]?.[1] as RequestInit | undefined;
+  return JSON.parse(String(init?.body));
+}
+
 describe("createStoryOutlineProvider", () => {
   test("uses the configured GPT model for GPT writing", async () => {
     process.env.QUICKROUTER_API_KEY = "key";
@@ -32,7 +37,7 @@ describe("createStoryOutlineProvider", () => {
       prompt: "生成大纲",
     });
 
-    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const body = fetchBody(fetchMock);
     expect(body.model).toBe("gpt-model");
   });
 
@@ -47,7 +52,7 @@ describe("createStoryOutlineProvider", () => {
       prompt: "生成大纲",
     });
 
-    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const body = fetchBody(fetchMock);
     expect(body.model).toBe("deepseek-model");
   });
 
@@ -59,7 +64,7 @@ describe("createStoryOutlineProvider", () => {
 
     await createStoryOutlineProvider().searchReference({ prompt: "整理特朗普资料" });
 
-    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const body = fetchBody(fetchMock);
     expect(body.model).toBe("research-model");
     expect(body.tools).toEqual([{ type: "web_search" }]);
   });

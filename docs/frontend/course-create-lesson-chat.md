@@ -350,7 +350,7 @@ AI 返回严格结构化数据，前端渲染为组件。
 
 ## 实现状态
 
-- 状态：第一轮优化已实现；第二轮反馈已确认，待实现。
+- 状态：第二轮优化已实现，待用户验收。
 - 本轮确认时间：2026-08-06。
 - 验证命令：`pnpm test -- lib/server/repositories/story-outline.test.ts lib/server/ai/story-outline-provider.test.ts features/courses/components/course-story-outline-workspace.test.tsx`、`pnpm exec prisma validate`、`pnpm lint`、`pnpm build`。
-- 提交号：第一轮实现 `6a3e2c7`；第二轮待实现。
+- 提交号：第一轮实现 `6a3e2c7`；第二轮实现同本提交。

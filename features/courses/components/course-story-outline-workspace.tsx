@@ -1,6 +1,6 @@
 "use client";
 
-import React, { FormEvent, useRef, useState } from "react";
+import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BookOpen, Loader2, MessageSquareText, Search, Sparkles } from "lucide-react";
 
@@ -10,8 +10,10 @@ import type {
   CourseSourceReference,
   CourseStoryChatAction,
   CourseStoryMessageInput,
+  CourseStoryOutlineChapter,
   CourseStoryOutline,
   CourseStoryOutlineState,
+  CourseAudiencePerson,
   StoryWritingProvider,
 } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
@@ -28,10 +30,22 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
   const [tone, setTone] = useState("温暖合作");
   const [pending, setPending] = useState(false);
   const [pendingLabel, setPendingLabel] = useState("");
+  const [pendingSeconds, setPendingSeconds] = useState(0);
+  const [resultTab, setResultTab] = useState<"outline" | "characters" | "references">("outline");
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
+  useEffect(() => {
+    if (!pending) return;
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      setPendingSeconds(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [pending]);
+
   async function postMessage(input: CourseStoryMessageInput, label = "正在处理...") {
+    setPendingSeconds(0);
     setPending(true);
     setPendingLabel(label);
     setError("");
@@ -49,6 +63,7 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
       setError(caught instanceof Error ? caught.message : "故事大纲生成失败");
     } finally {
       setPending(false);
+      setPendingSeconds(0);
       setPendingLabel("");
     }
   }
@@ -61,6 +76,7 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
   }
 
   async function confirm() {
+    setPendingSeconds(0);
     setPending(true);
     setError("");
     try {
@@ -72,6 +88,7 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
       setError(caught instanceof Error ? caught.message : "故事大纲确认失败");
     } finally {
       setPending(false);
+      setPendingSeconds(0);
     }
   }
 
@@ -97,6 +114,7 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
 
   async function resetStep() {
     if (!window.confirm("重新开始会清空 Step 2 当前聊天历史、参考资料和故事大纲，是否继续？")) return;
+    setPendingSeconds(0);
     setPending(true);
     setPendingLabel("正在重新开始...");
     setError("");
@@ -110,11 +128,13 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
       setError(caught instanceof Error ? caught.message : "故事大纲重置失败");
     } finally {
       setPending(false);
+      setPendingSeconds(0);
       setPendingLabel("");
     }
   }
 
   async function saveReference(referenceId: string, payload: Pick<CourseSourceReference, "name" | "type" | "sourceStatus" | "summary" | "usableFacts" | "avoidTopics" | "adaptationBoundary">) {
+    setPendingSeconds(0);
     setPending(true);
     setPendingLabel("正在保存参考资料...");
     setError("");
@@ -131,6 +151,30 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
       setError(caught instanceof Error ? caught.message : "参考资料保存失败");
     } finally {
       setPending(false);
+      setPendingSeconds(0);
+      setPendingLabel("");
+    }
+  }
+
+  async function saveOutline(outline: CourseStoryOutline) {
+    setPendingSeconds(0);
+    setPending(true);
+    setPendingLabel("正在保存故事大纲...");
+    setError("");
+    try {
+      const response = await fetch(`/api/courses/${state.course.id}/story-outline`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outline }),
+      });
+      const data = (await response.json()) as CourseStoryOutlineState & { message?: string };
+      if (!response.ok) throw new Error(data.message || "故事大纲保存失败");
+      setState(data);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "故事大纲保存失败");
+    } finally {
+      setPending(false);
+      setPendingSeconds(0);
       setPendingLabel("");
     }
   }
@@ -230,7 +274,7 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
               <article className="mr-10 rounded-lg bg-muted px-3 py-2 text-sm text-foreground">
                 <p className="flex items-center gap-2 leading-6">
                   <Loader2 className="size-4 animate-spin" />
-                  {pendingLabel}
+                  {loadingText(pendingLabel, pendingSeconds)}
                 </p>
               </article>
             ) : null}
@@ -265,10 +309,13 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
 
         <ResultPanel
           onChooseDirection={(directionId) => postMessage({ message: "", mode: "idea", action: "choose_direction", targetId: directionId }, "正在生成故事大纲...")}
+          onSaveOutline={saveOutline}
           onSaveReference={saveReference}
           outline={state.outline}
-          pendingLabel={pendingLabel}
+          pendingLabel={loadingText(pendingLabel, pendingSeconds)}
           references={state.referenceMaterials}
+          resultTab={resultTab}
+          setResultTab={setResultTab}
           state={state}
         />
       </div>
@@ -280,28 +327,58 @@ function modeClass(active: boolean) {
   return cn("min-h-10 rounded-md px-3 text-sm font-medium", active ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70");
 }
 
+function loadingText(label: string, seconds: number) {
+  if (!label) return "";
+  const suffix = seconds > 0 ? ` · ${seconds}s` : "";
+  const hint = seconds >= 15 ? "，仍在生成，请不要关闭页面" : "";
+  return `${label}${suffix}${hint}`;
+}
+
+function tabClass(active: boolean) {
+  return cn(
+    "min-h-9 rounded-md px-3 text-sm font-medium transition-colors",
+    active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+  );
+}
+
 function ResultPanel({
   state,
   references,
   outline,
   pendingLabel,
+  resultTab,
+  setResultTab,
   onChooseDirection,
+  onSaveOutline,
   onSaveReference,
 }: {
   state: CourseStoryOutlineState;
   references: CourseSourceReference[];
   outline: CourseStoryOutline | null;
   pendingLabel: string;
+  resultTab: "outline" | "characters" | "references";
+  setResultTab: (tab: "outline" | "characters" | "references") => void;
   onChooseDirection: (directionId: string) => void;
+  onSaveOutline: (outline: CourseStoryOutline) => void;
   onSaveReference: (referenceId: string, payload: Pick<CourseSourceReference, "name" | "type" | "sourceStatus" | "summary" | "usableFacts" | "avoidTopics" | "adaptationBoundary">) => void;
 }) {
   if (outline) {
     return (
       <section className="space-y-4 rounded-lg bg-card p-5 shadow-sm">
-        <OverviewSection outline={outline} />
-        {outline.sourceReferences.length ? <ReferencesSummary references={outline.sourceReferences} /> : null}
-        {outline.characters.length ? <CharactersSection outline={outline} /> : null}
-        <ChaptersSection outline={outline} />
+        <div className="flex gap-2 border-b border-border pb-3">
+          <button className={tabClass(resultTab === "outline")} onClick={() => setResultTab("outline")} type="button">故事大纲</button>
+          <button className={tabClass(resultTab === "characters")} onClick={() => setResultTab("characters")} type="button">角色</button>
+          <button className={tabClass(resultTab === "references")} onClick={() => setResultTab("references")} type="button">参考资料</button>
+        </div>
+        {resultTab === "outline" ? <OutlineEditor onSave={onSaveOutline} outline={outline} /> : null}
+        {resultTab === "characters" ? <CharactersSection coursePeople={state.coursePeople} outline={outline} /> : null}
+        {resultTab === "references" ? (
+          <div className="space-y-4">
+            {references.length || outline.sourceReferences.length ? [...references, ...outline.sourceReferences.filter((reference) => !references.some((item) => item.id === reference.id))].map((reference) => (
+              <ReferenceEditor key={reference.id} onSave={onSaveReference} reference={reference} />
+            )) : <p className="text-sm text-muted-foreground">暂无参考资料</p>}
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -342,88 +419,149 @@ function CardGroup({ title, children }: { title: string; children: React.ReactNo
   return <div><h4 className="mb-2 text-sm font-semibold text-foreground">{title}</h4><div className="space-y-2">{children}</div></div>;
 }
 
-function OverviewSection({ outline }: { outline: CourseStoryOutline }) {
+function OutlineEditor({ outline, onSave }: { outline: CourseStoryOutline; onSave: (outline: CourseStoryOutline) => void }) {
   const title = splitBilingual(outline.title);
   const summary = splitBilingual(outline.summary);
+  const [titleZh, setTitleZh] = useState(title.zh);
+  const [titleEn, setTitleEn] = useState(title.en);
+  const [summaryZh, setSummaryZh] = useState(summary.zh);
+  const [summaryEn, setSummaryEn] = useState(summary.en);
+  const [chapters, setChapters] = useState(outline.chapters.map((chapter) => ({
+    ...chapter,
+    whatHappens: chapter.whatHappens || chapter.storyGoal,
+    characterActions: chapter.characterActions || chapter.keyEvents[0] || "",
+    mainlineProgress: chapter.mainlineProgress || chapter.keyEvents[1] || "",
+  })));
+  const updateChapter = (id: string, patch: Partial<CourseStoryOutlineChapter>) => {
+    setChapters((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
+  };
   return (
-    <div className="rounded-lg border border-primary-100 bg-primary-50/40 p-4">
-      <div className="flex items-center gap-2">
-        <BookOpen className="size-5 text-primary" />
-        <h3 className="text-lg font-semibold text-foreground">{title.zh}</h3>
+    <div className="space-y-4">
+      <div className="rounded-lg border border-primary-100 bg-primary-50/40 p-4">
+        <div className="flex items-center gap-2">
+          <BookOpen className="size-5 text-primary" />
+          <h3 className="text-lg font-semibold text-foreground">{title.zh}</h3>
+        </div>
+        {title.en ? <p className="mt-1 text-sm font-medium text-primary-700">{title.en}</p> : null}
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+          {outline.narrativeType ? <span className="rounded-full bg-card px-2 py-1">叙事类型：{outline.narrativeType}</span> : null}
+        </div>
       </div>
-      {title.en ? <p className="mt-1 text-sm font-medium text-primary-700">{title.en}</p> : null}
-      <p className="mt-3 text-sm leading-6 text-foreground">{summary.zh}</p>
-      {summary.en ? <p className="mt-1 text-sm leading-6 text-muted-foreground">{summary.en}</p> : null}
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-        {outline.narrativeType ? <span className="rounded-full bg-card px-2 py-1">叙事类型：{outline.narrativeType}</span> : null}
-        {outline.storyHook ? <span className="rounded-full bg-card px-2 py-1">故事钩子：{outline.storyHook}</span> : null}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block space-y-1">
+          <span className="text-xs text-muted-foreground">中文标题</span>
+          <input aria-label="中文标题" className="h-10 w-full rounded-md border border-input px-3 text-sm" onChange={(event) => setTitleZh(event.target.value)} value={titleZh} />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-xs text-muted-foreground">英文标题</span>
+          <input aria-label="英文标题" className="h-10 w-full rounded-md border border-input px-3 text-sm" onChange={(event) => setTitleEn(event.target.value)} value={titleEn} />
+        </label>
       </div>
+      <label className="block space-y-1">
+        <span className="text-xs text-muted-foreground">中文主线概括</span>
+        <textarea aria-label="中文主线概括" className="min-h-24 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => setSummaryZh(event.target.value)} value={summaryZh} />
+      </label>
+      <label className="block space-y-1">
+        <span className="text-xs text-muted-foreground">英文主线概括</span>
+        <textarea aria-label="英文主线概括" className="min-h-24 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => setSummaryEn(event.target.value)} value={summaryEn} />
+      </label>
+      <CardGroup title="章节大纲">
+        <div className="grid gap-3 xl:grid-cols-2">
+          {chapters.map((chapter) => {
+            const chapterTitle = splitBilingual(chapter.title);
+            return (
+              <article className="space-y-3 rounded-md border border-border p-3" key={chapter.id}>
+                <div className="flex items-start gap-2">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary">{chapter.order}</span>
+                  <div className="min-w-0">
+                    <h5 className="text-sm font-semibold text-foreground">{chapterTitle.zh}</h5>
+                    {chapterTitle.en ? <p className="mt-0.5 text-xs font-medium text-primary-700">{chapterTitle.en}</p> : null}
+                  </div>
+                </div>
+                <label className="block space-y-1">
+                  <span className="text-xs text-muted-foreground">本章发生了什么</span>
+                  <textarea aria-label={`第 ${chapter.order} 章发生了什么`} className="min-h-20 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => updateChapter(chapter.id, { whatHappens: event.target.value })} value={chapter.whatHappens || ""} />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-xs text-muted-foreground">主要人物做了什么</span>
+                  <textarea aria-label={`第 ${chapter.order} 章人物行动`} className="min-h-20 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => updateChapter(chapter.id, { characterActions: event.target.value })} value={chapter.characterActions || ""} />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-xs text-muted-foreground">如何推动主线</span>
+                  <textarea aria-label={`第 ${chapter.order} 章推动主线`} className="min-h-20 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => updateChapter(chapter.id, { mainlineProgress: event.target.value })} value={chapter.mainlineProgress || ""} />
+                </label>
+              </article>
+            );
+          })}
+        </div>
+      </CardGroup>
+      <Button onClick={() => onSave({
+        ...outline,
+        title: joinBilingual(titleZh, titleEn),
+        summary: joinBilingual(summaryZh, summaryEn),
+        chapters: chapters.map((chapter) => ({
+          ...chapter,
+          storyGoal: chapter.whatHappens || "",
+          keyEvents: [chapter.characterActions || "", chapter.mainlineProgress || ""].filter(Boolean),
+          setting: "",
+          endingHook: "",
+        })),
+      })} type="button">保存故事大纲</Button>
     </div>
   );
 }
 
-function ReferencesSummary({ references }: { references: CourseSourceReference[] }) {
+function CharactersSection({ outline, coursePeople }: { outline: CourseStoryOutline; coursePeople: CourseAudiencePerson[] }) {
+  const referenced = outline.characters.filter((character) => character.sourceType === "referenced");
+  const original = outline.characters.filter((character) => character.sourceType === "original");
   return (
-    <CardGroup title="参考与边界">
-      <div className="grid gap-2">
-        {references.map((reference) => (
-          <article className="rounded-md border border-border p-3 text-sm" key={reference.id}>
-            <h5 className="font-semibold text-foreground">{reference.name}</h5>
-            <p className="mt-1 text-muted-foreground">{reference.summary}</p>
-            <p className="mt-2 text-xs text-muted-foreground">改编边界：{reference.adaptationBoundary}</p>
-          </article>
-        ))}
-      </div>
-    </CardGroup>
-  );
-}
-
-function CharactersSection({ outline }: { outline: CourseStoryOutline }) {
-  return (
-    <CardGroup title="角色结构">
-      <div className="grid gap-2 sm:grid-cols-2">
-        {outline.characters.map((character) => (
-          <article className="rounded-md border border-border p-3" key={character.id}>
-            <h5 className="text-sm font-semibold text-foreground">{character.displayName}</h5>
-            <p className="mt-1 text-xs text-muted-foreground">{sourceTypeLabel(character.sourceType)} · {character.roleInStory}</p>
-            <p className="mt-2 text-sm text-muted-foreground">{character.shortDescription}</p>
-          </article>
-        ))}
-      </div>
-    </CardGroup>
-  );
-}
-
-function ChaptersSection({ outline }: { outline: CourseStoryOutline }) {
-  const characterNameById = new Map(outline.characters.map((character) => [character.id, character.displayName]));
-  return (
-    <CardGroup title="章节大纲">
-      <div className="grid gap-3 xl:grid-cols-2">
-        {outline.chapters.map((chapter) => {
-          const title = splitBilingual(chapter.title);
-          const characterNames = chapter.characterIds.map((id) => characterNameById.get(id)).filter(Boolean);
-          return (
-            <article className="rounded-md border border-border p-3" key={chapter.id}>
-              <div className="flex items-start gap-2">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary">{chapter.order}</span>
-                <div className="min-w-0">
-                  <h5 className="text-sm font-semibold text-foreground">{title.zh}</h5>
-                  {title.en ? <p className="mt-0.5 text-xs font-medium text-primary-700">{title.en}</p> : null}
-                  <p className="mt-1 text-sm text-muted-foreground">{chapter.storyGoal}</p>
-                </div>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {chapter.keyEvents.map((event) => <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground" key={event}>{event}</span>)}
-              </div>
-              {characterNames.length ? <p className="mt-3 text-xs text-muted-foreground">出场角色：{characterNames.join("、")}</p> : null}
-              <p className="mt-2 text-xs text-muted-foreground">场景：{chapter.setting}</p>
-              <p className="mt-2 text-xs text-muted-foreground">结尾推进：{chapter.endingHook}</p>
+    <div className="space-y-5">
+      <CardGroup title="课堂角色">
+        <div className="grid gap-2 sm:grid-cols-2">
+          {coursePeople.length ? coursePeople.map((person) => (
+            <article className="rounded-md border border-border p-3" key={person.personId}>
+              <h5 className="text-sm font-semibold text-foreground">{person.chineseName} · {person.englishName}</h5>
+              <p className="mt-1 text-xs text-muted-foreground">{person.age} 岁 · {person.role === "teacher" ? "老师" : "学生"}</p>
             </article>
-          );
-        })}
-      </div>
-    </CardGroup>
+          )) : <p className="text-sm text-muted-foreground">暂无课堂角色</p>}
+        </div>
+      </CardGroup>
+      <CardGroup title="引用角色">
+        <div className="grid gap-2 sm:grid-cols-2">
+          {referenced.length ? referenced.map((character) => (
+            <CharacterCard character={character} key={character.id} />
+          )) : <p className="text-sm text-muted-foreground">暂无引用角色</p>}
+        </div>
+      </CardGroup>
+      <CardGroup title="原创角色">
+        <div className="grid gap-2 sm:grid-cols-2">
+          {original.length ? original.map((character) => (
+            <CharacterCard character={character} key={character.id} />
+          )) : <p className="text-sm text-muted-foreground">暂无原创角色</p>}
+        </div>
+      </CardGroup>
+    </div>
   );
+}
+
+function CharacterCard({ character }: { character: CourseStoryOutline["characters"][number] }) {
+  return (
+    <article className="rounded-md border border-border p-3">
+      <h5 className="text-sm font-semibold text-foreground">{character.displayName}</h5>
+      <p className="mt-1 text-xs text-muted-foreground">{sourceTypeLabel(character.sourceType)} · {character.roleInStory}</p>
+      <p className="mt-2 text-sm text-muted-foreground">{character.shortDescription}</p>
+    </article>
+  );
+}
+
+function joinBilingual(zh: string, en: string) {
+  return [zh.trim(), en.trim()].filter(Boolean).join(" / ");
+}
+
+function referenceSourceLabel(reference: CourseSourceReference) {
+  if (reference.sourceStatus === "teacher_supplied" || reference.researchProvider === "none") return "老师补充";
+  if (reference.researchProvider === "quickrouter_gpt") return "联网整理";
+  return "信息不足";
 }
 
 function ReferenceEditor({
@@ -441,6 +579,10 @@ function ReferenceEditor({
   const lines = (value: string) => value.split("\n").map((item) => item.trim()).filter(Boolean);
   return (
     <article className="space-y-3 rounded-md border border-border p-4">
+      <div>
+        <h4 className="text-sm font-semibold text-foreground">{reference.name}</h4>
+        <p className="mt-1 text-xs text-muted-foreground">资料来源：{referenceSourceLabel(reference)}</p>
+      </div>
       <label className="block"><span className="text-xs text-muted-foreground">引用对象</span><input aria-label="引用对象" className="mt-1 h-10 w-full rounded-md border border-input px-3 text-sm" onChange={(event) => setName(event.target.value)} value={name} /></label>
       <label className="block"><span className="text-xs text-muted-foreground">资料摘要</span><textarea aria-label="资料摘要" className="mt-1 min-h-20 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => setSummary(event.target.value)} value={summary} /></label>
       <label className="block"><span className="text-xs text-muted-foreground">可用要点</span><textarea aria-label="可用要点" className="mt-1 min-h-20 w-full rounded-md border border-input p-3 text-sm" onChange={(event) => setUsableFacts(event.target.value)} value={usableFacts} /></label>

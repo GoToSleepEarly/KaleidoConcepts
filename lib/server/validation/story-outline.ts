@@ -20,6 +20,7 @@ export const storyOutlineMessageSchema = z.object({
       z.literal("request_reference_search"),
       z.literal("supply_reference_material"),
       z.literal("choose_reference_search"),
+      z.literal("generate_directions"),
       z.literal("generate_from_reference"),
       z.literal("regenerate_outline"),
     ])
@@ -78,6 +79,9 @@ const chapterSchema = z.object({
   title: z.string().min(1),
   storyGoal: z.string().min(1),
   keyEvents: z.array(z.string()).min(1),
+  whatHappens: z.string().optional(),
+  characterActions: z.string().optional(),
+  mainlineProgress: z.string().optional(),
   characterIds: z.array(z.string()),
   setting: z.string().min(1),
   endingHook: z.string().min(1),

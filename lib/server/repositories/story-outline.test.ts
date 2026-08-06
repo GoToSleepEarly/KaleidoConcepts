@@ -21,7 +21,18 @@ function record(data: Record<string, unknown>) {
 }
 
 function createDb(overrides: Partial<StoryOutlineDb> = {}) {
-  const state = {
+  const state: {
+    course: Record<string, unknown>;
+    messages: Record<string, unknown>[];
+    directions: Record<string, unknown>[];
+    references: Record<string, unknown>[];
+    outline: Record<string, unknown> | null;
+    setting: Record<string, unknown> | null;
+    chapters: Record<string, unknown>[];
+    characters: Record<string, unknown>[];
+    logs: Record<string, unknown>[];
+    updates: Record<string, unknown>[];
+  } = {
     course: record({
       id: "course-1",
       title: "海底图书馆",
@@ -169,7 +180,7 @@ function createDb(overrides: Partial<StoryOutlineDb> = {}) {
 
 const deps: StoryOutlineGenerationDeps = {
   decideFreeInput: vi.fn(async () => ({
-    decision: "generate_outline",
+    decision: "generate_outline" as const,
     assistantMessage: "可以直接生成故事大纲。",
   })),
   generateDirections: vi.fn(async () => [
@@ -184,8 +195,8 @@ const deps: StoryOutlineGenerationDeps = {
   ]),
   searchReference: vi.fn(async () => ({
     name: "特朗普",
-    type: "public_figure",
-    sourceStatus: "confirmed",
+    type: "public_figure" as const,
+    sourceStatus: "confirmed" as const,
     summary: "公众人物，可做课堂化成长改编。",
     usableFacts: ["公众表达", "面对挑战"],
     avoidTopics: ["现实政治争议"],
@@ -197,7 +208,7 @@ const deps: StoryOutlineGenerationDeps = {
     characters: [
       {
         displayName: "夏天",
-        sourceType: "person",
+        sourceType: "person" as const,
         roleInStory: "学生主角",
         shortDescription: "喜欢观察线索。",
         shouldAppearInImages: true,
@@ -368,6 +379,27 @@ describe("story outline repository", () => {
     ]);
   });
 
+  test("generates direction cards when AI decides free input is broad", async () => {
+    const db = createDb();
+    const decideFreeInput = vi.fn(async () => ({
+      decision: "generate_directions" as const,
+      assistantMessage: "这个想法方向明确，但主线还可以先选一个方向。",
+    }));
+    const generateDirections = vi.fn(deps.generateDirections);
+
+    const state = await handleStoryOutlineMessage(db, "course-1", {
+      message: "写一个冒险故事",
+      mode: "idea",
+    }, { ...deps, decideFreeInput, generateDirections });
+
+    expect(generateDirections).toHaveBeenCalledWith(expect.objectContaining({
+      message: "写一个冒险故事",
+    }));
+    expect(state.outline).toBeNull();
+    expect(state.directions.length).toBeGreaterThan(0);
+    expect(state.chatMessages.at(-1)?.content).toBe("我生成了 3 个故事方向，你可以选一个继续。");
+  });
+
   test("saves teacher supplied reference and directly generates outline when AI says it is enough", async () => {
     const db = createDb();
     const decideFreeInput = vi.fn(async () => ({
@@ -446,5 +478,29 @@ describe("story outline repository", () => {
       characters: [],
       sourceReferences: [],
     }, false)).rejects.toBeInstanceOf(CourseStoryOutlineConflictError);
+  });
+
+  test("saves concise chapter fields through existing chapter columns", async () => {
+    const db = createDb();
+    await handleStoryOutlineMessage(db, "course-1", { message: "学生们进入海底图书馆", mode: "idea" }, deps);
+    const state = await getStoryOutlineState(db, "course-1");
+    const outline = state.outline!;
+
+    await saveStoryOutline(db, "course-1", {
+      ...outline,
+      chapters: outline.chapters.map((chapter) => ({
+        ...chapter,
+        whatHappens: "学生收到冒险任务。",
+        characterActions: "夏天决定带队出发。",
+        mainlineProgress: "队伍离开教室进入第一段旅程。",
+      })),
+    }, false);
+
+    expect(db.state.chapters[0]).toMatchObject({
+      storyGoal: "学生收到冒险任务。",
+      keyEvents: ["夏天决定带队出发。", "队伍离开教室进入第一段旅程。"],
+      setting: "",
+      endingHook: "",
+    });
   });
 });

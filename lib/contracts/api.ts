@@ -136,6 +136,7 @@ export type CourseStoryChatAction = {
     | "request_reference_search"
     | "supply_reference_material"
     | "choose_reference_search"
+    | "generate_directions"
     | "generate_from_reference"
     | "regenerate_outline";
   targetId?: string;
@@ -202,6 +203,9 @@ export type CourseStoryOutlineChapter = {
   titleEn?: string;
   storyGoal: string;
   keyEvents: string[];
+  whatHappens?: string;
+  characterActions?: string;
+  mainlineProgress?: string;
   characterIds: string[];
   setting: string;
   endingHook: string;

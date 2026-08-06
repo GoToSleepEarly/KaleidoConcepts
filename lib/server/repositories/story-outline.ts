@@ -156,7 +156,7 @@ export type GeneratedOutline = Pick<CourseStoryOutline, "title" | "summary"> & {
 
 export type StoryOutlineGenerationDeps = {
   decideFreeInput: (input: { course: DbCourse; coursePeople: CourseAudiencePerson[]; message: string; references: CourseSourceReference[]; outline: CourseStoryOutline | null }) => Promise<{
-    decision: "ask_clarification" | "request_reference_material" | "generate_outline";
+    decision: "ask_clarification" | "request_reference_material" | "generate_directions" | "generate_outline";
     assistantMessage: string;
     referenceName?: string;
     referenceType?: CourseSourceReferenceType;
@@ -286,6 +286,9 @@ function toOutline(outline: DbOutline | null, references: CourseSourceReference[
       title: chapter.title,
       storyGoal: chapter.storyGoal,
       keyEvents: array(chapter.keyEvents),
+      whatHappens: chapter.storyGoal,
+      characterActions: array(chapter.keyEvents)[0] ?? "",
+      mainlineProgress: array(chapter.keyEvents)[1] ?? "",
       characterIds: array(chapter.characterIds),
       setting: chapter.setting,
       endingHook: chapter.endingHook,
@@ -382,11 +385,15 @@ async function writeOutline(db: StoryOutlineDb, course: DbCourse, outline: Gener
       outlineId: saved.id,
       order: chapter.order,
       title: chapter.title,
-      storyGoal: chapter.storyGoal,
-      keyEvents: chapter.keyEvents,
+      storyGoal: chapter.whatHappens || chapter.storyGoal,
+      keyEvents: [
+        chapter.characterActions,
+        chapter.mainlineProgress,
+        ...(chapter.keyEvents ?? []),
+      ].filter((item): item is string => Boolean(item)),
       characterIds: chapter.characterIds,
-      setting: chapter.setting,
-      endingHook: chapter.endingHook,
+      setting: chapter.setting || "",
+      endingHook: chapter.endingHook || "",
     })),
   });
   await db.courseCharacter.deleteMany({ where: { courseId: course.id } });
@@ -554,6 +561,14 @@ export async function handleStoryOutlineMessage(
     return getStoryOutlineState(db, courseId);
   }
 
+  if (decision.decision === "generate_directions") {
+    const directions = await deps.generateDirections({ course, message: input.message });
+    await db.courseStoryDirection.deleteMany({ where: { courseId } });
+    await db.courseStoryDirection.createMany({ data: directions.map((direction) => ({ courseId, ...direction })) });
+    await addMessage(db, courseId, "assistant", "我生成了 3 个故事方向，你可以选一个继续。");
+    return getStoryOutlineState(db, courseId);
+  }
+
   if (decision.teacherReference) {
     await db.courseSourceReference.create({
       data: {
@@ -602,11 +617,14 @@ export async function saveStoryOutline(
     chapters: outline.chapters.map((chapter) => ({
       order: chapter.order,
       title: chapter.title,
-      storyGoal: chapter.storyGoal,
-      keyEvents: chapter.keyEvents,
+      storyGoal: chapter.whatHappens || chapter.storyGoal,
+      keyEvents: [
+        chapter.characterActions,
+        chapter.mainlineProgress,
+      ].filter((item): item is string => Boolean(item)),
       characterIds: chapter.characterIds,
-      setting: chapter.setting,
-      endingHook: chapter.endingHook,
+      setting: chapter.whatHappens || chapter.characterActions || chapter.mainlineProgress ? "" : chapter.setting || "",
+      endingHook: chapter.whatHappens || chapter.characterActions || chapter.mainlineProgress ? "" : chapter.endingHook || "",
     })),
     characters: outline.characters.map((character) => ({
       displayName: character.displayName,

@@ -25,7 +25,7 @@ type CoursePersonPrompt = Array<{
 }>;
 
 type FreeInputDecision = {
-  decision: "ask_clarification" | "request_reference_material" | "generate_outline";
+  decision: "ask_clarification" | "request_reference_material" | "generate_directions" | "generate_outline";
   assistantMessage: string;
   referenceName?: string;
   referenceType?: CourseSourceReferenceType;
@@ -55,9 +55,12 @@ export function createStoryOutlineGenerationDeps() {
         prompt: [
           "你是 Step2 故事大纲流程判断助手。",
           "只返回 JSON 对象，字段：decision, assistantMessage, referenceName, referenceType, teacherReference。",
-          "decision 只能是 ask_clarification, request_reference_material, generate_outline。",
+          "decision 只能是 ask_clarification, request_reference_material, generate_directions, generate_outline。",
           "只有老师自由输入需要判断；固定按钮流程不经过你。",
-          "如果信息足够生成或修改大纲，返回 generate_outline。",
+          "如果老师输入方向明确但主线不具体，例如只有故事类型、对象、主题或氛围，返回 generate_directions。",
+          "如果老师明确写了故事类型，后续方向必须保持这个类型。",
+          "如果老师写“冒险”，不要默认转成调查、推理或解谜。",
+          "如果信息已经足够生成章节主线，返回 generate_outline。",
           "如果对象不明确或资料不足，返回 ask_clarification 或 request_reference_material。",
           "如果老师以“我补充资料：”开头且资料足够，返回 generate_outline，并在 teacherReference 中整理老师补充资料。",
           "不要决定联网搜索，只说明是否需要参考资料。",
@@ -74,9 +77,13 @@ export function createStoryOutlineGenerationDeps() {
       const { text } = await client().generateOutline({
         writingProvider: "quickrouter_gpt",
         prompt: [
-          "你是英语 PBL 绘本课程故事策划助手。",
+          "你是英语 PBL 绘本课程故事方向策划助手。",
           "请只返回 JSON 数组，包含 3 个故事方向。",
           "每项字段：title, hook, whyFits, mainCharacters, classroomValue, seedPrompt。",
+          "方向卡只用于选择故事走向，不是完整大纲。",
+          "如果老师明确指定故事类型，3 个方向都必须保持该类型。",
+          "如果老师写冒险，方向必须是任务、旅程、挑战、选择和行动，不要默认写成调查、推理或解谜。",
+          "3 个方向要有明显差异：任务目标、冲突来源、主角视角或冒险路径至少一项不同。",
           `课程：${input.course.title}，时长：${input.course.durationMinutes} 分钟。`,
           `老师偏好：${input.message || "无"}`,
         ].join("\n"),
@@ -123,20 +130,25 @@ export function createStoryOutlineGenerationDeps() {
         writingProvider: input.writingProvider,
         prompt: [
           "你是英语 PBL 绘本课程故事大纲助手。",
-          "请只返回 JSON 对象，字段：title, summary, narrativeType, storyHook, characters, chapters。",
+          "请只返回 JSON 对象，字段：title, summary, narrativeType, characters, chapters。",
           "title 和 summary 必须中英双语，例如 {\"zh\":\"中文\",\"en\":\"English\"}。",
           "chapter.title 必须中英双语，例如 {\"zh\":\"中文章节名\",\"en\":\"English Chapter Title\"}。",
           "本阶段只生成故事大纲，不生成语法指导、知识点、题型、练习、答案或图片 prompt。",
           "characters 每项字段：displayName, sourceType, roleInStory, shortDescription, visualDescription, shouldAppearInImages。",
           "sourceType 只能是 person, referenced, original。",
-          "chapters 每项字段：order, title, storyGoal, keyEvents, characterIds, setting, endingHook。",
+          "chapters 每项字段：order, title, whatHappens, characterActions, mainlineProgress, characterIds。",
+          "不要返回 setting、endingHook、图片提示、练习设计、语法点或复杂结构字段。",
+          "每章只写老师快速判断故事发展所需的信息：本章发生什么、主要人物做了什么、如何推动主线。",
           "chapters 的数量必须等于指定章节数。",
           "先根据授课人物年龄、老师要求和引用对象判断叙事类型，再决定主角来源。",
           "学生不一定是主角；人物传记可让被讲述对象成为主角。",
           "如果学生进入故事，必须有自然身份和剧情功能。",
           "每个角色必须服务核心冲突；不要为热闹添加无关角色。",
           "新增原创角色默认 1-2 个，除非老师明确要求群像故事。",
-          "每份大纲必须有谜题、任务、误会、倒计时、丢失物、选择困境或调查线索等清晰钩子。",
+          "老师明确指定故事类型时必须保持该类型；冒险故事默认写任务、旅程、挑战、选择和行动。",
+          "只有老师明确要求解谜、侦探、调查、线索、推理时，才把主线写成调查或解谜。",
+          "课堂角色来自授课人物，不要为课堂角色编写外貌、性格或背景描述。",
+          "引用角色和原创角色才需要故事功能、简短描述和改编边界。",
           "每章必须推进具体事件，章节之间要有因果关系。",
           `课程：${input.course.title}，时长：${input.course.durationMinutes} 分钟。`,
           `授课人物：${JSON.stringify(input.coursePeople)}`,
@@ -164,11 +176,14 @@ export function createStoryOutlineGenerationDeps() {
         chapters: Array<{
           order: number;
           title: string | { zh: string; en: string };
-          storyGoal: string;
-          keyEvents: string[];
+          whatHappens?: string;
+          characterActions?: string;
+          mainlineProgress?: string;
+          storyGoal?: string;
+          keyEvents?: string[];
           characterIds: string[];
-          setting: string;
-          endingHook: string;
+          setting?: string;
+          endingHook?: string;
         }>;
       }>(text, "故事大纲解析失败，请重试");
       return {
@@ -178,6 +193,17 @@ export function createStoryOutlineGenerationDeps() {
         chapters: parsed.chapters.map((chapter) => ({
           ...chapter,
           title: bilingualText(chapter.title),
+          storyGoal: chapter.whatHappens || chapter.storyGoal || "",
+          keyEvents: [
+            chapter.characterActions,
+            chapter.mainlineProgress,
+            ...(chapter.keyEvents ?? []),
+          ].filter((item): item is string => Boolean(item)),
+          setting: chapter.setting || "",
+          endingHook: chapter.endingHook || "",
+          whatHappens: chapter.whatHappens || chapter.storyGoal || "",
+          characterActions: chapter.characterActions || "",
+          mainlineProgress: chapter.mainlineProgress || "",
         })),
       };
     },
