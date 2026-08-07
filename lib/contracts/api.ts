@@ -288,3 +288,80 @@ export type PresetOptionInput = {
   label: string;
   category?: string;
 };
+
+export type EnglishLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
+export type TeachingPlanStatus = "draft" | "confirmed";
+export type ExerciseType = "choice" | "blank" | "vocab" | "matching";
+export type ReadingExerciseMode = "none" | "embedded";
+
+export type ExerciseConfig = {
+  enabled: boolean;
+  countsByType: Record<Exclude<ExerciseType, "matching">, number>;
+};
+
+export type PracticeConfig = {
+  enabled: boolean;
+  countsByType: Record<ExerciseType, number>;
+};
+
+export type TeachingPlanChapter = {
+  outlineChapterId: string;
+  targetWordCount: number | null;
+  knowledgePointIds: string[];
+  readingExerciseMode: ReadingExerciseMode;
+  embeddedExercises: ExerciseConfig;
+  chapterPractice: PracticeConfig;
+  touched: {
+    targetWordCount: boolean;
+    readingExerciseMode: boolean;
+    embeddedExercises: boolean;
+    chapterPractice: boolean;
+  };
+};
+
+export type AfterClassPracticeConfig = {
+  enabled: boolean;
+  knowledgePointIds: string[];
+  practice: PracticeConfig;
+  touched: {
+    knowledgePointIds: boolean;
+    practice: boolean;
+  };
+};
+
+export type TeachingPlan = {
+  courseId: string;
+  status: TeachingPlanStatus;
+  englishLevel: EnglishLevel | null;
+  chapters: TeachingPlanChapter[];
+  afterClassPractice: AfterClassPracticeConfig;
+  updatedAt: string;
+  confirmedAt: string | null;
+};
+
+export type TeachingPlanKnowledgePoint = {
+  id: string;
+  label: string;
+  category?: string;
+};
+
+export type TeachingPlanState = {
+  course: {
+    id: string;
+    title: string;
+    durationMinutes: 30 | 45 | 60;
+    currentStage: CourseStage;
+  };
+  outline: {
+    id: string;
+    title: string;
+    chapters: Array<{
+      id: string;
+      order: number;
+      title: string;
+      summary: string;
+    }>;
+  };
+  knowledgePoints: TeachingPlanKnowledgePoint[];
+  plan: TeachingPlan;
+};
