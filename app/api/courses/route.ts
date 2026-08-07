@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim();
   if (!idempotencyKey) return NextResponse.json({ message: "缺少课程创建请求标识" }, { status: 400 });
   const payload = courseAudienceSchema.safeParse(await request.json());
-  if (!payload.success) return NextResponse.json({ message: "请完整填写课程名称、老师、学生和时长" }, { status: 400 });
+  if (!payload.success) return NextResponse.json({ message: "请完整填写课程名称、授课人物、时长、英语难度和知识点" }, { status: 400 });
   try {
     return NextResponse.json({ course: await createCourse(getDb(), payload.data, idempotencyKey) }, { status: 201 });
   } catch (error) {

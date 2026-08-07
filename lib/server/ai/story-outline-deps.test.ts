@@ -16,6 +16,8 @@ const generateOutlineMock = vi.fn<({ prompt }: { prompt: string }) => Promise<{ 
         characterActions: "",
         mainlineProgress: "",
         characterIds: [],
+        recommendedKnowledgePointKeys: ["KP1"],
+        knowledgePointRecommendationSummary: "用过去时描述发现地图的过程。",
       },
     ],
   }),
@@ -31,7 +33,7 @@ vi.mock("./story-outline-provider", () => ({
 
 describe("createStoryOutlineGenerationDeps", () => {
   test("keeps story outline prompt focused on necessary roles and short Chinese chapter summaries", async () => {
-    await createStoryOutlineGenerationDeps().generateOutline({
+    const outline = await createStoryOutlineGenerationDeps().generateOutline({
       task: "根据当前要求生成故事大纲。",
       references: [],
       chapterCount: 4,
@@ -43,6 +45,9 @@ describe("createStoryOutlineGenerationDeps", () => {
       ],
       selectedDirection: null,
       currentOutline: null,
+      englishLevel: "B1",
+      durationMinutes: 45,
+      selectedKnowledgePoints: [{ id: "grammar-1", label: "Past Simple", category: "时态" }],
     });
 
     const input = generateOutlineMock.mock.calls.at(-1)?.[0];
@@ -63,8 +68,14 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("Jett 和 Sage");
     expect(prompt).toContain("夏天");
     expect(prompt).toContain("指定章节数：4");
+    expect(prompt).toContain("英语难度：B1");
+    expect(prompt).toContain("课程时长：45 分钟");
+    expect(prompt).toContain('"key":"KP1"');
+    expect(prompt).not.toContain('"id":"grammar-1"');
+    expect(prompt).toContain("recommendedKnowledgePointKeys");
+    expect(prompt).toContain("不要生成词数、题型或题量");
+    expect(outline.chapters[0].recommendedKnowledgePointIds).toEqual(["grammar-1"]);
     expect(prompt).not.toContain("课程：海底图书馆");
-    expect(prompt).not.toContain("时长：45");
   });
 
   test("passes people, chapter count and conversation history into random direction generation", async () => {

@@ -20,7 +20,16 @@ function safeValue(value: unknown, key = ""): unknown {
     return value;
   }
   if (Array.isArray(value)) return value.map((item) => safeValue(item));
-  if (value instanceof Error) return { name: value.name, message: value.message, stack: value.stack };
+  if (value instanceof Error) {
+    const extra = Object.fromEntries(Object.entries(value).map(([entryKey, entryValue]) => [entryKey, safeValue(entryValue, entryKey)]));
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+      ...(value.cause ? { cause: safeValue(value.cause, "cause") } : {}),
+      ...extra,
+    };
+  }
   if (typeof value === "object" && value !== null) {
     return Object.fromEntries(Object.entries(value).map(([entryKey, entryValue]) => [entryKey, safeValue(entryValue, entryKey)]));
   }

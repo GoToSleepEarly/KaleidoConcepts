@@ -23,7 +23,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const body: unknown = await request.json();
   const parsed = courseAudienceSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ message: "请完整填写课程名称、老师、学生和时长" }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ message: "请完整填写课程名称、授课人物、时长、英语难度和知识点" }, { status: 400 });
   const resetDownstream = typeof body === "object" && body !== null && "resetDownstream" in body && body.resetDownstream === true;
   const { id } = await params;
   try {

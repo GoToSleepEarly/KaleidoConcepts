@@ -563,6 +563,7 @@ describe("story outline repository", () => {
     }));
     expect(state.outline).toBeNull();
     expect(state.directions.length).toBeGreaterThan(0);
+    expect(state.chatMessages.map((message) => message.content)).toContain("这个想法方向明确，但主线还可以先选一个方向。");
     expect(state.chatMessages.at(-1)?.content).toBe("我生成了 3 个故事方向，你可以选一个继续。");
   });
 

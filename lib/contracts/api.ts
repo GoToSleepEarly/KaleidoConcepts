@@ -78,6 +78,8 @@ export type CourseAudienceInput = {
   teacherId: string;
   studentIds: string[];
   durationMinutes: 30 | 45 | 60;
+  englishLevel: EnglishLevel;
+  knowledgePointIds: string[];
 };
 
 export type CourseAudiencePerson = {
@@ -96,6 +98,8 @@ export type CourseAudienceDetail = {
   id: string;
   title: string;
   durationMinutes: 30 | 45 | 60;
+  englishLevel: EnglishLevel | null;
+  knowledgePointIds: string[];
   lifecycleStatus: CourseLifecycleStatus;
   currentStage: CourseStage;
   people: CourseAudiencePerson[];
@@ -225,6 +229,9 @@ export type CourseStoryOutlineChapter = {
   characterIds: string[];
   setting: string;
   endingHook: string;
+  recommendedKnowledgePointIds?: string[];
+  knowledgePointRecommendationSummary?: string;
+  recommendedWordCount?: number;
 };
 
 export type CourseStoryOutline = {
@@ -249,7 +256,11 @@ export type CourseStoryOutlineState = {
     title: string;
     durationMinutes: 30 | 45 | 60;
     currentStage: CourseStage;
+    englishLevel?: EnglishLevel;
+    knowledgePointIds?: string[];
   };
+  selectedKnowledgePoints?: TeachingPlanKnowledgePoint[];
+  unrecommendedKnowledgePoints?: TeachingPlanKnowledgePoint[];
   chatMessages: CourseStoryChatMessage[];
   settings: {
     chapterCount: number;
@@ -313,6 +324,7 @@ export type TeachingPlanChapter = {
   chapterPractice: PracticeConfig;
   touched: {
     targetWordCount: boolean;
+    knowledgePointIds?: boolean;
     readingExerciseMode: boolean;
     embeddedExercises: boolean;
     chapterPractice: boolean;
@@ -351,6 +363,8 @@ export type TeachingPlanState = {
     title: string;
     durationMinutes: 30 | 45 | 60;
     currentStage: CourseStage;
+    englishLevel?: EnglishLevel;
+    knowledgePointIds?: string[];
   };
   outline: {
     id: string;
@@ -360,6 +374,8 @@ export type TeachingPlanState = {
       order: number;
       title: string;
       summary: string;
+      recommendedKnowledgePointIds: string[];
+      knowledgePointRecommendationSummary: string;
     }>;
   };
   knowledgePoints: TeachingPlanKnowledgePoint[];

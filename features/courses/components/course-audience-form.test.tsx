@@ -1,6 +1,6 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { CourseAudienceForm } from "./course-audience-form";
 
@@ -12,11 +12,32 @@ vi.mock("@/features/people/components/person-form-drawer", () => ({
   PersonEditorDialog: () => null,
 }));
 
+beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function showModal() { this.setAttribute("open", ""); };
+  HTMLDialogElement.prototype.close = function close() { this.removeAttribute("open"); };
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("CourseAudienceForm basic information UI", () => {
+  test("organizes Step1 knowledge points by grammar category", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ presets: [
+      { id: "grammar-1", kind: "grammar", label: "Past Simple", category: "时态", sortOrder: 0, createdAt: "", updatedAt: "" },
+      { id: "grammar-2", kind: "grammar", label: "Wh- Questions", category: "句型", sortOrder: 1, createdAt: "", updatedAt: "" },
+    ] })));
+    render(<CourseAudienceForm />);
+
+    fireEvent.click(screen.getByRole("button", { name: "选择知识点" }));
+    expect(await screen.findByRole("tab", { name: "时态" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "句型" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "句型" }));
+    expect(screen.getByRole("button", { name: "Wh- Questions" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Past Simple" })).not.toBeInTheDocument();
+  });
+
   test("presents Step1 as basic information without internal explanations", () => {
     render(<CourseAudienceForm />);
 

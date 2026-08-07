@@ -34,4 +34,22 @@ describe("devAiLog", () => {
       expect.objectContaining({ payload: expect.objectContaining({ image: expect.stringContaining("已省略") }) }),
     );
   });
+
+  test("includes the underlying transport error code", () => {
+    process.env.NODE_ENV = "development";
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const error = new TypeError("fetch failed", {
+      cause: Object.assign(new Error("Connect Timeout Error"), { code: "UND_ERR_CONNECT_TIMEOUT" }),
+    });
+    devAiLog({ operation: "story_outline", phase: "error", error });
+
+    expect(errorLog).toHaveBeenCalledWith(
+      "[AI][story_outline][error]",
+      expect.objectContaining({
+        error: expect.objectContaining({
+          cause: expect.objectContaining({ code: "UND_ERR_CONNECT_TIMEOUT" }),
+        }),
+      }),
+    );
+  });
 });

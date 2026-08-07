@@ -71,6 +71,8 @@ model Course {
   id              String          @id @default(cuid())
   title           String
   durationMinutes Int
+  englishLevel    EnglishLevel?
+  knowledgePointIds Json             @default("[]")
   lifecycleStatus CourseLifecycle @default(draft)
   currentStage    CourseStage     @default(audience)
   idempotencyKey  String          @unique
@@ -226,6 +228,8 @@ model CourseStoryOutlineChapter {
   characterIds Json
   setting     String
   endingHook  String
+  recommendedKnowledgePointIds Json @default("[]")
+  knowledgePointRecommendationSummary String @default("")
   outline     CourseStoryOutline @relation(fields: [outlineId], references: [id], onDelete: Cascade)
 
   @@unique([outlineId, order])

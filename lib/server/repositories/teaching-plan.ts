@@ -13,6 +13,8 @@ type DbCourse = {
   title: string;
   durationMinutes: number;
   currentStage: CourseStage;
+  englishLevel?: EnglishLevel | null;
+  knowledgePointIds?: unknown;
 };
 
 type DbOutlineChapter = {
@@ -21,6 +23,8 @@ type DbOutlineChapter = {
   title: string;
   storyGoal: string;
   keyEvents: unknown;
+  recommendedKnowledgePointIds?: unknown;
+  knowledgePointRecommendationSummary?: string;
 };
 
 type DbOutline = {
@@ -102,6 +106,8 @@ function toOutlineState(outline: DbOutline) {
       order: chapter.order,
       title: chapter.title,
       summary: outlineSummary(chapter),
+      recommendedKnowledgePointIds: Array.isArray(chapter.recommendedKnowledgePointIds) ? chapter.recommendedKnowledgePointIds.filter((id): id is string => typeof id === "string") : [],
+      knowledgePointRecommendationSummary: chapter.knowledgePointRecommendationSummary ?? "",
     })),
   };
 }
@@ -161,12 +167,24 @@ function normalizePracticeConfig(value: unknown): TeachingPlan["chapters"][numbe
 
 function normalizeChapters(value: unknown): TeachingPlan["chapters"] {
   if (!Array.isArray(value)) return [];
-  return value.filter(isRecord).map((chapter) => ({
-    ...chapter,
-    knowledgePointIds: Array.isArray(chapter.knowledgePointIds) ? chapter.knowledgePointIds.filter((id): id is string => typeof id === "string") : [],
-    embeddedExercises: normalizeExerciseConfig(chapter.embeddedExercises),
-    chapterPractice: normalizePracticeConfig(chapter.chapterPractice),
-  })) as TeachingPlan["chapters"];
+  return value.filter(isRecord).map((chapter) => {
+    const touched = isRecord(chapter.touched) ? chapter.touched : {};
+    return {
+      outlineChapterId: typeof chapter.outlineChapterId === "string" ? chapter.outlineChapterId : "",
+      targetWordCount: typeof chapter.targetWordCount === "number" ? chapter.targetWordCount : null,
+      knowledgePointIds: Array.isArray(chapter.knowledgePointIds) ? chapter.knowledgePointIds.filter((id): id is string => typeof id === "string") : [],
+      readingExerciseMode: chapter.readingExerciseMode === "embedded" ? "embedded" : "none",
+      embeddedExercises: normalizeExerciseConfig(chapter.embeddedExercises),
+      chapterPractice: normalizePracticeConfig(chapter.chapterPractice),
+      touched: {
+        targetWordCount: touched.targetWordCount === true,
+        knowledgePointIds: touched.knowledgePointIds === true,
+        readingExerciseMode: touched.readingExerciseMode === true,
+        embeddedExercises: touched.embeddedExercises === true,
+        chapterPractice: touched.chapterPractice === true,
+      },
+    };
+  });
 }
 
 function normalizeAfterClassPractice(value: unknown): TeachingPlan["afterClassPractice"] {
@@ -225,10 +243,13 @@ async function listKnowledgePoints(db: TeachingPlanDb) {
 async function ensureTeachingPlan(db: TeachingPlanDb, course: DbCourse, outline: DbOutline) {
   const existing = await db.courseTeachingPlan.findUnique({ where: { courseId: course.id } });
   if (existing) return toTeachingPlan(existing);
+  if (!course.englishLevel) throw new CourseTeachingPlanPrerequisiteError("请先在第一步选择英语难度和知识点");
   const outlineState = toOutlineState(outline);
   const draft = buildTeachingPlanDraft({
     courseId: course.id,
-    chapters: outlineState.chapters.map((chapter) => ({ id: chapter.id, title: chapter.title, summary: chapter.summary })),
+    englishLevel: course.englishLevel,
+    durationMinutes: course.durationMinutes as 30 | 45 | 60,
+    chapters: outlineState.chapters.map((chapter) => ({ ...chapter, recommendedKnowledgePointIds: chapter.recommendedKnowledgePointIds ?? [], knowledgePointRecommendationSummary: chapter.knowledgePointRecommendationSummary ?? "" })),
     updatedAt: new Date().toISOString(),
   });
   const created = await db.courseTeachingPlan.upsert({
@@ -246,16 +267,27 @@ async function ensureTeachingPlan(db: TeachingPlanDb, course: DbCourse, outline:
 export async function getTeachingPlanState(db: TeachingPlanDb, courseId: string): Promise<TeachingPlanState> {
   const course = await getCourse(db, courseId);
   const outline = await getConfirmedOutline(db, course);
-  const [plan, knowledgePoints] = await Promise.all([
+  const [savedPlan, knowledgePoints] = await Promise.all([
     ensureTeachingPlan(db, course, outline),
     listKnowledgePoints(db),
   ]);
+  const plan = savedPlan.afterClassPractice.touched.knowledgePointIds
+    ? savedPlan
+    : {
+        ...savedPlan,
+        afterClassPractice: {
+          ...savedPlan.afterClassPractice,
+          knowledgePointIds: [...new Set(savedPlan.chapters.flatMap((chapter) => chapter.knowledgePointIds))],
+        },
+      };
   return {
     course: {
       id: course.id,
       title: course.title,
       durationMinutes: course.durationMinutes as 30 | 45 | 60,
       currentStage: course.currentStage,
+      englishLevel: course.englishLevel as EnglishLevel,
+      knowledgePointIds: Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [],
     },
     outline: toOutlineState(outline),
     knowledgePoints,
@@ -268,7 +300,12 @@ export async function saveTeachingPlan(db: TeachingPlanDb, courseId: string, pla
   const outline = await getConfirmedOutline(db, course);
   const outlineChapterIds = toOutlineState(outline).chapters.map((chapter) => chapter.id);
   if (plan.courseId !== courseId) throw new TeachingPlanValidationError();
-  const parsedPlan = { ...plan, status: "draft" as const, confirmedAt: null };
+  if (!course.englishLevel || plan.englishLevel !== course.englishLevel) throw new TeachingPlanValidationError("英语难度以第一步设置为准。");
+  const allowedKnowledgePointIds = new Set((await listKnowledgePoints(db)).map((point) => point.id));
+  if (plan.chapters.some((chapter) => chapter.knowledgePointIds.some((id) => !allowedKnowledgePointIds.has(id)))) {
+    throw new TeachingPlanValidationError("章节知识点只能从当前语法库中选择。");
+  }
+  const parsedPlan = { ...plan, englishLevel: course.englishLevel, status: "draft" as const, confirmedAt: null };
   if (parsedPlan.chapters.map((chapter) => chapter.outlineChapterId).join("\n") !== outlineChapterIds.join("\n")) {
     throw new TeachingPlanValidationError("教学规划章节与故事大纲不一致。");
   }

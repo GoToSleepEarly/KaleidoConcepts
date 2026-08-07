@@ -36,6 +36,8 @@ type DbCourse = {
   id: string;
   title: string;
   durationMinutes: number;
+  englishLevel: CourseAudienceInput["englishLevel"] | null;
+  knowledgePointIds: unknown;
   lifecycleStatus: CourseLifecycleStatus;
   currentStage: CourseStage;
   idempotencyKey?: string;
@@ -46,6 +48,8 @@ type DbCourse = {
 type CourseCreateData = {
   title: string;
   durationMinutes: number;
+  englishLevel: CourseAudienceInput["englishLevel"];
+  knowledgePointIds: string[];
   lifecycleStatus: "draft";
   currentStage: "story_outline";
   idempotencyKey: string;
@@ -130,6 +134,8 @@ export async function createCourse(db: CoursesDb, input: CourseAudienceInput, id
       data: {
         title: input.title.trim(),
         durationMinutes: input.durationMinutes,
+        englishLevel: input.englishLevel,
+        knowledgePointIds: input.knowledgePointIds,
         lifecycleStatus: "draft",
         currentStage: "story_outline",
         idempotencyKey,
@@ -159,6 +165,8 @@ export async function updateCourseAudience(
   const currentStudents = currentPeople.filter((person) => person.role === "student").map((person) => person.personId).sort();
   const nextStudents = uniqueIds(input.studentIds).sort();
   const keyInputsChanged = current.durationMinutes !== input.durationMinutes
+    || current.englishLevel !== input.englishLevel
+    || !sameIds(Array.isArray(current.knowledgePointIds) ? current.knowledgePointIds.filter((id): id is string => typeof id === "string").sort() : [], [...input.knowledgePointIds].sort())
     || currentTeacher !== input.teacherId
     || !sameIds(currentStudents, nextStudents);
   const hasDownstream = !["audience", "story_outline"].includes(current.currentStage);
@@ -176,6 +184,8 @@ export async function updateCourseAudience(
       data: {
         title: input.title.trim(),
         durationMinutes: input.durationMinutes,
+        englishLevel: input.englishLevel,
+        knowledgePointIds: input.knowledgePointIds,
         currentStage: "story_outline",
         people: { deleteMany: {}, create: people },
       },
@@ -223,6 +233,8 @@ export async function getCourseAudience(db: CoursesDb, id: string): Promise<Cour
     id: course.id,
     title: course.title,
     durationMinutes: course.durationMinutes as 30 | 45 | 60,
+    englishLevel: course.englishLevel,
+    knowledgePointIds: Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [],
     lifecycleStatus: course.lifecycleStatus,
     currentStage: course.currentStage,
     people: (course.people ?? []).map((snapshot) => {
@@ -246,4 +258,10 @@ export async function getCourseAudience(db: CoursesDb, id: string): Promise<Cour
       };
     }),
   };
+}
+
+export async function archiveCourse(db: CoursesDb, id: string) {
+  const course = await db.course.findUnique({ where: { id } });
+  if (!course || course.lifecycleStatus === "archived") throw new CourseNotFoundError();
+  await db.course.update({ where: { id }, data: { lifecycleStatus: "archived" } });
 }

@@ -4,13 +4,15 @@ import type { TeachingPlan } from "@/lib/contracts/api";
 import { TeachingPlanValidationError, buildTeachingPlanDraft, validateTeachingPlanForConfirm } from "@/lib/server/validation/teaching-plan";
 
 const outlineChapters = [
-  { id: "chapter-1", title: "The Map", summary: "Students find a glowing map." },
-  { id: "chapter-2", title: "The Gate", summary: "Students open a hidden gate." },
+  { id: "chapter-1", title: "The Map", summary: "Students find a glowing map.", recommendedKnowledgePointIds: ["grammar-1"], knowledgePointRecommendationSummary: "适合地图线索。" },
+  { id: "chapter-2", title: "The Gate", summary: "Students open a hidden gate.", recommendedKnowledgePointIds: ["grammar-2"], knowledgePointRecommendationSummary: "适合行动表达。" },
 ];
 
 function completePlan(overrides: Partial<TeachingPlan> = {}): TeachingPlan {
   const draft = buildTeachingPlanDraft({
     courseId: "course-1",
+    englishLevel: "B1",
+    durationMinutes: 45,
     chapters: outlineChapters,
     updatedAt: "2026-08-07T00:00:00.000Z",
   });
@@ -27,41 +29,44 @@ function completePlan(overrides: Partial<TeachingPlan> = {}): TeachingPlan {
       enabled: true,
       knowledgePointIds: ["grammar-1", "grammar-2"],
       practice: { enabled: true, countsByType: { choice: 4, blank: 0, vocab: 0, matching: 4 } },
-      touched: { knowledgePointIds: false, practice: false },
+      touched: { knowledgePointIds: false, practice: true },
     },
     ...overrides,
   };
 }
 
 describe("teaching plan validation", () => {
-  test("creates a draft shell without default English level, word counts, or knowledge points", () => {
+  test("creates a complete draft from Step 1, AI recommendations, and fixed exercise defaults", () => {
     const draft = buildTeachingPlanDraft({
       courseId: "course-1",
+      englishLevel: "B1",
+      durationMinutes: 45,
       chapters: outlineChapters,
       updatedAt: "2026-08-07T00:00:00.000Z",
     });
 
-    expect(draft.englishLevel).toBeNull();
+    expect(draft.englishLevel).toBe("B1");
     expect(draft.status).toBe("draft");
     expect(draft.chapters).toHaveLength(2);
     expect(draft.chapters[0]).toMatchObject({
       outlineChapterId: "chapter-1",
-      targetWordCount: null,
-      knowledgePointIds: [],
+      targetWordCount: 180,
+      knowledgePointIds: ["grammar-1"],
       readingExerciseMode: "none",
       embeddedExercises: { enabled: false, countsByType: { choice: 0, blank: 0, vocab: 0 } },
-      chapterPractice: { enabled: true, countsByType: { choice: 0, blank: 0, vocab: 0, matching: 0 } },
+      chapterPractice: { enabled: true, countsByType: { choice: 5, blank: 5, vocab: 0, matching: 0 } },
       touched: {
         targetWordCount: false,
+        knowledgePointIds: false,
         readingExerciseMode: false,
         embeddedExercises: false,
         chapterPractice: false,
       },
     });
     expect(draft.afterClassPractice).toMatchObject({
-      enabled: true,
-      knowledgePointIds: [],
-      practice: { enabled: true, countsByType: { choice: 0, blank: 0, vocab: 0, matching: 0 } },
+      enabled: false,
+      knowledgePointIds: ["grammar-1", "grammar-2"],
+      practice: { enabled: false, countsByType: { choice: 5, blank: 5, vocab: 0, matching: 0 } },
       touched: { knowledgePointIds: false, practice: false },
     });
   });
@@ -73,6 +78,14 @@ describe("teaching plan validation", () => {
   test("requires English level before confirmation", () => {
     expect(() => validateTeachingPlanForConfirm(completePlan({ englishLevel: null }), outlineChapters.map((chapter) => chapter.id)))
       .toThrow(new TeachingPlanValidationError("请选择英语难度。"));
+  });
+
+  test("requires an explicit after-class practice decision", () => {
+    const plan = completePlan();
+    plan.afterClassPractice.touched.practice = false;
+
+    expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id)))
+      .toThrow(new TeachingPlanValidationError("请选择是否生成课后练习。"));
   });
 
   test("accepts target word count up to 200 and rejects values above it", () => {
@@ -109,7 +122,7 @@ describe("teaching plan validation", () => {
         enabled: true,
         knowledgePointIds: ["grammar-3"],
         practice: { enabled: true, countsByType: { choice: 6, blank: 0, vocab: 0, matching: 0 } },
-        touched: { knowledgePointIds: true, practice: false },
+        touched: { knowledgePointIds: true, practice: true },
       },
     });
 

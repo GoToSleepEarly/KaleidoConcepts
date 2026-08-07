@@ -51,7 +51,19 @@ type StoryPromptContext = {
   selectedDirection: unknown;
   currentDirections?: unknown[];
   currentOutline: unknown;
+  englishLevel?: string;
+  durationMinutes?: 30 | 45 | 60;
+  selectedKnowledgePoints?: Array<{ id: string; label: string; category?: string }>;
 };
+
+function knowledgePointOptions(input: Pick<StoryPromptContext, "selectedKnowledgePoints">) {
+  return (input.selectedKnowledgePoints ?? []).map((point, index) => ({
+    key: `KP${index + 1}`,
+    label: point.label,
+    category: point.category,
+    id: point.id,
+  }));
+}
 
 function contextPrompt(input: StoryPromptContext) {
   const peopleSnapshots = input.coursePeople.map(({ role, chineseName, englishName, age, gender }) => ({
@@ -64,6 +76,7 @@ function contextPrompt(input: StoryPromptContext) {
   return [
     "<course_context>",
     `指定章节数：${input.chapterCount}`,
+    ...(input.englishLevel ? [`英语难度：${input.englishLevel}`, `课程时长：${input.durationMinutes} 分钟`, `全课可选知识点：${JSON.stringify(knowledgePointOptions(input).map((point) => ({ key: point.key, label: point.label, category: point.category })))}`] : []),
     `老师和学生人物快照：${JSON.stringify(peopleSnapshots)}`,
     "</course_context>",
     "<conversation_history>",
@@ -187,6 +200,7 @@ export function createStoryOutlineGenerationDeps() {
       conversationHistory: Array<{ role: string; content: string }>;
       references: unknown[];
       selectedDirection: unknown;
+      currentDirections?: unknown[];
       currentOutline: unknown;
     }) => {
       const { text } = await client().generateOutline({
@@ -203,7 +217,7 @@ export function createStoryOutlineGenerationDeps() {
           "展示参考资料与是否联网是两个独立判断。故事依赖真实人物、历史背景、公众人物、既有作品角色、科学事实等背景知识时，应先为老师准备参考资料；你自身已有可靠、稳定知识时返回 prepare_reference_material，自身知识不足时才返回 request_reference_material。纯原创设定且不依赖外部背景知识时不需要资料。",
           "先检查 current_state 中已保存参考资料。现有资料已经覆盖本轮所需背景时，不重复返回 prepare_reference_material 或 request_reference_material，直接按主线清晰度继续。只有新增对象或出现尚未覆盖的必要知识时才准备新资料。",
           "只有对象冷门或有歧义、需要最新信息、精确时间线或专业细节、现有知识明显不足或老师明确要求核实时，才返回 request_reference_material。不得仅因对象属于真实人物、IP 或游戏角色就要求联网；例如你熟悉其稳定核心设定时应返回 prepare_reference_material。",
-          "assistantMessage 只用中文简要说明当前缺口或下一步，不复述全部需求。不要自行发起联网；仅在返回 request_reference_material 后，由老师选择手动补充或联网整理。",
+          "assistantMessage 是直接展示给老师的聊天消息，只用中文说明已经理解到什么和马上要做什么，不复述全部需求。返回 generate_directions 时说明正在创作 3 个故事方向；返回 generate_outline 时说明正在生成章节大纲；返回 prepare_reference_material 时说明正在整理创作所需资料。不要使用“模型、prompt、JSON、调用”等技术词。不要自行发起联网；仅在返回 request_reference_material 后，由老师选择手动补充或联网整理。",
           "在 prepare_reference_material 或 request_reference_material 时返回 researchPlan。researchPlan 结构为 {researchGoal, packets:[{title, subjects:[{name, context?}], researchQuestions, storyUseGoals}]}。研究既有故事时，必须覆盖完整主线、关键转折、结局和主要人物关系，不能只搜对象简介。",
           "不要套用固定知识分类。根据完整对话和故事目标动态决定研究对象、问题和颗粒度；同一作品且需要共同参与故事、彼此有关联的多个角色通常放在同一个 packet，不相关对象可拆分。",
           "老师手动补充的资料足够时，在 teacherReferences 中按可独立使用的资料组整理；若资料包含完整既有剧情但使用方式仍不明确，可以返回 ask_story_usage，否则按主线清晰度返回 generate_directions 或 generate_outline。每项字段为 name, type, summary, usableFacts, avoidTopics, adaptationBoundary，数组字段无内容时返回空数组。",
@@ -352,6 +366,9 @@ export function createStoryOutlineGenerationDeps() {
       conversationHistory: Array<{ role: string; content: string }>;
       selectedDirection: unknown;
       currentOutline?: unknown;
+      englishLevel?: string;
+      durationMinutes?: 30 | 45 | 60;
+      selectedKnowledgePoints?: Array<{ id: string; label: string; category?: string }>;
     }) => {
       const { text } = await client().generateOutline({
         writingProvider: input.writingProvider,
@@ -363,7 +380,8 @@ export function createStoryOutlineGenerationDeps() {
           "characters 是后续视觉资产名单，不是所有被故事提到的实体清单。只保留具体、持续参与剧情、需要保持视觉一致性的角色；机构、公司、团队、部门、监管方和其他背景群体不得进入 characters，只能在 summary 或章节 whatHappens 中按需提及。参考资料中出现某个实体，不代表它是角色。",
           "外部真实人物或已有作品角色实际出场时，sourceType 必须为 referenced，并在能够对应已保存参考资料时填写 sourceReferenceId；原创人物才使用 original。",
           "课堂人物只能复用人物快照，不编造外貌、性格或背景。老师点名且要求出场的每个角色都必须进入 characters，并在至少一章通过实际行动推动剧情；每个角色都必须服务核心冲突，AI 自行新增的原创角色最多 1 个，群像要求除外。",
-          "chapters 每项字段为 order, title, whatHappens, characterIds；数量必须等于指定章节数。每章只在 whatHappens 中写约 50 字的中文剧情概述，必须推进具体事件，并与前后章节形成因果关系。",
+          "chapters 每项字段为 order, title, whatHappens, characterIds, recommendedKnowledgePointKeys, knowledgePointRecommendationSummary；数量必须等于指定章节数。每章只在 whatHappens 中写约 50 字的中文剧情概述，必须推进具体事件，并与前后章节形成因果关系。",
+          "先完成各章剧情，再为每章匹配知识点。每章至少推荐 1 个知识点；recommendedKnowledgePointKeys 只能逐字复制“全课可选知识点”中的 key（例如 KP1），不要返回数据库 id、知识点名称或自行创造 key。根据本章语言情境、英语难度和课程时长控制知识密度，不合适的知识点可以不推荐。knowledgePointRecommendationSummary 用一句简洁中文说明该知识点能在本章什么表达中自然使用。不要生成词数、题型或题量。",
           "需求优先级从高到低为：老师历史中明确要求；已选择方向；已确认参考资料；当前大纲；通用创作建议。低优先级内容不得覆盖高优先级要求。",
           "根据人物年龄、老师要求和引用对象选择叙事类型与主角；学生不强制成为主角，但如果进入故事，必须有自然身份和剧情功能。",
           "Step 1 人物快照默认只用于理解课程学习者。老师选择“按原剧情讲”时，严格保留原作主线、关键转折、结局和原作角色，学生与老师不得自动进入 characters 或正文；只有老师明确要求他们进入剧情时才加入。",
@@ -400,8 +418,17 @@ export function createStoryOutlineGenerationDeps() {
           characterIds: string[];
           setting?: string;
           endingHook?: string;
+          recommendedKnowledgePointKeys?: string[];
+          recommendedKnowledgePointIds?: string[];
+          knowledgePointRecommendationSummary: string;
         }>;
       }>(text, "故事大纲解析失败，请重试");
+      const options = knowledgePointOptions(input);
+      const resolveKnowledgePointIds = (values: string[] = []) => [...new Set(values.flatMap((value) => {
+        const normalized = value.trim().toLowerCase();
+        const match = options.find((option) => option.key.toLowerCase() === normalized || option.id.toLowerCase() === normalized || option.label.trim().toLowerCase() === normalized);
+        return match ? [match.id] : [];
+      }))];
       return {
         ...parsed,
         title: bilingualText(parsed.title),
@@ -420,6 +447,8 @@ export function createStoryOutlineGenerationDeps() {
           whatHappens: chapter.whatHappens || chapter.storyGoal || "",
           characterActions: chapter.characterActions || "",
           mainlineProgress: chapter.mainlineProgress || "",
+          recommendedKnowledgePointIds: resolveKnowledgePointIds(chapter.recommendedKnowledgePointKeys ?? chapter.recommendedKnowledgePointIds),
+          knowledgePointRecommendationSummary: chapter.knowledgePointRecommendationSummary ?? "",
         })),
       };
     },

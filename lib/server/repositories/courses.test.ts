@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   CourseAudienceConflictError,
+  archiveCourse,
   createCourse,
   getCourseAudience,
   listCourses,
@@ -36,9 +37,28 @@ const input = {
   teacherId: "teacher-1",
   studentIds: ["student-1"],
   durationMinutes: 45 as const,
+  englishLevel: "B1" as const,
+  knowledgePointIds: ["grammar-1", "grammar-2"],
 };
 
 describe("course audience repository", () => {
+  test("archives a course instead of deleting its generated assets", async () => {
+    const updates: unknown[] = [];
+    const db = {
+      course: {
+        findUnique: async () => ({ id: "course-1", title: "海底图书馆", durationMinutes: 45, lifecycleStatus: "draft", currentStage: "story_outline" }),
+        update: async ({ data }: { data: Record<string, unknown> }) => {
+          updates.push(data);
+          return { id: "course-1", title: "海底图书馆", durationMinutes: 45, lifecycleStatus: "archived", currentStage: "story_outline" };
+        },
+      },
+    } as unknown as CoursesDb;
+
+    await archiveCourse(db, "course-1");
+
+    expect(updates).toEqual([{ lifecycleStatus: "archived" }]);
+  });
+
   test("creates a course atomically with identity and visual snapshots", async () => {
     const db = {
       person: { findMany: async () => [teacher, student] },
@@ -48,6 +68,8 @@ describe("course audience repository", () => {
           expect(data).toMatchObject({
             title: "海底图书馆",
             durationMinutes: 45,
+            englishLevel: "B1",
+            knowledgePointIds: ["grammar-1", "grammar-2"],
             lifecycleStatus: "draft",
             currentStage: "story_outline",
           });
@@ -137,7 +159,9 @@ describe("course audience repository", () => {
           findUnique: async () => ({
             id: "course-1",
             title: "旧名称",
-            durationMinutes: 45,
+              durationMinutes: 45,
+              englishLevel: "B1",
+              knowledgePointIds: ["grammar-1", "grammar-2"],
             currentStage: "content",
             people: [
               { personId: "teacher-1", role: "teacher" },

@@ -114,6 +114,32 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByText("还没有生成结果")).toBeInTheDocument();
   });
 
+  test("renders persisted AI progress messages while a multi-round request is still running", async () => {
+    vi.useFakeTimers();
+    let finishPost: ((response: Response) => void) | undefined;
+    const intermediateState: CourseStoryOutlineState = {
+      ...emptyState,
+      chatMessages: [
+        { id: "teacher-1", courseId: "course-1", role: "teacher", content: "我的故事想法：\n写一个冒险故事", actions: [], createdAt: "2026-08-07T00:00:00.000Z" },
+        { id: "assistant-1", courseId: "course-1", role: "assistant", content: "已理解故事想法，正在创作 3 个不同的故事方向。", actions: [], createdAt: "2026-08-07T00:00:01.000Z" },
+      ],
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") return new Promise<Response>((resolve) => { finishPost = resolve; });
+      return Promise.resolve(Response.json(intermediateState));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseStoryOutlineWorkspace initialState={emptyState} />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "故事想法" }), { target: { value: "写一个冒险故事" } });
+    fireEvent.click(screen.getByRole("button", { name: "开始讨论故事" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+
+    expect(screen.getByText("已理解故事想法，正在创作 3 个不同的故事方向。")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/courses/course-1/story-outline", { cache: "no-store" });
+    await act(async () => { finishPost?.(Response.json(intermediateState)); await Promise.resolve(); });
+  });
+
   test("formats the random form as a teacher chat message", async () => {
     const fetchMock = vi.fn(async () => Response.json(emptyState));
     vi.stubGlobal("fetch", fetchMock);

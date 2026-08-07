@@ -48,32 +48,63 @@ function outputText(data: ResponsesData) {
   return parts?.join("\n").trim() || null;
 }
 
+const RETRYABLE_CONNECT_CODES = new Set([
+  "UND_ERR_CONNECT_TIMEOUT",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+]);
+
+function transportErrorCode(error: unknown) {
+  if (!(error instanceof Error) || typeof error.cause !== "object" || error.cause === null) return null;
+  const code = Reflect.get(error.cause, "code");
+  return typeof code === "string" ? code : null;
+}
+
+function canRetryBeforeConnection(error: unknown) {
+  const code = transportErrorCode(error);
+  return code !== null && RETRYABLE_CONNECT_CODES.has(code);
+}
+
 export function createStoryOutlineProvider(config = configFromEnvironment()) {
   async function request(operation: string, body: Record<string, unknown>) {
     const startedAt = Date.now();
     devAiLog({ operation, phase: "request", payload: body });
-    let response: Response;
-    try {
-      response = await fetch("https://api.quickrouter.ai/v1/responses", {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${config.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(config.timeoutMs),
-      });
-    } catch (error) {
-      devAiLog({ operation, phase: "error", latencyMs: Date.now() - startedAt, error });
-      if (
-        error instanceof Error &&
-        (error.name === "TimeoutError" || error.name === "AbortError")
-      ) {
-        throw new Error("故事大纲生成超时，请稍后重试", { cause: error });
+    let response: Response | null = null;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        response = await fetch("https://api.quickrouter.ai/v1/responses", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${config.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(config.timeoutMs),
+        });
+        break;
+      } catch (error) {
+        const retrying = attempt === 1 && canRetryBeforeConnection(error);
+        devAiLog({
+          operation,
+          phase: "error",
+          latencyMs: Date.now() - startedAt,
+          payload: { attempt, retrying },
+          error,
+        });
+        if (retrying) continue;
+        if (
+          error instanceof Error &&
+          (error.name === "TimeoutError" || error.name === "AbortError")
+        ) {
+          throw new Error("故事大纲生成超时，请稍后重试", { cause: error });
+        }
+        throw new Error("故事大纲服务连接失败，请稍后重试", { cause: error });
       }
-      throw new Error("故事大纲服务连接失败，请稍后重试", { cause: error });
     }
+
+    if (!response) throw new Error("故事大纲服务连接失败，请稍后重试");
 
     let data: ResponsesData;
     let rawResponse: string;

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { ExerciseType, TeachingPlan } from "@/lib/contracts/api";
+import { defaultPracticeConfig, recommendedChapterWordCount } from "@/lib/domain/teaching-plan-policy";
 
 const embeddedExerciseTypes = ["choice", "blank", "vocab"] as const;
 const practiceExerciseTypes = ["choice", "blank", "vocab", "matching"] as const;
@@ -50,6 +51,7 @@ export const teachingPlanSchema = z.object({
     chapterPractice: practiceConfigSchema,
     touched: z.object({
       targetWordCount: z.boolean(),
+      knowledgePointIds: z.boolean(),
       readingExerciseMode: z.boolean(),
       embeddedExercises: z.boolean(),
       chapterPractice: z.boolean(),
@@ -77,31 +79,35 @@ export class TeachingPlanValidationError extends Error {
 
 export function buildTeachingPlanDraft(input: {
   courseId: string;
-  chapters: Array<{ id: string; title: string; summary: string }>;
+  englishLevel: NonNullable<TeachingPlan["englishLevel"]>;
+  durationMinutes: 30 | 45 | 60;
+  chapters: Array<{ id: string; title: string; summary: string; recommendedKnowledgePointIds: string[]; knowledgePointRecommendationSummary: string }>;
   updatedAt: string;
 }): TeachingPlan {
+  const recommendedKnowledgePointIds = [...new Set(input.chapters.flatMap((chapter) => chapter.recommendedKnowledgePointIds))];
   return {
     courseId: input.courseId,
     status: "draft",
-    englishLevel: null,
+    englishLevel: input.englishLevel,
     chapters: input.chapters.map((chapter) => ({
       outlineChapterId: chapter.id,
-      targetWordCount: null,
-      knowledgePointIds: [],
+      targetWordCount: recommendedChapterWordCount(input.englishLevel, input.durationMinutes, input.chapters.length),
+      knowledgePointIds: chapter.recommendedKnowledgePointIds,
       readingExerciseMode: "none",
       embeddedExercises: { enabled: false, countsByType: { choice: 0, blank: 0, vocab: 0 } },
-      chapterPractice: { enabled: true, countsByType: { choice: 0, blank: 0, vocab: 0, matching: 0 } },
+      chapterPractice: defaultPracticeConfig(),
       touched: {
         targetWordCount: false,
+        knowledgePointIds: false,
         readingExerciseMode: false,
         embeddedExercises: false,
         chapterPractice: false,
       },
     })),
     afterClassPractice: {
-      enabled: true,
-      knowledgePointIds: [],
-      practice: { enabled: true, countsByType: { choice: 0, blank: 0, vocab: 0, matching: 0 } },
+      enabled: false,
+      knowledgePointIds: recommendedKnowledgePointIds,
+      practice: defaultPracticeConfig(false),
       touched: { knowledgePointIds: false, practice: false },
     },
     updatedAt: input.updatedAt,
@@ -141,6 +147,9 @@ export function validateTeachingPlanForConfirm(plan: TeachingPlan, outlineChapte
   const parsed = teachingPlanSchema.safeParse(plan);
   if (!parsed.success) throw new TeachingPlanValidationError();
   if (!plan.englishLevel) throw new TeachingPlanValidationError("请选择英语难度。");
+  if (plan.status !== "confirmed" && !plan.afterClassPractice.touched.practice) {
+    throw new TeachingPlanValidationError("请选择是否生成课后练习。");
+  }
 
   const planChapterIds = plan.chapters.map((chapter) => chapter.outlineChapterId);
   if (!sameIds(planChapterIds, outlineChapterIds)) throw new TeachingPlanValidationError("教学规划章节与故事大纲不一致。");

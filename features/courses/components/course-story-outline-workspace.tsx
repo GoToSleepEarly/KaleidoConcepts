@@ -50,6 +50,32 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
     return () => window.clearInterval(timer);
   }, [pending]);
 
+  useEffect(() => {
+    if (!pending) return;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const response = await fetch(`/api/courses/${state.course.id}/story-outline`, { cache: "no-store" });
+        if (!response.ok || !active) return;
+        const nextState = (await response.json()) as CourseStoryOutlineState;
+        if (!active) return;
+        setState(nextState);
+        if (optimisticTeacherMessage && nextState.chatMessages.some((chat) => chat.role === "teacher" && chat.content === optimisticTeacherMessage)) {
+          setOptimisticTeacherMessage("");
+        }
+      } catch {
+        // 轮询只用于补充等待反馈，失败时保留当前界面并等待主请求返回。
+      }
+    };
+    const first = window.setTimeout(() => void refresh(), 700);
+    const timer = window.setInterval(() => void refresh(), 1400);
+    return () => {
+      active = false;
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
+  }, [optimisticTeacherMessage, pending, state.course.id]);
+
   async function postMessage(
     input: CourseStoryMessageInput,
     label = "正在处理...",
@@ -470,7 +496,7 @@ function ResultPanel({
           <button className={tabClass(resultTab === "characters")} onClick={() => setResultTab("characters")} type="button">角色</button>
           <button className={tabClass(resultTab === "references")} onClick={() => setResultTab("references")} type="button">参考资料</button>
         </div>
-        {resultTab === "outline" ? <OutlineSummary outline={outline} /> : null}
+        {resultTab === "outline" ? <OutlineSummary outline={outline} state={state} /> : null}
         {resultTab === "characters" ? <CharactersSection coursePeople={state.coursePeople} outline={outline} /> : null}
         {resultTab === "references" ? (
           <div className="space-y-4">
@@ -549,7 +575,7 @@ function CardGroup({ title, children }: { title: string; children: React.ReactNo
   return <div><h4 className="mb-2 text-sm font-semibold text-foreground">{title}</h4><div className="space-y-2">{children}</div></div>;
 }
 
-function OutlineSummary({ outline }: { outline: CourseStoryOutline }) {
+function OutlineSummary({ outline, state }: { outline: CourseStoryOutline; state: CourseStoryOutlineState }) {
   const title = splitBilingual(outline.title);
   const summary = splitBilingual(outline.summary);
   return (
@@ -564,6 +590,7 @@ function OutlineSummary({ outline }: { outline: CourseStoryOutline }) {
           {outline.narrativeType ? <span className="rounded-full bg-card px-2 py-1">叙事类型：{outline.narrativeType}</span> : null}
         </div>
       </div>
+      {state.unrecommendedKnowledgePoints?.length ? <p className="rounded-md bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-800">已根据 {state.course.englishLevel} 难度和 {state.course.durationMinutes} 分钟课时智能匹配。{state.unrecommendedKnowledgePoints.map((item) => item.label).join("、")} 暂未放入章节推荐，可在下一步手动调整。</p> : null}
       <CardGroup title="章节大纲">
         <div className="grid gap-3 xl:grid-cols-2">
           {outline.chapters.map((chapter) => {
@@ -579,6 +606,7 @@ function OutlineSummary({ outline }: { outline: CourseStoryOutline }) {
                 </div>
                 <p className="mt-3 text-xs font-medium text-muted-foreground">剧情概述</p>
                 <p className="mt-1 text-sm leading-6 text-foreground">{plotSummary}</p>
+                <div className="mt-3 border-t border-border pt-3"><div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium text-muted-foreground">建议 {chapter.recommendedWordCount} 词</span>{(chapter.recommendedKnowledgePointIds ?? []).map((id) => { const point = state.selectedKnowledgePoints?.find((item) => item.id === id); return <span className="rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700" key={id}>{point?.label ?? id}</span>; })}</div>{chapter.knowledgePointRecommendationSummary ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{chapter.knowledgePointRecommendationSummary}</p> : null}</div>
               </article>
             );
           })}

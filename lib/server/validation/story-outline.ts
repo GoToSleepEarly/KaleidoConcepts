@@ -102,6 +102,8 @@ const chapterSchema = z.object({
   characterIds: z.array(z.string()),
   setting: z.string().min(1),
   endingHook: z.string().min(1),
+  recommendedKnowledgePointIds: z.array(z.string().min(1)).optional(),
+  knowledgePointRecommendationSummary: z.string().optional(),
 });
 
 export const storyOutlineSaveSchema = z.object({

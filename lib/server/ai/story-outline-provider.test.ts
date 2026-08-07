@@ -75,4 +75,39 @@ describe("createStoryOutlineProvider", () => {
     expect(() => createStoryOutlineProvider()).toThrow(StoryOutlineProviderConfigError);
     expect(() => createStoryOutlineProvider()).toThrow("故事大纲服务尚未配置");
   });
+
+  test("retries once when the connection times out before a request is established", async () => {
+    process.env.QUICKROUTER_API_KEY = "key";
+    const connectionError = new TypeError("fetch failed", {
+      cause: Object.assign(new Error("Connect Timeout Error"), { code: "UND_ERR_CONNECT_TIMEOUT" }),
+    });
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(connectionError)
+      .mockResolvedValueOnce(Response.json({ output_text: "{\"ok\":true}" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createStoryOutlineProvider().generateOutline({
+      writingProvider: "quickrouter_gpt",
+      prompt: "生成大纲",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("does not retry an ambiguous connection reset that may have reached the provider", async () => {
+    process.env.QUICKROUTER_API_KEY = "key";
+    const connectionError = new TypeError("fetch failed", {
+      cause: Object.assign(new Error("socket reset"), { code: "ECONNRESET" }),
+    });
+    const fetchMock = vi.fn().mockRejectedValue(connectionError);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createStoryOutlineProvider().generateOutline({
+      writingProvider: "quickrouter_gpt",
+      prompt: "生成大纲",
+    })).rejects.toThrow("故事大纲服务连接失败，请稍后重试");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

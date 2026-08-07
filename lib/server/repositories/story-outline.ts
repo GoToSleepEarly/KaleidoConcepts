@@ -15,7 +15,10 @@ import type {
   CourseStoryOutlineState,
   StoryResearchProvider,
   StoryWritingProvider,
+  EnglishLevel,
+  TeachingPlanKnowledgePoint,
 } from "@/lib/contracts/api";
+import { recommendedChapterWordCount } from "@/lib/domain/teaching-plan-policy";
 
 type DbCourse = {
   id: string;
@@ -23,6 +26,8 @@ type DbCourse = {
   durationMinutes: number;
   currentStage: CourseStage;
   people?: DbCoursePerson[];
+  englishLevel?: EnglishLevel | null;
+  knowledgePointIds?: unknown;
 };
 
 type DbCoursePerson = {
@@ -103,6 +108,8 @@ type DbChapter = {
   characterIds: unknown;
   setting: string;
   endingHook: string;
+  recommendedKnowledgePointIds?: unknown;
+  knowledgePointRecommendationSummary?: string;
 };
 
 type DbCharacter = {
@@ -143,6 +150,7 @@ export type StoryOutlineDb = {
   courseStoryOutlineChapter: Required<Pick<Delegate<DbChapter>, "deleteMany" | "createMany">>;
   courseCharacter: Required<Pick<Delegate<DbCharacter>, "findMany" | "deleteMany" | "createMany">>;
   aiGenerationLog: Required<Pick<Delegate<Record<string, unknown>>, "create">>;
+  presetOption?: { findMany: (query: Record<string, unknown>) => Promise<Array<{ id: string; label: string; category: string | null }>> };
   $transaction?: <T>(callback: (tx: StoryOutlineDb) => Promise<T>) => Promise<T>;
 };
 
@@ -152,7 +160,7 @@ export type GeneratedOutline = Pick<CourseStoryOutline, "title" | "summary"> & {
   narrativeType?: string;
   storyHook?: string;
   characters: Array<Omit<CourseCharacter, "id" | "courseId" | "createdAt" | "updatedAt">>;
-  chapters: Array<Omit<CourseStoryOutlineChapter, "id">>;
+  chapters: Array<Omit<CourseStoryOutlineChapter, "id" | "recommendedWordCount">>;
 };
 
 type StoryOutlinePromptMessage = Pick<CourseStoryChatMessage, "role" | "content">;
@@ -165,6 +173,9 @@ type StoryOutlineAiContext = {
   selectedDirection: CourseStoryDirection | null;
   currentDirections: CourseStoryDirection[];
   currentOutline: CourseStoryOutline | null;
+  englishLevel?: EnglishLevel;
+  durationMinutes?: 30 | 45 | 60;
+  selectedKnowledgePoints?: TeachingPlanKnowledgePoint[];
 };
 
 export type StoryOutlineGenerationDeps = {
@@ -325,7 +336,7 @@ function toCharacter(character: DbCharacter): CourseCharacter {
   };
 }
 
-function toOutline(outline: DbOutline | null, references: CourseSourceReference[], characters: CourseCharacter[]): CourseStoryOutline | null {
+function toOutline(outline: DbOutline | null, references: CourseSourceReference[], characters: CourseCharacter[], course?: DbCourse): CourseStoryOutline | null {
   if (!outline) return null;
   return {
     id: outline.id,
@@ -348,6 +359,9 @@ function toOutline(outline: DbOutline | null, references: CourseSourceReference[
       characterIds: array(chapter.characterIds),
       setting: chapter.setting,
       endingHook: chapter.endingHook,
+      recommendedKnowledgePointIds: array(chapter.recommendedKnowledgePointIds),
+      knowledgePointRecommendationSummary: chapter.knowledgePointRecommendationSummary ?? "",
+      recommendedWordCount: course?.englishLevel ? recommendedChapterWordCount(course.englishLevel, course.durationMinutes as 30 | 45 | 60, outline.chapterCount) : 0,
     })),
     createdAt: outline.createdAt.toISOString(),
     updatedAt: outline.updatedAt.toISOString(),
@@ -390,14 +404,22 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
   ]);
   const mappedReferences = references.map(toReference);
   const mappedCharacters = characters.map(toCharacter);
-  const mappedOutline = toOutline(outline, mappedReferences, mappedCharacters);
+  const selectedIds = Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [];
+  const presets = db.presetOption ? await db.presetOption.findMany({ where: { id: { in: selectedIds }, kind: "grammar", archivedAt: null } }) : [];
+  const selectedKnowledgePoints = presets.map((item) => ({ id: item.id, label: item.label, category: item.category ?? undefined }));
+  const mappedOutline = toOutline(outline, mappedReferences, mappedCharacters, course);
+  const recommendedIds = new Set(mappedOutline?.chapters.flatMap((chapter) => chapter.recommendedKnowledgePointIds) ?? []);
   return {
     course: {
       id: course.id,
       title: course.title,
       durationMinutes: course.durationMinutes as 30 | 45 | 60,
       currentStage: course.currentStage,
+      englishLevel: course.englishLevel as EnglishLevel,
+      knowledgePointIds: selectedIds,
     },
+    selectedKnowledgePoints,
+    unrecommendedKnowledgePoints: selectedKnowledgePoints.filter((item) => !recommendedIds.has(item.id)),
     chatMessages: messages.map(toMessage),
     settings: {
       chapterCount: mappedOutline?.chapterCount ?? setting?.chapterCount ?? defaultChapterCount(course.durationMinutes),
@@ -455,6 +477,8 @@ async function writeOutline(db: StoryOutlineDb, course: DbCourse, outline: Gener
       characterIds: chapter.characterIds,
       setting: chapter.setting || "",
       endingHook: chapter.endingHook || "",
+      recommendedKnowledgePointIds: chapter.recommendedKnowledgePointIds ?? [],
+      knowledgePointRecommendationSummary: chapter.knowledgePointRecommendationSummary ?? "",
     })),
   });
   await db.courseCharacter.deleteMany({ where: { courseId: course.id } });
@@ -506,6 +530,8 @@ async function storyAiContext(
   ]);
   const mappedReferences = references.map(toReference);
   const mappedCharacters = characters.map(toCharacter);
+  const selectedIds = Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [];
+  const presets = db.presetOption ? await db.presetOption.findMany({ where: { id: { in: selectedIds }, kind: "grammar", archivedAt: null } }) : [];
   return {
     chapterCount,
     coursePeople: toCoursePeople(course),
@@ -517,7 +543,10 @@ async function storyAiContext(
     selectedDirection: selectedDirectionOverride === undefined
       ? directions.map(toDirection).find((direction) => direction.selectedAt) ?? null
       : selectedDirectionOverride,
-    currentOutline: toOutline(existingOutline, mappedReferences, mappedCharacters),
+    currentOutline: toOutline(existingOutline, mappedReferences, mappedCharacters, course),
+    englishLevel: course.englishLevel ?? undefined,
+    durationMinutes: course.durationMinutes as 30 | 45 | 60,
+    selectedKnowledgePoints: presets.map((item) => ({ id: item.id, label: item.label, category: item.category ?? undefined })),
   };
 }
 
@@ -531,6 +560,10 @@ async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task
       task,
       writingProvider: resolved.writingProvider,
     });
+    const allowedIds = new Set(context.selectedKnowledgePoints?.map((item) => item.id) ?? []);
+    if (allowedIds.size && outline.chapters.some((chapter) => !chapter.recommendedKnowledgePointIds?.length || chapter.recommendedKnowledgePointIds.some((id) => !allowedIds.has(id)) || !chapter.knowledgePointRecommendationSummary?.trim())) {
+      throw new CourseStoryOutlineValidationError("章节知识点推荐没有完整生成，请重试本次大纲。");
+    }
     const persistOutline = async (tx: StoryOutlineDb) => {
       await writeOutline(tx, course, outline, resolved.writingProvider, resolved.chapterCount);
       await tx.courseStoryDirection.deleteMany({ where: { courseId: course.id, selectedAt: null } });
@@ -665,6 +698,7 @@ export async function handleStoryOutlineMessage(
   if (input.action === "generate_directions") {
     const task = input.message.trim() || "我确认参考资料，请生成 3 个故事方向。";
     if (!input.message.trim()) await addMessage(db, courseId, "teacher", task);
+    await addMessage(db, courseId, "system", "已收到你的要求，正在创作 3 个不同的故事方向。");
     await generateAndSaveDirections(db, course, deps, setting.chapterCount);
     return getStoryOutlineState(db, courseId);
   }
@@ -672,6 +706,7 @@ export async function handleStoryOutlineMessage(
   if (input.action === "generate_from_reference") {
     const task = input.message.trim() || "请用已确认的参考资料生成故事大纲。";
     if (!input.message.trim()) await addMessage(db, courseId, "teacher", task);
+    await addMessage(db, courseId, "system", "参考资料和故事要求已确认，正在生成章节大纲。");
     await generateAndSaveOutline(db, course, task, deps, setting);
     return getStoryOutlineState(db, courseId);
   }
@@ -685,6 +720,7 @@ export async function handleStoryOutlineMessage(
     const selectionMessage = `我选择故事方向：${direction.title}\n${direction.hook}`;
     await addMessage(db, courseId, "teacher", selectionMessage);
     const task = `请基于已选择的故事方向生成大纲：${direction.title}\n${direction.seedPrompt || direction.hook}`;
+    await addMessage(db, courseId, "system", "故事方向已确认，正在生成章节大纲和教学知识点建议。");
     await generateAndSaveOutline(db, course, task, deps, setting, { ...direction, selectedAt: new Date().toISOString() });
     return getStoryOutlineState(db, courseId);
   }
@@ -692,11 +728,13 @@ export async function handleStoryOutlineMessage(
   if (input.action === "regenerate_outline") {
     const task = input.message.trim() || "请基于当前全部要求重新生成故事大纲。";
     if (!input.message.trim()) await addMessage(db, courseId, "teacher", task);
+    await addMessage(db, courseId, "system", "已收到修改要求，正在重新生成章节大纲。");
     await generateAndSaveOutline(db, course, task, deps, setting);
     return getStoryOutlineState(db, courseId);
   }
 
   if (input.mode === "random") {
+    await addMessage(db, courseId, "system", "已收到灵感设置，正在创作 3 个不同的故事方向。");
     await generateAndSaveDirections(db, course, deps, setting.chapterCount);
     return getStoryOutlineState(db, courseId);
   }
@@ -760,6 +798,7 @@ export async function handleStoryOutlineMessage(
   }
 
   if (decision.decision === "prepare_reference_material") {
+    await addMessage(db, courseId, "system", decision.assistantMessage || "已理解故事想法，正在整理创作所需的参考资料。");
     const objectName = decision.referenceName || input.message || "当前故事背景";
     const researchPlan = decision.researchPlan ?? fallbackResearchPlan(objectName);
     const generatedReferences = await deps.generateReferenceFromKnowledge({
@@ -792,6 +831,7 @@ export async function handleStoryOutlineMessage(
   }
 
   if (decision.decision === "generate_directions") {
+    await addMessage(db, courseId, "system", decision.assistantMessage || "已理解故事想法，正在创作 3 个不同的故事方向。");
     await generateAndSaveDirections(db, course, deps, setting.chapterCount);
     return getStoryOutlineState(db, courseId);
   }
@@ -801,7 +841,8 @@ export async function handleStoryOutlineMessage(
       ? "根据老师已确认的参考资料和完整历史生成故事大纲。"
       : input.action === "choose_story_usage"
         ? "根据老师选择的原剧情使用方式生成故事大纲。"
-        : "根据老师当前完整要求生成故事大纲。");
+      : "根据老师当前完整要求生成故事大纲。");
+  await addMessage(db, courseId, "system", decision.assistantMessage || "故事要求已经明确，正在生成章节大纲和教学知识点建议。");
   await generateAndSaveOutline(db, course, outlineTask, deps, setting);
   return getStoryOutlineState(db, courseId);
 }
@@ -844,6 +885,8 @@ export async function saveStoryOutline(
       characterIds: chapter.characterIds,
       setting: chapter.whatHappens || chapter.characterActions || chapter.mainlineProgress ? "" : chapter.setting || "",
       endingHook: chapter.whatHappens || chapter.characterActions || chapter.mainlineProgress ? "" : chapter.endingHook || "",
+      recommendedKnowledgePointIds: chapter.recommendedKnowledgePointIds ?? [],
+      knowledgePointRecommendationSummary: chapter.knowledgePointRecommendationSummary ?? "",
     })),
     characters: outline.characters.map((character) => ({
       displayName: character.displayName,
@@ -864,6 +907,10 @@ export async function confirmStoryOutline(db: StoryOutlineDb, courseId: string) 
   const state = await getStoryOutlineState(db, courseId);
   if (!state.outline || !state.outline.title || !state.outline.summary || !state.outline.chapters.length) {
     throw new CourseStoryOutlineValidationError();
+  }
+  const allowedIds = new Set(state.course.knowledgePointIds ?? []);
+  if (allowedIds.size && state.outline.chapters.some((chapter) => !chapter.recommendedKnowledgePointIds?.length || chapter.recommendedKnowledgePointIds.some((id) => !allowedIds.has(id)))) {
+    throw new CourseStoryOutlineValidationError("章节知识点推荐不完整，请重新生成大纲。");
   }
   return db.course.update({ where: { id: courseId }, data: { currentStage: "teaching_plan" } });
 }

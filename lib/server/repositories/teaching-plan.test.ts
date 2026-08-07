@@ -32,7 +32,7 @@ function completePlan(plan: TeachingPlan): TeachingPlan {
       enabled: true,
       knowledgePointIds: ["grammar-1", "grammar-2"],
       practice: { enabled: true, countsByType: { choice: 8, blank: 0, vocab: 0, matching: 0 } },
-      touched: { knowledgePointIds: false, practice: false },
+      touched: { knowledgePointIds: false, practice: true },
     },
   };
 }
@@ -50,6 +50,8 @@ function createDb() {
       title: "海底图书馆",
       durationMinutes: 45,
       currentStage: "teaching_plan",
+      englishLevel: "B1",
+      knowledgePointIds: ["grammar-1", "grammar-2"],
     }),
     outline: record({
       id: "outline-1",
@@ -58,13 +60,14 @@ function createDb() {
       summary: "学生进入海底图书馆。",
     }),
     chapters: [
-      record({ id: "outline-chapter-1", order: 1, title: "发光地图", storyGoal: "找到地图", keyEvents: ["发现地图"] }),
-      record({ id: "outline-chapter-2", order: 2, title: "蓝色书页", storyGoal: "找到书页", keyEvents: ["打开门"] }),
+      record({ id: "outline-chapter-1", order: 1, title: "发光地图", storyGoal: "找到地图", keyEvents: ["发现地图"], recommendedKnowledgePointIds: ["grammar-1"], knowledgePointRecommendationSummary: "适合地图线索。" }),
+      record({ id: "outline-chapter-2", order: 2, title: "蓝色书页", storyGoal: "找到书页", keyEvents: ["打开门"], recommendedKnowledgePointIds: ["grammar-2"], knowledgePointRecommendationSummary: "适合行动表达。" }),
     ],
     plan: null,
     presets: [
       record({ id: "grammar-1", kind: "grammar", label: "Past Simple", category: "时态", sortOrder: 0, archivedAt: null }),
       record({ id: "grammar-2", kind: "grammar", label: "Wh- Questions", category: "句型", sortOrder: 1, archivedAt: null }),
+      record({ id: "grammar-3", kind: "grammar", label: "Present Perfect", category: "时态", sortOrder: 2, archivedAt: null }),
     ],
   };
 
@@ -97,7 +100,7 @@ function createDb() {
       findMany: vi.fn(async () => state.presets),
     },
     $transaction: async (callback) => callback(db),
-  } as TeachingPlanDb & { state: typeof state };
+  } as unknown as TeachingPlanDb & { state: typeof state };
   return db;
 }
 
@@ -109,10 +112,16 @@ describe("teaching plan repository", () => {
 
     expect(state.course.currentStage).toBe("teaching_plan");
     expect(state.outline.chapters.map((chapter) => chapter.title)).toEqual(["发光地图", "蓝色书页"]);
-    expect(state.knowledgePoints.map((point) => point.label)).toEqual(["Past Simple", "Wh- Questions"]);
+    expect(state.knowledgePoints.map((point) => point.label)).toEqual(["Past Simple", "Wh- Questions", "Present Perfect"]);
     expect(state.plan.status).toBe("draft");
-    expect(state.plan.englishLevel).toBeNull();
+    expect(state.plan.englishLevel).toBe("B1");
+    expect(state.plan.chapters[0]).toMatchObject({ targetWordCount: 180, knowledgePointIds: ["grammar-1"], chapterPractice: { enabled: true, countsByType: { choice: 5, blank: 5 } } });
     expect(state.plan.chapters.map((chapter) => chapter.outlineChapterId)).toEqual(["outline-chapter-1", "outline-chapter-2"]);
+    expect(state.plan.afterClassPractice.knowledgePointIds).toEqual(["grammar-1", "grammar-2"]);
+    expect(state.outline.chapters[0]).toMatchObject({
+      recommendedKnowledgePointIds: ["grammar-1"],
+      knowledgePointRecommendationSummary: "适合地图线索。",
+    });
   });
 
   test("does not create a plan before story outline is confirmed", async () => {
@@ -131,6 +140,17 @@ describe("teaching plan repository", () => {
 
     expect(saved.englishLevel).toBe("B1");
     expect(db.state.course.currentStage).toBe("teaching_plan");
+  });
+
+  test("allows teachers to add an active grammar point outside the Step 1 AI scope", async () => {
+    const db = createDb();
+    const state = await getTeachingPlanState(db, "course-1");
+    const plan = completePlan(state.plan);
+    plan.chapters[0].knowledgePointIds.push("grammar-3");
+
+    const saved = await saveTeachingPlan(db, "course-1", plan);
+
+    expect(saved.chapters[0].knowledgePointIds).toContain("grammar-3");
   });
 
   test("normalizes legacy exercise count shape when reading saved plan", async () => {

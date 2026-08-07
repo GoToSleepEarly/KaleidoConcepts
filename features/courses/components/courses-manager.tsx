@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, BookOpen, Clock3, ExternalLink, Plus, UsersRound } from "lucide-react";
+import { ArrowRight, BookOpen, Clock3, ExternalLink, Loader2, Plus, Trash2, UsersRound } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Dialog } from "@/components/ui/dialog";
 import type { CourseListItem } from "@/lib/contracts/api";
 
 const stageLabels: Record<CourseListItem["currentStage"], string> = {
@@ -21,6 +22,8 @@ export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
   const [courses, setCourses] = useState<CourseListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [courseToDelete, setCourseToDelete] = useState<CourseListItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -39,6 +42,25 @@ export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
       });
     return () => controller.abort();
   }, []);
+
+  async function deleteCourse() {
+    if (!courseToDelete) return;
+    setDeleting(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/courses/${courseToDelete.id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const data = (await response.json()) as { message?: string };
+        throw new Error(data.message || "课程删除失败，请重试");
+      }
+      setCourses((current) => current.filter((course) => course.id !== courseToDelete.id));
+      setCourseToDelete(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "课程删除失败，请重试");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -78,7 +100,7 @@ export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
               <div className="hidden sm:block">
                 <span className="inline-flex rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700">{stageLabels[course.currentStage]}</span>
               </div>
-              <Button asChild size="sm" variant="ghost"><Link href={course.nextEditPath}>继续<ArrowRight className="size-4" /></Link></Button>
+              <div className="flex items-center gap-1"><Button asChild size="sm" variant="ghost"><Link href={course.nextEditPath}>继续<ArrowRight className="size-4" /></Link></Button><Button aria-label={`删除课程 ${course.title}`} onClick={() => setCourseToDelete(course)} size="icon-sm" title="删除课程" type="button" variant="ghost"><Trash2 className="size-4" /></Button></div>
             </article>
           ))}
         </div>
@@ -88,6 +110,7 @@ export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
           </div>
         ) : null}
       </section>
+      <Dialog description={courseToDelete ? `“${courseToDelete.title}”将从课程列表移除。课程内容和已生成图片会保留，避免误删核心资产。` : ""} onClose={() => { if (!deleting) setCourseToDelete(null); }} open={Boolean(courseToDelete)} title="删除这门课程？"><div className="flex justify-end gap-2 p-4"><Button disabled={deleting} onClick={() => setCourseToDelete(null)} type="button" variant="outline">保留课程</Button><Button disabled={deleting} onClick={() => void deleteCourse()} type="button" variant="destructive">{deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}{deleting ? "正在删除" : "删除课程"}</Button></div></Dialog>
     </div>
   );
 }
