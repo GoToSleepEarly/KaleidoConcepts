@@ -3,9 +3,12 @@ import { getDb } from "@/lib/server/db";
 import { CoursePersonValidationError, createCourse, listCourses } from "@/lib/server/repositories/courses";
 import { courseAudienceSchema } from "@/lib/server/validation/courses";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    return NextResponse.json({ courses: await listCourses(getDb()) });
+    const requestedPage = Number.parseInt(new URL(request.url).searchParams.get("page") ?? "1", 10);
+    const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const query = new URL(request.url).searchParams.get("query") ?? "";
+    return NextResponse.json(await listCourses(getDb(), page, 5, query));
   } catch {
     return NextResponse.json({ message: "课程列表加载失败" }, { status: 500 });
   }

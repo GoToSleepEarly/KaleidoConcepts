@@ -3,6 +3,8 @@ import { describe, expect, test, vi } from "vitest";
 import {
   compilePersonVisualPrompt,
   createDescriptionVisual,
+  deletePersonVisual,
+  refinePersonVisual,
   retryPersonVisual,
   selectPersonVisual,
   type PersonVisualsDb,
@@ -246,5 +248,71 @@ describe("person visual generation", () => {
     );
 
     expect(selected).toBe("asset-1");
+  });
+
+  test("keeps age and gender in the refine prompt", async () => {
+    const parent = pendingAsset({ status: "succeeded", storagePath: "/data/original.webp" });
+    const created: Array<Record<string, unknown>> = [];
+    const generated = pendingAsset({ id: "revision-1", parentAssetId: "asset-1", sourceMode: "revision", status: "pending" });
+    await refinePersonVisual(
+      {
+        person: {
+          findUnique: async () => ({ id: "person-1", age: 9, gender: "female", archivedAt: null }),
+        },
+        personVisualAsset: {
+          findUnique: async ({ where }: { where: Record<string, unknown> }) => "personId_idempotencyKey" in where ? null : parent,
+          create: async ({ data }: { data: Record<string, unknown> }) => { created.push(data); return { ...generated, ...data }; },
+          updateMany: async () => ({ count: 1 }),
+          update: async ({ data }: { data: Record<string, unknown> }) => ({ ...generated, ...data }),
+        },
+      } as unknown as PersonVisualsDb,
+      "person-1",
+      "asset-1",
+      "头发改成红色",
+      "refine-key",
+      {
+        generate: vi.fn(),
+        edit: vi.fn(async () => ({ imageUrl: "https://example.com/revision.webp" })),
+        persist: vi.fn(async () => ({ storagePath: "/data/revision.webp", publicUrl: "/revision.webp" })),
+        readAsDataUrl: vi.fn(async () => "data:image/webp;base64,AAAA"),
+        removeTemporarySource: vi.fn(),
+      },
+    );
+
+    expect(created[0]?.compiledPrompt).toContain("9岁女性人物");
+    expect(created[0]?.compiledPrompt).toContain("保持输入角色的年龄感、性别特征");
+    expect(created[0]?.compiledPrompt).toContain("头发改成红色");
+  });
+
+  test("deletes an unused visual and its stored file", async () => {
+    const removeStoredFile = vi.fn(async () => undefined);
+    const removeRecord = vi.fn(async () => pendingAsset());
+    await deletePersonVisual(
+      {
+        personVisualAsset: {
+          findUnique: async () => pendingAsset({ storagePath: "/data/person.webp", _count: { childAssets: 0, selectedBy: 0, courseSnapshots: 0 } }),
+          delete: removeRecord,
+        },
+      } as unknown as PersonVisualsDb,
+      "person-1",
+      "asset-1",
+      removeStoredFile,
+    );
+
+    expect(removeRecord).toHaveBeenCalledWith({ where: { id: "asset-1" } });
+    expect(removeStoredFile).toHaveBeenCalledWith("/data/person.webp");
+  });
+
+  test.each([
+    [{ childAssets: 0, selectedBy: 1, courseSnapshots: 0 }, "当前正在使用"],
+    [{ childAssets: 1, selectedBy: 0, courseSnapshots: 0 }, "修改版本依赖"],
+    [{ childAssets: 0, selectedBy: 0, courseSnapshots: 1 }, "课程已引用"],
+  ])("protects referenced visuals from deletion", async (counts, message) => {
+    await expect(deletePersonVisual(
+      { personVisualAsset: { findUnique: async () => pendingAsset({ _count: counts }) } } as unknown as PersonVisualsDb,
+      "person-1",
+      "asset-1",
+      vi.fn(),
+    )).rejects.toThrow(message);
   });
 });

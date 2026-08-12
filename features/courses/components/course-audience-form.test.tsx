@@ -25,8 +25,8 @@ afterEach(() => {
 describe("CourseAudienceForm basic information UI", () => {
   test("organizes Step1 knowledge points by grammar category", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ presets: [
-      { id: "grammar-1", kind: "grammar", label: "Past Simple", category: "时态", sortOrder: 0, createdAt: "", updatedAt: "" },
-      { id: "grammar-2", kind: "grammar", label: "Wh- Questions", category: "句型", sortOrder: 1, createdAt: "", updatedAt: "" },
+      { id: "grammar-1", kind: "grammar", label: "Past Simple", labelZh: "一般过去时", category: "时态", sortOrder: 0, createdAt: "", updatedAt: "" },
+      { id: "grammar-2", kind: "grammar", label: "Wh- Questions", labelZh: "特殊疑问句", category: "句型", sortOrder: 1, createdAt: "", updatedAt: "" },
     ] })));
     render(<CourseAudienceForm />);
 
@@ -34,8 +34,12 @@ describe("CourseAudienceForm basic information UI", () => {
     expect(await screen.findByRole("tab", { name: "时态" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "句型" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "句型" }));
-    expect(screen.getByRole("button", { name: "Wh- Questions" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Past Simple" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /特殊疑问句.*Wh- Questions/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /一般过去时.*Past Simple/ })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索语法点" }), { target: { value: "过去时" } });
+    expect(screen.getByRole("button", { name: /一般过去时.*Past Simple/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /特殊疑问句.*Wh- Questions/ })).not.toBeInTheDocument();
   });
 
   test("presents Step1 as basic information without internal explanations", () => {
@@ -104,7 +108,7 @@ describe("CourseAudienceForm basic information UI", () => {
         });
       }
 
-      return Response.json({ people: [], nextCursor: null });
+      return Response.json({ people: [], page: 1, pageSize: 100, total: 0, totalPages: 1 });
     });
 
     render(<CourseAudienceForm courseId="course-1" />);

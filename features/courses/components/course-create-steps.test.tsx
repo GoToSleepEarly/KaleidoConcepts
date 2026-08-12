@@ -1,6 +1,6 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, test, vi } from "vitest";
 
 import { CourseCreateSteps } from "./course-create-steps";
 
@@ -26,5 +26,22 @@ describe("CourseCreateSteps", () => {
     const lockedStep = screen.getAllByText("教学规划").find((node) => node.closest("[aria-disabled='true']"));
     expect(currentStep?.closest("[aria-current='step']")).toHaveAttribute("aria-current", "step");
     expect(lockedStep?.closest("[aria-disabled='true']")).toHaveAttribute("aria-disabled", "true");
+  });
+
+  test("links an already reached later step after navigating back", () => {
+    render(<CourseCreateSteps courseId="course-1" currentStep={4} furthestStep={5} />);
+
+    expect(screen.getByRole("link", { name: "视觉资源" })).toHaveAttribute(
+      "href",
+      "/courses/course-1/create/visual-resources",
+    );
+    expect(screen.getAllByText("预览发布").find((node) => node.closest("[aria-disabled='true']"))?.closest("[aria-disabled='true']")).toHaveAttribute("aria-disabled", "true");
+  });
+
+  test("lets the page guard an unlocked step navigation", () => {
+    const onNavigate = vi.fn();
+    render(<CourseCreateSteps courseId="course-1" currentStep={2} furthestStep={4} onNavigate={onNavigate} />);
+    fireEvent.click(screen.getByRole("link", { name: "文案与练习" }));
+    expect(onNavigate).toHaveBeenCalledWith(expect.stringContaining("/courses/course-1/create/content"));
   });
 });

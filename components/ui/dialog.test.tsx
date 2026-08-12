@@ -14,6 +14,22 @@ beforeAll(() => {
 });
 
 describe("Dialog cancel handling", () => {
+  test("centers compact modal dialogs in both axes", () => {
+    render(
+      <Dialog onClose={vi.fn()} open size="compact" title="新增主题方向">
+        <span>内容</span>
+      </Dialog>,
+    );
+
+    expect(screen.getByRole("dialog")).toHaveClass(
+      "left-1/2",
+      "top-1/2",
+      "-translate-x-1/2",
+      "-translate-y-1/2",
+      "w-[min(92vw,560px)]",
+    );
+  });
+
   test("does not close when a file input emits a bubbling cancel event", () => {
     const onClose = vi.fn();
     render(

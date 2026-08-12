@@ -75,10 +75,10 @@ export function PersonEditorDialog({
       !form.chineseName.trim() ||
       !form.englishName.trim() ||
       !Number.isInteger(age) ||
-      age < 1 ||
-      age > 120
+      age < 0 ||
+      age > 99
     ) {
-      setError("请完整填写中文名、英文名和 1–120 岁的年龄");
+      setError("请完整填写中文名、英文名和 0–99 岁的年龄");
       return;
     }
     setSaving(true);
@@ -126,7 +126,7 @@ export function PersonEditorDialog({
       icon={<UserRound className="size-5" />}
       onClose={onClose}
       open={open}
-      size="wide"
+      size="medium"
       title={
         workingPerson
           ? `编辑${form.role === "student" ? "学生" : "老师"}`
@@ -199,8 +199,8 @@ export function PersonEditorDialog({
                       icon={CalendarDays}
                       inputMode="numeric"
                       label="年龄"
-                      max={120}
-                      min={1}
+                      max={99}
+                      min={0}
                       onChange={(value) =>
                         setForm((current) => ({ ...current, age: value }))
                       }
@@ -297,7 +297,7 @@ export function PersonEditorDialog({
             </div>
           </form>
         ) : workingPerson ? (
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-hidden">
             <PersonVisualStudio
               embedded
               onChanged={() => onSaved(workingPerson)}

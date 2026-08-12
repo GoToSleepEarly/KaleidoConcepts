@@ -17,7 +17,8 @@ This directory keeps only current module context. Historical plans, old PRD draf
 | People profiles | `docs/frontend/people-profiles.md` | Implemented |
 | Course list | `docs/frontend/courses-list-management.md` | Implemented |
 | Course create Step 1 | `docs/frontend/course-create-basic.md` | Implemented |
-| Lesson chat Step 2 | `docs/frontend/course-create-lesson-chat.md` | Implemented |
+| Course create navigation | `docs/frontend/course-create-navigation.md` | Implemented |
+| Lesson chat Step 2 | `docs/frontend/course-create-lesson-chat.md` | Implemented; alignment optimization specified, pending implementation |
 | Lesson draft Step 3 | `docs/frontend/course-create-lesson-draft.md` | Implemented |
 | Resources Step 4 | `docs/frontend/course-create-resources.md` | Implemented |
 | Preview and PDF Step 5 | `docs/frontend/course-preview-and-pdf.md` | Implemented |

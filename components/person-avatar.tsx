@@ -11,19 +11,21 @@ type PersonAvatarProps = {
   gender?: Gender;
   avatarUrl?: string;
   size?: number;
+  imageWidth?: number;
+  imageHeight?: number;
   className?: string;
+  shape?: "circle" | "square";
 };
 
-export function PersonAvatar({ name, seed, gender, avatarUrl, size = 56, className }: PersonAvatarProps) {
+export function PersonAvatar({ name, seed, gender, avatarUrl, size = 56, imageWidth, imageHeight, className, shape = "circle" }: PersonAvatarProps) {
   if (avatarUrl) {
+    const width = imageWidth ?? size;
+    const height = imageHeight ?? size;
     return (
-      <Image
-        alt=""
-        className={cn("rounded-full object-cover ring-4 ring-slate-50", className)}
-        height={size}
-        src={avatarUrl}
-        width={size}
-      />
+      <div className={cn("relative shrink-0 overflow-visible", className)} style={{ width, height }}>
+        <Image alt="" className={cn("block size-full object-contain", shape === "circle" ? "rounded-full" : "rounded-none")} height={height} src={avatarUrl} width={width} />
+        {gender ? <span aria-label={gender === "male" ? "男" : "女"} className={cn("absolute bottom-1 right-1 z-10 flex size-5 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm ring-2 ring-white", gender === "male" ? "bg-sky-500" : "bg-pink-500")}>{gender === "male" ? "♂" : "♀"}</span> : null}
+      </div>
     );
   }
 

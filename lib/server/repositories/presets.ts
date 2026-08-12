@@ -4,6 +4,7 @@ type DbPresetOption = {
   id: string;
   kind: PresetKind;
   label: string;
+  labelZh?: string | null;
   category: string | null;
   sortOrder: number;
   archivedAt: Date | null;
@@ -14,6 +15,7 @@ type DbPresetOption = {
 type PresetWriteData = {
   kind: PresetKind;
   label: string;
+  labelZh: string | null;
   category: string | null;
   sortOrder: number;
 };
@@ -26,7 +28,7 @@ type PresetFindManyQuery = {
 type PresetDelegate = {
   findMany: (query: PresetFindManyQuery) => Promise<DbPresetOption[]>;
   findFirst: (query: {
-    where: { kind: PresetKind; label: string; archivedAt: null; id?: { not: string } };
+    where: { kind: PresetKind; label: string; archivedAt?: null; id?: { not: string } };
   }) => Promise<DbPresetOption | null>;
   create: (query: { data: PresetWriteData }) => Promise<DbPresetOption>;
   update: (query: { where: { id: string }; data: Partial<PresetWriteData> & { archivedAt?: Date | null } }) => Promise<DbPresetOption>;
@@ -61,6 +63,7 @@ function toPresetOption(preset: DbPresetOption): PresetOption {
     id: preset.id,
     kind: preset.kind,
     label: preset.label,
+    ...(preset.labelZh ? { labelZh: preset.labelZh } : {}),
     category: preset.category ?? undefined,
     sortOrder: preset.sortOrder,
     createdAt: preset.createdAt.toISOString(),
@@ -84,17 +87,32 @@ export async function createPreset(db: PresetsDb, input: PresetOptionInput) {
   const label = input.label.trim();
 
   const existing = await db.presetOption.findFirst({
-    where: { kind: input.kind, label, archivedAt: null },
+    where: { kind: input.kind, label },
   });
 
-  if (existing) {
+  if (existing && !existing.archivedAt) {
     throw new PresetConflictError();
+  }
+
+  if (existing) {
+    const restored = await db.presetOption.update({
+      where: { id: existing.id },
+      data: {
+        label,
+        labelZh: normalizeOptionalText(input.labelZh),
+        category: normalizeOptionalText(input.category),
+        archivedAt: null,
+      },
+    });
+
+    return toPresetOption(restored);
   }
 
   const preset = await db.presetOption.create({
     data: {
       kind: input.kind,
       label,
+      labelZh: normalizeOptionalText(input.labelZh),
       category: normalizeOptionalText(input.category),
       sortOrder: 0,
     },
@@ -124,6 +142,7 @@ export async function updatePreset(db: PresetsDb, id: string, input: PresetOptio
     where: { id },
     data: {
       label,
+      labelZh: normalizeOptionalText(input.labelZh),
       category: normalizeOptionalText(input.category),
     },
   });

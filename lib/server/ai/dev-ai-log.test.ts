@@ -3,15 +3,13 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { devAiLog } from "./dev-ai-log";
 
 describe("devAiLog", () => {
-  const originalNodeEnv = process.env.NODE_ENV;
-
   afterEach(() => {
-    process.env.NODE_ENV = originalNodeEnv;
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 
   test("does not write AI logs in production", () => {
-    process.env.NODE_ENV = "production";
+    vi.stubEnv("NODE_ENV", "production");
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
     devAiLog({ operation: "story_outline", phase: "request", payload: { prompt: "hello" } });
@@ -20,7 +18,7 @@ describe("devAiLog", () => {
   });
 
   test("logs development calls while redacting image data", () => {
-    process.env.NODE_ENV = "development";
+    vi.stubEnv("NODE_ENV", "development");
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
     devAiLog({
@@ -31,12 +29,21 @@ describe("devAiLog", () => {
 
     expect(info).toHaveBeenCalledWith(
       "[AI][person_visual_edit][request]",
-      expect.objectContaining({ payload: expect.objectContaining({ image: expect.stringContaining("已省略") }) }),
+      expect.stringContaining("已省略"),
     );
   });
 
+  test("prints request input and response output as explicit serialized logs", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    devAiLog({ operation: "content_generate_reading", phase: "request", payload: { input: "INPUT_MARKER" } });
+    devAiLog({ operation: "content_generate_reading", phase: "response", payload: { output: "OUTPUT_MARKER" } });
+    expect(info).toHaveBeenNthCalledWith(1, "[AI][content_generate_reading][request]", expect.stringContaining("INPUT_MARKER"));
+    expect(info).toHaveBeenNthCalledWith(2, "[AI][content_generate_reading][response]", expect.stringContaining("OUTPUT_MARKER"));
+  });
+
   test("includes the underlying transport error code", () => {
-    process.env.NODE_ENV = "development";
+    vi.stubEnv("NODE_ENV", "development");
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const error = new TypeError("fetch failed", {
       cause: Object.assign(new Error("Connect Timeout Error"), { code: "UND_ERR_CONNECT_TIMEOUT" }),
@@ -45,11 +52,7 @@ describe("devAiLog", () => {
 
     expect(errorLog).toHaveBeenCalledWith(
       "[AI][story_outline][error]",
-      expect.objectContaining({
-        error: expect.objectContaining({
-          cause: expect.objectContaining({ code: "UND_ERR_CONNECT_TIMEOUT" }),
-        }),
-      }),
+      expect.stringContaining("UND_ERR_CONNECT_TIMEOUT"),
     );
   });
 });

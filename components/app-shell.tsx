@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BookOpen, ChevronDown, ListChecks, LogOut, Sparkles, Tags, UsersRound } from "lucide-react";
@@ -24,7 +24,7 @@ const routeInfo: Record<string, { title: string; subtitle: string; activeKey: st
   },
   people: {
     title: "人物档案",
-    subtitle: "老师与学生",
+    subtitle: "人物资料会用于课程内容和插图生成",
     activeKey: "people",
   },
   themes: {
@@ -83,9 +83,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
   const routeMeta = getRouteMeta(pathname);
   const session = useMemo(() => getStoredSession(), []);
   const displayName = session?.user.displayName ?? "教师账号";
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+
+    function closeOnOutsideClick(event: MouseEvent) {
+      if (!accountMenuRef.current?.contains(event.target as Node)) setIsMenuOpen(false);
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsMenuOpen(false);
+    }
+
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isMenuOpen]);
 
   function handleLogout() {
     clearAuthSession();
@@ -93,15 +113,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-dvh bg-[#F3F5FA] text-slate-950">
-      <aside className="print-hidden fixed inset-y-0 left-0 z-sticky hidden w-[260px] flex-col border-r border-[#151B2A] bg-[#070B16] text-white lg:flex">
-        <Link className="flex h-[76px] items-center gap-3 px-5" href="/courses">
-          <span className="flex size-10 items-center justify-center rounded-lg border border-white/12 bg-white/8 text-white">
+    <div className="flex min-h-dvh bg-[#F4F9FF] text-[#19324D]">
+      <aside className="print-hidden fixed inset-y-0 left-0 z-sticky hidden w-60 flex-col border-r border-[#DCEAF6] bg-white text-[#19324D] lg:flex">
+        <Link className="flex h-[72px] items-center gap-3 px-5" href="/courses">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-[#EEF0FF] text-[#4D5FE8]">
             <Sparkles className="size-5" />
           </span>
           <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold">Kaleido Concepts</span>
-            <span className="mt-1 block text-xs text-white/42">万象之境</span>
+            <span className="block truncate text-base font-bold">Kaleido Concepts</span>
+            <span className="mt-0.5 block text-[13px] font-medium text-[#69829B]">万象之境</span>
           </span>
         </Link>
 
@@ -114,52 +134,47 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               return (
                 <Link
                   className={cn(
-                    "group flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors duration-200",
+                    "group flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-semibold transition-colors duration-200",
                     isActive
-                      ? "bg-white text-[#07111F]"
-                      : "text-white/62 hover:bg-white/8 hover:text-white",
+                      ? "bg-[#EEF0FF] text-[#3447D4]"
+                      : "text-[#526B84] hover:bg-[#F3F8FC] hover:text-[#19324D]",
                   )}
                   href={item.href}
                   key={item.href}
                 >
-                  <Icon className={cn("size-[18px]", isActive ? "text-[#3147FF]" : "text-white/48 group-hover:text-white/80")} />
+                  <Icon className={cn("size-[18px]", isActive ? "text-[#5365EC]" : "text-[#7890A7] group-hover:text-[#536B83]")} />
                   <span className="flex-1">{item.label}</span>
-                  {isActive ? <span className="size-1.5 rounded-full bg-[#26D7FF]" /> : null}
+                  {isActive ? <span className="size-1.5 rounded-full bg-[#6FD8C2]" /> : null}
                 </Link>
               );
             })}
           </div>
         </nav>
 
-        <div className="border-t border-white/8 px-5 py-4">
-          <div className="flex items-center justify-between text-xs text-white/42">
-            <span>Studio</span>
-            <span>Live</span>
-          </div>
-        </div>
       </aside>
 
-      <div className="flex min-h-dvh min-w-0 flex-1 flex-col lg:pl-[260px]">
-        <header className="print-hidden sticky top-0 z-sticky flex min-h-[64px] items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-md sm:px-6 lg:h-[72px] lg:px-8 lg:py-0">
+      <div className="flex min-h-dvh min-w-0 flex-1 flex-col lg:pl-60">
+        <header className="print-hidden sticky top-0 z-sticky flex min-h-[64px] items-center justify-between gap-3 border-b border-[#DCEAF6] bg-white px-4 py-3 sm:px-6 lg:h-[72px] lg:px-8 lg:py-0">
           <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold text-slate-950 sm:text-lg">{routeMeta.title}</h1>
-            <p className="mt-1 line-clamp-1 text-xs text-slate-500 sm:text-sm">{routeMeta.subtitle}</p>
+            <h1 className="truncate text-lg font-semibold text-[#19324D] sm:text-xl">{routeMeta.title}</h1>
+            <p className="mt-0.5 line-clamp-1 text-[13px] text-[#69829B]">{routeMeta.subtitle}</p>
           </div>
 
-          <div className="relative shrink-0">
+          <div className="relative w-40 shrink-0" ref={accountMenuRef}>
             <button
+              aria-expanded={isMenuOpen}
               aria-label="用户菜单"
-              className="flex min-h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 pr-3 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 sm:gap-3"
+              className="flex min-h-11 w-full items-center gap-2 rounded-full border border-[#D7E5F1] bg-white px-2.5 pr-3 text-sm font-medium text-[#38536E] transition-colors hover:border-[#BBCFE0] hover:bg-[#F7FBFE] sm:gap-3"
               onClick={() => setIsMenuOpen((value) => !value)}
               type="button"
             >
               <PersonAvatar name={displayName} seed={displayName} size={30} />
               <span className="hidden sm:block">{displayName}</span>
-              <ChevronDown className={cn("size-4 text-slate-400 transition-transform duration-200", isMenuOpen && "rotate-180")} />
+              <ChevronDown className={cn("ml-auto size-4 text-[#7890A7] transition-transform duration-200", isMenuOpen && "rotate-180")} />
             </button>
 
             {isMenuOpen ? (
-              <div className="absolute right-0 top-full z-dropdown mt-2 w-44 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg animate-fade-in">
+              <div className="absolute right-0 top-full z-dropdown mt-2 w-full overflow-hidden rounded-xl bg-white shadow-[0_6px_14px_rgba(46,78,108,0.14)] animate-fade-in" data-testid="account-menu">
                 <button
                   className="flex h-10 w-full items-center gap-2 px-3 text-left text-sm text-red-600 transition-colors duration-200 hover:bg-red-50"
                   onClick={handleLogout}

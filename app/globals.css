@@ -238,6 +238,11 @@ p {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes dialog-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @keyframes pulse-dot {
   0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
   40% { transform: scale(1); opacity: 1; }
@@ -256,6 +261,56 @@ p {
 
 .animate-fade-in {
   animation: fade-in 0.3s ease-out;
+}
+
+.animate-dialog-fade {
+  animation: dialog-fade 0.18s ease-out;
+}
+
+.login-workspace-blur {
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    transparent 56%,
+    black calc(56% + 96px),
+    black 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    transparent 56%,
+    black calc(56% + 96px),
+    black 100%
+  );
+}
+
+.login-transition {
+  background: linear-gradient(
+    90deg,
+    rgba(238, 246, 251, 0) 0,
+    rgba(238, 246, 251, 0) 56%,
+    #eef6fb calc(56% + 96px),
+    #eef6fb 100%
+  );
+}
+
+@media (min-aspect-ratio: 16/9) {
+  .login-background {
+    -webkit-mask-image: linear-gradient(
+      90deg,
+      transparent 0,
+      black 96px,
+      black calc(100% - 96px),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      90deg,
+      transparent 0,
+      black 96px,
+      black calc(100% - 96px),
+      transparent 100%
+    );
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

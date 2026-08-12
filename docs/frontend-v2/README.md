@@ -28,12 +28,12 @@
 | --- | --- | --- |
 | 系统隔离与 V1 退役 | `docs/frontend-v2/system-architecture.md` | 已确认并实现当前边界 |
 | 人物档案 | `docs/frontend-v2/people-profiles.md` | 已实现，待用户验收 |
-| 基础信息 | `docs/frontend-v2/course-create-audience.md` | 新增教学目标契约，待确认后实现 |
-| 故事大纲 | `docs/frontend/course-create-lesson-chat.md` | 新增章节知识点推荐契约，待确认后实现 |
-| 教学规划 | `docs/frontend-v2/course-create-teaching-plan.md` | 新契约待确认 |
-| 文案与练习 | `docs/frontend-v2/course-create-content-and-exercises.md` | 旧草稿，待按新架构重新确认 |
-| 视觉资源 | `docs/frontend-v2/course-create-visual-resources.md` | 旧草稿，待按新架构重新确认 |
-| 预览发布 | 待创建 | 待讨论 |
+| 基础信息 | `docs/frontend-v2/course-create-audience.md` | 教学目标契约已实现 |
+| 故事大纲 | `docs/frontend/course-create-lesson-chat.md` | 章节知识点推荐契约已实现 |
+| 教学规划 | `docs/frontend-v2/course-create-teaching-plan.md` | 题型分离、覆盖与分页规则已实现，待用户验收 |
+| 文案与练习 | `docs/frontend-v2/course-create-content-and-exercises.md` | 核心前后端已实现，待用户验收 |
+| 视觉资源 | `docs/frontend-v2/course-create-visual-resources.md` | 核心前后端已实现，待用户验收 |
+| 预览发布 | `docs/frontend-v2/course-preview-and-publish.md` | 核心前后端已实现，待用户验收 |
 
 ## 新课程流程
 
@@ -41,4 +41,4 @@
 基础信息 -> 故事大纲 -> 教学规划 -> 文案与练习 -> 视觉资源 -> 预览发布
 ```
 
-实现仍按模块逐步验收；本轮先共同确认 Step 1-3 的跨模块数据边界，再按 Step 1 → Step 2 → Step 3 顺序实现和验收。
+实现仍按模块逐步验收；当前进入 Step 6 用户验收。

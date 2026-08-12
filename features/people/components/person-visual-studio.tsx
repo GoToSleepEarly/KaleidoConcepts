@@ -245,6 +245,10 @@ export function PersonVisualStudio({
   >(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState("");
+  const [deletingVisualId, setDeletingVisualId] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [justGeneratedId, setJustGeneratedId] = useState<string | null>(null);
+  const [returnToVisualId, setReturnToVisualId] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const photoInputId = person ? `person-photo-${person.id}` : "person-photo";
 
@@ -403,7 +407,7 @@ export function PersonVisualStudio({
       const body = new FormData();
       body.set("photo", photo);
       body.set("customPrompt", photoStylePrompt);
-      await run(
+      const visual = await run(
         () =>
           fetch(`/api/people/${person.id}/visuals/from-photo`, {
             method: "POST",
@@ -412,9 +416,10 @@ export function PersonVisualStudio({
           }),
         "create",
       );
+      if (visual?.status === "succeeded") setJustGeneratedId(visual.id);
       return;
     }
-    await run(
+    const visual = await run(
       () =>
         fetch(`/api/people/${person.id}/visuals/from-description`, {
           method: "POST",
@@ -429,11 +434,12 @@ export function PersonVisualStudio({
         }),
       "create",
     );
+    if (visual?.status === "succeeded") setJustGeneratedId(visual.id);
   }
 
   async function refine() {
     if (!person || !selected || !instruction.trim()) return;
-    await run(
+    const visual = await run(
       () =>
         fetch(`/api/people/${person.id}/visuals/${selected.id}/refine`, {
           method: "POST",
@@ -445,19 +451,44 @@ export function PersonVisualStudio({
         }),
       "refine",
     );
+    if (visual?.status === "succeeded") setJustGeneratedId(visual.id);
   }
 
-  async function selectCurrent() {
-    if (!person || !selected) return;
+  async function selectCurrent(target = selected) {
+    if (!person || !target) return;
     const visual = await run(() =>
-      fetch(`/api/people/${person.id}/visuals/${selected.id}/select`, {
+      fetch(`/api/people/${person.id}/visuals/${target.id}/select`, {
         method: "POST",
       }),
     );
-    if (visual) setActiveId(selected.id);
+    if (visual) {
+      setActiveId(target.id);
+      setJustGeneratedId(null);
+    }
+  }
+
+  async function deleteVisual(visual: PersonVisualAsset) {
+    if (!person || visual.id === activeId) return;
+    setDeletingVisualId(visual.id);
+    setError("");
+    try {
+      const response = await fetch(`/api/people/${person.id}/visuals/${visual.id}`, { method: "DELETE" });
+      const data = (await response.json().catch(() => null)) as { message?: string } | null;
+      if (!response.ok) throw new Error(data?.message || "人物形象删除失败");
+      const remaining = visuals.filter((item) => item.id !== visual.id);
+      setVisuals(remaining);
+      setSelectedId((current) => current === visual.id ? (remaining.find((item) => item.id === activeId)?.id ?? remaining[0]?.id ?? null) : current);
+      setWorkspaceMode(resolveVisualWorkspaceMode(remaining));
+      onChanged();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "人物形象删除失败");
+    } finally {
+      setDeletingVisualId(null);
+    }
   }
 
   function startOver() {
+    setReturnToVisualId(selectedId);
     setWorkspaceMode("create");
     setMode("photo");
     setPhoto(null);
@@ -469,37 +500,44 @@ export function PersonVisualStudio({
     if (photoInputRef.current) photoInputRef.current.value = "";
   }
 
+  function cancelStartOver() {
+    const restoreId = returnToVisualId && visuals.some((visual) => visual.id === returnToVisualId)
+      ? returnToVisualId
+      : (visuals.find((visual) => visual.id === activeId)?.id ?? visuals[0]?.id ?? null);
+    setSelectedId(restoreId);
+    setWorkspaceMode("refine");
+    setReturnToVisualId(null);
+    setError("");
+  }
+
   const content = person ? (
     <div
       className={cn(
-        "grid min-h-0 lg:grid-cols-[minmax(0,1.02fr)_minmax(360px,.98fr)]",
-        embedded && "lg:h-full",
+        "grid min-h-0 overflow-hidden lg:grid-cols-2",
+        embedded && "h-full",
       )}
     >
-      <section className="flex min-h-0 flex-col border-b border-border bg-muted/35 p-4 sm:p-6 lg:border-b-0 lg:border-r">
+      <section className="flex min-h-0 flex-col overflow-hidden border-b border-border bg-muted/35 p-4 sm:p-5 lg:border-b-0 lg:border-r">
         <div className="flex items-center justify-between gap-4">
           <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <ImageIcon className="size-4 text-primary" />
             形象预览
           </p>
-          {selected?.id === activeId ? (
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
-              <Check className="size-3.5" />
-              当前使用
-            </span>
-          ) : null}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {selected?.id === activeId ? <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><Check className="size-3.5" />当前使用</span> : selected?.id === justGeneratedId ? <span className="inline-flex items-center gap-1 text-xs font-medium text-primary"><Sparkles className="size-3.5" />新生成</span> : selected?.status === "succeeded" ? <Button disabled={loading} onClick={() => void selectCurrent()} size="sm" type="button" variant="outline"><Check className="size-4" />设为当前形象</Button> : null}
+            {workspaceMode === "create" && visuals.length ? <Button onClick={cancelStartOver} size="sm" type="button" variant="outline">取消重新创建</Button> : workspaceMode === "refine" ? <Button onClick={startOver} size="sm" type="button" variant="outline"><RotateCcw className="size-4" />重新创建</Button> : null}
+          </div>
         </div>
 
-        <div className="mt-4 flex min-h-52 flex-1 items-center justify-center overflow-hidden rounded-xl border border-border bg-card shadow-sm sm:min-h-[390px]">
+        <div className="mt-4 flex min-h-0 flex-1 items-center justify-center">
           {selected?.publicUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              alt={`${person.chineseName} 的全身人物形象`}
-              className="h-full max-h-[540px] w-full object-contain"
-              src={selected.publicUrl}
-            />
+            <button aria-label="查看人物形象大图" className="group/preview relative aspect-[2/3] h-full max-h-[460px] max-w-full overflow-hidden border border-border bg-white shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={() => setPreviewOpen(true)} type="button">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt={`${person.chineseName} 的全身人物形象`} className="size-full object-contain" src={selected.publicUrl} />
+              <span className="absolute inset-x-0 bottom-0 bg-slate-950/65 py-2 text-xs font-medium text-white opacity-0 transition-opacity group-hover/preview:opacity-100 group-focus-visible/preview:opacity-100">查看大图</span>
+            </button>
           ) : (
-            <div className="flex flex-col items-center px-8 text-center">
+            <div className="flex aspect-[2/3] h-full max-h-[460px] max-w-full flex-col items-center justify-center border border-dashed border-border bg-card px-8 text-center">
               <span className="rounded-full bg-primary-50 p-3 ring-8 ring-primary-50/60">
                 <PersonAvatar
                   gender={person.gender}
@@ -516,17 +554,18 @@ export function PersonVisualStudio({
         </div>
 
         {visuals.length ? (
-          <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+          <div className="mt-3 flex h-[98px] shrink-0 gap-3 overflow-x-auto px-1 pt-2 pb-1">
             {visuals.map((visual) => (
-              <button
+              <div className="relative shrink-0" key={visual.id}>
+                <button
                 aria-label="查看形象版本"
                 className={cn(
-                  "relative flex h-20 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border-2 border-border bg-card text-xs text-muted-foreground",
+                  "relative flex h-[84px] w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border-2 border-border bg-card text-xs text-muted-foreground",
                   selectedId === visual.id && "border-primary",
                 )}
-                key={visual.id}
                 onClick={() => {
                   setSelectedId(visual.id);
+                  setJustGeneratedId(null);
                   setWorkspaceMode("refine");
                 }}
                 type="button"
@@ -535,7 +574,7 @@ export function PersonVisualStudio({
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     alt=""
-                    className="size-full object-cover"
+                    className="size-full object-contain"
                     src={visual.publicUrl}
                   />
                 ) : visual.status === "failed" ? (
@@ -548,7 +587,9 @@ export function PersonVisualStudio({
                     <Check className="size-3" />
                   </span>
                 ) : null}
-              </button>
+                </button>
+                {visual.id !== activeId ? <button aria-label="删除这个形象版本" className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-600" disabled={deletingVisualId === visual.id} onClick={() => void deleteVisual(visual)} type="button">{deletingVisualId === visual.id ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}</button> : null}
+              </div>
             ))}
           </div>
         ) : null}
@@ -556,10 +597,10 @@ export function PersonVisualStudio({
 
       <section
         className={cn(
-          "min-h-0 bg-card",
+          "h-full min-h-0 overflow-hidden bg-card",
           workspaceMode === "refine"
             ? "flex flex-col"
-            : "p-4 sm:p-6 lg:overflow-y-auto",
+            : "overflow-y-auto p-4 sm:p-6",
         )}
       >
         {workspaceMode === "refine" ? (
@@ -578,16 +619,6 @@ export function PersonVisualStudio({
                   </p>
                 </div>
               </div>
-              <Button
-                className="shrink-0"
-                onClick={startOver}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <RotateCcw className="size-4" />
-                重新创建
-              </Button>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
@@ -610,11 +641,11 @@ export function PersonVisualStudio({
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             alt=""
-                            className="h-16 w-11 rounded-md bg-muted object-cover"
+                            className="h-[72px] w-12 rounded-md bg-white object-contain"
                             src={visual.publicUrl}
                           />
                         ) : (
-                          <span className="flex h-16 w-11 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                          <span className="flex h-[72px] w-12 items-center justify-center rounded-md bg-muted text-muted-foreground">
                             <ImageIcon className="size-4" />
                           </span>
                         )}
@@ -628,22 +659,13 @@ export function PersonVisualStudio({
                               : "历史版本"}
                           </p>
                         </div>
+                        {visual.id === justGeneratedId ? (
+                          visual.id === activeId ? <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><Check className="size-3.5" />当前使用</span> : <Button className="ml-auto shrink-0" disabled={loading} onClick={() => void selectCurrent(visual)} size="sm" type="button"><Check className="size-4" />使用这个新形象</Button>
+                        ) : null}
                       </div>
                     </div>
                   ))}
 
-                  {selected.id !== activeId ? (
-                    <Button
-                      disabled={loading}
-                      onClick={selectCurrent}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Check className="size-4" />
-                      使用这个版本
-                    </Button>
-                  ) : null}
                 </div>
               ) : (
                 <div className="flex min-h-40 items-center justify-center text-sm text-muted-foreground">
@@ -670,7 +692,7 @@ export function PersonVisualStudio({
                     <textarea
                       className="min-h-16 max-h-32 min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground"
                       onChange={(event) => setInstruction(event.target.value)}
-                      placeholder="说说想怎么修改，例如：衣服改成深蓝色"
+                      placeholder="说说想怎么修改，例如：头发改成红色"
                       value={instruction}
                     />
                     <Button
@@ -899,6 +921,15 @@ export function PersonVisualStudio({
           </form>
         )}
       </section>
+
+      <Dialog onClose={() => setPreviewOpen(false)} open={previewOpen} size="compact" title={`${person.chineseName} · 人物形象`}>
+        <div className="flex max-h-[calc(100dvh-8rem)] items-center justify-center bg-[#F8FBFE] p-4 sm:p-6">
+          {selected?.publicUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img alt={`${person.chineseName} 的人物形象大图`} className="aspect-[2/3] max-h-[calc(100dvh-12rem)] max-w-full bg-white object-contain" src={selected.publicUrl} />
+          ) : null}
+        </div>
+      </Dialog>
     </div>
   ) : null;
 

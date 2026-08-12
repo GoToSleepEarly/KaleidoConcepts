@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { courseWordBudget, defaultPracticeConfig, recommendedChapterWordCount } from "@/lib/domain/teaching-plan-policy";
+import {
+  balancedPageSizes,
+  courseWordBudget,
+  defaultPracticeConfig,
+  defaultReadingExerciseConfig,
+  practicePageCount,
+  readingPageCount,
+  recommendedChapterWordCount,
+} from "@/lib/domain/teaching-plan-policy";
 
 describe("teaching plan policy", () => {
   it("uses stable word budgets from difficulty and duration", () => {
@@ -15,7 +23,25 @@ describe("teaching plan policy", () => {
     expect(recommendedChapterWordCount("C1", 60, 5)).toBe(110);
   });
 
-  it("starts practice with five choice and five blank questions", () => {
-    expect(defaultPracticeConfig()).toEqual({ enabled: true, countsByType: { choice: 5, blank: 5, vocab: 0, matching: 0 } });
+  it("starts grammar practice with five option cloze and five word-form questions", () => {
+    expect(defaultPracticeConfig()).toEqual({ enabled: true, grammar: { optionCloze: 5, wordForm: 5 } });
+  });
+
+  it("starts正文 with four choice, three transformation, and three vocabulary questions", () => {
+    expect(defaultReadingExerciseConfig()).toEqual({ enabled: true, grammar: { optionCloze: 4, wordForm: 3 }, vocabulary: { chineseHint: 3 } });
+  });
+
+  it("derives transparent正文 page counts from both words and exercise density", () => {
+    expect(readingPageCount(90, defaultReadingExerciseConfig())).toBe(2);
+    expect(readingPageCount(120, defaultReadingExerciseConfig())).toBe(2);
+    expect(readingPageCount(180, defaultReadingExerciseConfig())).toBe(3);
+    expect(readingPageCount(90, { enabled: true, grammar: { optionCloze: 2, wordForm: 1 }, vocabulary: { chineseHint: 2 } })).toBe(1);
+  });
+
+  it("balances practice pages without creating a one-item tail", () => {
+    expect(balancedPageSizes(6)).toEqual([3, 3]);
+    expect(balancedPageSizes(9)).toEqual([5, 4]);
+    expect(balancedPageSizes(11)).toEqual([4, 4, 3]);
+    expect(practicePageCount({ optionCloze: 6, wordForm: 9 })).toBe(4);
   });
 });

@@ -71,11 +71,11 @@ describe("people repository", () => {
     });
   });
 
-  test("lists active people by search and sorts recently used people first", async () => {
+  test("queries a page of active people with search in the database", async () => {
     const people = await listPeople(
       {
         person: {
-          findMany: async ({ where }: { where: Record<string, unknown> }) => {
+          findMany: async ({ where, skip, take }: { where: Record<string, unknown>; skip: number; take: number }) => {
             expect(where).toEqual({
               archivedAt: null,
               role: "student",
@@ -84,8 +84,8 @@ describe("people repository", () => {
                 { englishName: { contains: "su", mode: "insensitive" } },
               ],
             });
+            expect({ skip, take }).toEqual({ skip: 20, take: 20 });
             return [
-              dbPerson({ id: "older", chineseName: "苏西", englishName: "Susie" }),
               dbPerson({
                 id: "recent",
                 chineseName: "苏阳",
@@ -94,13 +94,18 @@ describe("people repository", () => {
               }),
             ];
           },
+          count: async ({ where }: { where: Record<string, unknown> }) => {
+            expect(where).toMatchObject({ archivedAt: null, role: "student" });
+            return 42;
+          },
         },
       } as unknown as PeopleDb,
-      { role: "student", query: " su ", status: "active", sort: "recent", limit: 20 },
+      { role: "student", query: " su ", status: "active", sort: "recent", page: 2, pageSize: 20 },
     );
 
-    expect(people.people.map((person) => person.id)).toEqual(["recent", "older"]);
+    expect(people.people.map((person) => person.id)).toEqual(["recent"]);
     expect(people.people[0]?.lastUsedAt).toBe("2026-08-04T10:00:00.000Z");
+    expect(people).toMatchObject({ page: 2, pageSize: 20, total: 42, totalPages: 3 });
   });
 
   test("maps the latest generation state without treating a missing image as missing profile data", async () => {
@@ -112,6 +117,7 @@ describe("people repository", () => {
               visualAssets: [{ status: "failed", updatedAt: new Date("2026-08-03T10:00:00.000Z") }],
             }),
           ],
+          count: async () => 1,
         },
       } as unknown as PeopleDb,
       {},

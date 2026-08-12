@@ -31,6 +31,7 @@ describe("createStoryOutlineProvider", () => {
     process.env.QUICKROUTER_GPT_TEXT_MODEL = "gpt-model";
     const fetchMock = mockTextResponse();
     vi.stubGlobal("fetch", fetchMock);
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
 
     await createStoryOutlineProvider().generateOutline({
       writingProvider: "quickrouter_gpt",
@@ -39,6 +40,22 @@ describe("createStoryOutlineProvider", () => {
 
     const body = fetchBody(fetchMock);
     expect(body.model).toBe("gpt-model");
+    expect(timeoutSpy).toHaveBeenCalledWith(600_000);
+  });
+
+  test("allows a large generation request to override the default timeout", async () => {
+    process.env.QUICKROUTER_API_KEY = "key";
+    const fetchMock = mockTextResponse();
+    vi.stubGlobal("fetch", fetchMock);
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+
+    await createStoryOutlineProvider().generateOutline({
+      writingProvider: "quickrouter_gpt",
+      prompt: "生成较长的课程正文",
+      timeoutMs: 360_000,
+    });
+
+    expect(timeoutSpy).toHaveBeenCalledWith(360_000);
   });
 
   test("uses the configured DeepSeek model for DeepSeek writing", async () => {

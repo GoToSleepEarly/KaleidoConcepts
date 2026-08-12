@@ -132,12 +132,11 @@ export function createPersonVisualProvider(config = configFromEnvironment()) {
     }) => {
       const body = new FormData();
       body.set("model", config.model);
+      body.set("image", imageBlob(imageDataUrl), "person-reference.png");
       body.set("prompt", prompt);
       body.set("n", "1");
       body.set("size", "1024x1536");
       body.set("quality", config.quality);
-      body.set("format", "webp");
-      body.set("image", imageBlob(imageDataUrl), "person-reference.png");
       return request(
         "person_visual_edit",
         "/v1/images/edits",

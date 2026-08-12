@@ -23,12 +23,12 @@ function completePlan(overrides: Partial<TeachingPlan> = {}): TeachingPlan {
       ...chapter,
       targetWordCount: 90,
       knowledgePointIds: chapter.outlineChapterId === "chapter-1" ? ["grammar-1"] : ["grammar-2"],
-      chapterPractice: { enabled: true, countsByType: { choice: 2, blank: 2, vocab: 0, matching: 0 } },
+      chapterPractice: { enabled: true, grammar: { optionCloze: 2, wordForm: 2 } },
     })),
     afterClassPractice: {
       enabled: true,
       knowledgePointIds: ["grammar-1", "grammar-2"],
-      practice: { enabled: true, countsByType: { choice: 4, blank: 0, vocab: 0, matching: 4 } },
+      practice: { enabled: true, grammar: { optionCloze: 4, wordForm: 0 } },
       touched: { knowledgePointIds: false, practice: true },
     },
     ...overrides,
@@ -47,26 +47,27 @@ describe("teaching plan validation", () => {
 
     expect(draft.englishLevel).toBe("B1");
     expect(draft.status).toBe("draft");
+    expect(draft.mainIdeaTargetWordCount).toBe(120);
     expect(draft.chapters).toHaveLength(2);
     expect(draft.chapters[0]).toMatchObject({
       outlineChapterId: "chapter-1",
       targetWordCount: 180,
       knowledgePointIds: ["grammar-1"],
-      readingExerciseMode: "none",
-      embeddedExercises: { enabled: false, countsByType: { choice: 0, blank: 0, vocab: 0 } },
-      chapterPractice: { enabled: true, countsByType: { choice: 5, blank: 5, vocab: 0, matching: 0 } },
+      readingExerciseMode: "interactive",
+      readingExercises: { enabled: true, grammar: { optionCloze: 4, wordForm: 3 }, vocabulary: { chineseHint: 3 } },
+      chapterPractice: { enabled: false, grammar: { optionCloze: 5, wordForm: 5 } },
       touched: {
         targetWordCount: false,
         knowledgePointIds: false,
         readingExerciseMode: false,
-        embeddedExercises: false,
+        readingExercises: false,
         chapterPractice: false,
       },
     });
     expect(draft.afterClassPractice).toMatchObject({
       enabled: false,
       knowledgePointIds: ["grammar-1", "grammar-2"],
-      practice: { enabled: false, countsByType: { choice: 5, blank: 5, vocab: 0, matching: 0 } },
+      practice: { enabled: false, grammar: { optionCloze: 5, wordForm: 5 } },
       touched: { knowledgePointIds: false, practice: false },
     });
   });
@@ -80,12 +81,17 @@ describe("teaching plan validation", () => {
       .toThrow(new TeachingPlanValidationError("请选择英语难度。"));
   });
 
-  test("requires an explicit after-class practice decision", () => {
-    const plan = completePlan();
-    plan.afterClassPractice.touched.practice = false;
+  test("keeps after-class reading between 80 and 150 words", () => {
+    expect(() => validateTeachingPlanForConfirm(completePlan({ mainIdeaTargetWordCount: 80 }), outlineChapters.map((chapter) => chapter.id))).not.toThrow();
+    expect(() => validateTeachingPlanForConfirm(completePlan({ mainIdeaTargetWordCount: 151 }), outlineChapters.map((chapter) => chapter.id)))
+      .toThrow(new TeachingPlanValidationError("课后阅读词数需在 80-150 之间。"));
+  });
 
-    expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id)))
-      .toThrow(new TeachingPlanValidationError("请选择是否生成课后练习。"));
+  test("accepts the default decision to skip after-class practice", () => {
+    const plan = completePlan();
+    plan.afterClassPractice = { ...plan.afterClassPractice, enabled: false, practice: { ...plan.afterClassPractice.practice, enabled: false }, touched: { ...plan.afterClassPractice.touched, practice: false } };
+
+    expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id))).not.toThrow();
   });
 
   test("accepts target word count up to 200 and rejects values above it", () => {
@@ -101,19 +107,22 @@ describe("teaching plan validation", () => {
       .toThrow(new TeachingPlanValidationError("第 2 章目标词数需在 50-200 之间。"));
   });
 
-  test("rejects matching questions in embedded reading exercises", () => {
+  test("allows optional正文 types but requires at least one grammar question", () => {
     const plan = completePlan({
       chapters: completePlan().chapters.map((chapter, index) => index === 0
         ? {
             ...chapter,
-            readingExerciseMode: "embedded",
-            embeddedExercises: { enabled: true, countsByType: { choice: 1, blank: 1, vocab: 0, matching: 1 } as never },
+            readingExerciseMode: "interactive",
+            readingExercises: { enabled: true, grammar: { optionCloze: 2, wordForm: 0 }, vocabulary: { chineseHint: 0 } },
           }
         : chapter),
     });
 
+    expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id))).not.toThrow();
+
+    plan.chapters[0].readingExercises.grammar = { optionCloze: 0, wordForm: 0 };
     expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id)))
-      .toThrow(new TeachingPlanValidationError("第 1 章内嵌题型不支持匹配题。"));
+      .toThrow(new TeachingPlanValidationError("第 1 章至少保留 1 道正文语法题。"));
   });
 
   test("rejects after-class knowledge points outside chapter selections", () => {
@@ -121,12 +130,35 @@ describe("teaching plan validation", () => {
       afterClassPractice: {
         enabled: true,
         knowledgePointIds: ["grammar-3"],
-        practice: { enabled: true, countsByType: { choice: 6, blank: 0, vocab: 0, matching: 0 } },
+        practice: { enabled: true, grammar: { optionCloze: 6, wordForm: 0 } },
         touched: { knowledgePointIds: true, practice: true },
       },
     });
 
     expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id)))
       .toThrow(new TeachingPlanValidationError("课后练习知识点只能从章节知识点中选择。"));
+  });
+
+  test("requires正文 and chapter grammar questions to cover every chapter knowledge point", () => {
+    const plan = completePlan();
+    plan.chapters[0].knowledgePointIds = ["grammar-1", "grammar-2", "grammar-3"];
+    plan.chapters[0].readingExercises.grammar = { optionCloze: 1, wordForm: 1 };
+
+    expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id)))
+      .toThrow(new TeachingPlanValidationError("第 1 章正文语法题数量不能少于知识点数量。"));
+
+    plan.chapters[0].readingExercises.grammar = { optionCloze: 2, wordForm: 1 };
+    plan.chapters[0].chapterPractice.grammar = { optionCloze: 1, wordForm: 1 };
+    expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id)))
+      .toThrow(new TeachingPlanValidationError("第 1 章章节练习语法题数量不能少于知识点数量。"));
+  });
+
+  test("requires after-class grammar questions to cover every selected knowledge point", () => {
+    const plan = completePlan();
+    plan.afterClassPractice.knowledgePointIds = ["grammar-1", "grammar-2"];
+    plan.afterClassPractice.practice.grammar = { optionCloze: 1, wordForm: 0 };
+
+    expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id)))
+      .toThrow(new TeachingPlanValidationError("课后语法题数量不能少于所选知识点数量。"));
   });
 });

@@ -2,11 +2,11 @@
 
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, BookOpen, Loader2, RotateCcw, Search, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Check, Loader2, Pencil, RotateCcw, Search, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
+import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
 import type {
   CourseSourceReference,
   CourseStoryChatAction,
@@ -14,12 +14,12 @@ import type {
   CourseStoryOutline,
   CourseStoryOutlineState,
   CourseStoryDirection,
-  CourseAudiencePerson,
+  PresetOption,
   StoryWritingProvider,
 } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
-export function CourseStoryOutlineWorkspace({ initialState }: { initialState: CourseStoryOutlineState }) {
+export function CourseStoryOutlineWorkspace({ initialState, themePresets = [] }: { initialState: CourseStoryOutlineState; themePresets?: PresetOption[] }) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
   const [mode, setMode] = useState<"idea" | "random">("idea");
@@ -27,7 +27,8 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
   const [randomSupplement, setRandomSupplement] = useState("");
   const [chapterCount, setChapterCount] = useState(initialState.settings.chapterCount);
   const [writingProvider, setWritingProvider] = useState<StoryWritingProvider>(initialState.settings.writingProvider);
-  const [theme, setTheme] = useState("任意主题");
+  const [selectedTheme, setSelectedTheme] = useState<PresetOption | null>(null);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [storyType, setStoryType] = useState("冒险解谜");
   const [tone, setTone] = useState("温暖合作");
   const [pending, setPending] = useState(false);
@@ -40,6 +41,18 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const hasStepContent = Boolean(state.chatMessages.length || state.directions.length || state.referenceMaterials.length || state.outline);
   const conversationStarted = hasStepContent || pending || Boolean(optimisticTeacherMessage);
+  const hasUnsentInput = Boolean(message.trim() || randomSupplement.trim());
+
+  function navigate(href: string) {
+    if (hasUnsentInput && !window.confirm("输入框里还有未发送的内容。离开将放弃这些内容，是否继续？")) return;
+    router.push(href);
+  }
+
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => { if (hasUnsentInput) event.preventDefault(); };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [hasUnsentInput]);
 
   useEffect(() => {
     if (!pending) return;
@@ -122,7 +135,7 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
       ? [
         "请帮我生成随机故事方向。",
         "",
-        `主题：${theme}`,
+        `主题：${selectedTheme ? `${selectedTheme.category} / ${selectedTheme.label}` : "任意主题"}`,
         `故事类型：${storyType}`,
         `故事氛围：${tone}`,
         randomSupplement.trim() ? `补充要求：${randomSupplement.trim()}` : "",
@@ -165,6 +178,10 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
   }
 
   async function handleAction(action: CourseStoryChatAction) {
+    if (action.action === "modify_requirements") {
+      continueModify("我想调整创作需求：");
+      return;
+    }
     if (action.label === "继续修改" || action.action === "confirm_reference_object") {
       continueModify("帮我修改：");
       return;
@@ -223,7 +240,7 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <CourseCreateSteps courseId={state.course.id} currentStep={2} />
+      <CourseCreateSteps courseId={state.course.id} currentStep={2} furthestStep={courseStageStep(state.course.currentStage)} onNavigate={navigate} />
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold text-foreground">故事大纲</h2>
@@ -272,16 +289,13 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
                   <p className="mt-1 text-sm text-muted-foreground">选择基本方向，也可以补充一个特别要求。</p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <label className="block">
+                  <div className="block">
                     <span className="text-xs text-muted-foreground">主题灵感</span>
-                    <select aria-label="主题灵感" className="mt-1 h-10 w-full rounded-md border border-input bg-background px-2 text-sm" onChange={(event) => setTheme(event.target.value)} value={theme}>
-                      <option>任意主题</option>
-                      <option>海底世界</option>
-                      <option>太空学校</option>
-                      <option>时间旅行</option>
-                      <option>魔法图书馆</option>
-                    </select>
-                  </label>
+                    <button aria-label="选择主题" className="mt-1 flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setThemePickerOpen(true)} type="button">
+                      <span className="truncate">{selectedTheme ? `${selectedTheme.category} / ${selectedTheme.label}` : "任意主题"}</span>
+                      <Search aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  </div>
                   <label className="block">
                     <span className="text-xs text-muted-foreground">故事类型</span>
                     <select aria-label="故事类型" className="mt-1 h-10 w-full rounded-md border border-input bg-background px-2 text-sm" onChange={(event) => setStoryType(event.target.value)} value={storyType}>
@@ -322,9 +336,20 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
             {state.chatMessages.map((chat) => (
               <article className={cn("rounded-lg px-3 py-2 text-sm", chat.role === "teacher" ? "ml-10 bg-primary text-primary-foreground" : "mr-10 bg-muted text-foreground")} key={chat.id}>
                 <p className="whitespace-pre-wrap leading-6">{chat.content}</p>
+                {chat.actions.some((action) => action.action === "submit_alignment_answers" && action.questions?.length) ? (
+                  <AlignmentQuestionForm
+                    disabled={pending}
+                    onSubmit={(answers, readableMessage) => postMessage(
+                      { message: readableMessage, mode: "idea", action: "submit_alignment_answers", alignmentAnswers: answers },
+                      "正在确认故事要求...",
+                      { optimisticMessage: readableMessage },
+                    )}
+                    questions={chat.actions.find((action) => action.action === "submit_alignment_answers")?.questions ?? []}
+                  />
+                ) : null}
                 {chat.actions.length ? (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {chat.actions.map((action) => (
+                    {chat.actions.filter((action) => action.action !== "submit_alignment_answers").map((action) => (
                       <Button disabled={pending} key={action.id} onClick={() => void handleAction(action)} size="sm" type="button" variant="outline">
                         {action.action === "request_reference_search" || action.action === "choose_reference_search" ? <Search className="size-4" /> : <Sparkles className="size-4" />}
                         {action.label}
@@ -369,8 +394,28 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
           onDescribeDirection={() => continueModify("我希望的故事方向：")}
           onChooseDirection={(direction) => postMessage(
             { message: "", mode: "idea", action: "choose_direction", targetId: direction.id },
-            "正在生成故事大纲...",
+            "正在选择故事方向...",
             { optimisticMessage: `我选择故事方向：${direction.title}\n${direction.hook}` },
+          )}
+          onConfirmDirection={(direction) => postMessage(
+            { message: "", mode: "idea", action: "confirm_direction", targetId: direction.id },
+            "正在生成故事大纲...",
+            { optimisticMessage: `我确认使用故事方向：${direction.title}` },
+          )}
+          onReviseDirection={(direction, instruction) => postMessage(
+            { message: instruction, mode: "revise", action: "revise_direction", targetId: direction.id },
+            "正在调整故事方向...",
+            { optimisticMessage: `调整“${direction.title}”：${instruction}` },
+          )}
+          onReviseOutline={(instruction) => postMessage(
+            { message: instruction, mode: "revise", action: "revise_outline" },
+            "正在调整故事大纲...",
+            { optimisticMessage: `修改整体大纲：${instruction}` },
+          )}
+          onReviseChapter={(order, instruction) => postMessage(
+            { message: instruction, mode: "revise", action: "revise_chapter", targetChapterOrder: order },
+            `正在调整第 ${order} 章...`,
+            { optimisticMessage: `修改第 ${order} 章：${instruction}` },
           )}
           onConfirm={confirm}
           outline={state.outline}
@@ -383,6 +428,21 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
           state={state}
         />
       </div>
+      <div className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-lg border border-border bg-card/95 px-4 py-3 shadow-md backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+        <p aria-live="polite" className="text-sm text-muted-foreground">{hasUnsentInput ? "输入内容尚未发送" : state.outline ? "故事大纲已生成，可以进入教学规划" : "还需：生成故事大纲"}</p>
+        <div className="flex gap-2"><Button disabled={pending} onClick={() => navigate(`/courses/${state.course.id}/create/audience`)} type="button" variant="outline"><ArrowLeft className="size-4" />上一步</Button><Button disabled={pending || !state.outline} onClick={() => courseStageStep(state.course.currentStage) >= 3 ? navigate(`/courses/${state.course.id}/create/teaching-plan`) : void confirm()} type="button">下一步：教学规划<ArrowRight className="size-4" /></Button></div>
+      </div>
+      {themePickerOpen ? (
+        <ThemePickerDialog
+          onClose={() => setThemePickerOpen(false)}
+          onConfirm={(theme) => {
+            setSelectedTheme(theme);
+            setThemePickerOpen(false);
+          }}
+          selectedTheme={selectedTheme}
+          themes={themePresets}
+        />
+      ) : null}
       <Dialog onClose={() => setResetOpen(false)} open={resetOpen} title="重新开始本轮构思？">
         <div className="space-y-5 p-5 sm:p-6">
           <p className="text-sm leading-6 text-muted-foreground">将清空本轮 Step 2 的聊天记录、故事方向、参考资料和故事大纲。</p>
@@ -397,6 +457,55 @@ export function CourseStoryOutlineWorkspace({ initialState }: { initialState: Co
         </div>
       </Dialog>
     </div>
+  );
+}
+
+function ThemePickerDialog({ themes, selectedTheme, onClose, onConfirm }: { themes: PresetOption[]; selectedTheme: PresetOption | null; onClose: () => void; onConfirm: (theme: PresetOption | null) => void }) {
+  const [query, setQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("全部");
+  const [selectedId, setSelectedId] = useState<string | null>(selectedTheme?.id ?? null);
+  const categories = [...new Set(themes.map((theme) => theme.category ?? "未分类"))];
+  const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
+  const filtered = themes.filter((theme) => {
+    const category = theme.category ?? "未分类";
+    const categoryMatches = Boolean(normalizedQuery) || activeCategory === "全部" || activeCategory === category;
+    return categoryMatches && (!normalizedQuery || `${category} ${theme.label}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery));
+  });
+
+  return (
+    <Dialog description="每次选择一个主题方向；AI 会结合故事类型和氛围生成三个不同目标。" onClose={onClose} open title="选择主题" size="wide">
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="shrink-0 space-y-3 border-b border-border p-4 sm:p-5">
+          <label className="relative block">
+            <Search aria-hidden className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <span className="sr-only">搜索主题</span>
+            <input aria-label="搜索主题" className="min-h-11 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" onChange={(event) => setQuery(event.target.value)} placeholder="搜索主题方向或大类" role="searchbox" value={query} />
+          </label>
+          <div aria-label="主题大类" className="flex gap-1 overflow-x-auto rounded-md bg-muted p-1" role="tablist">
+            {["全部", ...categories].map((category) => (
+              <button aria-selected={activeCategory === category} className={cn("min-h-9 shrink-0 rounded px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", activeCategory === category ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70 hover:text-foreground")} key={category} onClick={() => { setActiveCategory(category); setQuery(""); }} role="tab" type="button">
+                {category}{category === "全部" ? ` ${themes.length}` : ` ${themes.filter((theme) => (theme.category ?? "未分类") === category).length}`}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {!normalizedQuery && activeCategory === "全部" ? (
+              <button aria-pressed={selectedId === null} className={cn("min-h-14 rounded-md border px-4 py-3 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", selectedId === null ? "border-primary bg-primary-50 text-primary-700" : "border-border bg-background hover:border-primary-300")} onClick={() => setSelectedId(null)} type="button">任意主题</button>
+            ) : null}
+            {filtered.map((theme) => (
+              <button aria-pressed={selectedId === theme.id} className={cn("min-h-14 rounded-md border px-4 py-3 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", selectedId === theme.id ? "border-primary bg-primary-50 text-primary-700" : "border-border bg-background hover:border-primary-300")} key={theme.id} onClick={() => setSelectedId(theme.id)} type="button">{theme.label}</button>
+            ))}
+          </div>
+          {!filtered.length ? <p className="py-12 text-center text-sm text-muted-foreground">没有匹配的主题方向</p> : null}
+        </div>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border p-4 sm:px-5">
+          <span className="text-sm text-muted-foreground">{selectedId ? `已选择 ${themes.find((theme) => theme.id === selectedId)?.label ?? "主题"}` : "已选择任意主题"}</span>
+          <div className="flex gap-2"><Button onClick={onClose} type="button" variant="outline">取消</Button><Button onClick={() => onConfirm(themes.find((theme) => theme.id === selectedId) ?? null)} type="button">确认主题</Button></div>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -416,6 +525,97 @@ function actionHistoryMessage(action: CourseStoryChatAction) {
   if (action.action === "generate_directions") return "我确认参考资料，请生成 3 个故事方向。";
   if (action.action === "regenerate_outline") return "请基于当前全部要求重新生成故事大纲。";
   return action.label;
+}
+
+function AlignmentQuestionForm({
+  questions,
+  disabled,
+  onSubmit,
+}: {
+  questions: NonNullable<CourseStoryChatAction["questions"]>;
+  disabled: boolean;
+  onSubmit: (answers: Record<string, string | string[]>, readableMessage: string) => void | Promise<void>;
+}) {
+  const [selected, setSelected] = useState<Record<string, string[]>>({});
+  const [custom, setCustom] = useState<Record<string, string>>({});
+
+  function toggle(questionId: string, optionId: string, multiple: boolean) {
+    setSelected((current) => {
+      const values = current[questionId] ?? [];
+      return { ...current, [questionId]: multiple ? (values.includes(optionId) ? values.filter((id) => id !== optionId) : [...values, optionId]) : [optionId] };
+    });
+  }
+
+  const complete = questions.every((question) => {
+    if (!question.required) return true;
+    if (question.answerMode === "text") return Boolean(custom[question.id]?.trim());
+    return Boolean(selected[question.id]?.length || custom[question.id]?.trim());
+  });
+
+  function submitAnswers() {
+    const answers: Record<string, string | string[]> = {};
+    const lines = ["我的回答："];
+    for (const question of questions) {
+      const optionLabels = (selected[question.id] ?? []).map((id) => id === "__recommendation"
+        ? `采用建议：${question.recommendation?.value ?? "请给我建议"}`
+        : question.options?.find((option) => option.id === id)?.label ?? id);
+      const customValue = custom[question.id]?.trim();
+      const values = [...optionLabels, ...(customValue ? [customValue] : [])];
+      answers[question.id] = question.answerMode === "multi_choice" ? values : values.join("；");
+      lines.push(`${question.label}：${values.join("；") || "暂不回答"}`);
+    }
+    void onSubmit(answers, lines.join("\n"));
+  }
+
+  return (
+    <div className="mt-3 space-y-4 rounded-md border border-border bg-background p-3">
+      {questions.map((question, index) => {
+        const active = selected[question.id] ?? [];
+        return (
+          <fieldset className="space-y-2" key={question.id}>
+            <legend className="text-sm font-medium text-foreground">{index + 1}. {question.label}</legend>
+            {question.reason ? <p className="text-xs leading-5 text-muted-foreground">{question.reason}</p> : null}
+            {question.answerMode !== "text" ? (
+              <div className="grid gap-2">
+                {question.options?.map((option) => (
+                  <label className={cn("flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm", active.includes(option.id) ? "border-primary bg-primary-50 text-primary-700" : "border-border hover:border-primary-300")} key={option.id}>
+                    <input
+                      checked={active.includes(option.id)}
+                      className="accent-primary"
+                      disabled={disabled}
+                      name={question.id}
+                      onChange={() => toggle(question.id, option.id, question.answerMode === "multi_choice")}
+                      type={question.answerMode === "multi_choice" ? "checkbox" : "radio"}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+                {question.allowRecommendation && question.recommendation ? (
+                  <label className={cn("cursor-pointer rounded-md border px-3 py-2 text-sm", active.includes("__recommendation") ? "border-primary bg-primary-50" : "border-border hover:border-primary-300")}>
+                    <span className="flex items-center gap-2"><input checked={active.includes("__recommendation")} className="accent-primary" disabled={disabled} name={question.id} onChange={() => toggle(question.id, "__recommendation", question.answerMode === "multi_choice")} type={question.answerMode === "multi_choice" ? "checkbox" : "radio"} />我不确定，请给我建议</span>
+                    <span className="mt-1 block pl-5 text-xs text-muted-foreground">建议：{question.recommendation.value}。{question.recommendation.reason}</span>
+                  </label>
+                ) : null}
+              </div>
+            ) : null}
+            {question.answerMode === "text" || question.allowCustom || question.options?.some((option) => option.enablesTextInput && active.includes(option.id)) ? (
+              <input
+                aria-label={`${question.label}补充说明`}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100"
+                disabled={disabled}
+                onChange={(event) => setCustom((current) => ({ ...current, [question.id]: event.target.value }))}
+                placeholder={question.options?.find((option) => option.enablesTextInput && active.includes(option.id))?.textPlaceholder ?? "也可以输入你的情况"}
+                value={custom[question.id] ?? ""}
+              />
+            ) : null}
+          </fieldset>
+        );
+      })}
+      <Button disabled={disabled || !complete} onClick={submitAnswers} size="sm" type="button">
+        <Check className="size-4" />提交回答
+      </Button>
+    </div>
+  );
 }
 
 function loadingStatus(label: string, seconds: number) {
@@ -466,6 +666,10 @@ function ResultPanel({
   resultTab,
   setResultTab,
   onChooseDirection,
+  onConfirmDirection,
+  onReviseDirection,
+  onReviseOutline,
+  onReviseChapter,
   onDescribeDirection,
   onConfirm,
   pending,
@@ -478,6 +682,10 @@ function ResultPanel({
   resultTab: "outline" | "characters" | "references";
   setResultTab: (tab: "outline" | "characters" | "references") => void;
   onChooseDirection: (direction: CourseStoryDirection) => void;
+  onConfirmDirection: (direction: CourseStoryDirection) => void;
+  onReviseDirection: (direction: CourseStoryDirection, instruction: string) => void;
+  onReviseOutline: (instruction: string) => void;
+  onReviseChapter: (order: number, instruction: string) => void;
   onDescribeDirection: () => void;
   onConfirm: () => void;
   pending: boolean;
@@ -485,7 +693,7 @@ function ResultPanel({
   const hasNewDirections = state.directions.length > 0 && !state.directions.some((direction) => direction.selectedAt);
 
   if (hasNewDirections) {
-    return <DirectionsPanel directions={state.directions} onChooseDirection={onChooseDirection} onDescribeDirection={onDescribeDirection} />;
+    return <DirectionsPanel directions={state.directions} onChooseDirection={onChooseDirection} onConfirmDirection={onConfirmDirection} onDescribeDirection={onDescribeDirection} onReviseDirection={onReviseDirection} pending={pending} />;
   }
 
   if (outline) {
@@ -496,8 +704,8 @@ function ResultPanel({
           <button className={tabClass(resultTab === "characters")} onClick={() => setResultTab("characters")} type="button">角色</button>
           <button className={tabClass(resultTab === "references")} onClick={() => setResultTab("references")} type="button">参考资料</button>
         </div>
-        {resultTab === "outline" ? <OutlineSummary outline={outline} state={state} /> : null}
-        {resultTab === "characters" ? <CharactersSection coursePeople={state.coursePeople} outline={outline} /> : null}
+        {resultTab === "outline" ? <OutlineSummary onReviseChapter={onReviseChapter} onReviseOutline={onReviseOutline} outline={outline} pending={pending} state={state} /> : null}
+        {resultTab === "characters" ? <CharactersSection outline={outline} /> : null}
         {resultTab === "references" ? (
           <div className="space-y-4">
             {references.length || outline.sourceReferences.length ? [...references, ...outline.sourceReferences.filter((reference) => !references.some((item) => item.id === reference.id))].map((reference) => (
@@ -527,7 +735,7 @@ function ResultPanel({
   }
 
   if (state.directions.length) {
-    return <DirectionsPanel directions={state.directions} onChooseDirection={onChooseDirection} onDescribeDirection={onDescribeDirection} />;
+    return <DirectionsPanel directions={state.directions} onChooseDirection={onChooseDirection} onConfirmDirection={onConfirmDirection} onDescribeDirection={onDescribeDirection} onReviseDirection={onReviseDirection} pending={pending} />;
   }
 
   return (
@@ -546,21 +754,45 @@ function ResultPanel({
 function DirectionsPanel({
   directions,
   onChooseDirection,
+  onConfirmDirection,
   onDescribeDirection,
+  onReviseDirection,
+  pending,
 }: {
   directions: CourseStoryDirection[];
   onChooseDirection: (direction: CourseStoryDirection) => void;
+  onConfirmDirection: (direction: CourseStoryDirection) => void;
   onDescribeDirection: () => void;
+  onReviseDirection: (direction: CourseStoryDirection, instruction: string) => void;
+  pending: boolean;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [instruction, setInstruction] = useState("");
   return (
     <section className="space-y-4 rounded-lg bg-card p-5 shadow-sm">
-      <h3 className="text-lg font-semibold text-foreground">故事方向</h3>
+      <div><h3 className="text-lg font-semibold text-foreground">故事方向</h3><p className="mt-1 text-sm text-muted-foreground">先选择大方向；你仍可单独调整选中的卡片，确认后才会生成章节大纲。</p></div>
       {directions.map((direction) => (
-        <article className="rounded-md border border-border p-4" key={direction.id}>
-          <h4 className="text-sm font-semibold text-foreground">{splitBilingual(direction.title).zh}</h4>
-          <p className="mt-2 text-sm text-muted-foreground">{splitBilingual(direction.hook).zh}</p>
-          <p className="mt-2 text-xs text-muted-foreground">{splitBilingual(direction.whyFits).zh}</p>
-          <Button className="mt-3" onClick={() => onChooseDirection(direction)} size="sm" type="button">选择这个方向</Button>
+        <article className={cn("rounded-md border p-4", direction.selectedAt ? "border-primary bg-primary-50/30" : "border-border")} key={direction.id}>
+          <div className="flex items-start justify-between gap-3"><h4 className="text-base font-semibold text-foreground">{splitBilingual(direction.title).zh}</h4>{direction.selectedAt ? <span className="rounded-full bg-primary px-2 py-1 text-xs font-medium text-primary-foreground">已选择</span> : null}</div>
+          <p className="mt-2 text-sm leading-6 text-foreground">{splitBilingual(direction.hook).zh}</p>
+          <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+            <div><dt className="text-xs font-medium text-muted-foreground">故事亮点</dt><dd className="mt-1 leading-5 text-foreground">{direction.storyHighlight || "—"}</dd></div>
+            <div><dt className="text-xs font-medium text-muted-foreground">成长核心</dt><dd className="mt-1 leading-5 text-foreground">{direction.growthCore || "—"}</dd></div>
+            <div><dt className="text-xs font-medium text-muted-foreground">主要角色</dt><dd className="mt-1 leading-5 text-foreground">{direction.mainCharacters.join("、") || "待大纲阶段确认"}</dd></div>
+            <div><dt className="text-xs font-medium text-muted-foreground">适合原因</dt><dd className="mt-1 leading-5 text-foreground">{splitBilingual(direction.whyFits).zh}</dd></div>
+          </dl>
+          {editingId === direction.id ? (
+            <div className="mt-4 space-y-2 rounded-md border border-border bg-background p-3">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor={`revise-${direction.id}`}>只修改这张方向卡</label>
+              <textarea className="min-h-20 w-full resize-y rounded-md border border-input p-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" id={`revise-${direction.id}`} onChange={(event) => setInstruction(event.target.value)} placeholder="例如：保留角色，但把冲突改得更离奇一些" value={instruction} />
+              <div className="flex gap-2"><Button disabled={pending || !instruction.trim()} onClick={() => { onReviseDirection(direction, instruction.trim()); setEditingId(null); setInstruction(""); }} size="sm" type="button">应用修改</Button><Button onClick={() => { setEditingId(null); setInstruction(""); }} size="sm" type="button" variant="outline">取消</Button></div>
+            </div>
+          ) : (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {direction.selectedAt ? <Button disabled={pending} onClick={() => onConfirmDirection(direction)} size="sm" type="button"><Check className="size-4" />确认方向，生成大纲</Button> : <Button disabled={pending} onClick={() => onChooseDirection(direction)} size="sm" type="button">选择这个方向</Button>}
+              <Button disabled={pending} onClick={() => { setEditingId(direction.id); setInstruction(""); }} size="sm" type="button" variant="outline"><Pencil className="size-4" />调整这张卡</Button>
+            </div>
+          )}
         </article>
       ))}
       <div className="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
@@ -575,9 +807,13 @@ function CardGroup({ title, children }: { title: string; children: React.ReactNo
   return <div><h4 className="mb-2 text-sm font-semibold text-foreground">{title}</h4><div className="space-y-2">{children}</div></div>;
 }
 
-function OutlineSummary({ outline, state }: { outline: CourseStoryOutline; state: CourseStoryOutlineState }) {
+function OutlineSummary({ outline, state, pending, onReviseOutline, onReviseChapter }: { outline: CourseStoryOutline; state: CourseStoryOutlineState; pending: boolean; onReviseOutline: (instruction: string) => void; onReviseChapter: (order: number, instruction: string) => void }) {
   const title = splitBilingual(outline.title);
   const summary = splitBilingual(outline.summary);
+  const [editing, setEditing] = useState(false);
+  const [instruction, setInstruction] = useState("");
+  const [editingChapter, setEditingChapter] = useState<number | null>(null);
+  const [chapterInstruction, setChapterInstruction] = useState("");
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-primary-100 bg-primary-50/40 p-4">
@@ -589,6 +825,7 @@ function OutlineSummary({ outline, state }: { outline: CourseStoryOutline; state
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
           {outline.narrativeType ? <span className="rounded-full bg-card px-2 py-1">叙事类型：{outline.narrativeType}</span> : null}
         </div>
+        {editing ? <div className="mt-4 space-y-2"><textarea aria-label="整体大纲修改要求" className="min-h-20 w-full resize-y rounded-md border border-input bg-background p-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" onChange={(event) => setInstruction(event.target.value)} placeholder="说明需要调整的主线、角色或成长方向" value={instruction} /><div className="flex gap-2"><Button disabled={pending || !instruction.trim()} onClick={() => { onReviseOutline(instruction.trim()); setEditing(false); setInstruction(""); }} size="sm" type="button">重新生成整体大纲</Button><Button onClick={() => setEditing(false)} size="sm" type="button" variant="outline">取消</Button></div></div> : <Button className="mt-4" disabled={pending} onClick={() => setEditing(true)} size="sm" type="button" variant="outline"><Pencil className="size-4" />修改整体大纲</Button>}
       </div>
       {state.unrecommendedKnowledgePoints?.length ? <p className="rounded-md bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-800">已根据 {state.course.englishLevel} 难度和 {state.course.durationMinutes} 分钟课时智能匹配。{state.unrecommendedKnowledgePoints.map((item) => item.label).join("、")} 暂未放入章节推荐，可在下一步手动调整。</p> : null}
       <CardGroup title="章节大纲">
@@ -607,6 +844,7 @@ function OutlineSummary({ outline, state }: { outline: CourseStoryOutline; state
                 <p className="mt-3 text-xs font-medium text-muted-foreground">剧情概述</p>
                 <p className="mt-1 text-sm leading-6 text-foreground">{plotSummary}</p>
                 <div className="mt-3 border-t border-border pt-3"><div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium text-muted-foreground">建议 {chapter.recommendedWordCount} 词</span>{(chapter.recommendedKnowledgePointIds ?? []).map((id) => { const point = state.selectedKnowledgePoints?.find((item) => item.id === id); return <span className="rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700" key={id}>{point?.label ?? id}</span>; })}</div>{chapter.knowledgePointRecommendationSummary ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{chapter.knowledgePointRecommendationSummary}</p> : null}</div>
+                {editingChapter === chapter.order ? <div className="mt-3 space-y-2"><textarea aria-label={`第 ${chapter.order} 章修改要求`} className="min-h-20 w-full resize-y rounded-md border border-input p-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" onChange={(event) => setChapterInstruction(event.target.value)} placeholder="只说明这一章需要怎样调整" value={chapterInstruction} /><div className="flex gap-2"><Button disabled={pending || !chapterInstruction.trim()} onClick={() => { onReviseChapter(chapter.order, chapterInstruction.trim()); setEditingChapter(null); setChapterInstruction(""); }} size="sm" type="button">应用本章修改</Button><Button onClick={() => setEditingChapter(null)} size="sm" type="button" variant="outline">取消</Button></div></div> : <Button className="mt-3" disabled={pending} onClick={() => { setEditingChapter(chapter.order); setChapterInstruction(""); }} size="sm" type="button" variant="ghost"><Pencil className="size-4" />修改本章</Button>}
               </article>
             );
           })}
@@ -616,33 +854,14 @@ function OutlineSummary({ outline, state }: { outline: CourseStoryOutline; state
   );
 }
 
-function CharactersSection({ outline, coursePeople }: { outline: CourseStoryOutline; coursePeople: CourseAudiencePerson[] }) {
-  const referenced = outline.characters.filter((character) => character.sourceType === "referenced");
-  const original = outline.characters.filter((character) => character.sourceType === "original");
+function CharactersSection({ outline }: { outline: CourseStoryOutline }) {
   return (
-    <div className="space-y-5">
-      <CardGroup title="课堂角色">
+    <div>
+      <CardGroup title="故事出场角色">
         <div className="grid gap-2 sm:grid-cols-2">
-          {coursePeople.length ? coursePeople.map((person) => (
-            <article className="rounded-md border border-border p-3" key={person.personId}>
-              <h5 className="text-sm font-semibold text-foreground">{person.chineseName} · {person.englishName}</h5>
-              <p className="mt-1 text-xs text-muted-foreground">{person.age} 岁 · {person.role === "teacher" ? "老师" : "学生"}</p>
-            </article>
-          )) : <p className="text-sm text-muted-foreground">暂无课堂角色</p>}
-        </div>
-      </CardGroup>
-      <CardGroup title="引用角色">
-        <div className="grid gap-2 sm:grid-cols-2">
-          {referenced.length ? referenced.map((character) => (
+          {outline.characters.length ? outline.characters.map((character) => (
             <CharacterCard character={character} key={character.id} />
-          )) : <p className="text-sm text-muted-foreground">暂无引用角色</p>}
-        </div>
-      </CardGroup>
-      <CardGroup title="原创角色">
-        <div className="grid gap-2 sm:grid-cols-2">
-          {original.length ? original.map((character) => (
-            <CharacterCard character={character} key={character.id} />
-          )) : <p className="text-sm text-muted-foreground">暂无原创角色</p>}
+          )) : <p className="text-sm text-muted-foreground">本故事暂无出场角色</p>}
         </div>
       </CardGroup>
     </div>

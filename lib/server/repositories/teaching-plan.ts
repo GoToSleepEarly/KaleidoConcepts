@@ -1,12 +1,12 @@
 import type {
   CourseStage,
   EnglishLevel,
-  ExerciseType,
   TeachingPlan,
   TeachingPlanKnowledgePoint,
   TeachingPlanState,
 } from "@/lib/contracts/api";
 import { buildTeachingPlanDraft, TeachingPlanValidationError, validateTeachingPlanForConfirm } from "@/lib/server/validation/teaching-plan";
+import { defaultPracticeConfig, defaultReadingExerciseConfig, minimumReadingParagraphCount } from "@/lib/domain/teaching-plan-policy";
 
 type DbCourse = {
   id: string;
@@ -40,6 +40,7 @@ type DbTeachingPlan = {
   courseId: string;
   status: "draft" | "confirmed";
   englishLevel: EnglishLevel | null;
+  mainIdeaTargetWordCount?: number;
   chapters: unknown;
   afterClassPractice: unknown;
   confirmedAt: Date | null;
@@ -50,6 +51,7 @@ type DbPreset = {
   id: string;
   kind: "theme" | "grammar";
   label: string;
+  labelZh?: string | null;
   category: string | null;
   sortOrder: number;
   archivedAt: Date | null;
@@ -117,6 +119,7 @@ function toTeachingPlan(record: DbTeachingPlan): TeachingPlan {
     courseId: record.courseId,
     status: record.status,
     englishLevel: record.englishLevel,
+    mainIdeaTargetWordCount: typeof record.mainIdeaTargetWordCount === "number" ? record.mainIdeaTargetWordCount : 120,
     chapters: normalizeChapters(record.chapters),
     afterClassPractice: normalizeAfterClassPractice(record.afterClassPractice),
     updatedAt: record.updatedAt.toISOString(),
@@ -128,40 +131,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function normalizeCounts(
-  value: unknown,
-  allowedTypes: readonly ExerciseType[],
-): Record<string, number> {
-  const empty = Object.fromEntries(allowedTypes.map((type) => [type, 0]));
-  if (!isRecord(value)) return empty;
-  const countsByType = value.countsByType;
-  if (isRecord(countsByType)) {
-    return Object.fromEntries(allowedTypes.map((type) => [type, typeof countsByType[type] === "number" ? countsByType[type] : 0]));
-  }
-  const legacyTypes = Array.isArray(value.types) ? value.types.filter((type): type is ExerciseType => typeof type === "string" && allowedTypes.includes(type as ExerciseType)) : [];
-  const legacyCount = typeof value.count === "number" ? value.count : 0;
-  if (!legacyTypes.length || legacyCount <= 0) return empty;
-  const base = Math.floor(legacyCount / legacyTypes.length);
-  const remainder = legacyCount % legacyTypes.length;
-  return Object.fromEntries(allowedTypes.map((type) => {
-    const index = legacyTypes.indexOf(type);
-    return [type, index === -1 ? 0 : base + (index < remainder ? 1 : 0)];
-  }));
+function numericField(value: unknown, key: string, fallback: number) {
+  return isRecord(value) && typeof value[key] === "number" ? value[key] as number : fallback;
 }
 
-function normalizeExerciseConfig(value: unknown): TeachingPlan["chapters"][number]["embeddedExercises"] {
+function normalizeReadingExerciseConfig(value: unknown): TeachingPlan["chapters"][number]["readingExercises"] {
   const record = isRecord(value) ? value : {};
+  const defaults = defaultReadingExerciseConfig();
+  const grammar = isRecord(record.grammar) ? record.grammar : {};
+  const vocabulary = isRecord(record.vocabulary) ? record.vocabulary : {};
   return {
-    enabled: typeof record.enabled === "boolean" ? record.enabled : false,
-    countsByType: normalizeCounts(record, ["choice", "blank", "vocab"]) as TeachingPlan["chapters"][number]["embeddedExercises"]["countsByType"],
+    enabled: true,
+    grammar: {
+      optionCloze: numericField(grammar, "optionCloze", defaults.grammar.optionCloze),
+      wordForm: numericField(grammar, "wordForm", defaults.grammar.wordForm),
+    },
+    vocabulary: { chineseHint: numericField(vocabulary, "chineseHint", defaults.vocabulary.chineseHint) },
   };
 }
 
 function normalizePracticeConfig(value: unknown): TeachingPlan["chapters"][number]["chapterPractice"] {
   const record = isRecord(value) ? value : {};
+  const defaults = defaultPracticeConfig(false);
+  const grammar = isRecord(record.grammar) ? record.grammar : {};
   return {
     enabled: typeof record.enabled === "boolean" ? record.enabled : false,
-    countsByType: normalizeCounts(record, ["choice", "blank", "vocab", "matching"]) as TeachingPlan["chapters"][number]["chapterPractice"]["countsByType"],
+    grammar: {
+      optionCloze: numericField(grammar, "optionCloze", defaults.grammar.optionCloze),
+      wordForm: numericField(grammar, "wordForm", defaults.grammar.wordForm),
+    },
   };
 }
 
@@ -169,18 +167,24 @@ function normalizeChapters(value: unknown): TeachingPlan["chapters"] {
   if (!Array.isArray(value)) return [];
   return value.filter(isRecord).map((chapter) => {
     const touched = isRecord(chapter.touched) ? chapter.touched : {};
+    const targetWordCount = typeof chapter.targetWordCount === "number" ? chapter.targetWordCount : null;
+    const readingExercises = normalizeReadingExerciseConfig(chapter.readingExercises ?? chapter.embeddedExercises);
+    const savedReadingMode = chapter.readingExerciseMode === "interactive" || chapter.readingExerciseMode === "embedded" ? "interactive" : "complete";
+    const savedChapterPractice = normalizePracticeConfig(chapter.chapterPractice);
     return {
       outlineChapterId: typeof chapter.outlineChapterId === "string" ? chapter.outlineChapterId : "",
-      targetWordCount: typeof chapter.targetWordCount === "number" ? chapter.targetWordCount : null,
+      targetWordCount,
+      paragraphCount: minimumReadingParagraphCount(targetWordCount ?? 90, readingExercises),
       knowledgePointIds: Array.isArray(chapter.knowledgePointIds) ? chapter.knowledgePointIds.filter((id): id is string => typeof id === "string") : [],
-      readingExerciseMode: chapter.readingExerciseMode === "embedded" ? "embedded" : "none",
-      embeddedExercises: normalizeExerciseConfig(chapter.embeddedExercises),
-      chapterPractice: normalizePracticeConfig(chapter.chapterPractice),
+      readingExerciseMode: touched.readingExerciseMode === true ? savedReadingMode : "interactive",
+      readingExercises,
+      chapterPractice: touched.chapterPractice === true ? savedChapterPractice : defaultPracticeConfig(false),
       touched: {
         targetWordCount: touched.targetWordCount === true,
+        paragraphCount: false,
         knowledgePointIds: touched.knowledgePointIds === true,
         readingExerciseMode: touched.readingExerciseMode === true,
-        embeddedExercises: touched.embeddedExercises === true,
+        readingExercises: touched.readingExercises === true || touched.embeddedExercises === true,
         chapterPractice: touched.chapterPractice === true,
       },
     };
@@ -189,18 +193,21 @@ function normalizeChapters(value: unknown): TeachingPlan["chapters"] {
 
 function normalizeAfterClassPractice(value: unknown): TeachingPlan["afterClassPractice"] {
   const record = isRecord(value) ? value : {};
+  const touched = isRecord(record.touched) ? record.touched : {};
+  const manuallyConfigured = touched.practice === true;
   return {
     ...record,
-    enabled: typeof record.enabled === "boolean" ? record.enabled : true,
+    enabled: manuallyConfigured && record.enabled === true,
     knowledgePointIds: Array.isArray(record.knowledgePointIds) ? record.knowledgePointIds.filter((id): id is string => typeof id === "string") : [],
-    practice: normalizePracticeConfig(record.practice),
-    touched: isRecord(record.touched) ? record.touched : { knowledgePointIds: false, practice: false },
+    practice: manuallyConfigured ? normalizePracticeConfig(record.practice) : defaultPracticeConfig(false),
+    touched: { knowledgePointIds: touched.knowledgePointIds === true, practice: manuallyConfigured },
   } as TeachingPlan["afterClassPractice"];
 }
 
 function planWriteData(plan: TeachingPlan) {
   return {
     englishLevel: plan.englishLevel,
+    mainIdeaTargetWordCount: plan.mainIdeaTargetWordCount ?? 120,
     chapters: plan.chapters,
     afterClassPractice: plan.afterClassPractice,
   };
@@ -210,6 +217,7 @@ function toKnowledgePoint(preset: DbPreset): TeachingPlanKnowledgePoint {
   return {
     id: preset.id,
     label: preset.label,
+    labelZh: preset.labelZh ?? undefined,
     category: preset.category ?? undefined,
   };
 }
@@ -271,7 +279,7 @@ export async function getTeachingPlanState(db: TeachingPlanDb, courseId: string)
     ensureTeachingPlan(db, course, outline),
     listKnowledgePoints(db),
   ]);
-  const plan = savedPlan.afterClassPractice.touched.knowledgePointIds
+  const plan = savedPlan.afterClassPractice.touched.knowledgePointIds && savedPlan.afterClassPractice.knowledgePointIds.length
     ? savedPlan
     : {
         ...savedPlan,
@@ -305,7 +313,17 @@ export async function saveTeachingPlan(db: TeachingPlanDb, courseId: string, pla
   if (plan.chapters.some((chapter) => chapter.knowledgePointIds.some((id) => !allowedKnowledgePointIds.has(id)))) {
     throw new TeachingPlanValidationError("章节知识点只能从当前语法库中选择。");
   }
-  const parsedPlan = { ...plan, englishLevel: course.englishLevel, status: "draft" as const, confirmedAt: null };
+  const parsedPlan = {
+    ...plan,
+    englishLevel: course.englishLevel,
+    status: "draft" as const,
+    confirmedAt: null,
+    chapters: plan.chapters.map((chapter) => ({
+      ...chapter,
+      paragraphCount: minimumReadingParagraphCount(chapter.targetWordCount ?? 90, chapter.readingExercises),
+      touched: { ...chapter.touched, paragraphCount: false },
+    })),
+  };
   if (parsedPlan.chapters.map((chapter) => chapter.outlineChapterId).join("\n") !== outlineChapterIds.join("\n")) {
     throw new TeachingPlanValidationError("教学规划章节与故事大纲不一致。");
   }
@@ -356,8 +374,3 @@ export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, 
   };
   return db.$transaction ? db.$transaction(confirm) : confirm(db);
 }
-
-export const teachingPlanExerciseTypes = {
-  embedded: ["choice", "blank", "vocab"] satisfies ExerciseType[],
-  practice: ["choice", "blank", "vocab", "matching"] satisfies ExerciseType[],
-};

@@ -26,12 +26,12 @@ function completePlan(plan: TeachingPlan): TeachingPlan {
       ...chapter,
       targetWordCount: 90,
       knowledgePointIds: [`grammar-${index + 1}`],
-      chapterPractice: { enabled: true, countsByType: { choice: 4, blank: 0, vocab: 0, matching: 0 } },
+      chapterPractice: { enabled: true, grammar: { optionCloze: 4, wordForm: 0 } },
     })),
     afterClassPractice: {
       enabled: true,
       knowledgePointIds: ["grammar-1", "grammar-2"],
-      practice: { enabled: true, countsByType: { choice: 8, blank: 0, vocab: 0, matching: 0 } },
+      practice: { enabled: true, grammar: { optionCloze: 8, wordForm: 0 } },
       touched: { knowledgePointIds: false, practice: true },
     },
   };
@@ -99,7 +99,7 @@ function createDb() {
     presetOption: {
       findMany: vi.fn(async () => state.presets),
     },
-    $transaction: async (callback) => callback(db),
+    $transaction: async <T>(callback: (tx: TeachingPlanDb) => Promise<T>) => callback(db),
   } as unknown as TeachingPlanDb & { state: typeof state };
   return db;
 }
@@ -114,8 +114,9 @@ describe("teaching plan repository", () => {
     expect(state.outline.chapters.map((chapter) => chapter.title)).toEqual(["发光地图", "蓝色书页"]);
     expect(state.knowledgePoints.map((point) => point.label)).toEqual(["Past Simple", "Wh- Questions", "Present Perfect"]);
     expect(state.plan.status).toBe("draft");
+    expect(state.plan.mainIdeaTargetWordCount).toBe(120);
     expect(state.plan.englishLevel).toBe("B1");
-    expect(state.plan.chapters[0]).toMatchObject({ targetWordCount: 180, knowledgePointIds: ["grammar-1"], chapterPractice: { enabled: true, countsByType: { choice: 5, blank: 5 } } });
+    expect(state.plan.chapters[0]).toMatchObject({ targetWordCount: 180, knowledgePointIds: ["grammar-1"], readingExerciseMode: "interactive", chapterPractice: { enabled: false, grammar: { optionCloze: 5, wordForm: 5 } } });
     expect(state.plan.chapters.map((chapter) => chapter.outlineChapterId)).toEqual(["outline-chapter-1", "outline-chapter-2"]);
     expect(state.plan.afterClassPractice.knowledgePointIds).toEqual(["grammar-1", "grammar-2"]);
     expect(state.outline.chapters[0]).toMatchObject({
@@ -135,10 +136,12 @@ describe("teaching plan repository", () => {
     const db = createDb();
     const state = await getTeachingPlanState(db, "course-1");
     const plan = completePlan(state.plan);
+    plan.chapters[0].paragraphCount = 6;
 
     const saved = await saveTeachingPlan(db, "course-1", plan);
 
     expect(saved.englishLevel).toBe("B1");
+    expect(saved.chapters[0].paragraphCount).not.toBe(6);
     expect(db.state.course.currentStage).toBe("teaching_plan");
   });
 
@@ -153,7 +156,7 @@ describe("teaching plan repository", () => {
     expect(saved.chapters[0].knowledgePointIds).toContain("grammar-3");
   });
 
-  test("normalizes legacy exercise count shape when reading saved plan", async () => {
+  test("fills missing exercise fields with the current defaults when reading a saved plan", async () => {
     const db = createDb();
     db.state.plan = record({
       courseId: "course-1",
@@ -164,16 +167,16 @@ describe("teaching plan repository", () => {
           outlineChapterId: "outline-chapter-1",
           targetWordCount: 90,
           knowledgePointIds: ["grammar-1"],
-          readingExerciseMode: "embedded",
-          embeddedExercises: { enabled: true, types: ["choice", "blank"], count: 4 },
-          chapterPractice: { enabled: true, types: ["choice", "matching"], count: 6 },
-          touched: { targetWordCount: true, readingExerciseMode: true, embeddedExercises: true, chapterPractice: true },
+          readingExerciseMode: "interactive",
+          readingExercises: { grammar: { optionCloze: 2 }, vocabulary: {} },
+          chapterPractice: { enabled: true, grammar: { wordForm: 3 } },
+          touched: { targetWordCount: true, readingExerciseMode: true, readingExercises: true, chapterPractice: true },
         },
       ],
       afterClassPractice: {
         enabled: true,
         knowledgePointIds: ["grammar-1"],
-        practice: { enabled: true, types: ["vocab"], count: 3 },
+        practice: { enabled: true, grammar: { optionCloze: 3 } },
         touched: { knowledgePointIds: true, practice: true },
       },
       confirmedAt: null,
@@ -181,9 +184,10 @@ describe("teaching plan repository", () => {
 
     const state = await getTeachingPlanState(db, "course-1");
 
-    expect(state.plan.chapters[0].embeddedExercises.countsByType).toEqual({ choice: 2, blank: 2, vocab: 0 });
-    expect(state.plan.chapters[0].chapterPractice.countsByType).toEqual({ choice: 3, blank: 0, vocab: 0, matching: 3 });
-    expect(state.plan.afterClassPractice.practice.countsByType).toEqual({ choice: 0, blank: 0, vocab: 3, matching: 0 });
+    expect(state.plan.chapters[0].readingExerciseMode).toBe("interactive");
+    expect(state.plan.chapters[0].readingExercises).toEqual({ enabled: true, grammar: { optionCloze: 2, wordForm: 3 }, vocabulary: { chineseHint: 3 } });
+    expect(state.plan.chapters[0].chapterPractice).toEqual({ enabled: true, grammar: { optionCloze: 5, wordForm: 3 } });
+    expect(state.plan.afterClassPractice.practice).toEqual({ enabled: true, grammar: { optionCloze: 3, wordForm: 5 } });
   });
 
   test("confirms a complete plan and advances to content", async () => {

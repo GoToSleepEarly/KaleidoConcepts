@@ -21,7 +21,7 @@ export function Dialog({
   description?: string;
   icon?: React.ReactNode;
   variant?: "modal" | "drawer";
-  size?: "default" | "wide";
+  size?: "compact" | "default" | "medium" | "wide";
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -39,9 +39,14 @@ export function Dialog({
       aria-labelledby={`${title}-title`}
       className={cn(
         "m-auto max-h-[calc(100dvh-2rem)] w-[min(94vw,760px)] overflow-hidden rounded-lg bg-card p-0 text-foreground shadow-lg backdrop:bg-slate-950/45",
-        "open:animate-fade-in",
+        "open:animate-dialog-fade",
+        variant === "modal" && "fixed left-1/2 top-1/2 m-0 -translate-x-1/2 -translate-y-1/2",
         variant === "drawer" &&
           "fixed inset-y-0 right-0 m-0 h-dvh max-h-dvh w-[min(94vw,520px)] max-w-none rounded-none border-l border-border",
+        size === "compact" && variant === "modal" && "w-[min(92vw,560px)]",
+        size === "medium" &&
+          variant === "modal" &&
+          "h-[min(720px,calc(100dvh-2rem))] w-[min(94vw,900px)]",
         size === "wide" &&
           variant === "modal" &&
           "h-[min(760px,calc(100dvh-2rem))] w-[min(96vw,1080px)]",

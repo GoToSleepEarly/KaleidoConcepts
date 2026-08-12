@@ -35,7 +35,7 @@ function configFromEnvironment(): ProviderConfig {
     gptModel: process.env.QUICKROUTER_GPT_TEXT_MODEL || "gpt-5.5",
     deepseekModel: process.env.QUICKROUTER_DEEPSEEK_TEXT_MODEL || "deepseek-v4-flash",
     researchModel: process.env.QUICKROUTER_RESEARCH_MODEL || process.env.QUICKROUTER_GPT_TEXT_MODEL || "gpt-5.5",
-    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 180_000,
+    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };
 }
 
@@ -67,7 +67,7 @@ function canRetryBeforeConnection(error: unknown) {
 }
 
 export function createStoryOutlineProvider(config = configFromEnvironment()) {
-  async function request(operation: string, body: Record<string, unknown>) {
+  async function request(operation: string, body: Record<string, unknown>, timeoutMs = config.timeoutMs) {
     const startedAt = Date.now();
     devAiLog({ operation, phase: "request", payload: body });
     let response: Response | null = null;
@@ -81,7 +81,7 @@ export function createStoryOutlineProvider(config = configFromEnvironment()) {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(config.timeoutMs),
+          signal: AbortSignal.timeout(timeoutMs),
         });
         break;
       } catch (error) {
@@ -141,10 +141,12 @@ export function createStoryOutlineProvider(config = configFromEnvironment()) {
       writingProvider,
       prompt,
       operation,
+      timeoutMs,
     }: {
       writingProvider: StoryWritingProvider;
       prompt: string;
       operation?: string;
+      timeoutMs?: number;
     }) =>
       request(operation || "story_outline", {
         model:
@@ -152,7 +154,7 @@ export function createStoryOutlineProvider(config = configFromEnvironment()) {
             ? config.deepseekModel
             : config.gptModel,
         input: prompt,
-      }),
+      }, timeoutMs),
     searchReference: ({ prompt, operation = "search_reference" }: { prompt: string; operation?: string }) =>
       request(operation, {
         model: config.researchModel,

@@ -46,7 +46,8 @@ type PersonWhere = {
 };
 
 type PersonDelegate = {
-  findMany: (query: { where: PersonWhere; include?: unknown }) => Promise<DbPerson[]>;
+  findMany: (query: { where: PersonWhere; include?: unknown; orderBy?: unknown; skip?: number; take?: number }) => Promise<DbPerson[]>;
+  count: (query: { where: PersonWhere }) => Promise<number>;
   findUnique: (query: { where: { id: string }; include?: unknown }) => Promise<DbPerson | null>;
   create: (query: { data: Omit<PersonCreateInput, "notes"> & { notes: string | null } }) => Promise<DbPerson>;
   update: (query: {
@@ -111,42 +112,44 @@ export async function listPeople(
     query?: string;
     status?: "active" | "archived";
     sort?: "recent" | "name";
-    cursor?: string;
-    limit?: number;
+    page?: number;
+    pageSize?: number;
   } = {},
 ): Promise<PeopleListResponse> {
   const query = options.query?.trim();
-  const people = await db.person.findMany({
-    where: {
-      archivedAt: options.status === "archived" ? { not: null } : null,
-      ...(options.role ? { role: options.role } : {}),
-      ...(query
-        ? {
-            OR: [
-              { chineseName: { contains: query, mode: "insensitive" as const } },
-              { englishName: { contains: query, mode: "insensitive" as const } },
-            ],
-          }
-        : {}),
-    },
+  const where: PersonWhere = {
+    archivedAt: options.status === "archived" ? { not: null } : null,
+    ...(options.role ? { role: options.role } : {}),
+    ...(query
+      ? {
+          OR: [
+            { chineseName: { contains: query, mode: "insensitive" as const } },
+            { englishName: { contains: query, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+  };
+  const page = Math.max(options.page ?? 1, 1);
+  const pageSize = Math.min(Math.max(options.pageSize ?? 50, 1), 100);
+  const [people, total] = await Promise.all([
+    db.person.findMany({
+    where,
     include: {
       activeVisualAsset: true,
       visualAssets: { select: { status: true, updatedAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
       coursePeople: { select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
     },
-  });
+    orderBy: options.sort === "name"
+      ? [{ chineseName: "asc" }, { id: "asc" }]
+      : [{ updatedAt: "desc" }, { chineseName: "asc" }, { id: "asc" }],
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  }),
+    db.person.count({ where }),
+  ]);
 
   const mapped = people.map(profileWithRelations);
-  mapped.sort((a, b) => {
-    if (options.sort === "name") return a.chineseName.localeCompare(b.chineseName, "zh-CN");
-    const recentDifference = (b.lastUsedAt ? Date.parse(b.lastUsedAt) : 0) - (a.lastUsedAt ? Date.parse(a.lastUsedAt) : 0);
-    return recentDifference || a.chineseName.localeCompare(b.chineseName, "zh-CN");
-  });
-
-  const start = options.cursor ? Math.max(mapped.findIndex((person) => person.id === options.cursor) + 1, 0) : 0;
-  const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
-  const page = mapped.slice(start, start + limit);
-  return { people: page, nextCursor: start + limit < mapped.length ? page.at(-1)?.id ?? null : null };
+  return { people: mapped, page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
 }
 
 export async function createPerson(db: PeopleDb, input: PersonCreateInput) {

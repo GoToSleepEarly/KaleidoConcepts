@@ -1,4 +1,4 @@
-import type { EnglishLevel, PracticeConfig } from "@/lib/contracts/api";
+import type { EnglishLevel, GrammarExerciseCounts, GrammarPracticeConfig, ReadingExerciseConfig } from "@/lib/contracts/api";
 
 const WORD_BUDGETS: Record<"basic" | "intermediate" | "advanced", Record<30 | 45 | 60, number>> = {
   basic: { 30: 200, 45: 300, 60: 400 },
@@ -15,6 +15,39 @@ export function recommendedChapterWordCount(level: EnglishLevel, duration: 30 | 
   return Math.round(courseWordBudget(level, duration) / Math.max(1, chapterCount) / 10) * 10;
 }
 
-export function defaultPracticeConfig(enabled = true): PracticeConfig {
-  return { enabled, countsByType: { choice: 5, blank: 5, vocab: 0, matching: 0 } };
+export function defaultPracticeConfig(enabled = true): GrammarPracticeConfig {
+  return { enabled, grammar: { optionCloze: 5, wordForm: 5 } };
+}
+
+export function defaultReadingExerciseConfig(): ReadingExerciseConfig {
+  return { enabled: true, grammar: { optionCloze: 4, wordForm: 3 }, vocabulary: { chineseHint: 3 } };
+}
+
+export function readingExerciseTotal(config: ReadingExerciseConfig) {
+  return config.grammar.optionCloze + config.grammar.wordForm + config.vocabulary.chineseHint;
+}
+
+export function grammarExerciseTotal(counts: GrammarExerciseCounts) {
+  return counts.optionCloze + counts.wordForm;
+}
+
+export function minimumReadingParagraphCount(targetWordCount: number, config: ReadingExerciseConfig) {
+  const wordPages = targetWordCount <= 90 ? 1 : targetWordCount <= 150 ? 2 : 3;
+  return Math.max(wordPages, Math.ceil(readingExerciseTotal(config) / 5));
+}
+
+export function readingPageCount(targetWordCount: number, config: ReadingExerciseConfig, paragraphCount?: number) {
+  return Math.max(minimumReadingParagraphCount(targetWordCount, config), paragraphCount ?? 0);
+}
+
+export function balancedPageSizes(total: number, pageCapacity = 5) {
+  if (total <= 0) return [];
+  const pageCount = Math.ceil(total / pageCapacity);
+  const base = Math.floor(total / pageCount);
+  const remainder = total % pageCount;
+  return Array.from({ length: pageCount }, (_, index) => base + (index < remainder ? 1 : 0));
+}
+
+export function practicePageCount(counts: GrammarExerciseCounts) {
+  return balancedPageSizes(counts.optionCloze).length + balancedPageSizes(counts.wordForm).length;
 }

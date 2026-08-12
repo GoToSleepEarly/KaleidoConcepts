@@ -344,7 +344,7 @@ Step 5 必须按 `chapterId + sourceParagraphId` 回到 Step 3 读取对应段�
 - 用户能生成一张包含主要人物、主要背景和故事钩子的纯画面封面。
 - 用户能单张、单章或一次性创建全部缺失图片任务。
 - 每章正好 2 张章节图片，第 1 张绑定第 1 段全文，第 2 张绑定第 2 段全文。
-- 即使没有全部图片成功，也能进入 Step 5 提前预览。
+- 没有资源方案或课程图片也能使用占位进入 Step 5；只有存在生成中任务时才阻断预览发布，前端禁用入口，后端同步校验。
 - 页面能看到每张图片对应的原文和核心镜头。
 - 每张图片 prompt 都是 GPT Image 2 专用自包含 prompt，包含当前画面人物、场景、动作、构图、画风和纯画面限制。
 - 人物外貌、服装、主要背景和整体风格不出现一眼可见的异常漂移。
@@ -403,7 +403,8 @@ Step 5 必须按 `chapterId + sourceParagraphId` 回到 Step 3 读取对应段�
   - 封面重复生成幂等：`cover/generate` 在封面处于 active（`pending`/`submitting`/`generating`）时返回 400 而非重置记录，前端同步置灰"重新生成封面"按钮，杜绝生成中刷新 / 误点造成的重复提交与状态竞态。
 - 2026-07-13：Step 4 prompt 质量方案调整：不传参考图，资源方案生成从 DeepSeek 切换为 QuickRouter Responses；Responses 直接读取 Step 3 全文并输出 `coverBrief.imagePrompt` 和每个 `shot.imagePrompt`，代码不再旧式拼接 `EXACT CAST ONLY` / `STYLE LOCK` 等片段，只做安全后缀和 1200 字符截断；章节图创建支持单张、单章和全部缺失图片任务。
 - 2026-07-13：修复同步生图超时误判：`IMAGE_SUBMITTING_TIMEOUT_MS` 默认从 180s 提高到 900s，避免 QuickRouter 后台已完成但本地轮询把长耗时 `submitting` 任务提前标为失败。
-- 2026-07-13：删除旧句子级图片绑定字段，资源方案和 Step 5 均改为 `sourceParagraphId` 段落绑定；Step 4 预览入口放宽为资源方案存在即可进入。
+- 2026-07-13：删除旧句子级图片绑定字段，资源方案和 Step 5 均改为 `sourceParagraphId` 段落绑定。
+- 2026-08-12：统一预览发布门禁；没有资源方案、图片缺失或失败时可使用占位继续，只有生成中任务会阻断。进入预览、直接读取预览与发布接口执行同一校验。
 - Migration：`prisma/migrations/20260713170000_remove_course_image_sentence_fields/migration.sql`
 - 验证命令：`pnpm prisma:generate`、`pnpm lint`、`pnpm test`、`pnpm build`
 - 待真实生成验收：需要配置真实 `QUICKROUTER_API_KEY`、可选 `QUICKROUTER_RESPONSES_MODEL` 和持久化 `STORAGE_DIR` 后，完成一次资源方案、封面和单章节图片端到端生成。

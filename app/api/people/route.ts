@@ -11,13 +11,17 @@ export async function GET(request: Request) {
     query: z.string().max(80).optional(),
     status: z.enum(["active", "archived"]).default("active"),
     sort: z.enum(["recent", "name"]).default("recent"),
-    cursor: z.string().optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
   }).safeParse(Object.fromEntries(params));
   if (!parsed.success) return NextResponse.json({ message: "人物查询参数无效" }, { status: 400 });
 
   try {
-    return NextResponse.json(await listPeople(getDb(), parsed.data));
+    return NextResponse.json(await listPeople(getDb(), {
+      ...parsed.data,
+      pageSize: parsed.data.pageSize ?? parsed.data.limit ?? 50,
+    }));
   } catch {
     return NextResponse.json({ message: "人物档案加载失败" }, { status: 500 });
   }

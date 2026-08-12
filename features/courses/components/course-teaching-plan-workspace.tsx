@@ -2,47 +2,31 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronRight, Clock3, Loader2, Minus, Plus, RotateCcw, Search, Trash2, X } from "lucide-react";
+import { ArrowLeft, BookOpenText, Check, ChevronRight, Clock3, Loader2, Minus, PencilLine, Plus, RotateCcw, Search, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
+import { Dialog } from "@/components/ui/dialog";
+import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
 import type {
-  ExerciseType,
-  PracticeConfig,
+  GrammarExerciseType,
+  GrammarPracticeConfig,
+  ReadingExerciseMode,
   TeachingPlan,
   TeachingPlanChapter,
   TeachingPlanState,
 } from "@/lib/contracts/api";
+import { grammarExerciseTotal, minimumReadingParagraphCount, practicePageCount, readingExerciseTotal, readingPageCount } from "@/lib/domain/teaching-plan-policy";
 import { cn } from "@/lib/utils";
 
-const embeddedTypes: Array<Exclude<ExerciseType, "matching">> = ["choice", "blank", "vocab"];
-const practiceTypes: ExerciseType[] = ["choice", "blank", "vocab", "matching"];
-const typeLabels: Record<ExerciseType, string> = { choice: "选择题", blank: "填空题", vocab: "词汇题", matching: "匹配题" };
-const typeHints: Record<ExerciseType, string> = {
-  choice: "选项填空",
-  blank: "给词变形",
-  vocab: "中文提示写词",
-  matching: "中英配对",
+const grammarLabels: Record<GrammarExerciseType, string> = { optionCloze: "选项填空", wordForm: "给词变形" };
+const grammarExamples: Record<GrammarExerciseType, string> = {
+  optionCloze: "举例：Summer ______ (found / lost / painted) the glowing map.",
+  wordForm: "举例：Yesterday, Mia ______ (find) the hidden door.",
 };
-const typeExamples: Record<ExerciseType, string> = {
-  choice: "举例：Summer ______ the glowing map. (found / lost / painted)",
-  blank: "举例：Summer ______ the glowing map. (find)",
-  vocab: "举例：The map showed a secret ______.（路线，5个字母）",
-  matching: "举例：route - 路线 / gate - 大门 / whisper - 低语",
-};
+const vocabularyExample = "举例：The map showed a secret ______ (路线，5个字母).";
 
 function unionKnowledgePointIds(chapters: TeachingPlanChapter[]) {
   return [...new Set(chapters.flatMap((chapter) => chapter.knowledgePointIds))];
-}
-
-function totalCount(counts?: Record<string, number> | null) {
-  if (!counts) return 0;
-  return Object.values(counts).reduce((sum, count) => sum + count, 0);
-}
-
-function selectedTypeCount(counts?: Record<string, number> | null) {
-  if (!counts) return 0;
-  return Object.values(counts).filter((count) => count > 0).length;
 }
 
 type SaveStatus = "saved" | "dirty" | "saving" | "failed";
@@ -52,12 +36,23 @@ function chapterReady(chapter: TeachingPlanChapter) {
   return Boolean(chapter.targetWordCount && chapter.knowledgePointIds.length);
 }
 
-function saveStatusLabel(status: SaveStatus) {
+function saveStatusLabel(status: SaveStatus, incomplete = false) {
+  if (incomplete) return "待完善";
   return status === "dirty" ? "未保存" : status === "saving" ? "正在保存..." : status === "failed" ? "保存失败" : "已自动保存";
 }
 
-function initialCountForType() {
-  return 5;
+function hasValidExercisePlan(plan: TeachingPlan) {
+  const chaptersValid = plan.chapters.every((chapter) => {
+    const readingCount = grammarExerciseTotal(chapter.readingExercises.grammar);
+    const practiceCount = grammarExerciseTotal(chapter.chapterPractice.grammar);
+    return chapter.readingExercises.enabled
+      && readingCount >= Math.max(1, chapter.knowledgePointIds.length)
+      && (!chapter.chapterPractice.enabled || practiceCount >= Math.max(1, chapter.knowledgePointIds.length));
+  });
+  if (!chaptersValid) return false;
+  if (!plan.afterClassPractice.enabled) return true;
+  return plan.afterClassPractice.practice.enabled
+    && grammarExerciseTotal(plan.afterClassPractice.practice.grammar) >= Math.max(1, plan.afterClassPractice.knowledgePointIds.length);
 }
 
 function sameIdSet(left: string[], right: string[]) {
@@ -77,9 +72,9 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
   const selectedChapter = plan.chapters[selectedChapterIndex];
   const selectedOutlineChapter = initialState.outline.chapters[selectedChapterIndex];
   const readyChapterCount = plan.chapters.filter(chapterReady).length;
-  const afterClassDecisionMade = plan.status === "confirmed" || plan.afterClassPractice.touched.practice;
+  const exercisePlanValid = hasValidExercisePlan(plan);
   const confirmHint = plan.englishLevel
-    ? `章节 ${readyChapterCount}/${plan.chapters.length} · ${afterClassDecisionMade ? (plan.afterClassPractice.enabled ? "课后练习已开启" : "课后练习不生成") : "课后练习待确认"}`
+    ? `章节 ${readyChapterCount}/${plan.chapters.length} · ${plan.afterClassPractice.enabled ? "课后练习已开启" : "课后练习不生成"}`
     : "还需选择英语难度";
   const afterClassNeedsReview = useMemo(() => {
     if (!plan.afterClassPractice.touched.knowledgePointIds) return false;
@@ -115,16 +110,19 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
           return {
             ...chapter,
             targetWordCount: source.targetWordCount,
+            paragraphCount: source.paragraphCount,
             readingExerciseMode: source.readingExerciseMode,
-            embeddedExercises: {
-              enabled: source.embeddedExercises.enabled,
-              countsByType: { ...source.embeddedExercises.countsByType },
+            readingExercises: {
+              enabled: source.readingExercises.enabled,
+              grammar: { ...source.readingExercises.grammar },
+              vocabulary: { ...source.readingExercises.vocabulary },
             },
             touched: {
               ...chapter.touched,
               targetWordCount: true,
+              paragraphCount: false,
               readingExerciseMode: true,
-              embeddedExercises: true,
+              readingExercises: true,
             },
           };
         }),
@@ -142,7 +140,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
           ...chapter,
           chapterPractice: {
             enabled: source.chapterPractice.enabled,
-            countsByType: { ...source.chapterPractice.countsByType },
+            grammar: { ...source.chapterPractice.grammar },
           },
           touched: { ...chapter.touched, chapterPractice: true },
         }),
@@ -167,10 +165,12 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
       if (!response.ok || !data.plan) throw new Error(data.message || "保存失败，请重试。");
       setPlan(data.plan);
       setSaveStatus("saved");
+      return true;
     } catch (caught) {
-      if (caught instanceof DOMException && caught.name === "AbortError") return;
+      if (caught instanceof DOMException && caught.name === "AbortError") return false;
       setSaveStatus("failed");
       setError(caught instanceof Error ? caught.message : "保存失败，请重试。");
+      return false;
     }
   }, [initialState.course.id]);
 
@@ -184,10 +184,27 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
     return () => window.clearTimeout(timer);
   }, [plan, saveDraft, saveStatus]);
 
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => { if (saveStatus !== "saved") event.preventDefault(); };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [saveStatus]);
+
+  async function navigate(href: string) {
+    if (saveStatus !== "saved" && !(await saveDraft(plan))) return;
+    router.push(href);
+  }
+
   async function confirmPlan(resetDownstream = false) {
+    if (!exercisePlanValid) {
+      setActivePanel("chapters");
+      setError("");
+      return;
+    }
     setConfirming(true);
     setError("");
     try {
+      if (saveStatus === "dirty" && !(await saveDraft(plan))) return;
       const response = await fetch(`/api/courses/${initialState.course.id}/teaching-plan/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -211,7 +228,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <CourseCreateSteps currentStep={3} courseId={initialState.course.id} />
+      <CourseCreateSteps currentStep={3} courseId={initialState.course.id} furthestStep={courseStageStep(initialState.course.currentStage)} onNavigate={(href) => void navigate(href)} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <p className="text-sm font-medium text-muted-foreground">教学规划</p>
@@ -221,7 +238,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
           <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 font-medium text-muted-foreground"><Clock3 className="size-4" />{initialState.course.durationMinutes} 分钟</span>
           <span className="rounded-full bg-primary-50 px-3 py-1.5 text-sm font-semibold text-primary-700">{initialState.course.englishLevel}</span>
           <span className="rounded-full bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">全课 {initialState.knowledgePoints.length} 个知识点</span>
-          <span className={cn("rounded-full px-3 py-1.5 text-xs font-medium", saveStatus === "failed" ? "bg-red-50 text-red-700" : saveStatus === "saving" ? "bg-primary-50 text-primary-700" : "bg-muted text-muted-foreground")}>{saveStatusLabel(saveStatus)}</span>
+          <span className={cn("rounded-full px-3 py-1.5 text-xs font-medium", saveStatus === "failed" ? "bg-red-50 text-red-700" : !exercisePlanValid ? "bg-amber-50 text-amber-800" : saveStatus === "saving" ? "bg-primary-50 text-primary-700" : "bg-muted text-muted-foreground")}>{saveStatusLabel(saveStatus, !exercisePlanValid)}</span>
         </div>
       </div>
 
@@ -239,7 +256,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
                 active={activePanel === "afterClass"}
                 label="课后"
                 onClick={() => setActivePanel("afterClass")}
-                summary={afterClassDecisionMade ? (plan.afterClassPractice.enabled ? `生成 · ${totalCount(plan.afterClassPractice.practice.countsByType)} 题` : "不生成") : "待确认"}
+                summary={`课后阅读 ${plan.mainIdeaTargetWordCount ?? 120} 词 · ${plan.afterClassPractice.enabled ? `${grammarExerciseTotal(plan.afterClassPractice.practice.grammar)} 道练习` : "无课后练习"}`}
               />
             </div>
           </section>
@@ -260,8 +277,8 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
                         {chapterReady(chapter) ? <Check className="size-4 text-primary" /> : <ChevronRight className="size-4 text-muted-foreground" />}
                       </div>
                       <div className="mt-2 space-y-1 text-xs font-medium text-muted-foreground">
-                        <div>{chapter.targetWordCount ? `${chapter.targetWordCount} 词` : "词数未设置"} · {chapter.knowledgePointIds.length} 个知识点</div>
-                        <div>{chapter.readingExerciseMode === "embedded" ? `内嵌 ${totalCount(chapter.embeddedExercises.countsByType)} 题` : "纯正文"} · {chapter.chapterPractice.enabled ? `章节练习 ${totalCount(chapter.chapterPractice.countsByType)} 题` : "无章节练习"}</div>
+                        <div>{chapter.targetWordCount ? `${chapter.targetWordCount} 词 · ${readingPageCount(chapter.targetWordCount, chapter.readingExercises, chapter.paragraphCount)} 个正文段落` : "词数未设置"} · {chapter.knowledgePointIds.length} 个知识点</div>
+                        <div>{chapter.readingExerciseMode === "interactive" ? `边读边练 ${readingExerciseTotal(chapter.readingExercises)} 题` : `完整阅读 ${readingExerciseTotal(chapter.readingExercises)} 题`} · {chapter.chapterPractice.enabled ? `章节练习 ${grammarExerciseTotal(chapter.chapterPractice.grammar)} 题 / ${practicePageCount(chapter.chapterPractice.grammar)} 页` : "无章节练习"}</div>
                       </div>
                     </button>
                   );
@@ -285,13 +302,19 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
           ) : null}
 
           {activePanel === "afterClass" ? (
-            <AfterClassEditor
-              afterClassNeedsReview={afterClassNeedsReview}
-              knowledgePointIds={unionKnowledgePointIds(plan.chapters)}
-              knowledgePoints={initialState.knowledgePoints}
-              onChange={(updater) => updatePlan((current) => ({ ...current, afterClassPractice: updater(current.afterClassPractice) }))}
-              plan={plan}
-            />
+            <>
+              <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-4"><div><h3 className="text-base font-semibold text-foreground">课后阅读</h3><p className="mt-1 text-sm text-muted-foreground">Main Idea Reading Practice</p></div><label className="flex items-center gap-2 text-sm font-medium text-foreground"><input aria-label="课后阅读目标词数" className="h-9 w-24 rounded-md border border-input bg-card px-2 text-center font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" max={150} min={80} onChange={(event) => updatePlan((current) => ({ ...current, mainIdeaTargetWordCount: Number(event.target.value) }))} type="number" value={plan.mainIdeaTargetWordCount ?? 120} />词</label></div>
+                <p className="mt-3 text-xs text-muted-foreground">可设置 80–150 词，默认 120 词；用于 Step 4 生成和修改课后阅读。</p>
+              </section>
+              <AfterClassEditor
+                afterClassNeedsReview={afterClassNeedsReview}
+                knowledgePointIds={unionKnowledgePointIds(plan.chapters)}
+                knowledgePoints={initialState.knowledgePoints}
+                onChange={(updater) => updatePlan((current) => ({ ...current, afterClassPractice: updater(current.afterClassPractice) }))}
+                plan={plan}
+              />
+            </>
           ) : null}
         </main>
       </div>
@@ -301,10 +324,11 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
       <div className="sticky bottom-4 flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-md sm:px-5">
         <div className="min-w-0">
           <p className="text-sm font-medium text-foreground">{confirmHint}</p>
-          <p className={cn("mt-0.5 text-xs", saveStatus === "failed" ? "text-red-700" : "text-muted-foreground")}>{saveStatusLabel(saveStatus)}</p>
+          <p className={cn("mt-0.5 text-xs", saveStatus === "failed" ? "text-red-700" : !exercisePlanValid ? "text-amber-700" : "text-muted-foreground")}>{saveStatusLabel(saveStatus, !exercisePlanValid)}</p>
         </div>
         <div className="flex gap-2">
-          <Button disabled={confirming || saveStatus === "saving"} onClick={() => void confirmPlan(false)} type="button">{confirming ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}{confirming ? "确认中" : "确认并进入文案与练习"}</Button>
+          <Button disabled={confirming || saveStatus === "saving"} onClick={() => void navigate(`/courses/${initialState.course.id}/create/story-outline`)} type="button" variant="outline"><ArrowLeft className="size-4" />上一步</Button>
+          <Button disabled={confirming || saveStatus === "saving" || !exercisePlanValid} onClick={() => void confirmPlan(false)} type="button">{confirming ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}{confirming ? "确认中" : "确认并进入文案与练习"}</Button>
         </div>
       </div>
     </div>
@@ -355,10 +379,16 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, onApplyReadin
               <label className="rounded-md border border-input bg-background px-3 py-2">
                 <span className="block text-xs font-medium text-muted-foreground">目标词数</span>
                 <span className="mt-1 flex items-center gap-2">
-                  <input aria-label={`${chapterLabel}目标词数`} className="h-9 w-20 rounded-md border border-input bg-card px-2 text-center text-sm font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" max={200} min={50} onChange={(event) => onChange((current) => ({ ...current, targetWordCount: Number(event.target.value), touched: { ...current.touched, targetWordCount: true } }))} type="number" value={chapter.targetWordCount ?? ""} />
+                  <input aria-label={`${chapterLabel}目标词数`} className="h-9 w-20 rounded-md border border-input bg-card px-2 text-center text-sm font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" max={200} min={50} onChange={(event) => onChange((current) => { const targetWordCount = Number(event.target.value); return { ...current, targetWordCount, paragraphCount: minimumReadingParagraphCount(targetWordCount, current.readingExercises), touched: { ...current.touched, targetWordCount: true } }; })} type="number" value={chapter.targetWordCount ?? ""} />
                   <span className="text-sm text-muted-foreground">词</span>
                 </span>
               </label>
+              <div className="rounded-md border border-input bg-background px-3 py-2">
+                <span className="block text-xs font-medium text-muted-foreground">正文段落</span>
+                <span className="mt-1 flex items-center gap-2">
+                  <output aria-label={`${chapterLabel}正文段落数`} className="flex h-9 min-w-16 items-center justify-center rounded-md bg-muted px-3 text-sm font-semibold tabular-nums text-foreground">{chapter.paragraphCount} 段</output>
+                </span>
+              </div>
             </div>
           </div>
           <div className="mt-6 border-t border-border pt-5">
@@ -372,7 +402,7 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, onApplyReadin
             <div className="mt-2 flex flex-wrap gap-2">
               {chapter.knowledgePointIds.length ? chapter.knowledgePointIds.map((id) => {
                 const point = knowledgePoints.find((item) => item.id === id);
-                const label = point?.label ?? id;
+                const label = point ? knowledgePointName(point) : id;
                 return (
                   <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm", recommendedIds.includes(id) ? "bg-primary-50 text-primary-700" : "bg-amber-50 text-amber-800")} key={id}>
                     {label}
@@ -410,11 +440,30 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, onApplyReadin
             <h4 className="text-sm font-semibold text-foreground">正文模式</h4>
             <Button onClick={onApplyReadingToAll} size="sm" type="button" variant="outline">同步正文设置到全部章节</Button>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-muted p-1">
-            <button aria-pressed={chapter.readingExerciseMode === "none"} className={cn("min-h-10 rounded-md text-sm font-medium", chapter.readingExerciseMode === "none" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70")} onClick={() => onChange((current) => ({ ...current, readingExerciseMode: "none", embeddedExercises: { enabled: false, countsByType: { choice: 0, blank: 0, vocab: 0 } }, touched: { ...current.touched, readingExerciseMode: true, embeddedExercises: true } }))} type="button">无题目</button>
-            <button aria-pressed={chapter.readingExerciseMode === "embedded"} className={cn("min-h-10 rounded-md text-sm font-medium", chapter.readingExerciseMode === "embedded" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70")} onClick={() => onChange((current) => ({ ...current, readingExerciseMode: "embedded", embeddedExercises: { enabled: true, countsByType: current.embeddedExercises.countsByType }, touched: { ...current.touched, readingExerciseMode: true, embeddedExercises: true } }))} type="button">加入内嵌题</button>
+          <div aria-label="正文模式" className="mt-4 grid gap-3 sm:grid-cols-2" role="radiogroup">
+            <ReadingModeOption
+              checked={chapter.readingExerciseMode === "complete"}
+              description="题目与答案自然融入正文，学生可以连续阅读。"
+              icon={BookOpenText}
+              name={`reading-mode-${chapter.outlineChapterId}`}
+              onChange={() => onChange((current) => ({ ...current, readingExerciseMode: "complete", touched: { ...current.touched, readingExerciseMode: true } }))}
+              title="完整阅读"
+              value="complete"
+              answerState="答案状态：直接显示"
+            />
+            <ReadingModeOption
+              checked={chapter.readingExerciseMode === "interactive"}
+              description="正文保留作答位置，学生在阅读过程中完成练习。"
+              icon={PencilLine}
+              name={`reading-mode-${chapter.outlineChapterId}`}
+              onChange={() => onChange((current) => ({ ...current, readingExerciseMode: "interactive", touched: { ...current.touched, readingExerciseMode: true } }))}
+              title="边读边练"
+              value="interactive"
+              answerState="答案状态：保留空位"
+            />
           </div>
-          {chapter.readingExerciseMode === "embedded" ? <ExerciseConfigEditor allowedTypes={embeddedTypes} ariaPrefix={`${chapterLabel}内嵌题`} config={chapter.embeddedExercises} max={8} onChange={(config) => onChange((current) => ({ ...current, embeddedExercises: config, touched: { ...current.touched, embeddedExercises: true } }))} /> : <p className="mt-3 text-sm text-muted-foreground">将展示完整正文，不在阅读中插入题目。</p>}
+          <p className="mt-3 text-sm text-muted-foreground">{chapter.readingExerciseMode === "complete" ? "答案直接呈现在正文中，阅读更连贯。" : "正文保留作答位置，学生边读边完成。"}</p>
+          <ReadingExerciseEditor ariaPrefix={`${chapterLabel}正文`} config={chapter.readingExercises} onChange={(readingExercises) => onChange((current) => ({ ...current, readingExercises, paragraphCount: minimumReadingParagraphCount(current.targetWordCount ?? 90, readingExercises), touched: { ...current.touched, readingExercises: true } }))} />
         </div>
 
         <div className="rounded-lg bg-card p-5 shadow-sm">
@@ -424,8 +473,7 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, onApplyReadin
           </div>
           {chapter.chapterPractice.enabled ? (
             <>
-              <PracticeConfigEditor ariaPrefix={`${chapterLabel}章节练习`} config={chapter.chapterPractice} max={10} onChange={(config) => onChange((current) => ({ ...current, chapterPractice: config, touched: { ...current.touched, chapterPractice: true } }))} />
-              {selectedTypeCount(chapter.chapterPractice.countsByType) > 2 ? <p className="mt-3 text-sm text-amber-700">建议章节练习不超过 2 种题型。</p> : null}
+              <GrammarPracticeEditor ariaPrefix={`${chapterLabel}章节练习`} config={chapter.chapterPractice} max={20} onChange={(config) => onChange((current) => ({ ...current, chapterPractice: config, touched: { ...current.touched, chapterPractice: true } }))} />
             </>
           ) : null}
         </div>
@@ -434,27 +482,54 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, onApplyReadin
   );
 }
 
+function ReadingModeOption({ checked, title, description, answerState, name, value, icon: Icon, onChange }: {
+  checked: boolean;
+  title: string;
+  description: string;
+  answerState: string;
+  name: string;
+  value: ReadingExerciseMode;
+  icon: typeof BookOpenText;
+  onChange: () => void;
+}) {
+  return (
+    <label className={cn("group relative flex min-h-36 cursor-pointer flex-col rounded-lg border-2 p-4 transition-colors duration-200", checked ? "border-primary bg-primary-50" : "border-border bg-background hover:border-primary-200 hover:bg-muted/30")}>
+      <input checked={checked} className="sr-only" name={name} onChange={onChange} type="radio" value={value} />
+      <span className="flex items-start justify-between gap-3">
+        <span aria-hidden className={cn("flex size-9 items-center justify-center rounded-md", checked ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground group-hover:text-foreground")}><Icon className="size-4.5" /></span>
+        <span aria-hidden className={cn("flex size-5 items-center justify-center rounded-full border", checked ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card")}>
+          {checked ? <Check className="size-3.5" /> : null}
+        </span>
+      </span>
+      <span className="mt-3 text-sm font-semibold text-foreground">{title}</span>
+      <span className="mt-1 text-xs leading-5 text-muted-foreground">{description}</span>
+      <span className={cn("mt-auto pt-3 text-xs font-semibold", checked ? "text-primary-700" : "text-muted-foreground")}>{answerState}</span>
+    </label>
+  );
+}
+
 function GrammarLibraryPicker({ knowledgePoints, selectedIds, onApply, onClose }: { knowledgePoints: TeachingPlanState["knowledgePoints"]; selectedIds: string[]; onApply: (ids: string[]) => void; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [localIds, setLocalIds] = useState(selectedIds);
   const categories = useMemo(() => [...new Set(knowledgePoints.map((point) => point.category || "未分类"))], [knowledgePoints]);
-  const [activeCategory, setActiveCategory] = useState(categories[0] ?? "未分类");
+  const [activeCategory, setActiveCategory] = useState("全部");
+  const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
   const filtered = knowledgePoints.filter((point) => {
     const category = point.category || "未分类";
-    return category === activeCategory && `${point.label} ${category}`.toLowerCase().includes(query.toLowerCase());
+    const categoryMatches = Boolean(normalizedQuery) || activeCategory === "全部" || category === activeCategory;
+    return categoryMatches && `${point.labelZh ?? ""} ${point.label} ${category}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery);
   });
   return (
-    <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/35 p-4">
-      <div className="w-full max-w-xl rounded-lg bg-card shadow-lg">
+    <Dialog description="支持按中文名称、英文名称或分类查找。" onClose={onClose} open title="语法库">
+      <div className="flex max-h-[72dvh] min-h-[520px] flex-col">
         <div className="border-b border-border p-4">
-          <h4 className="text-base font-semibold text-foreground">语法库</h4>
           <div aria-label="语法分类" className="mt-3 flex gap-1 overflow-x-auto rounded-md bg-muted p-1" role="tablist">
-            {categories.map((category) => (
+            {["全部", ...categories].map((category) => (
               <button
                 aria-selected={activeCategory === category}
                 className={cn("min-h-9 shrink-0 rounded px-3 text-sm font-medium transition-colors", activeCategory === category ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70 hover:text-foreground")}
                 key={category}
-                onClick={() => setActiveCategory(category)}
+                onClick={() => { setActiveCategory(category); setQuery(""); }}
                 role="tab"
                 type="button"
               >
@@ -463,18 +538,18 @@ function GrammarLibraryPicker({ knowledgePoints, selectedIds, onApply, onClose }
             ))}
           </div>
           <label className="relative mt-3 block">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search aria-hidden className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <span className="sr-only">搜索语法点</span>
-            <input className="min-h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" onChange={(event) => setQuery(event.target.value)} placeholder="搜索语法点" value={query} />
+            <input aria-label="搜索语法点" autoFocus className="min-h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" onChange={(event) => setQuery(event.target.value)} placeholder="搜索中文名、英文名或分类" role="searchbox" value={query} />
           </label>
         </div>
-        <div className="max-h-[52dvh] overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {filtered.map((point) => (
             <label className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 hover:bg-muted/50" key={point.id}>
               <input aria-label={`选择语法点 ${point.label}`} checked={localIds.includes(point.id)} onChange={() => setLocalIds((current) => current.includes(point.id) ? current.filter((id) => id !== point.id) : [...current, point.id])} type="checkbox" />
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-foreground">{point.label}</span>
-                {point.category ? <span className="text-xs text-muted-foreground">{point.category}</span> : null}
+                <span className="block text-sm font-medium text-foreground">{point.labelZh ?? point.label}</span>
+                <span className="text-xs text-muted-foreground">{point.labelZh ? `${point.label} · ` : ""}{point.category}</span>
               </span>
             </label>
           ))}
@@ -488,8 +563,12 @@ function GrammarLibraryPicker({ knowledgePoints, selectedIds, onApply, onClose }
           </div>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
+}
+
+function knowledgePointName(point: TeachingPlanState["knowledgePoints"][number]) {
+  return point.labelZh ? `${point.labelZh} · ${point.label}` : point.label;
 }
 
 function ToggleHeader({ enabled, label, onChange }: { enabled: boolean; label: string; onChange: (enabled: boolean) => void }) {
@@ -504,82 +583,80 @@ function ToggleHeader({ enabled, label, onChange }: { enabled: boolean; label: s
   );
 }
 
-function ExerciseConfigEditor({ config, allowedTypes, max, ariaPrefix, onChange }: { config: TeachingPlanChapter["embeddedExercises"]; allowedTypes: Array<Exclude<ExerciseType, "matching">>; max: number; ariaPrefix: string; onChange: (config: TeachingPlanChapter["embeddedExercises"]) => void }) {
-  return (
-    <ExerciseCountRows
-      allowedTypes={allowedTypes}
-      ariaPrefix={ariaPrefix}
-      counts={config.countsByType}
-      max={max}
-      onChange={(type, count) => onChange({ ...config, enabled: true, countsByType: { ...config.countsByType, [type]: count } })}
-    />
-  );
-}
-
-function PracticeConfigEditor({ config, max, ariaPrefix, onChange }: { config: PracticeConfig; max: number; ariaPrefix: string; onChange: (config: PracticeConfig) => void }) {
-  return (
-    <ExerciseCountRows
-      allowedTypes={practiceTypes}
-      ariaPrefix={ariaPrefix}
-      counts={config.countsByType}
-      max={max}
-      onChange={(type, count) => onChange({ ...config, enabled: true, countsByType: { ...config.countsByType, [type]: count } })}
-    />
-  );
-}
-
-function ExerciseCountRows<T extends ExerciseType>({ counts, allowedTypes, ariaPrefix, max, onChange }: { counts: Partial<Record<T, number>>; allowedTypes: T[]; ariaPrefix: string; max: number; onChange: (type: T, count: number) => void }) {
+function ReadingExerciseEditor({ config, ariaPrefix, onChange }: { config: TeachingPlanChapter["readingExercises"]; ariaPrefix: string; onChange: (config: TeachingPlanChapter["readingExercises"]) => void }) {
   const [adding, setAdding] = useState(false);
-  const selectedTypes = allowedTypes.filter((type) => (counts[type] ?? 0) > 0);
-  const availableTypes = allowedTypes.filter((type) => (counts[type] ?? 0) <= 0);
-  const addLabel = ariaPrefix.includes("内嵌题") ? "添加内嵌题型" : ariaPrefix.includes("章节练习") ? "添加章节练习题型" : "添加课后练习题型";
+  const invalid = grammarExerciseTotal(config.grammar) < 1;
+  const grammarRow = (type: GrammarExerciseType) => (
+    <div className="grid gap-3 rounded-md border border-border bg-background p-3 sm:grid-cols-[minmax(0,1fr)_220px]" key={type}>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-foreground">{grammarLabels[type]}</div>
+        <div className="mt-1 text-xs leading-5 text-muted-foreground">{grammarExamples[type]}</div>
+      </div>
+      <div className="flex items-center justify-end gap-2"><Stepper ariaPrefix={ariaPrefix} label={grammarLabels[type]} max={8} onChange={(count) => onChange({ ...config, enabled: true, grammar: { ...config.grammar, [type]: count } })} value={config.grammar[type]} /><button aria-label={`${ariaPrefix}删除题型 ${grammarLabels[type]}`} className="flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onChange({ ...config, grammar: { ...config.grammar, [type]: 0 } })} type="button"><X className="size-4" /></button></div>
+    </div>
+  );
+  const missingGrammar = (["optionCloze", "wordForm"] as GrammarExerciseType[]).filter((type) => config.grammar[type] === 0);
+  const vocabularyEnabled = config.vocabulary.chineseHint > 0;
+  const hasMissing = missingGrammar.length > 0 || !vocabularyEnabled;
+  return (
+    <div className="mt-5 space-y-4">
+      <div>
+        <div className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground">语法</div>
+        <div className="space-y-2">{config.grammar.optionCloze > 0 ? grammarRow("optionCloze") : null}{config.grammar.wordForm > 0 ? grammarRow("wordForm") : null}{!grammarExerciseTotal(config.grammar) ? <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 px-3 py-3 text-sm text-amber-800">至少添加一种语法题型，才能覆盖本章知识点。</div> : null}</div>
+      </div>
+      <div>
+        <div className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground">词汇词组</div>
+        {vocabularyEnabled ? <div className="grid gap-3 rounded-md border border-border bg-background p-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-foreground">中文提示写词</div>
+            <div className="mt-1 text-xs leading-5 text-muted-foreground">{vocabularyExample}</div>
+          </div>
+          <div className="flex items-center justify-end gap-2"><Stepper ariaPrefix={ariaPrefix} label="中文提示写词" max={8} onChange={(count) => onChange({ ...config, enabled: true, vocabulary: { chineseHint: count } })} value={config.vocabulary.chineseHint} /><button aria-label={`${ariaPrefix}删除题型 中文提示写词`} className="flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onChange({ ...config, vocabulary: { chineseHint: 0 } })} type="button"><X className="size-4" /></button></div>
+        </div> : <p className="rounded-md border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">当前不生成正文词汇题。</p>}
+      </div>
+      {hasMissing ? <div><Button aria-expanded={adding} onClick={() => setAdding((current) => !current)} size="sm" type="button" variant="outline"><Plus className="size-4" />添加正文题型</Button>{adding ? <div className="mt-2 grid gap-2 rounded-md border border-border bg-muted/30 p-2 sm:grid-cols-2">{missingGrammar.map((type) => <AddExerciseTypeCard example={grammarExamples[type]} key={type} label={grammarLabels[type]} onClick={() => { onChange({ ...config, enabled: true, grammar: { ...config.grammar, [type]: type === "optionCloze" ? 4 : 3 } }); setAdding(false); }} />)}{!vocabularyEnabled ? <AddExerciseTypeCard example={vocabularyExample} label="中文提示写词" onClick={() => { onChange({ ...config, enabled: true, vocabulary: { chineseHint: 3 } }); setAdding(false); }} /> : null}</div> : null}</div> : null}
+      {invalid ? <p className="text-sm font-medium text-amber-700">至少保留一种语法题型</p> : <p className="text-xs text-muted-foreground">题型可按章节增删；词汇题不参与语法知识点覆盖。</p>}
+    </div>
+  );
+}
+
+function GrammarPracticeEditor({ config, max, ariaPrefix, onChange }: { config: GrammarPracticeConfig; max: number; ariaPrefix: string; onChange: (config: GrammarPracticeConfig) => void }) {
+  const [adding, setAdding] = useState(false);
+  const active = (["optionCloze", "wordForm"] as GrammarExerciseType[]).filter((type) => config.grammar[type] > 0);
+  const missing = (["optionCloze", "wordForm"] as GrammarExerciseType[]).filter((type) => config.grammar[type] === 0);
   return (
     <div className="mt-4 space-y-3">
-      <p className="text-xs text-muted-foreground">建议每种题型 5 题一组，便于统一展示。</p>
-      {selectedTypes.length ? (
-        <div className="space-y-2">
-          {selectedTypes.map((type) => (
-            <div className="grid gap-3 rounded-md border border-primary-200 bg-primary-50/40 p-3 transition-colors sm:grid-cols-[minmax(0,1fr)_176px_36px]" key={type}>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="text-sm font-semibold text-foreground">{typeLabels[type]}</div>
-                </div>
-                <div className="mt-1 text-xs leading-5 text-muted-foreground">{typeExamples[type]}</div>
-              </div>
-              <Stepper ariaPrefix={ariaPrefix} label={typeLabels[type]} max={max} onChange={(count) => onChange(type, count)} value={counts[type] ?? 0} />
-              <button aria-label={`${ariaPrefix}${typeLabels[type]}删除`} className="flex size-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-red-200 hover:bg-red-50 hover:text-red-700" onClick={() => onChange(type, 0)} type="button">
-                <Trash2 className="size-4" />
-              </button>
-            </div>
-          ))}
+      <p className="text-xs text-muted-foreground">只考查语法知识点；每页最多 5 题，超出后均衡分页。</p>
+      {active.map((type) => (
+        <div className="grid gap-3 rounded-md border border-primary-200 bg-primary-50/40 p-3 sm:grid-cols-[minmax(0,1fr)_220px]" key={type}>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-foreground">{grammarLabels[type]}</div>
+            <div className="mt-1 text-xs leading-5 text-muted-foreground">{grammarExamples[type]}</div>
+          </div>
+          <div className="flex items-center justify-end gap-2"><Stepper ariaPrefix={ariaPrefix} label={grammarLabels[type]} max={max} onChange={(count) => onChange({ ...config, enabled: true, grammar: { ...config.grammar, [type]: count } })} value={config.grammar[type]} /><button aria-label={`${ariaPrefix}删除题型 ${grammarLabels[type]}`} className="flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onChange({ ...config, grammar: { ...config.grammar, [type]: 0 } })} type="button"><X className="size-4" /></button></div>
         </div>
-      ) : (
-        <div className="rounded-md border border-dashed border-border bg-muted/40 px-3 py-3 text-sm text-muted-foreground">尚未添加题型</div>
-      )}
-      {availableTypes.length ? (
-        <div className="space-y-2">
-          <Button onClick={() => setAdding((current) => !current)} size="sm" type="button" variant="outline"><Plus className="size-4" />{addLabel}</Button>
-          {adding ? (
-            <div className="grid gap-2 sm:grid-cols-3">
-              {availableTypes.map((type) => (
-                <button aria-label={`添加${typeHints[type]}`} className="rounded-md border border-border bg-background p-3 text-left transition-colors hover:border-primary-200 hover:bg-primary-50" key={type} onClick={() => { onChange(type, Math.min(max, initialCountForType())); setAdding(false); }} type="button">
-                  <span className="block text-sm font-semibold text-foreground">添加{typeHints[type]}</span>
-                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">{typeExamples[type]}</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      ))}
+      {!active.length ? <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 px-3 py-3 text-sm text-amber-800">已开启练习，请至少添加一种语法题型。</div> : null}
+      {missing.length ? <div><Button aria-expanded={adding} onClick={() => setAdding((current) => !current)} size="sm" type="button" variant="outline"><Plus className="size-4" />添加{ariaPrefix.includes("章节") ? "章节练习" : "课后练习"}题型</Button>{adding ? <div className="mt-2 grid gap-2 rounded-md border border-border bg-muted/30 p-2 sm:grid-cols-2">{missing.map((type) => <AddExerciseTypeCard example={grammarExamples[type]} key={type} label={grammarLabels[type]} onClick={() => { onChange({ ...config, enabled: true, grammar: { ...config.grammar, [type]: 5 } }); setAdding(false); }} />)}</div> : null}</div> : null}
+      <p className="text-xs font-medium text-muted-foreground">预计 {practicePageCount(config.grammar)} 页</p>
     </div>
+  );
+}
+
+function AddExerciseTypeCard({ label, example, onClick }: { label: string; example: string; onClick: () => void }) {
+  return (
+    <button aria-label={`添加${label}`} className="min-h-24 rounded-md border border-border bg-background p-3 text-left shadow-sm transition-[border-color,background-color,box-shadow] hover:border-primary-200 hover:bg-primary-50/50 hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={onClick} type="button">
+      <span className="flex items-center gap-2 text-sm font-semibold text-foreground"><Plus className="size-4 text-primary" />添加{label}</span>
+      <span className="mt-2 block text-xs leading-5 text-muted-foreground">{example}</span>
+    </button>
   );
 }
 
 function Stepper({ ariaPrefix, label, value, max, onChange }: { ariaPrefix: string; label: string; value: number; max: number; onChange: (count: number) => void }) {
   return (
     <div className="flex items-center justify-end gap-2">
-      <button aria-label={`${ariaPrefix}${label}减少`} className="flex size-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary-200 hover:text-foreground" onClick={() => onChange(Math.max(0, value - 1))} type="button"><Minus className="size-4" /></button>
-      <input aria-label={`${ariaPrefix}${label}数量`} className="h-8 w-14 rounded-md border border-input bg-background text-center text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" max={max} min={1} onChange={(event) => onChange(Math.max(1, Math.min(max, Number(event.target.value))))} type="number" value={value} />
+      <button aria-label={`${ariaPrefix}${label}减少`} className="flex size-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary-200 hover:text-foreground" onClick={() => onChange(Math.max(1, value - 1))} type="button"><Minus className="size-4" /></button>
+      <input aria-label={`${ariaPrefix}${label}数量`} className="h-8 w-14 rounded-md border border-input bg-background text-center text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" max={max} min={1} onChange={(event) => onChange(Math.max(1, Math.min(max, Number(event.target.value) || 1)))} type="number" value={value} />
       <button aria-label={`${ariaPrefix}${label}增加`} className="flex size-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary-200 hover:text-foreground" onClick={() => onChange(Math.min(max, value + 1))} type="button"><Plus className="size-4" /></button>
     </div>
   );
@@ -593,16 +670,17 @@ function AfterClassEditor({ plan, knowledgePoints, knowledgePointIds, afterClass
   onChange: (updater: (config: TeachingPlan["afterClassPractice"]) => TeachingPlan["afterClassPractice"]) => void;
 }) {
   const availablePoints = knowledgePoints.filter((point) => knowledgePointIds.includes(point.id));
-  const decisionMade = plan.status === "confirmed" || plan.afterClassPractice.touched.practice;
+  const decisionMade = true;
+  const includesVocabularyReview = plan.chapters.some((chapter) => chapter.readingExercises.vocabulary.chineseHint > 0);
   return (
     <section className="rounded-lg bg-card p-5 shadow-sm">
       <div>
         <h3 className="text-base font-semibold text-foreground">课后练习</h3>
-        <p className="mt-1 text-sm text-muted-foreground">全课统一配置，请确认是否需要生成。</p>
+        <p className="mt-1 text-sm text-muted-foreground">默认不生成；需要时可主动开启。</p>
       </div>
       {!decisionMade ? <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">请选择是否生成课后练习</p> : null}
       <div className="mt-4 grid grid-cols-2 gap-2 rounded-lg bg-muted p-1">
-        <button aria-pressed={decisionMade && plan.afterClassPractice.enabled} className={cn("min-h-11 rounded-md text-sm font-semibold transition-colors", decisionMade && plan.afterClassPractice.enabled ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-card hover:text-foreground")} onClick={() => onChange((current) => ({ ...current, enabled: true, knowledgePointIds: current.touched.knowledgePointIds ? current.knowledgePointIds : knowledgePointIds, practice: { enabled: true, countsByType: totalCount(current.practice.countsByType) ? current.practice.countsByType : { choice: 5, blank: 5, vocab: 0, matching: 0 } }, touched: { ...current.touched, practice: true } }))} type="button">生成课后练习</button>
+        <button aria-pressed={decisionMade && plan.afterClassPractice.enabled} className={cn("min-h-11 rounded-md text-sm font-semibold transition-colors", decisionMade && plan.afterClassPractice.enabled ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-card hover:text-foreground")} onClick={() => onChange((current) => ({ ...current, enabled: true, knowledgePointIds: !current.knowledgePointIds.length || !current.touched.knowledgePointIds ? knowledgePointIds : current.knowledgePointIds, practice: { enabled: true, grammar: grammarExerciseTotal(current.practice.grammar) ? current.practice.grammar : { optionCloze: 5, wordForm: 5 } }, touched: { ...current.touched, practice: true } }))} type="button">生成课后练习</button>
         <button aria-pressed={decisionMade && !plan.afterClassPractice.enabled} className={cn("min-h-11 rounded-md text-sm font-semibold transition-colors", decisionMade && !plan.afterClassPractice.enabled ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:bg-card hover:text-foreground")} onClick={() => onChange((current) => ({ ...current, enabled: false, practice: { ...current.practice, enabled: false }, touched: { ...current.touched, practice: true } }))} type="button">不生成课后练习</button>
       </div>
       {afterClassNeedsReview ? <p className="mt-3 text-sm text-amber-700">课后练习知识点可能需要检查。</p> : null}
@@ -615,11 +693,17 @@ function AfterClassEditor({ plan, knowledgePoints, knowledgePointIds, afterClass
               <label className={cn("flex min-h-11 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors", plan.afterClassPractice.knowledgePointIds.includes(point.id) ? "border-primary bg-primary-50 text-primary-700" : "border-border bg-background text-muted-foreground hover:border-primary-200 hover:text-foreground")} key={point.id}>
                 <input checked={plan.afterClassPractice.knowledgePointIds.includes(point.id)} className="sr-only" onChange={() => onChange((current) => ({ ...current, knowledgePointIds: current.knowledgePointIds.includes(point.id) ? current.knowledgePointIds.filter((id) => id !== point.id) : [...current.knowledgePointIds, point.id], touched: { ...current.touched, knowledgePointIds: true } }))} type="checkbox" />
                 <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded border", plan.afterClassPractice.knowledgePointIds.includes(point.id) ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card")}>{plan.afterClassPractice.knowledgePointIds.includes(point.id) ? <Check className="size-3.5" /> : null}</span>
-                <span className="min-w-0 flex-1 font-medium">{point.label}</span>
+                <span className="min-w-0 flex-1 font-medium">{knowledgePointName(point)}</span>
               </label>
             ))}
           </div>
-          <PracticeConfigEditor ariaPrefix="课后练习" config={plan.afterClassPractice.practice} max={20} onChange={(practice) => onChange((current) => ({ ...current, practice, touched: { ...current.touched, practice: true } }))} />
+          {includesVocabularyReview ? (
+            <div className="mt-5 rounded-md border border-primary-200 bg-primary-50/50 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground"><Check className="size-4 text-primary" />词汇复习 · 中英配对</div>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">自动使用正文整理出的词汇词组，去重后生成固定配对练习，无需设置题量。</p>
+            </div>
+          ) : null}
+          <GrammarPracticeEditor ariaPrefix="课后练习" config={plan.afterClassPractice.practice} max={20} onChange={(practice) => onChange((current) => ({ ...current, practice, touched: { ...current.touched, practice: true } }))} />
         </>
       ) : null}
     </section>

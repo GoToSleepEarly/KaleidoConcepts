@@ -8,8 +8,11 @@ import type { PersonVisualsDb } from "@/lib/server/repositories/person-visuals";
 import type { PresetsDb } from "@/lib/server/repositories/presets";
 import type { StoryOutlineDb } from "@/lib/server/repositories/story-outline";
 import type { TeachingPlanDb } from "@/lib/server/repositories/teaching-plan";
+import type { CourseContentDb } from "@/lib/server/repositories/course-content";
+import type { VisualResourcesDb } from "@/lib/server/repositories/visual-resources";
+import type { CoursePreviewDb } from "@/lib/server/repositories/course-preview";
 
-export type AppDb = AuthDb & PeopleDb & PersonVisualsDb & PresetsDb & CoursesDb & StoryOutlineDb & TeachingPlanDb;
+export type AppDb = AuthDb & PeopleDb & PersonVisualsDb & PresetsDb & CoursesDb & StoryOutlineDb & TeachingPlanDb & CourseContentDb & VisualResourcesDb & CoursePreviewDb;
 
 let prisma: AppDb | null = null;
 

@@ -8,7 +8,12 @@ import type { PresetKind } from "@/lib/contracts/api";
 const presetInputSchema = z.object({
   kind: z.enum(["theme", "grammar"]),
   label: z.string().trim().min(1),
-  category: z.string().optional(),
+  labelZh: z.string().trim().optional(),
+  category: z.string().trim().min(1),
+}).superRefine((value, context) => {
+  if (value.kind === "grammar" && !value.labelZh) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["labelZh"], message: "请填写语法点中文名称" });
+  }
 });
 
 export async function GET(request: Request) {

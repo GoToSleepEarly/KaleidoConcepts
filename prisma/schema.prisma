@@ -75,6 +75,7 @@ model Course {
   knowledgePointIds Json             @default("[]")
   lifecycleStatus CourseLifecycle @default(draft)
   currentStage    CourseStage     @default(audience)
+  visualQuality   CourseImageQuality @default(medium)
   idempotencyKey  String          @unique
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
@@ -87,6 +88,14 @@ model Course {
   characters      CourseCharacter[]
   aiGenerationLogs AiGenerationLog[]
   teachingPlan    CourseTeachingPlan?
+  lessonContent   CourseLessonContent?
+  contentGenerations CourseContentGeneration[]
+  contentMessages CourseContentChatMessage[]
+  visualResourcePlan CourseVisualResourcePlan?
+  characterVisuals CourseCharacterVisual[]
+  visualImageSlots CourseVisualImageSlot[]
+  images CourseImage[]
+  presentation CoursePresentation?
 
   @@index([lifecycleStatus, updatedAt])
 }
@@ -115,6 +124,7 @@ model PresetOption {
   id         String           @id @default(cuid())
   kind       PresetOptionKind
   label      String
+  labelZh    String?
   category   String?
   sortOrder  Int              @default(0)
   archivedAt DateTime?
@@ -143,6 +153,11 @@ model CourseStorySetting {
   courseId        String               @unique
   chapterCount    Int
   writingProvider StoryWritingProvider @default(quickrouter_gpt)
+  alignmentStatus StoryAlignmentStatus @default(idle)
+  planningMode StoryPlanningMode @default(explore_options)
+  alignmentSummary String?
+  alignmentDetails Json @default("{}")
+  alignmentConfirmedAt DateTime?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
   course          Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -155,6 +170,8 @@ model CourseStoryDirection {
   hook            String
   whyFits         String
   mainCharacters  Json
+  storyHighlight  String   @default("")
+  growthCore      String   @default("")
   classroomValue  String
   seedPrompt      String
   selectedAt      DateTime?
@@ -212,6 +229,7 @@ model CourseCharacter {
   course               Course                    @relation(fields: [courseId], references: [id], onDelete: Cascade)
   sourcePerson         Person?                   @relation(fields: [sourcePersonId], references: [id], onDelete: SetNull)
   sourceReference      CourseSourceReference?    @relation(fields: [sourceReferenceId], references: [id], onDelete: SetNull)
+  visual               CourseCharacterVisual?
 
   @@index([courseId, sourceType])
   @@index([sourcePersonId])
@@ -240,12 +258,163 @@ model CourseTeachingPlan {
   courseId           String             @unique
   status             TeachingPlanStatus @default(draft)
   englishLevel       EnglishLevel?
+  mainIdeaTargetWordCount Int             @default(120)
   chapters           Json
   afterClassPractice Json
   confirmedAt        DateTime?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
   course             Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model CourseCharacterVisual {
+  id                  String                    @id @default(cuid())
+  courseId            String
+  characterId         String                    @unique
+  intent              CharacterVisualIntent?
+  source              CharacterVisualSource?
+  personVisualAssetId String?
+  activeImageId       String?
+  status              CharacterVisualStatus     @default(missing)
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+  course              Course                     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  character           CourseCharacter            @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  activeImage         CourseImage?               @relation("ActiveCharacterVisual", fields: [activeImageId], references: [id], onDelete: SetNull)
+  images              CourseImage[]              @relation("CharacterVisualImages")
+
+  @@index([courseId, status])
+  @@index([personVisualAssetId])
+}
+
+model CourseVisualResourcePlan {
+  id             String   @id @default(cuid())
+  courseId       String   @unique
+  sourceRevision String
+  coverBrief     Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  course         Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model CourseVisualImageSlot {
+  id            String              @id @default(cuid())
+  courseId      String
+  stableKey     String
+  slotType      CourseImageSlotType
+  chapterId     String?
+  paragraphId   String?
+  sourceText    String
+  characterIds  Json
+  focus         String
+  prompt        String
+  activeImageId String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  course        Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  activeImage   CourseImage?        @relation("ActiveSlotImage", fields: [activeImageId], references: [id], onDelete: SetNull)
+  images        CourseImage[]       @relation("SlotImages")
+
+  @@unique([courseId, stableKey])
+  @@index([courseId, chapterId])
+}
+
+model CourseImage {
+  id                String                   @id @default(cuid())
+  courseId          String
+  slotId            String?
+  characterVisualId String?
+  parentAssetId     String?
+  operation         CourseImageOperation
+  userInstruction   String?
+  prompt            String
+  quality           CourseImageQuality
+  referenceAssetIds Json                     @default("[]")
+  sourceHash        String
+  idempotencyKey    String
+  status            CourseImageStatus        @default(pending)
+  provider          CourseImageProvider      @default(quickrouter_gpt_image_2)
+  providerTaskId    String?
+  providerImageUrl  String?
+  storagePath       String?
+  publicUrl          String?
+  temporarySourcePath String?
+  failureReason     String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  course            Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  slot              CourseVisualImageSlot?   @relation("SlotImages", fields: [slotId], references: [id], onDelete: Cascade)
+  characterVisual   CourseCharacterVisual?   @relation("CharacterVisualImages", fields: [characterVisualId], references: [id], onDelete: Cascade)
+  parentAsset       CourseImage?              @relation("CourseImageVersions", fields: [parentAssetId], references: [id], onDelete: Restrict)
+  childAssets       CourseImage[]             @relation("CourseImageVersions")
+  selectedBySlots   CourseVisualImageSlot[]   @relation("ActiveSlotImage")
+  selectedByCharacters CourseCharacterVisual[] @relation("ActiveCharacterVisual")
+
+  @@unique([courseId, idempotencyKey])
+  @@index([courseId, status])
+  @@index([slotId, createdAt])
+  @@index([characterVisualId, createdAt])
+}
+
+model CourseLessonContent {
+  id                 String              @id @default(cuid())
+  courseId           String              @unique
+  status             CourseContentStatus @default(empty)
+  phase              CourseContentPhase?
+  writingProvider    StoryWritingProvider @default(quickrouter_gpt)
+  sourceRevision     String              @default("")
+  contentVersion     Int                 @default(0)
+  chapters           Json                @default("[]")
+  mainIdea           Json?
+  homework           Json?
+  exercisesStale     Boolean             @default(false)
+  errorMessage       String?
+  confirmedAt        DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  course             Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model CoursePresentation {
+  courseId          String   @id
+  coverTheme        String   @default("dark")
+  coverTitleFontSize Float   @default(1.0)
+  chapterTheme      String   @default("blue-purple")
+  slideOverrides    Json     @default("{}")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  course            Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model CourseContentGeneration {
+  id             String                        @id @default(cuid())
+  courseId       String
+  operation      CourseContentOperation
+  sourceRevision String
+  idempotencyKey String
+  status         CourseContentGenerationStatus @default(running)
+  attempt        Int                           @default(0)
+  errorMessage   String?
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
+  course         Course                        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, idempotencyKey])
+  @@unique([courseId, sourceRevision, operation])
+  @@index([courseId, createdAt])
+}
+
+model CourseContentChatMessage {
+  id         String                @id @default(cuid())
+  courseId   String
+  role       CourseStoryChatRole
+  content    String
+  targetType CourseContentTargetType?
+  targetId   String?
+  createdAt  DateTime              @default(now())
+  course     Course                @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, createdAt])
 }
 
 model AiGenerationLog {
@@ -319,6 +488,18 @@ enum StoryWritingProvider {
   quickrouter_deepseek
 }
 
+enum StoryAlignmentStatus {
+  idle
+  needs_clarification
+  ready_for_confirmation
+  confirmed
+}
+
+enum StoryPlanningMode {
+  explore_options
+  follow_defined_plot
+}
+
 enum StoryResearchProvider {
   quickrouter_gpt
   none
@@ -352,6 +533,54 @@ enum CourseCharacterSourceType {
   original
 }
 
+enum CharacterVisualIntent {
+  preserve_identity
+  originalize
+}
+
+enum CharacterVisualSource {
+  person_asset
+  uploaded_reference
+  generated_baseline
+}
+
+enum CharacterVisualStatus {
+  missing
+  generating
+  ready
+  failed
+  stale
+}
+
+enum CourseImageSlotType {
+  character_baseline
+  visual_cover
+  lesson_shot
+}
+
+enum CourseImageOperation {
+  initial
+  revision
+}
+
+enum CourseImageQuality {
+  low
+  medium
+  high
+}
+
+enum CourseImageStatus {
+  pending
+  submitting
+  generating
+  succeeded
+  failed
+}
+
+enum CourseImageProvider {
+  quickrouter_gpt_image_2
+}
+
 enum AiGenerationStatus {
   succeeded
   failed
@@ -360,6 +589,49 @@ enum AiGenerationStatus {
 enum TeachingPlanStatus {
   draft
   confirmed
+}
+
+enum CourseContentStatus {
+  empty
+  generating_reading
+  reading_ready
+  generating_exercises
+  ready
+  failed
+  confirmed
+}
+
+enum CourseContentPhase {
+  preparing
+  generating_chapters
+  validating_chapters
+  repairing_chapters
+  generating_main_idea
+  validating_main_idea
+  repairing_main_idea
+  generating_exercises
+  validating_exercises
+}
+
+enum CourseContentOperation {
+  reading
+  exercises
+  modify
+}
+
+enum CourseContentGenerationStatus {
+  running
+  succeeded
+  failed
+  result_unknown
+}
+
+enum CourseContentTargetType {
+  chapter
+  paragraph
+  chapter_practice
+  main_idea
+  homework
 }
 
 enum EnglishLevel {

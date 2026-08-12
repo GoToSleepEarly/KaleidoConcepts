@@ -58,6 +58,10 @@ export async function removeTemporaryPersonPhoto(storagePath: string) {
   await rm(storagePath, { force: true });
 }
 
+export async function removeStoredPersonVisual(storagePath: string) {
+  await rm(storagePath, { force: true });
+}
+
 export function resolvePersonVisualFile(personId: string, assetFile: string) {
   if (!/^[a-zA-Z0-9_-]+$/.test(personId) || !/^[a-zA-Z0-9_-]+\.webp$/.test(assetFile)) return null;
   return path.join(storageRoot(), "person-visuals", personId, assetFile);

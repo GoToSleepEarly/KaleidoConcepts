@@ -67,7 +67,10 @@ export type PersonVisualAsset = {
 
 export type PeopleListResponse = {
   people: PersonProfile[];
-  nextCursor: string | null;
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 };
 
 export type CourseLifecycleStatus = "draft" | "published" | "archived";
@@ -109,12 +112,23 @@ export type CourseListItem = {
   id: string;
   title: string;
   durationMinutes: number;
+  englishLevel: EnglishLevel | null;
+  storyTitle: string | null;
+  lessonDraftExists: boolean;
   lifecycleStatus: CourseLifecycleStatus;
   currentStage: CourseStage;
   teacherName: string | null;
   studentNames: string[];
   nextEditPath: string;
   updatedAt: string;
+};
+
+export type CoursesListResponse = {
+  courses: CourseListItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 };
 
 export type StoryWritingProvider = "quickrouter_gpt" | "quickrouter_deepseek";
@@ -143,6 +157,32 @@ export type CourseResearchPlan = {
   }>;
 };
 
+export type StoryAlignmentQuestion = {
+  id: string;
+  label: string;
+  reason?: string;
+  required: boolean;
+  answerMode: "single_choice" | "multi_choice" | "text";
+  options?: Array<{
+    id: string;
+    label: string;
+    enablesTextInput?: boolean;
+    textPlaceholder?: string;
+  }>;
+  allowCustom: boolean;
+  allowRecommendation: boolean;
+  recommendation?: { value: string; reason: string };
+};
+
+export type StoryAlignmentState = {
+  status: "idle" | "needs_clarification" | "ready_for_confirmation" | "confirmed";
+  planningMode: "explore_options" | "follow_defined_plot";
+  resolvedUnderstanding: string[];
+  unresolvedIssues: string[];
+  questions: StoryAlignmentQuestion[];
+  summary?: string;
+};
+
 export type CourseStoryChatAction = {
   id: string;
   label: string;
@@ -157,9 +197,17 @@ export type CourseStoryChatAction = {
     | "describe_story_usage"
     | "generate_directions"
     | "generate_from_reference"
-    | "regenerate_outline";
+    | "regenerate_outline"
+    | "submit_alignment_answers"
+    | "confirm_requirements"
+    | "modify_requirements"
+    | "revise_direction"
+    | "confirm_direction"
+    | "revise_outline"
+    | "revise_chapter";
   targetId?: string;
   researchPlan?: CourseResearchPlan;
+  questions?: StoryAlignmentQuestion[];
 };
 
 export type CourseStoryChatMessage = {
@@ -178,7 +226,9 @@ export type CourseStoryDirection = {
   hook: string;
   whyFits: string;
   mainCharacters: string[];
-  classroomValue: string;
+  storyHighlight?: string;
+  growthCore?: string;
+  classroomValue?: string;
   seedPrompt: string;
   selectedAt: string | null;
   createdAt: string;
@@ -266,6 +316,7 @@ export type CourseStoryOutlineState = {
     chapterCount: number;
     writingProvider: StoryWritingProvider;
   };
+  alignment?: StoryAlignmentState;
   directions: CourseStoryDirection[];
   referenceMaterials: CourseSourceReference[];
   outline: CourseStoryOutline | null;
@@ -277,6 +328,8 @@ export type CourseStoryMessageInput = {
   mode: "idea" | "random" | "revise";
   action?: CourseStoryChatAction["action"];
   targetId?: string;
+  targetChapterOrder?: number;
+  alignmentAnswers?: Record<string, string | string[]>;
   researchPlan?: CourseResearchPlan;
   chapterCount?: number;
   writingProvider?: StoryWritingProvider;
@@ -288,6 +341,7 @@ export type PresetOption = {
   id: string;
   kind: PresetKind;
   label: string;
+  labelZh?: string;
   category?: string;
   sortOrder: number;
   createdAt: string;
@@ -297,36 +351,42 @@ export type PresetOption = {
 export type PresetOptionInput = {
   kind: PresetKind;
   label: string;
-  category?: string;
+  labelZh?: string;
+  category: string;
 };
 
 export type EnglishLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
 export type TeachingPlanStatus = "draft" | "confirmed";
-export type ExerciseType = "choice" | "blank" | "vocab" | "matching";
-export type ReadingExerciseMode = "none" | "embedded";
+export type GrammarExerciseType = "optionCloze" | "wordForm";
+export type ReadingExerciseMode = "complete" | "interactive";
 
-export type ExerciseConfig = {
+export type GrammarExerciseCounts = Record<GrammarExerciseType, number>;
+
+export type ReadingExerciseConfig = {
   enabled: boolean;
-  countsByType: Record<Exclude<ExerciseType, "matching">, number>;
+  grammar: GrammarExerciseCounts;
+  vocabulary: { chineseHint: number };
 };
 
-export type PracticeConfig = {
+export type GrammarPracticeConfig = {
   enabled: boolean;
-  countsByType: Record<ExerciseType, number>;
+  grammar: GrammarExerciseCounts;
 };
 
 export type TeachingPlanChapter = {
   outlineChapterId: string;
   targetWordCount: number | null;
+  paragraphCount: number;
   knowledgePointIds: string[];
   readingExerciseMode: ReadingExerciseMode;
-  embeddedExercises: ExerciseConfig;
-  chapterPractice: PracticeConfig;
+  readingExercises: ReadingExerciseConfig;
+  chapterPractice: GrammarPracticeConfig;
   touched: {
     targetWordCount: boolean;
+    paragraphCount: boolean;
     knowledgePointIds?: boolean;
     readingExerciseMode: boolean;
-    embeddedExercises: boolean;
+    readingExercises: boolean;
     chapterPractice: boolean;
   };
 };
@@ -334,7 +394,7 @@ export type TeachingPlanChapter = {
 export type AfterClassPracticeConfig = {
   enabled: boolean;
   knowledgePointIds: string[];
-  practice: PracticeConfig;
+  practice: GrammarPracticeConfig;
   touched: {
     knowledgePointIds: boolean;
     practice: boolean;
@@ -345,6 +405,7 @@ export type TeachingPlan = {
   courseId: string;
   status: TeachingPlanStatus;
   englishLevel: EnglishLevel | null;
+  mainIdeaTargetWordCount?: number;
   chapters: TeachingPlanChapter[];
   afterClassPractice: AfterClassPracticeConfig;
   updatedAt: string;
@@ -354,6 +415,7 @@ export type TeachingPlan = {
 export type TeachingPlanKnowledgePoint = {
   id: string;
   label: string;
+  labelZh?: string;
   category?: string;
 };
 
@@ -381,3 +443,180 @@ export type TeachingPlanState = {
   knowledgePoints: TeachingPlanKnowledgePoint[];
   plan: TeachingPlan;
 };
+
+export type CourseContentStatus = "empty" | "generating_reading" | "reading_ready" | "generating_exercises" | "ready" | "failed" | "confirmed";
+export type CourseContentPhase = "preparing" | "generating_chapters" | "validating_chapters" | "repairing_chapters" | "validating_main_idea" | "repairing_main_idea" | "generating_exercises" | "validating_exercises" | null;
+export type CourseContentTargetType = "chapter" | "paragraph" | "chapter_practice" | "main_idea" | "homework";
+
+export type CourseContentTextPart = { type: "text"; text: string };
+export type CourseContentGrammarPart = {
+  type: "grammar";
+  id: string;
+  exerciseType: GrammarExerciseType;
+  knowledgePointId: string;
+  answer: string;
+  baseForm?: string;
+  options?: string[];
+};
+export type CourseContentVocabularyPart = {
+  type: "vocabulary";
+  id: string;
+  answer: string;
+  canonicalForm: string;
+  meaningZh: string;
+};
+export type CourseContentPart = CourseContentTextPart | CourseContentGrammarPart | CourseContentVocabularyPart;
+
+export type CourseContentParagraph = {
+  id: string;
+  parts: CourseContentPart[];
+};
+
+export type CourseGrammarQuestion = {
+  id: string;
+  type: GrammarExerciseType;
+  knowledgePointId: string;
+  before: string;
+  after: string;
+  answer: string;
+  baseForm?: string;
+  options?: string[];
+};
+
+export type CourseContentChapter = {
+  id: string;
+  outlineChapterId: string;
+  order: number;
+  title: string;
+  targetWordCount: number;
+  readingExerciseMode: ReadingExerciseMode;
+  paragraphs: CourseContentParagraph[];
+  chapterPractice: CourseGrammarQuestion[];
+  validationIssues: string[];
+};
+
+export type CourseVocabularyMatchingItem = {
+  id: string;
+  canonicalForm: string;
+  meaningZh: string;
+};
+
+export type CourseContentMessage = {
+  id: string;
+  role: "teacher" | "assistant" | "system";
+  content: string;
+  createdAt: string;
+};
+
+export type CourseContentState = {
+  course: { id: string; title: string; currentStage: CourseStage; englishLevel: EnglishLevel };
+  knowledgePoints: Array<{ id: string; label: string }>;
+  chapterKnowledgePointIds: Record<string, string[]>;
+  homeworkKnowledgePointIds: string[];
+  status: CourseContentStatus;
+  phase: CourseContentPhase;
+  writingProvider: StoryWritingProvider;
+  sourceRevision: string;
+  contentVersion: number;
+  chapters: CourseContentChapter[];
+  mainIdea: { id: string; title: string; text: string } | null;
+  homework: { grammar: CourseGrammarQuestion[]; vocabularyMatching: CourseVocabularyMatchingItem[] } | null;
+  exercisesStale: boolean;
+  messages: CourseContentMessage[];
+  errorMessage: string | null;
+  updatedAt: string | null;
+};
+
+export type CourseImageQuality = "low" | "medium" | "high";
+export type CharacterVisualIntent = "preserve_identity" | "originalize";
+export type CharacterVisualSource = "person_asset" | "uploaded_reference" | "generated_baseline";
+export type CharacterVisualStatus = "missing" | "generating" | "ready" | "failed" | "stale";
+export type CourseImageStatus = "pending" | "submitting" | "generating" | "succeeded" | "failed";
+export type CourseImageSlotType = "character_baseline" | "visual_cover" | "lesson_shot";
+
+export type CourseVisualAsset = {
+  id: string;
+  parentAssetId: string | null;
+  operation: "initial" | "revision";
+  userInstruction: string | null;
+  quality: CourseImageQuality;
+  status: CourseImageStatus;
+  publicUrl: string | null;
+  failureReason: string | null;
+  createdAt: string;
+};
+
+export type CourseCharacterVisual = {
+  id: string;
+  characterId: string;
+  displayName: string;
+  sourceType: CourseCharacterSourceType;
+  sourceReferenceType: CourseSourceReferenceType | null;
+  shouldAppearInImages: boolean;
+  intent: CharacterVisualIntent | null;
+  source: CharacterVisualSource | null;
+  status: CharacterVisualStatus;
+  personVisualUrl: string | null;
+  storyVisualDesign: string | null;
+  activeAssetId: string | null;
+  activeAsset: CourseVisualAsset | null;
+  versions: CourseVisualAsset[];
+};
+
+export type CourseVisualImageSlot = {
+  id: string;
+  stableKey: string;
+  slotType: CourseImageSlotType;
+  chapterId: string | null;
+  chapterOrder: number | null;
+  chapterTitle: string | null;
+  paragraphId: string | null;
+  sourceText: string;
+  characterIds: string[];
+  focus: string;
+  prompt: string;
+  activeAssetId: string | null;
+  activeAsset: CourseVisualAsset | null;
+  versions: CourseVisualAsset[];
+};
+
+export type CourseVisualResourcesState = {
+  course: { id: string; title: string; currentStage: CourseStage };
+  quality: CourseImageQuality;
+  planReady: boolean;
+  characters: CourseCharacterVisual[];
+  slots: CourseVisualImageSlot[];
+};
+
+export type CoursePreviewImage = { publicUrl: string | null };
+export type CoursePreviewReadingPart =
+  | { type: "text"; text: string }
+  | { type: "exercise"; id: string; number: number; exerciseType: GrammarExerciseType | "vocabulary"; answer: string; knowledgePointId: string | null; knowledgePointLabel: string; spaceBefore: boolean; hint?: string; options?: string[] };
+
+export type CoursePreviewKnowledgePoint = { id: string; label: string };
+
+export type CoursePreviewPage =
+  | { id: string; type: "cover_pure"; image: CoursePreviewImage }
+  | { id: string; type: "cover_title"; image: CoursePreviewImage; title: string; teacherName: string | null; studentNames: string[] }
+  | { id: string; type: "chapter_divider"; chapterOrder: number; chapterTitleZh: string; chapterTitleEn: string }
+  | { id: string; type: "shot_image"; chapterId: string; paragraphId: string; image: CoursePreviewImage }
+  | { id: string; type: "shot_text"; chapterId: string; paragraphId: string; image: CoursePreviewImage; readingExerciseMode: ReadingExerciseMode; knowledgePoints: CoursePreviewKnowledgePoint[]; parts: CoursePreviewReadingPart[]; textBox: PreviewTextBox }
+  | { id: string; type: "grammar_practice"; scope: "chapter" | "homework"; chapterId?: string; chapterTitleZh?: string; chapterTitleEn?: string; exerciseType: GrammarExerciseType; pageNumber: number; questionStartNumber: number; knowledgePoints: CoursePreviewKnowledgePoint[]; questions: CourseGrammarQuestion[] }
+  | { id: string; type: "main_idea"; title: string; text: string }
+  | { id: string; type: "vocabulary_matching"; pageNumber: number; items: CourseVocabularyMatchingItem[] };
+
+export type PreviewTextBox = { opacity: number; fontSize: number };
+export type SlideTextOverride = { textBox?: Partial<PreviewTextBox> };
+export type CoursePresentationConfig = {
+  coverTheme: string;
+  coverTitleFontSize: number;
+  chapterTheme: string;
+  slideOverrides: Record<string, SlideTextOverride>;
+};
+export type CoursePresentationUpdate = CoursePresentationConfig;
+export type CoursePreviewResponse = {
+  course: { id: string; title: string; lifecycleStatus: CourseLifecycleStatus; teacherName: string | null; studentNames: string[] };
+  pages: CoursePreviewPage[];
+  presentation: CoursePresentationConfig;
+};
+export type PublishCourseResponse = { redirectUrl: string };

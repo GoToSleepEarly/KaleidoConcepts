@@ -1,10 +1,7 @@
 import { z } from "zod";
 
-import type { ExerciseType, TeachingPlan } from "@/lib/contracts/api";
-import { defaultPracticeConfig, recommendedChapterWordCount } from "@/lib/domain/teaching-plan-policy";
-
-const embeddedExerciseTypes = ["choice", "blank", "vocab"] as const;
-const practiceExerciseTypes = ["choice", "blank", "vocab", "matching"] as const;
+import type { TeachingPlan } from "@/lib/contracts/api";
+import { defaultPracticeConfig, defaultReadingExerciseConfig, grammarExerciseTotal, minimumReadingParagraphCount, recommendedChapterWordCount } from "@/lib/domain/teaching-plan-policy";
 
 export const englishLevelSchema = z.union([
   z.literal("A1"),
@@ -15,45 +12,41 @@ export const englishLevelSchema = z.union([
   z.literal("C2"),
 ]);
 
-const embeddedCountsSchema = z.object({
-  choice: z.number().int().min(0).max(8),
-  blank: z.number().int().min(0).max(8),
-  vocab: z.number().int().min(0).max(8),
-}).passthrough();
-
-const practiceCountsSchema = z.object({
-  choice: z.number().int().min(0).max(20),
-  blank: z.number().int().min(0).max(20),
-  vocab: z.number().int().min(0).max(20),
-  matching: z.number().int().min(0).max(20),
+const grammarCountsSchema = z.object({
+  optionCloze: z.number().int().min(0).max(20),
+  wordForm: z.number().int().min(0).max(20),
 });
 
 const exerciseConfigSchema = z.object({
   enabled: z.boolean(),
-  countsByType: embeddedCountsSchema,
+  grammar: grammarCountsSchema,
+  vocabulary: z.object({ chineseHint: z.number().int().min(0).max(8) }),
 });
 
 const practiceConfigSchema = z.object({
   enabled: z.boolean(),
-  countsByType: practiceCountsSchema,
+  grammar: grammarCountsSchema,
 });
 
 export const teachingPlanSchema = z.object({
   courseId: z.string().min(1),
   status: z.union([z.literal("draft"), z.literal("confirmed")]),
   englishLevel: englishLevelSchema.nullable(),
+  mainIdeaTargetWordCount: z.number().int().default(120),
   chapters: z.array(z.object({
     outlineChapterId: z.string().min(1),
     targetWordCount: z.number().int().nullable(),
+    paragraphCount: z.number().int().min(1),
     knowledgePointIds: z.array(z.string().min(1)),
-    readingExerciseMode: z.union([z.literal("none"), z.literal("embedded")]),
-    embeddedExercises: exerciseConfigSchema,
+    readingExerciseMode: z.union([z.literal("complete"), z.literal("interactive")]),
+    readingExercises: exerciseConfigSchema,
     chapterPractice: practiceConfigSchema,
     touched: z.object({
       targetWordCount: z.boolean(),
+      paragraphCount: z.boolean(),
       knowledgePointIds: z.boolean(),
       readingExerciseMode: z.boolean(),
-      embeddedExercises: z.boolean(),
+      readingExercises: z.boolean(),
       chapterPractice: z.boolean(),
     }),
   })),
@@ -89,21 +82,28 @@ export function buildTeachingPlanDraft(input: {
     courseId: input.courseId,
     status: "draft",
     englishLevel: input.englishLevel,
-    chapters: input.chapters.map((chapter) => ({
-      outlineChapterId: chapter.id,
-      targetWordCount: recommendedChapterWordCount(input.englishLevel, input.durationMinutes, input.chapters.length),
-      knowledgePointIds: chapter.recommendedKnowledgePointIds,
-      readingExerciseMode: "none",
-      embeddedExercises: { enabled: false, countsByType: { choice: 0, blank: 0, vocab: 0 } },
-      chapterPractice: defaultPracticeConfig(),
-      touched: {
-        targetWordCount: false,
-        knowledgePointIds: false,
-        readingExerciseMode: false,
-        embeddedExercises: false,
-        chapterPractice: false,
-      },
-    })),
+    mainIdeaTargetWordCount: 120,
+    chapters: input.chapters.map((chapter) => {
+      const targetWordCount = recommendedChapterWordCount(input.englishLevel, input.durationMinutes, input.chapters.length);
+      const readingExercises = defaultReadingExerciseConfig();
+      return {
+        outlineChapterId: chapter.id,
+        targetWordCount,
+        paragraphCount: minimumReadingParagraphCount(targetWordCount, readingExercises),
+        knowledgePointIds: chapter.recommendedKnowledgePointIds,
+        readingExerciseMode: "interactive",
+        readingExercises,
+        chapterPractice: defaultPracticeConfig(false),
+        touched: {
+          targetWordCount: false,
+          paragraphCount: false,
+          knowledgePointIds: false,
+          readingExerciseMode: false,
+          readingExercises: false,
+          chapterPractice: false,
+        },
+      };
+    }),
     afterClassPractice: {
       enabled: false,
       knowledgePointIds: recommendedKnowledgePointIds,
@@ -119,38 +119,19 @@ function sameIds(left: string[], right: string[]) {
   return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
-function exerciseTotal(counts: Partial<Record<ExerciseType, number>>) {
-  return Object.values(counts).reduce((sum, count) => sum + (typeof count === "number" ? count : 0), 0);
-}
-
-function requireExerciseConfig(
-  enabled: boolean,
-  counts: Partial<Record<ExerciseType, number>>,
-  messagePrefix: string,
-  options: { min: number; max: number; allowed: readonly ExerciseType[]; matchingMessage?: string },
-) {
+function requireGrammarPractice(enabled: boolean, counts: TeachingPlan["chapters"][number]["chapterPractice"]["grammar"], messagePrefix: string, max: number) {
   if (!enabled) return;
-  const selectedTypes = Object.entries(counts)
-    .filter(([, count]) => typeof count === "number" && count > 0)
-    .map(([type]) => type as ExerciseType);
-  if (selectedTypes.some((type) => !options.allowed.includes(type))) {
-    throw new TeachingPlanValidationError(options.matchingMessage || `${messagePrefix}题型不支持。`);
-  }
-  const count = exerciseTotal(counts);
-  if (selectedTypes.length < 1) throw new TeachingPlanValidationError(`${messagePrefix}至少选择 1 种题型。`);
-  if (count < options.min || count > options.max) {
-    throw new TeachingPlanValidationError(`${messagePrefix}题量需在 ${options.min}-${options.max} 之间。`);
-  }
+  const count = grammarExerciseTotal(counts);
+  if (count < 1) throw new TeachingPlanValidationError(`${messagePrefix}至少保留 1 道语法题。`);
+  if (count > max) throw new TeachingPlanValidationError(`${messagePrefix}题量不能超过 ${max} 道。`);
 }
 
 export function validateTeachingPlanForConfirm(plan: TeachingPlan, outlineChapterIds: string[]) {
   const parsed = teachingPlanSchema.safeParse(plan);
   if (!parsed.success) throw new TeachingPlanValidationError();
   if (!plan.englishLevel) throw new TeachingPlanValidationError("请选择英语难度。");
-  if (plan.status !== "confirmed" && !plan.afterClassPractice.touched.practice) {
-    throw new TeachingPlanValidationError("请选择是否生成课后练习。");
-  }
-
+  const mainIdeaTargetWordCount = plan.mainIdeaTargetWordCount ?? 120;
+  if (mainIdeaTargetWordCount < 80 || mainIdeaTargetWordCount > 150) throw new TeachingPlanValidationError("课后阅读词数需在 80-150 之间。");
   const planChapterIds = plan.chapters.map((chapter) => chapter.outlineChapterId);
   if (!sameIds(planChapterIds, outlineChapterIds)) throw new TeachingPlanValidationError("教学规划章节与故事大纲不一致。");
 
@@ -160,26 +141,16 @@ export function validateTeachingPlanForConfirm(plan: TeachingPlan, outlineChapte
       throw new TeachingPlanValidationError(`${label}目标词数需在 50-200 之间。`);
     }
     if (!chapter.knowledgePointIds.length) throw new TeachingPlanValidationError(`${label}还没有选择知识点。`);
-    if (chapter.readingExerciseMode === "embedded") {
-      requireExerciseConfig(
-        chapter.embeddedExercises.enabled,
-        chapter.embeddedExercises.countsByType,
-        `${label}内嵌题`,
-        {
-          min: 1,
-          max: 8,
-          allowed: [...embeddedExerciseTypes],
-          matchingMessage: `${label}内嵌题型不支持匹配题。`,
-        },
-      );
-      if (!chapter.embeddedExercises.enabled) throw new TeachingPlanValidationError(`${label}内嵌题配置不完整。`);
+    if (!chapter.readingExercises.enabled || grammarExerciseTotal(chapter.readingExercises.grammar) < 1) {
+      throw new TeachingPlanValidationError(`${label}至少保留 1 道正文语法题。`);
     }
-    requireExerciseConfig(
-      chapter.chapterPractice.enabled,
-      chapter.chapterPractice.countsByType,
-      `${label}章节练习`,
-      { min: 1, max: 10, allowed: [...practiceExerciseTypes] },
-    );
+    if (grammarExerciseTotal(chapter.readingExercises.grammar) < chapter.knowledgePointIds.length) {
+      throw new TeachingPlanValidationError(`${label}正文语法题数量不能少于知识点数量。`);
+    }
+    requireGrammarPractice(chapter.chapterPractice.enabled, chapter.chapterPractice.grammar, `${label}章节练习`, 20);
+    if (chapter.chapterPractice.enabled && grammarExerciseTotal(chapter.chapterPractice.grammar) < chapter.knowledgePointIds.length) {
+      throw new TeachingPlanValidationError(`${label}章节练习语法题数量不能少于知识点数量。`);
+    }
   }
 
   if (plan.afterClassPractice.enabled) {
@@ -188,20 +159,16 @@ export function validateTeachingPlanForConfirm(plan: TeachingPlan, outlineChapte
     if (plan.afterClassPractice.knowledgePointIds.some((id) => !chapterKnowledgePoints.has(id))) {
       throw new TeachingPlanValidationError("课后练习知识点只能从章节知识点中选择。");
     }
-    requireExerciseConfig(
-      plan.afterClassPractice.practice.enabled,
-      plan.afterClassPractice.practice.countsByType,
-      "课后练习",
-      { min: 1, max: 20, allowed: [...practiceExerciseTypes] },
-    );
+    requireGrammarPractice(plan.afterClassPractice.practice.enabled, plan.afterClassPractice.practice.grammar, "课后练习", 40);
     if (!plan.afterClassPractice.practice.enabled) throw new TeachingPlanValidationError("课后练习配置不完整。");
+    if (grammarExerciseTotal(plan.afterClassPractice.practice.grammar) < plan.afterClassPractice.knowledgePointIds.length) {
+      throw new TeachingPlanValidationError("课后语法题数量不能少于所选知识点数量。");
+    }
   }
 }
 
 export function parseTeachingPlan(input: unknown): TeachingPlan {
   const parsed = teachingPlanSchema.safeParse(input);
   if (!parsed.success) throw new TeachingPlanValidationError();
-  const invalidEmbedded = parsed.data.chapters.find((chapter) => "matching" in chapter.embeddedExercises.countsByType && Number(chapter.embeddedExercises.countsByType.matching) > 0);
-  if (invalidEmbedded) throw new TeachingPlanValidationError("内嵌题型不支持匹配题。");
   return parsed.data as TeachingPlan;
 }

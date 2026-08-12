@@ -2,7 +2,7 @@ import type {
   CourseAudienceDetail,
   CourseAudienceInput,
   CourseLifecycleStatus,
-  CourseListItem,
+  CoursesListResponse,
   CourseStage,
   Gender,
   PersonRole,
@@ -43,6 +43,8 @@ type DbCourse = {
   idempotencyKey?: string;
   updatedAt?: Date;
   people?: DbCoursePerson[];
+  storyOutline?: { title: string } | null;
+  lessonContent?: { courseId: string } | null;
 };
 
 type CourseCreateData = {
@@ -58,7 +60,8 @@ type CourseCreateData = {
 
 type CourseDelegate = {
   findUnique: (query: { where: { id?: string; idempotencyKey?: string }; include?: unknown }) => Promise<DbCourse | null>;
-  findMany: (query: { where?: unknown; include?: unknown; orderBy?: unknown }) => Promise<DbCourse[]>;
+  findMany: (query: { where?: unknown; include?: unknown; orderBy?: unknown; skip?: number; take?: number }) => Promise<DbCourse[]>;
+  count: (query: { where?: unknown }) => Promise<number>;
   create: (query: { data: CourseCreateData }) => Promise<DbCourse>;
   update: (query: { where: { id: string }; data: Record<string, unknown> }) => Promise<DbCourse>;
 };
@@ -199,27 +202,47 @@ function stagePath(id: string, stage: CourseStage) {
   return `/courses/${id}/create/${stage.replaceAll("_", "-")}`;
 }
 
-export async function listCourses(db: CoursesDb): Promise<CourseListItem[]> {
-  const courses = await db.course.findMany({
-    where: { lifecycleStatus: { not: "archived" } },
-    include: { people: true },
+export async function listCourses(db: CoursesDb, page = 1, pageSize = 5, query = ""): Promise<CoursesListResponse> {
+  const normalizedQuery = query.trim();
+  const where = {
+    lifecycleStatus: { not: "archived" },
+    ...(normalizedQuery ? {
+      OR: [
+        { title: { contains: normalizedQuery, mode: "insensitive" } },
+        { storyOutline: { is: { title: { contains: normalizedQuery, mode: "insensitive" } } } },
+      ],
+    } : {}),
+  };
+  const [courses, total] = await Promise.all([db.course.findMany({
+    where,
+    include: {
+      people: true,
+      storyOutline: { select: { title: true } },
+      lessonContent: { select: { courseId: true } },
+    },
     orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-  });
-  return courses.map((course) => {
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  }), db.course.count({ where })]);
+  const items = courses.map((course) => {
     const people = course.people ?? [];
     const teacher = people.find((person) => person.role === "teacher");
     return {
       id: course.id,
       title: course.title,
       durationMinutes: course.durationMinutes,
+      englishLevel: course.englishLevel,
+      storyTitle: course.storyOutline?.title ?? null,
+      lessonDraftExists: Boolean(course.lessonContent),
       lifecycleStatus: course.lifecycleStatus,
       currentStage: course.currentStage,
-      teacherName: teacher?.chineseNameSnapshot ?? null,
-      studentNames: people.filter((person) => person.role === "student").map((person) => person.chineseNameSnapshot),
+      teacherName: teacher?.englishNameSnapshot ?? null,
+      studentNames: people.filter((person) => person.role === "student").map((person) => person.englishNameSnapshot),
       nextEditPath: stagePath(course.id, course.currentStage),
       updatedAt: course.updatedAt?.toISOString() ?? new Date(0).toISOString(),
     };
   });
+  return { courses: items, page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
 }
 
 export async function getCourseAudience(db: CoursesDb, id: string): Promise<CourseAudienceDetail> {

@@ -45,6 +45,7 @@ export function devAiLog(entry: AiLogEntry) {
     error: entry.error,
   });
   const label = `[AI][${entry.operation}][${entry.phase}]`;
-  if (entry.phase === "error") console.error(label, details);
-  else console.info(label, details);
+  const serialized = JSON.stringify(details, null, 2);
+  if (entry.phase === "error") console.error(label, serialized);
+  else console.info(label, serialized);
 }

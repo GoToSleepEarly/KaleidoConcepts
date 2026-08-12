@@ -18,6 +18,7 @@ describe("presets repository", () => {
                 id: "preset-1",
                 kind: "grammar",
                 label: "Past Simple",
+                labelZh: "一般过去时",
                 category: "时态",
                 sortOrder: 0,
                 archivedAt: null,
@@ -40,6 +41,7 @@ describe("presets repository", () => {
         id: "preset-1",
         kind: "grammar",
         label: "Past Simple",
+        labelZh: "一般过去时",
         category: "时态",
         sortOrder: 0,
         createdAt: "2026-07-01T09:00:00.000Z",
@@ -54,11 +56,11 @@ describe("presets repository", () => {
         presetOption: {
           findMany: async () => [],
           findFirst: async (query) => {
-            expect(query.where).toEqual({ kind: "theme", label: "海底世界", archivedAt: null });
+            expect(query.where).toEqual({ kind: "theme", label: "海洋生态" });
             return null;
           },
           create: async ({ data }) => {
-            expect(data).toEqual({ kind: "theme", label: "海底世界", category: null, sortOrder: 0 });
+            expect(data).toEqual({ kind: "theme", label: "海洋生态", labelZh: null, category: "自然与生态", sortOrder: 0 });
             return {
               id: "preset-2",
               ...data,
@@ -71,11 +73,28 @@ describe("presets repository", () => {
           findUnique: async () => null,
         },
       },
-      { kind: "theme", label: "  海底世界  ", category: "  " },
+      { kind: "theme", label: "  海洋生态  ", category: "  自然与生态  " },
     );
 
-    expect(preset.label).toBe("海底世界");
-    expect(preset.category).toBeUndefined();
+    expect(preset.label).toBe("海洋生态");
+    expect(preset.category).toBe("自然与生态");
+  });
+
+  test("stores the Chinese label for a grammar preset", async () => {
+    const preset = await createPreset(
+      {
+        presetOption: {
+          findMany: async () => [],
+          findFirst: async () => null,
+          create: async ({ data }) => ({ id: "grammar-new", ...data, archivedAt: null, createdAt: new Date(), updatedAt: new Date() }),
+          update: async () => ({}) as never,
+          findUnique: async () => null,
+        },
+      },
+      { kind: "grammar", label: "Past Simple", labelZh: "  一般过去时  ", category: "时态" },
+    );
+
+    expect(preset).toMatchObject({ label: "Past Simple", labelZh: "一般过去时", category: "时态" });
   });
 
   test("rejects creating a duplicate preset", async () => {
@@ -99,9 +118,51 @@ describe("presets repository", () => {
             findUnique: async () => null,
           },
         },
-        { kind: "theme", label: "海底世界" },
+        { kind: "theme", label: "海底世界", category: "自然与生态" },
       ),
     ).rejects.toBeInstanceOf(PresetConflictError);
+  });
+
+  test("restores an archived preset when creating the same label", async () => {
+    const archivedAt = new Date("2026-08-01T00:00:00.000Z");
+    const restored = await createPreset(
+      {
+        presetOption: {
+          findMany: async () => [],
+          findFirst: async () => ({
+            id: "archived-theme",
+            kind: "theme",
+            label: "机器人",
+            labelZh: null,
+            category: "旧分类",
+            sortOrder: 0,
+            archivedAt,
+            createdAt: new Date("2026-07-01T00:00:00.000Z"),
+            updatedAt: archivedAt,
+          }),
+          create: async () => ({}) as never,
+          update: async ({ where, data }) => {
+            expect(where).toEqual({ id: "archived-theme" });
+            expect(data).toEqual({ label: "机器人", labelZh: null, category: "科学与未来", archivedAt: null });
+            return {
+              id: "archived-theme",
+              kind: "theme",
+              label: "机器人",
+              labelZh: null,
+              category: "科学与未来",
+              sortOrder: 0,
+              archivedAt: null,
+              createdAt: new Date("2026-07-01T00:00:00.000Z"),
+              updatedAt: new Date("2026-08-13T00:00:00.000Z"),
+            };
+          },
+          findUnique: async () => null,
+        },
+      },
+      { kind: "theme", label: "机器人", category: "科学与未来" },
+    );
+
+    expect(restored).toMatchObject({ id: "archived-theme", label: "机器人", category: "科学与未来" });
   });
 
   test("updates a preset keeping its kind", async () => {
@@ -116,11 +177,12 @@ describe("presets repository", () => {
           create: async () => ({}) as never,
           update: async ({ where, data }) => {
             expect(where).toEqual({ id: "preset-3" });
-            expect(data).toEqual({ label: "Future Simple", category: "时态" });
+            expect(data).toEqual({ label: "Future Simple", labelZh: "一般将来时", category: "时态" });
             return {
               id: "preset-3",
               kind: "grammar",
               label: "Future Simple",
+              labelZh: "一般将来时",
               category: "时态",
               sortOrder: 0,
               archivedAt: null,
@@ -144,7 +206,7 @@ describe("presets repository", () => {
         },
       },
       "preset-3",
-      { kind: "grammar", label: "Future Simple", category: "时态" },
+      { kind: "grammar", label: "Future Simple", labelZh: "一般将来时", category: "时态" },
     );
 
     expect(updated.label).toBe("Future Simple");
@@ -164,7 +226,7 @@ describe("presets repository", () => {
           },
         },
         "missing",
-        { kind: "theme", label: "x" },
+        { kind: "theme", label: "x", category: "测试" },
       ),
     ).rejects.toBeInstanceOf(PresetNotFoundError);
   });

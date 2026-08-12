@@ -185,14 +185,18 @@ describe("course audience repository", () => {
   test("lists courses from immutable person snapshots", async () => {
     const courses = await listCourses({
       course: {
+        count: async () => 1,
         findMany: async () => [
           {
             id: "course-1",
             title: "海底图书馆",
             durationMinutes: 45,
+            englishLevel: "B1",
             lifecycleStatus: "draft",
             currentStage: "story_outline",
             updatedAt: new Date("2026-08-05T08:00:00.000Z"),
+            storyOutline: { title: "会发光的借书证" },
+            lessonContent: { courseId: "course-1" },
             people: [
               { role: "teacher", chineseNameSnapshot: "林老师", englishNameSnapshot: "Ms. Lin" },
               { role: "student", chineseNameSnapshot: "夏天", englishNameSnapshot: "Summer" },
@@ -202,11 +206,34 @@ describe("course audience repository", () => {
       },
     } as unknown as CoursesDb);
 
-    expect(courses[0]).toMatchObject({
-      teacherName: "林老师",
-      studentNames: ["夏天"],
+    expect(courses).toMatchObject({ page: 1, pageSize: 5, total: 1, totalPages: 1 });
+    expect(courses.courses[0]).toMatchObject({
+      teacherName: "Ms. Lin",
+      studentNames: ["Summer"],
+      englishLevel: "B1",
+      storyTitle: "会发光的借书证",
+      lessonDraftExists: true,
       nextEditPath: "/courses/course-1/create/story-outline",
     });
+  });
+
+  test("searches course and story titles with case-insensitive matching", async () => {
+    const queries: unknown[] = [];
+    await listCourses({
+      course: {
+        count: async ({ where }: { where?: unknown }) => { queries.push(where); return 0; },
+        findMany: async (query: unknown) => { queries.push(query); return []; },
+      },
+    } as unknown as CoursesDb, 1, 5, "library");
+
+    expect(queries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        OR: [
+          { title: { contains: "library", mode: "insensitive" } },
+          { storyOutline: { is: { title: { contains: "library", mode: "insensitive" } } } },
+        ],
+      }),
+    ]));
   });
 
   test("reports when the current profile differs from the saved snapshot", async () => {

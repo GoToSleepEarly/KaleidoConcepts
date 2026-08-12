@@ -1,0 +1,134 @@
+import type { PrismaClient } from "@prisma/client";
+
+import type {
+  CourseContentChapter,
+  CoursePresentationConfig,
+  CoursePresentationUpdate,
+  CoursePreviewResponse,
+  CourseVocabularyMatchingItem,
+  CourseGrammarQuestion,
+  PublishCourseResponse,
+} from "@/lib/contracts/api";
+import { compilePreviewPages, DEFAULT_COURSE_PRESENTATION } from "@/lib/domain/course-preview";
+
+export type CoursePreviewDb = Pick<PrismaClient, "course" | "coursePresentation" | "presetOption">;
+
+export class CoursePreviewNotFoundError extends Error {}
+export class CoursePreviewPrerequisiteError extends Error {}
+
+type PreviewVisualSlot = {
+  activeImage?: { status: string; publicUrl?: string | null } | null;
+  images?: Array<{ status: string }>;
+};
+
+function assertVisualResourcesReady(slots: PreviewVisualSlot[]) {
+  const inFlight = slots.filter((slot) => slot.images?.some((image) => ["pending", "submitting", "generating"].includes(image.status))).length;
+  if (inFlight) throw new CoursePreviewPrerequisiteError(`还有 ${inFlight} 张图片正在生成，请等待全部完成后再进入预览发布`);
+}
+
+export function defaultPresentation(): CoursePresentationConfig {
+  return { ...DEFAULT_COURSE_PRESENTATION, slideOverrides: {} };
+}
+
+function normalizedPresentation(input?: Partial<CoursePresentationUpdate> | null): CoursePresentationConfig {
+  const defaults = defaultPresentation();
+  return {
+    coverTheme: input?.coverTheme ?? defaults.coverTheme,
+    coverTitleFontSize: input?.coverTitleFontSize ?? defaults.coverTitleFontSize,
+    chapterTheme: input?.chapterTheme ?? defaults.chapterTheme,
+    slideOverrides: input?.slideOverrides ?? {},
+  };
+}
+
+export async function getCoursePreview(db: CoursePreviewDb, courseId: string): Promise<CoursePreviewResponse> {
+  const [course, knowledgePoints] = await Promise.all([db.course.findUnique({
+    where: { id: courseId },
+    include: {
+      people: true,
+      lessonContent: true,
+      storyOutline: { include: { chapters: true } },
+      visualImageSlots: { include: { activeImage: { select: { publicUrl: true, status: true } }, images: { select: { status: true } } } },
+      presentation: true,
+      teachingPlan: true,
+    },
+  }), db.presetOption.findMany({ where: { kind: "grammar", archivedAt: null }, orderBy: [{ sortOrder: "asc" }, { label: "asc" }], select: { id: true, label: true } })]);
+  if (!course) throw new CoursePreviewNotFoundError("课程不存在");
+  if (!course.lessonContent) throw new CoursePreviewPrerequisiteError("请先完成文案与练习");
+  assertVisualResourcesReady(course.visualImageSlots);
+
+  const teacher = course.people.find((person) => person.role === "teacher");
+  const students = course.people.filter((person) => person.role === "student");
+  const presentation = course.presentation ? normalizedPresentation({
+    coverTheme: course.presentation.coverTheme,
+    coverTitleFontSize: course.presentation.coverTitleFontSize,
+    chapterTheme: course.presentation.chapterTheme,
+    slideOverrides: course.presentation.slideOverrides as CoursePresentationConfig["slideOverrides"],
+  }) : defaultPresentation();
+
+  const slots = course.visualImageSlots.map((slot) => ({
+    id: slot.id,
+    slotType: slot.slotType,
+    chapterId: slot.chapterId,
+    paragraphId: slot.paragraphId,
+    publicUrl: slot.activeImage?.status === "succeeded" ? slot.activeImage.publicUrl : null,
+  }));
+  const mainIdea = course.lessonContent.mainIdea as { id: string; title: string; text: string } | null;
+  const homework = course.lessonContent.homework as { grammar: CourseGrammarQuestion[]; vocabularyMatching: CourseVocabularyMatchingItem[] } | null;
+  const planChapters = Array.isArray(course.teachingPlan?.chapters) ? course.teachingPlan.chapters as Array<{ outlineChapterId?: string; knowledgePointIds?: string[] }> : [];
+  const afterClassPractice = course.teachingPlan?.afterClassPractice as { knowledgePointIds?: string[] } | null;
+  const outlineChapterTitles = new Map(course.storyOutline?.chapters.map((chapter) => [chapter.id, chapter.title]) ?? []);
+  const chapters = (course.lessonContent.chapters as unknown as CourseContentChapter[]).map((chapter) => ({
+    ...chapter,
+    title: outlineChapterTitles.get(chapter.outlineChapterId) ?? chapter.title,
+  }));
+
+  return {
+    course: {
+      id: course.id,
+      title: course.title,
+      lifecycleStatus: course.lifecycleStatus,
+      teacherName: teacher?.englishNameSnapshot || teacher?.chineseNameSnapshot || null,
+      studentNames: students.map((student) => student.englishNameSnapshot || student.chineseNameSnapshot),
+    },
+    presentation,
+    pages: compilePreviewPages({
+      title: course.storyOutline?.title || course.title,
+      teacherName: teacher?.englishNameSnapshot || teacher?.chineseNameSnapshot || null,
+      studentNames: students.map((student) => student.englishNameSnapshot || student.chineseNameSnapshot),
+      knowledgePoints,
+      chapterKnowledgePointIds: Object.fromEntries(planChapters.filter((chapter) => typeof chapter.outlineChapterId === "string").map((chapter) => [chapter.outlineChapterId!, Array.isArray(chapter.knowledgePointIds) ? chapter.knowledgePointIds : []])),
+      homeworkKnowledgePointIds: Array.isArray(afterClassPractice?.knowledgePointIds) ? afterClassPractice.knowledgePointIds : [],
+      chapters,
+      mainIdea,
+      homework,
+      slots,
+    }),
+  };
+}
+
+export async function savePresentation(db: CoursePreviewDb, courseId: string, input: Partial<CoursePresentationUpdate>) {
+  const course = await db.course.findUnique({ where: { id: courseId }, select: { id: true } });
+  if (!course) throw new CoursePreviewNotFoundError("课程不存在");
+  const value = normalizedPresentation(input);
+  await db.coursePresentation.upsert({ where: { courseId }, create: { courseId, ...value }, update: value });
+  return value;
+}
+
+export async function confirmVisualResources(db: Pick<PrismaClient, "course">, courseId: string) {
+  const course = await db.course.findUnique({ where: { id: courseId }, include: { lessonContent: true, visualImageSlots: { include: { activeImage: { select: { status: true } }, images: { select: { status: true } } } } } });
+  if (!course) throw new CoursePreviewNotFoundError("课程不存在");
+  if (!course.lessonContent) throw new CoursePreviewPrerequisiteError("请先完成文案与练习");
+  assertVisualResourcesReady(course.visualImageSlots);
+  if (course.currentStage !== "preview") await db.course.update({ where: { id: courseId }, data: { currentStage: "preview" } });
+  return { redirectUrl: `/courses/${courseId}/create/preview` };
+}
+
+export async function publishCourse(db: CoursePreviewDb, courseId: string, input?: Partial<CoursePresentationUpdate>): Promise<PublishCourseResponse> {
+  const course = await db.course.findUnique({ where: { id: courseId }, include: { lessonContent: true, visualImageSlots: { include: { activeImage: { select: { status: true } }, images: { select: { status: true } } } } } });
+  if (!course) throw new CoursePreviewNotFoundError("课程不存在");
+  if (!course.lessonContent) throw new CoursePreviewPrerequisiteError("请先完成文案与练习");
+  assertVisualResourcesReady(course.visualImageSlots);
+  if (input) await savePresentation(db, courseId, input);
+  if (course.lifecycleStatus !== "published") await db.course.update({ where: { id: courseId }, data: { lifecycleStatus: "published", currentStage: "preview" } });
+  return { redirectUrl: `/courses/${courseId}` };
+}

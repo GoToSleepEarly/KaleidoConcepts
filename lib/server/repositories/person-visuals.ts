@@ -38,6 +38,7 @@ type DbVisualAsset = {
   createdAt: Date;
   updatedAt: Date;
   parentAsset?: DbVisualAsset | null;
+  _count?: { childAssets: number; selectedBy: number; courseSnapshots: number };
 };
 
 type PersonVisualAssetDelegate = {
@@ -333,6 +334,7 @@ export async function refinePersonVisual(
 ) {
   const existing = await existingByKey(db, personId, idempotencyKey);
   if (existing) return toAsset(existing);
+  const person = await getPerson(db, personId);
   const parent = await db.personVisualAsset.findUnique({
     where: { id: parentAssetId },
   });
@@ -344,7 +346,7 @@ export async function refinePersonVisual(
   ) {
     throw new PersonVisualInvalidStateError("请选择一个可用形象继续修改");
   }
-  const prompt = `保持输入角色的身份、脸型、发型、完整服装、身形比例和画风一致，只执行以下修改：${text(instruction)}。保持竖版单人全身、从头到脚完整可见、无文字、无水印。`;
+  const prompt = `这是${person.age}岁${person.gender === "male" ? "男性" : "女性"}人物。保持输入角色的年龄感、性别特征、身份、脸型、发型、完整服装、身形比例和画风一致，只执行以下修改：${text(instruction)}。保持竖版单人全身、从头到脚完整可见、无文字、无水印。`;
   const asset = await db.personVisualAsset.create({
     data: {
       personId,
@@ -399,6 +401,24 @@ export async function selectPersonVisual(
     data: { activeVisualAssetId: assetId },
   });
   return toAsset(asset);
+}
+
+export async function deletePersonVisual(
+  db: PersonVisualsDb,
+  personId: string,
+  assetId: string,
+  removeStoredFile: (storagePath: string) => Promise<void>,
+) {
+  const asset = await db.personVisualAsset.findUnique({
+    where: { id: assetId },
+    include: { _count: { select: { childAssets: true, selectedBy: true, courseSnapshots: true } } },
+  });
+  if (!asset || asset.personId !== personId) throw new PersonVisualNotFoundError();
+  if ((asset._count?.selectedBy ?? 0) > 0) throw new PersonVisualInvalidStateError("当前正在使用的形象不能删除");
+  if ((asset._count?.childAssets ?? 0) > 0) throw new PersonVisualInvalidStateError("已有修改版本依赖这张图片，不能删除");
+  if ((asset._count?.courseSnapshots ?? 0) > 0) throw new PersonVisualInvalidStateError("课程已引用这张图片，不能删除");
+  await db.personVisualAsset.delete({ where: { id: assetId } });
+  if (asset.storagePath) await removeStoredFile(asset.storagePath).catch(() => undefined);
 }
 
 export async function listPersonVisuals(db: PersonVisualsDb, personId: string) {

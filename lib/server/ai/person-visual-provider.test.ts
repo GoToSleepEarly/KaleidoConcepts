@@ -32,7 +32,7 @@ describe("person visual provider", () => {
     expect(body).toMatchObject({ n: 1, size: "1024x1536", format: "webp" });
   });
 
-  test("sends image edits as multipart form data", async () => {
+  test("sends image edits as multipart form data required by the live gateway", async () => {
     const request = vi.fn(async (...args: Parameters<typeof fetch>) => {
       void args;
       return new Response(
@@ -59,12 +59,14 @@ describe("person visual provider", () => {
     });
 
     const options = request.mock.calls[0]?.[1];
-    expect(options?.body).toBeInstanceOf(FormData);
     const body = options?.body as FormData;
-    expect(body.get("prompt")).toBe("change the coat");
     expect(body.get("model")).toBe("gpt-image-2");
+    expect(body.get("prompt")).toBe("change the coat");
+    expect(body.get("n")).toBe("1");
     expect(body.get("size")).toBe("1024x1536");
+    expect(body.get("quality")).toBe("low");
     expect(body.get("image")).toBeInstanceOf(Blob);
+    expect(body.has("format")).toBe(false);
     expect(new Headers(options?.headers).has("Content-Type")).toBe(false);
   });
 });

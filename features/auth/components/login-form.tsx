@@ -1,8 +1,9 @@
 "use client";
 
+import React from "react";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, LockKeyhole, UserRound } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,30 +56,42 @@ export function LoginForm() {
   return (
     <form className="space-y-6" onSubmit={handleSubmit}>
       <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-800" htmlFor="username">
+        <label className="text-sm font-semibold text-slate-900" htmlFor="username">
           账号
         </label>
-        <Input
-          id="username"
-          onChange={(event) => setUsername(event.target.value)}
-          value={username}
-          autoComplete="username"
-          className="h-12"
-        />
+        <div className="relative">
+          <UserRound
+            aria-hidden="true"
+            className="pointer-events-none absolute left-4 top-1/2 size-[18px] -translate-y-1/2 text-slate-500"
+            data-testid="username-icon"
+          />
+          <Input
+            id="username"
+            onChange={(event) => setUsername(event.target.value)}
+            value={username}
+            autoComplete="username"
+            className="h-12 pl-11"
+          />
+        </div>
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-800" htmlFor="password">
+        <label className="text-sm font-semibold text-slate-900" htmlFor="password">
           密码
         </label>
         <div className="relative">
+          <LockKeyhole
+            aria-hidden="true"
+            className="pointer-events-none absolute left-4 top-1/2 size-[18px] -translate-y-1/2 text-slate-500"
+            data-testid="password-icon"
+          />
           <Input
             id="password"
             onChange={(event) => setPassword(event.target.value)}
             type={showPassword ? "text" : "password"}
             value={password}
             autoComplete="current-password"
-            className="h-12 pr-11"
+            className="h-12 pl-11 pr-11"
           />
           <button
             aria-label={showPassword ? "隐藏密码" : "显示密码"}
