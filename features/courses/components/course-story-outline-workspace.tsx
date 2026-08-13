@@ -778,21 +778,28 @@ function ResultPanel({
   onConfirm: () => void;
   pending: boolean;
 }) {
-  const hasNewDirections = state.directions.length > 0 && !state.directions.some((direction) => direction.selectedAt);
+  const artifactsOutdated = state.alignment?.artifactsOutdated === true;
+  const hasUnselectedDirection = state.directions.some((direction) => !direction.selectedAt);
+  const hasDirectionsNewerThanOutline = Boolean(outline && state.directions.some((direction) => (
+    new Date(direction.createdAt).getTime() > new Date(outline.updatedAt).getTime()
+  )));
+  const shouldShowDirections = state.directions.length > 0
+    && (!outline || artifactsOutdated || hasUnselectedDirection || hasDirectionsNewerThanOutline);
 
-  if (hasNewDirections) {
-    return <DirectionsPanel directions={state.directions} onChooseDirection={onChooseDirection} onConfirmDirection={onConfirmDirection} onDescribeDirection={onDescribeDirection} onReviseDirection={onReviseDirection} pending={pending} />;
+  if (shouldShowDirections) {
+    return <DirectionsPanel directions={state.directions} outdated={artifactsOutdated} onChooseDirection={onChooseDirection} onConfirmDirection={onConfirmDirection} onDescribeDirection={onDescribeDirection} onReviseDirection={onReviseDirection} pending={pending} />;
   }
 
   if (outline) {
     return (
       <section className="space-y-4 rounded-lg bg-card p-5 shadow-sm">
+        <ArtifactVersionNotice outdated={artifactsOutdated} />
         <div className="flex gap-2 border-b border-border pb-3">
           <button className={tabClass(resultTab === "outline")} onClick={() => setResultTab("outline")} type="button">故事大纲</button>
           <button className={tabClass(resultTab === "characters")} onClick={() => setResultTab("characters")} type="button">角色</button>
           <button className={tabClass(resultTab === "references")} onClick={() => setResultTab("references")} type="button">参考资料</button>
         </div>
-        {resultTab === "outline" ? <OutlineSummary onReviseChapter={onReviseChapter} onReviseOutline={onReviseOutline} outline={outline} pending={pending} state={state} /> : null}
+        {resultTab === "outline" ? <OutlineSummary onReviseChapter={onReviseChapter} onReviseOutline={onReviseOutline} outline={outline} pending={pending || artifactsOutdated} state={state} /> : null}
         {resultTab === "characters" ? <CharactersSection outline={outline} /> : null}
         {resultTab === "references" ? (
           <div className="space-y-4">
@@ -806,7 +813,7 @@ function ResultPanel({
         ) : null}
         <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted-foreground">确认后将进入教学规划，继续设计每章教学内容。</p>
-          <Button disabled={pending} onClick={onConfirm} type="button">
+          <Button disabled={pending || artifactsOutdated} onClick={onConfirm} type="button">
             {pending && pendingLabel === "正在确认故事大纲..." ? <Loader2 className="size-4 animate-spin" /> : null}
             确认故事大纲并进入教学规划
             {!pending ? <ArrowRight className="size-4" /> : null}
@@ -827,7 +834,7 @@ function ResultPanel({
   }
 
   if (state.directions.length) {
-    return <DirectionsPanel directions={state.directions} onChooseDirection={onChooseDirection} onConfirmDirection={onConfirmDirection} onDescribeDirection={onDescribeDirection} onReviseDirection={onReviseDirection} pending={pending} />;
+    return <DirectionsPanel directions={state.directions} outdated={artifactsOutdated} onChooseDirection={onChooseDirection} onConfirmDirection={onConfirmDirection} onDescribeDirection={onDescribeDirection} onReviseDirection={onReviseDirection} pending={pending} />;
   }
 
   return (
@@ -843,8 +850,19 @@ function ResultPanel({
   );
 }
 
+function ArtifactVersionNotice({ outdated }: { outdated: boolean }) {
+  if (!outdated) return <div><span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">最新版本</span></div>;
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
+      <p className="font-medium">当前展示的是上一版故事成果</p>
+      <p className="mt-1 text-xs leading-5 text-amber-800">确认新的创作需求并完成生成后，故事方向、大纲和角色会更新为最新版本。</p>
+    </div>
+  );
+}
+
 function DirectionsPanel({
   directions,
+  outdated,
   onChooseDirection,
   onConfirmDirection,
   onDescribeDirection,
@@ -852,6 +870,7 @@ function DirectionsPanel({
   pending,
 }: {
   directions: CourseStoryDirection[];
+  outdated: boolean;
   onChooseDirection: (direction: CourseStoryDirection) => void;
   onConfirmDirection: (direction: CourseStoryDirection) => void;
   onDescribeDirection: () => void;
@@ -862,6 +881,7 @@ function DirectionsPanel({
   const [instruction, setInstruction] = useState("");
   return (
     <section className="space-y-4 rounded-lg bg-card p-5 shadow-sm">
+      <ArtifactVersionNotice outdated={outdated} />
       <div><h3 className="text-lg font-semibold text-foreground">故事方向</h3><p className="mt-1 text-sm text-muted-foreground">先选择大方向；你仍可单独调整选中的卡片，确认后才会生成章节大纲。</p></div>
       {directions.map((direction) => (
         <article className={cn("rounded-md border p-4", direction.selectedAt ? "border-primary bg-primary-50/30" : "border-border")} key={direction.id}>
@@ -881,15 +901,15 @@ function DirectionsPanel({
             </div>
           ) : (
             <div className="mt-4 flex flex-wrap gap-2">
-              {direction.selectedAt ? <Button disabled={pending} onClick={() => onConfirmDirection(direction)} size="sm" type="button"><Check className="size-4" />确认方向，生成大纲</Button> : <Button disabled={pending} onClick={() => onChooseDirection(direction)} size="sm" type="button">选择这个方向</Button>}
-              <Button disabled={pending} onClick={() => { setEditingId(direction.id); setInstruction(""); }} size="sm" type="button" variant="outline"><Pencil className="size-4" />调整这张卡</Button>
+              {direction.selectedAt ? <Button disabled={pending || outdated} onClick={() => onConfirmDirection(direction)} size="sm" type="button"><Check className="size-4" />确认方向，生成大纲</Button> : <Button disabled={pending || outdated} onClick={() => onChooseDirection(direction)} size="sm" type="button">选择这个方向</Button>}
+              <Button disabled={pending || outdated} onClick={() => { setEditingId(direction.id); setInstruction(""); }} size="sm" type="button" variant="outline"><Pencil className="size-4" />调整这张卡</Button>
             </div>
           )}
         </article>
       ))}
       <div className="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">都不合适？告诉我你希望的故事方向，我会重新生成。</p>
-        <Button onClick={onDescribeDirection} size="sm" type="button" variant="outline">描述我想要的方向</Button>
+        <Button disabled={pending || outdated} onClick={onDescribeDirection} size="sm" type="button" variant="outline">描述我想要的方向</Button>
       </div>
     </section>
   );

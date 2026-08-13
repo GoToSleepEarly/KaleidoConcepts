@@ -182,6 +182,7 @@ export type StoryAlignmentState = {
   questions: StoryAlignmentQuestion[];
   summary?: string;
   needsBackgroundRefresh?: boolean;
+  artifactsOutdated?: boolean;
 };
 
 export type CourseStoryChatAction = {

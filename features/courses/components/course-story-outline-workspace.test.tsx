@@ -930,6 +930,27 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.queryByText("The Glowing Map")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("中文主线概括")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "保存故事大纲" })).not.toBeInTheDocument();
+    expect(screen.getByText("最新版本")).toBeInTheDocument();
+  });
+
+  test("marks the existing outline and characters as outdated after the creative requirement changes", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      alignment: {
+        status: "ready_for_confirmation",
+        planningMode: "explore_options",
+        resolvedUnderstanding: ["改为二战故事"],
+        unresolvedIssues: [],
+        questions: [],
+        summary: "改为二战故事",
+        needsBackgroundRefresh: true,
+        artifactsOutdated: true,
+      },
+    }} />);
+
+    expect(screen.getByText("当前展示的是上一版故事成果")).toBeInTheDocument();
+    expect(screen.getByText("确认新的创作需求并完成生成后，故事方向、大纲和角色会更新为最新版本。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认故事大纲并进入教学规划" })).toBeDisabled();
   });
 
   test("confirms the generated outline from the result panel before entering Step 3", async () => {

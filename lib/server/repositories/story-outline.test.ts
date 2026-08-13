@@ -512,10 +512,7 @@ describe("story outline repository", () => {
 
   test("regenerates the whole outline from the current chat action", async () => {
     const db = createDb();
-    await handleStoryOutlineMessage(db, "course-1", {
-      message: "学生们进入海底图书馆",
-      mode: "idea",
-    }, deps);
+    await generateConfirmedOutline(db);
     const generateOutline = vi.fn(async () => ({
       title: "A New Outline",
       summary: "A new full story outline.",
@@ -551,7 +548,8 @@ describe("story outline repository", () => {
       task: "整体换一个更轻松的方向",
     }));
     expect(state.outline?.title).toBe("A New Outline");
-    expect(state.chatMessages.some((message) => message.content === "故事大纲已生成。")).toBe(false);
+    expect(state.alignment?.artifactsOutdated).toBe(false);
+    expect(state.chatMessages.at(-1)?.content).toBe("故事大纲已更新，右侧显示的是最新版本。");
   });
 
 
@@ -671,8 +669,77 @@ describe("story outline repository", () => {
       needsBackgroundRefresh: true,
     }));
     expect(generateOutline).not.toHaveBeenCalled();
-    expect(state.alignment).toMatchObject({ status: "ready_for_confirmation", summary: expect.stringContaining("二战"), needsBackgroundRefresh: true });
+    expect(state.alignment).toMatchObject({ status: "ready_for_confirmation", summary: expect.stringContaining("二战"), needsBackgroundRefresh: true, artifactsOutdated: true });
     expect(state.chatMessages.at(-1)?.actions[0]).toMatchObject({ label: "确认修改需求" });
+  });
+
+  test("keeps the refresh decision through another alignment round and replaces old references", async () => {
+    const db = createDb();
+    await generateConfirmedOutline(db);
+    db.state.references.push(record({
+      courseId: "course-1",
+      name: "旧作品资料",
+      type: "ip",
+      sourceStatus: "confirmed",
+      summary: "旧资料",
+      usableFacts: ["旧设定"],
+      avoidTopics: [],
+      adaptationBoundary: "旧边界",
+      researchProvider: "none",
+      confirmedAt: new Date(),
+    }));
+    db.state.setting = record({
+      ...db.state.setting,
+      courseId: "course-1",
+      alignmentStatus: "needs_clarification",
+      planningMode: "explore_options",
+      alignmentSummary: null,
+      alignmentDetails: {
+        resolvedUnderstanding: [],
+        unresolvedIssues: ["确认新作品"],
+        questions: [],
+        needsBackgroundRefresh: true,
+        artifactsOutdated: true,
+      },
+    });
+    const alignRequirements = vi.fn(async () => ({
+      status: "ready_for_confirmation" as const,
+      planningMode: "explore_options" as const,
+      assistantMessage: "请确认。",
+      resolvedUnderstanding: ["改用新作品"],
+      unresolvedIssues: [],
+      questions: [],
+      summary: "改用新作品创作故事。",
+    }));
+    const prepareBackgroundKnowledge = vi.fn(async () => ({
+      status: "ready" as const,
+      references: [{
+        name: "新作品资料",
+        type: "ip" as const,
+        sourceStatus: "confirmed" as const,
+        summary: "新资料",
+        usableFacts: ["新设定"],
+        avoidTopics: [],
+        adaptationBoundary: "新边界",
+      }],
+    }));
+
+    await handleStoryOutlineMessage(db, "course-1", {
+      message: "使用新作品",
+      mode: "idea",
+      action: "submit_alignment_answers",
+    }, { ...deps, alignRequirements, prepareBackgroundKnowledge });
+    const aligned = await getStoryOutlineState(db, "course-1");
+    expect(aligned.alignment).toMatchObject({ needsBackgroundRefresh: true, artifactsOutdated: true });
+
+    await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "confirm_requirements",
+    }, { ...deps, alignRequirements, prepareBackgroundKnowledge });
+
+    expect(db.state.references).toHaveLength(1);
+    expect(db.state.references[0]).toMatchObject({ name: "新作品资料", summary: "新资料" });
   });
 
   test("does not execute the same request id twice", async () => {

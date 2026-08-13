@@ -267,9 +267,21 @@ async function persistPreparedReferences(db: StoryOutlineDb, courseId: string, r
         data: { courseId, ...reference, researchProvider, confirmedAt: null },
       });
     }
+    if (replaceExisting) await updateAlignmentDetails(target, courseId, { needsBackgroundRefresh: false });
   };
   if (db.$transaction) await db.$transaction(persist);
   else await persist(db);
+}
+
+async function updateAlignmentDetails(db: StoryOutlineDb, courseId: string, changes: Record<string, unknown>) {
+  const stored = await db.courseStorySetting.findUnique({ where: { courseId } });
+  const current = typeof stored?.alignmentDetails === "object" && stored.alignmentDetails !== null
+    ? stored.alignmentDetails as Record<string, unknown>
+    : {};
+  await db.courseStorySetting.updateMany({
+    where: { courseId },
+    data: { alignmentDetails: { ...current, ...changes } },
+  });
 }
 
 function fallbackResearchPlan(objectName: string): CourseResearchPlan {
@@ -494,6 +506,7 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
       unresolvedIssues: Array.isArray(alignmentDetails.unresolvedIssues) ? alignmentDetails.unresolvedIssues : [],
       questions: Array.isArray(alignmentDetails.questions) ? alignmentDetails.questions : [],
       ...(typeof alignmentDetails.needsBackgroundRefresh === "boolean" ? { needsBackgroundRefresh: alignmentDetails.needsBackgroundRefresh } : {}),
+      ...(typeof alignmentDetails.artifactsOutdated === "boolean" ? { artifactsOutdated: alignmentDetails.artifactsOutdated } : {}),
       ...(setting?.alignmentSummary ? { summary: setting.alignmentSummary } : {}),
     },
     operation: setting?.operationRequestId && (setting.operationStatus === "running" || setting.operationStatus === "failed" || setting.operationStatus === "result_unknown") && setting.operationPhase && setting.operationStartedAt ? {
@@ -656,6 +669,7 @@ async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task
   try {
     const resolved = setting ?? await currentSetting(db, course);
     const context = await storyAiContext(db, course, resolved.chapterCount, selectedDirection);
+    const isUpdate = Boolean(context.currentOutline);
     const outline = await deps.generateOutline({
       ...context,
       task,
@@ -669,6 +683,10 @@ async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task
       await guard?.(tx);
       await writeOutline(tx, course, outline, resolved.writingProvider, resolved.chapterCount);
       await tx.courseStoryDirection.deleteMany({ where: { courseId: course.id, selectedAt: null } });
+      await updateAlignmentDetails(tx, course.id, { artifactsOutdated: false });
+      await addMessage(tx, course.id, "assistant", isUpdate
+        ? "故事大纲已更新，右侧显示的是最新版本。"
+        : "故事大纲已生成，右侧显示的是最新版本。");
     };
     if (db.$transaction) await db.$transaction(persistOutline);
     else await persistOutline(db);
@@ -722,6 +740,9 @@ async function generateAndSaveDirections(
       growthCore: direction.growthCore ?? "",
       classroomValue: direction.classroomValue ?? "",
     })) });
+    await tx.courseStoryOutline.deleteMany({ where: { courseId: course.id } });
+    await tx.courseCharacter.deleteMany({ where: { courseId: course.id } });
+    await updateAlignmentDetails(tx, course.id, { artifactsOutdated: false });
   };
   if (db.$transaction) await db.$transaction(replaceDirections);
   else await replaceDirections(db);
@@ -740,13 +761,27 @@ async function saveAlignment(
     questions: StoryAlignmentQuestion[];
     summary?: string;
     needsBackgroundRefresh?: boolean;
+    artifactsOutdated?: boolean;
   },
 ) {
+  const stored = await db.courseStorySetting.findUnique({ where: { courseId: course.id } });
+  const previousDetails = typeof stored?.alignmentDetails === "object" && stored.alignmentDetails !== null
+    ? stored.alignmentDetails as Record<string, unknown>
+    : {};
   const alignmentDetails = {
     resolvedUnderstanding: alignment.resolvedUnderstanding,
     unresolvedIssues: alignment.unresolvedIssues,
     questions: alignment.questions,
-    ...(typeof alignment.needsBackgroundRefresh === "boolean" ? { needsBackgroundRefresh: alignment.needsBackgroundRefresh } : {}),
+    ...(typeof alignment.needsBackgroundRefresh === "boolean"
+      ? { needsBackgroundRefresh: alignment.needsBackgroundRefresh }
+      : typeof previousDetails.needsBackgroundRefresh === "boolean"
+        ? { needsBackgroundRefresh: previousDetails.needsBackgroundRefresh }
+        : {}),
+    ...(typeof alignment.artifactsOutdated === "boolean"
+      ? { artifactsOutdated: alignment.artifactsOutdated }
+      : typeof previousDetails.artifactsOutdated === "boolean"
+        ? { artifactsOutdated: previousDetails.artifactsOutdated }
+        : {}),
   };
   await db.courseStorySetting.upsert({
     where: { courseId: course.id },
@@ -831,7 +866,11 @@ async function executeStoryOutlineMessage(
       task: `老师希望修改当前成果，但该要求会更换核心创作需求。请把最新要求整理成修改后的创作理解，不执行原修改。\n修改原因：${boundary.reason}\n老师要求：${input.message.trim()}`,
     });
     await guard();
-    await saveAlignment(db, course, setting, { ...alignment, needsBackgroundRefresh: boundary.needsBackgroundRefresh });
+    await saveAlignment(db, course, setting, {
+      ...alignment,
+      needsBackgroundRefresh: boundary.needsBackgroundRefresh,
+      artifactsOutdated: true,
+    });
     if (alignment.status === "needs_clarification") {
       await addMessage(db, courseId, "assistant", alignment.assistantMessage, [{
         id: `alignment-${Date.now()}`,
@@ -877,6 +916,7 @@ async function executeStoryOutlineMessage(
         questions: [],
         summary: stored.alignmentSummary,
         needsBackgroundRefresh: details.needsBackgroundRefresh,
+        artifactsOutdated: details.artifactsOutdated,
       });
       await addMessage(db, courseId, "teacher", "我确认这份创作理解。");
     }
@@ -895,7 +935,10 @@ async function executeStoryOutlineMessage(
     });
     await guard();
     if (background.status === "not_needed") {
-      if (details.needsBackgroundRefresh === true) await db.courseSourceReference.deleteMany({ where: { courseId } });
+      if (details.needsBackgroundRefresh === true) {
+        await db.courseSourceReference.deleteMany({ where: { courseId } });
+        await updateAlignmentDetails(db, courseId, { needsBackgroundRefresh: false });
+      }
       await continueAfterBackground(db, course, deps, setting, guard);
       return getStoryOutlineState(db, courseId);
     }
