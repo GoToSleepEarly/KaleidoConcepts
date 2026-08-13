@@ -12,7 +12,7 @@ type ProviderConfig = { apiKey: string; model: string; timeoutMs: number; retryD
 const DEFAULT_SATURATION_RETRY_DELAYS_MS = [1_000, 2_000] as const;
 
 function configFromEnvironment(): ProviderConfig {
-  const apiKey = process.env.QUICKROUTER_API_KEY;
+  const apiKey = process.env.QUICKROUTER_IMAGE_API_KEY;
   if (!apiKey) throw new Error("图片生成服务尚未配置");
   const timeoutValue = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS);
   return {

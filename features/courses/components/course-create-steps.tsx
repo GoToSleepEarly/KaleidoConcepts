@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useSyncExternalStore } from "react";
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import type { CourseStage } from "@/lib/contracts/api";
 
 const steps = [
@@ -17,23 +18,34 @@ export function courseStageStep(stage: CourseStage) {
   return stageSteps[stage];
 }
 
-export function CourseCreateSteps({ currentStep, courseId, furthestStep = currentStep, onNavigate }: { currentStep: number; courseId?: string; furthestStep?: number; onNavigate?: (href: string) => void }) {
-  const reachedStep = Math.max(currentStep, furthestStep);
-  const completedProgress = steps.length > 1 ? Math.max(0, Math.min(100, ((reachedStep - 1) / (steps.length - 1)) * 100)) : 0;
+function subscribeToProgressSlot(onStoreChange: () => void) {
+  void onStoreChange;
+  return () => undefined;
+}
 
-  return (
-    <section aria-label="课程创建进度" className="rounded-xl border border-primary-100 bg-gradient-to-b from-card to-primary-50/40 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
-      <div className="relative" data-testid="course-stepper-flow-band">
-        <span aria-hidden className="absolute left-[8.333%] right-[8.333%] top-3.5 h-px bg-primary-100" />
-        <span aria-hidden className="absolute left-[8.333%] top-3.5 h-px bg-primary transition-[width] duration-200 ease-out-expo" style={{ width: `calc(${completedProgress}% * 0.833333)` }} />
-        <ol className="relative grid grid-cols-6">
+function getProgressSlot() {
+  return document.getElementById("course-create-progress-slot");
+}
+
+function getServerProgressSlot() {
+  return null;
+}
+
+export function CourseCreateSteps({ currentStep, courseId, furthestStep = currentStep, onNavigate }: { currentStep: number; courseId?: string; furthestStep?: number; onNavigate?: (href: string) => void }) {
+  const portalTarget = useSyncExternalStore(subscribeToProgressSlot, getProgressSlot, getServerProgressSlot);
+  const reachedStep = Math.max(currentStep, furthestStep);
+
+  const progress = (
+    <section aria-label="课程创建进度" className="mx-auto w-full max-w-3xl px-1 sm:px-2">
+      <div className="rounded-lg border border-primary-100 bg-primary-50/70 p-1" data-testid="course-stepper-flow-band">
+        <ol className="grid grid-cols-6 gap-1">
           {steps.map((label, index) => {
             const step = index + 1;
             const active = step === currentStep;
             const done = step !== currentStep && step <= reachedStep;
-            const nodeClass = `group relative z-10 flex min-w-0 flex-col items-center gap-2 text-center text-[11px] font-medium transition-colors ${active ? "text-primary-700" : done ? "text-foreground" : "text-muted-foreground/70"}`;
-            const dotClass = `flex size-7 items-center justify-center rounded-full border-2 bg-card text-[11px] font-semibold transition-colors ${active ? "border-primary text-primary shadow-[0_0_0_5px_rgba(37,99,235,0.08)]" : done ? "border-primary bg-primary text-primary-foreground" : "border-primary-100 text-muted-foreground"}`;
-            const labelClass = `max-w-[5.5rem] truncate rounded-full px-1.5 py-0.5 ${active ? "bg-card/70" : done && courseId ? "group-hover:bg-card/70" : ""}`;
+            const nodeClass = `group flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-md px-1 text-center text-xs font-semibold transition-[background-color,color,box-shadow,transform] duration-150 xl:text-[13px] ${active ? "bg-primary text-white shadow-sm" : done && courseId ? "cursor-pointer bg-white text-foreground shadow-sm hover:bg-primary-100 hover:text-primary-800 active:translate-y-px" : "cursor-default text-slate-400"}`;
+            const dotClass = `hidden size-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold xl:flex ${active ? "bg-white/20 text-white" : done && courseId ? "bg-primary-50 text-primary" : "bg-white/70 text-slate-400"}`;
+            const labelClass = "min-w-0 whitespace-nowrap";
             const content = (
               <>
                 <span className={dotClass}>{step}</span>
@@ -59,4 +71,6 @@ export function CourseCreateSteps({ currentStep, courseId, furthestStep = curren
       </div>
     </section>
   );
+
+  return portalTarget ? createPortal(progress, portalTarget) : progress;
 }

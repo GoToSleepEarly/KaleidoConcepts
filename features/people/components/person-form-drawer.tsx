@@ -68,6 +68,18 @@ export function PersonEditorDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  async function refreshWorkingPerson() {
+    if (!workingPerson) return;
+    const params = new URLSearchParams({ role: workingPerson.role, status: "active", pageSize: "100" });
+    const response = await fetch(`/api/people?${params}`);
+    const data = (await response.json()) as { people?: PersonProfile[] };
+    const refreshed = data.people?.find((candidate) => candidate.id === workingPerson.id);
+    if (response.ok && refreshed) {
+      setWorkingPerson(refreshed);
+      onSaved(refreshed);
+    }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     const age = Number(form.age);
@@ -300,7 +312,7 @@ export function PersonEditorDialog({
           <div className="min-h-0 flex-1 overflow-hidden">
             <PersonVisualStudio
               embedded
-              onChanged={() => onSaved(workingPerson)}
+              onChanged={() => void refreshWorkingPerson()}
               onClose={onClose}
               open
               person={workingPerson}

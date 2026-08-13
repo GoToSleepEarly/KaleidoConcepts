@@ -1,13 +1,14 @@
 import type { EnglishLevel, GrammarExerciseCounts, GrammarPracticeConfig, ReadingExerciseConfig } from "@/lib/contracts/api";
 
-const WORD_BUDGETS: Record<"basic" | "intermediate" | "advanced", Record<30 | 45 | 60, number>> = {
+const WORD_BUDGETS: Record<"starter" | "basic" | "intermediate" | "advanced", Record<30 | 45 | 60, number>> = {
+  starter: { 30: 160, 45: 240, 60: 320 },
   basic: { 30: 200, 45: 300, 60: 400 },
   intermediate: { 30: 240, 45: 360, 60: 480 },
   advanced: { 30: 280, 45: 420, 60: 560 },
 };
 
 export function courseWordBudget(level: EnglishLevel, duration: 30 | 45 | 60) {
-  const band = level === "A1" || level === "A2" ? "basic" : level === "B1" || level === "B2" ? "intermediate" : "advanced";
+  const band = level === "Starter" ? "starter" : level === "A1" || level === "A2" ? "basic" : level === "B1" || level === "B2" ? "intermediate" : "advanced";
   return WORD_BUDGETS[band][duration];
 }
 

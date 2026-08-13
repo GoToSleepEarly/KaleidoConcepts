@@ -105,30 +105,6 @@ function contextPrompt(input: StoryPromptContext) {
   ];
 }
 
-type FreeInputDecision = {
-  decision: "ask_clarification" | "ask_story_usage" | "prepare_reference_material" | "request_reference_material" | "generate_directions" | "generate_outline";
-  assistantMessage: string;
-  referenceName?: string;
-  referenceType?: CourseSourceReferenceType;
-  researchPlan?: CourseResearchPlan;
-  teacherReference?: {
-    name: string;
-    type: CourseSourceReferenceType;
-    summary: string;
-    usableFacts: string[];
-    avoidTopics: string[];
-    adaptationBoundary: string;
-  };
-  teacherReferences?: Array<{
-    name: string;
-    type: CourseSourceReferenceType;
-    summary: string;
-    usableFacts: string[];
-    avoidTopics: string[];
-    adaptationBoundary: string;
-  }>;
-};
-
 type AlignmentDecision = {
   status: "needs_clarification" | "ready_for_confirmation";
   planningMode: "explore_options" | "follow_defined_plot";
@@ -138,6 +114,21 @@ type AlignmentDecision = {
   questions: StoryAlignmentQuestion[];
   summary?: string;
 };
+
+const classroomParticipationRules = [
+  "除非老师明确排除，Step 1 中的老师和所有学生默认全部参与故事；不得遗漏课堂人物，也不得默认只选择一名学生。",
+  "课堂人物的具体进入方式由故事剧情决定，不把进入方式当作需求澄清问题。",
+];
+
+const confirmedReferenceRules = [
+  "只使用与当前创作直接相关且能够确认的背景信息，不猜测细节，不混合不同版本。",
+  "背景资料用于提供事实和改编边界，不得覆盖老师已经确认的创作要求。",
+];
+
+const teacherFacingReplyRules = [
+  "面向老师的回复只说明已确认结果、真正缺少的信息和下一步可执行动作，不播报内部分析过程。",
+  "面向老师的回复不得出现模型、Prompt、JSON、调用、知识库或能力限制等内部术语。",
+];
 
 type BackgroundKnowledgeResult =
   | { status: "not_needed"; reason: string }
@@ -243,6 +234,7 @@ function normalizeAlignmentQuestion(value: unknown): StoryAlignmentQuestion | nu
     : null;
   const recommendationValue = stringValue(recommendationSource?.value);
   const recommendationReason = stringValue(recommendationSource?.reason);
+  const hasRecommendation = Boolean(recommendationValue && recommendationReason);
   return {
     id,
     label,
@@ -251,16 +243,45 @@ function normalizeAlignmentQuestion(value: unknown): StoryAlignmentQuestion | nu
     answerMode,
     ...(options?.length ? { options } : {}),
     allowCustom: source.allowCustom !== false,
-    allowRecommendation: Boolean(source.allowRecommendation),
-    ...(recommendationValue && recommendationReason ? { recommendation: { value: recommendationValue, reason: recommendationReason } } : {}),
+    allowRecommendation: Boolean(source.allowRecommendation) || hasRecommendation,
+    ...(hasRecommendation ? { recommendation: { value: recommendationValue, reason: recommendationReason } } : {}),
   };
+}
+
+function normalizeRecommendedSummary(
+  value: string,
+  planningMode: AlignmentDecision["planningMode"],
+  replyContext: "initial" | "requirement_change" = "initial",
+  needsBackgroundRefresh = true,
+) {
+  let summary = value.trim()
+    .replace(/^已(?:确认|确定)(?:将|为)?\s*/u, "")
+    .replace(/^(?:建议按这个方向创作|我理解你的创作需求是|我理解你想将创作需求调整为)[：:]\s*/u, "")
+    .replace(/当前不(?:再|继续)?追问[^。！？；，,]*[；，,]?\s*/gu, "")
+    .replace(/(?:因此|所以|接下来)?确认后，我会准备\s*(?:3\s*个不同的故事方向|故事大纲)；如需背景资料，会先整理必要内容[。！？]?/gu, "")
+    .replace(/(?:下一步先提供|确认后，我会提供)\s*3\s*个(?:候选|不同)?故事方向(?:供(?:您|你)选择)?[。！？]?/gu, "")
+    .replace(/确认后，我会根据这条主线生成故事大纲[。！？]?/gu, "")
+    .replace(/确认后，我会按新的创作需求继续[^。！？]*[。！？]?/gu, "")
+    .replace(/由于故事背景发生变化，可能会重新整理背景资料[。！？]?/gu, "")
+    .replace(/。{2,}/gu, "。");
+  summary = summary.replace(/^[：:；;，,\s]+/u, "");
+  summary = summary.replace(/[；;，,\s]*$/u, "").replace(/[。！？\s]*$/u, "");
+  const prefix = replyContext === "requirement_change" ? "我理解你想将创作需求调整为：" : "我理解你的创作需求是：";
+  const nextStep = replyContext === "requirement_change"
+    ? needsBackgroundRefresh
+      ? "确认后，我会按新的创作需求继续。由于故事背景发生变化，可能会重新整理背景资料。"
+      : "确认后，我会按新的创作需求继续，并沿用现有背景资料。"
+    : planningMode === "follow_defined_plot"
+      ? "确认后，我会准备故事大纲；如需背景资料，会先整理必要内容。"
+      : "确认后，我会准备 3 个不同的故事方向；如需背景资料，会先整理必要内容。";
+  return `${prefix}${summary}。${nextStep}`;
 }
 
 export function createStoryOutlineGenerationDeps() {
   let provider: ReturnType<typeof createStoryOutlineProvider> | null = null;
   const client = () => (provider ??= createStoryOutlineProvider());
   return {
-    alignRequirements: async (input: StoryPromptContext & { task: string }): Promise<AlignmentDecision> => {
+    alignRequirements: async (input: StoryPromptContext & { task: string; replyContext?: "initial" | "requirement_change"; needsBackgroundRefresh?: boolean }): Promise<AlignmentDecision> => {
       const { text } = await client().generateOutline({
         writingProvider: "quickrouter_gpt",
         operation: "story_align_requirements",
@@ -270,13 +291,22 @@ export function createStoryOutlineGenerationDeps() {
           "需求对齐的目标不是帮助老师补完整个故事，而是确认故事的大方向和不可误解的边界。",
           "核心判断：如果当前信息存在两种或以上合理理解，并且不同理解会产生本质不同的故事，就必须继续提问；可以安全交给后续三个故事方向探索的内容不需要提问。",
           "老师可以只提供人物、IP、主题或粗略想法。不要要求老师提前确定主角目标、核心冲突、关键事件、奇幻机制或结局；老师没有完整故事想法不是信息缺失，后续系统会生成 3 个候选故事方向供老师选择。",
-          "只需明确：故事围绕谁或什么展开；引用人物、IP、作品或事件如何进入故事；哪些人物、设定或内容必须保留；是否存在互相冲突的要求。",
-          "每轮提出 1-3 个当前最关键且可独立回答的问题，有依赖关系的问题留到下一轮。选项用于加速但不要求覆盖所有可能，每题允许自定义输入。可以提供“我不确定，请给我建议”，但建议必须由老师再次确认后才算解决。",
-          "老师明确提及 IP 时，视为希望实际使用其中的原作人物；不要主动提供只参考主题、氛围或风格的选项。版本或核心人物范围会显著改变故事时才继续确认。",
-          "对齐完成后不直接生成故事，返回简短创作理解摘要等待老师确认。没有具体主线时，在摘要中说明将通过 3 个候选方向选择，不继续追问剧情细节。",
+          ...classroomParticipationRules,
+          "后续根据实际人数自动设计单人、双人或团队行动，并让每个人至少有一次改变局面的有效行动。人物身份、相遇方式、任务、冲突、奇幻机制和结局都由后续故事方向与大纲决定，不要向老师追问。",
+          "老师明确提及 IP 或作品时，视为希望实际使用其中的原作人物；老师同时提出老师和学生经历新冒险时，默认理解为使用原作世界或核心人物创作新剧情，不追问是复述原作还是新编，也不主动提供只参考主题、氛围或风格的选项。",
+          "老师未点名原作人物时，不要求老师列人物名单；后续根据背景资料选择与故事最相关的最小核心角色集合。只有版本歧义、点名人物冲突或其他差异会实质改变故事时，才需要确认。",
+          "通常不提问：信息足以生成 3 个明显不同的故事方向时，直接返回 ready_for_confirmation 和整理后的创作理解。只有确实存在会改变故事本质、且无法安全推断的阻断歧义时才提问；通常只问 1 题，两个互相独立的阻断歧义并存时最多问 2 题。",
+          "需要提问时，每个问题都必须给出 2-3 个可直接选择的选项，并且必须同时给出一项具体推荐及简短理由；推荐项作为安全默认答案，老师可以直接确认。除非缺少无法推断的专有名称或版本，不使用纯文本题。每题仍允许自定义输入。",
+          "对齐完成后不直接生成故事，返回简短创作理解摘要等待老师确认。摘要须说明老师和所有学生都会参与，具体进入方式由后续剧情设计；没有具体主线时，说明将通过 3 个候选方向选择，不继续追问剧情细节。",
+          input.replyContext === "requirement_change"
+            ? "这是一次创作需求修改。summary 只概括修改后的创作理解，不使用“建议”“已确认”“已确定”等措辞；系统会统一添加“我理解你想将创作需求调整为：”和后续资料提示。"
+            : "summary 只概括你对老师创作需求的理解，不使用“建议”“已确认”“已确定”等措辞；系统会统一添加“我理解你的创作需求是：”。",
+          "老师提到任何作品、IP、真实人物、历史事件、知识主题或其他来源时，summary 必须明确说明该来源在故事中如何使用，不能只写“基于”或“参考”。作品与 IP 需要说明是使用原作世界和核心角色创作新剧情，还是忠实讲述已给出的原剧情；真实人物与历史事件需要说明事实叙事和适龄改编边界；知识主题需要说明知识如何通过故事事件呈现。",
+          "summary 不得向老师播报“不继续追问”“正在分析”“系统将处理”等内部流程。需求对齐阶段尚未判断是否需要背景资料，不能承诺确认后立刻展示方向或大纲。planningMode 为 explore_options 时以“确认后，我会准备 3 个不同的故事方向；如需背景资料，会先整理必要内容。”收尾；为 follow_defined_plot 时以“确认后，我会准备故事大纲；如需背景资料，会先整理必要内容。”收尾。",
           "只返回 JSON：{status, planningMode, assistantMessage, resolvedUnderstanding, unresolvedIssues, questions, summary?}。status 只能是 needs_clarification 或 ready_for_confirmation；planningMode 只能是 explore_options 或 follow_defined_plot。",
           "questions 每项字段为 id, label, reason?, required, answerMode, options?, allowCustom, allowRecommendation, recommendation?。answerMode 只能是 single_choice, multi_choice, text。",
           "ready_for_confirmation 时 unresolvedIssues 和 questions 必须为空且 summary 非空；needs_clarification 时至少返回一个问题。不要使用模型、Prompt、JSON、调用等技术词。",
+          ...teacherFacingReplyRules,
           ...contextPrompt(input),
           "<current_task>",
           input.task,
@@ -285,7 +315,17 @@ export function createStoryOutlineGenerationDeps() {
       });
       const parsed = parseJson<Record<string, unknown>>(text, "故事需求对齐失败，请重试");
       const status = parsed.status === "ready_for_confirmation" ? "ready_for_confirmation" : "needs_clarification";
-      const questions = Array.isArray(parsed.questions) ? parsed.questions.map(normalizeAlignmentQuestion).filter((item): item is StoryAlignmentQuestion => Boolean(item)) : [];
+      const normalizedQuestions = Array.isArray(parsed.questions) ? parsed.questions.map(normalizeAlignmentQuestion).filter((item): item is StoryAlignmentQuestion => Boolean(item)) : [];
+      const questionIds = new Set<string>();
+      const questions = normalizedQuestions.map((question, index) => {
+        if (!questionIds.has(question.id)) {
+          questionIds.add(question.id);
+          return question;
+        }
+        const uniqueId = `${question.id}-${index + 1}`;
+        questionIds.add(uniqueId);
+        return { ...question, id: uniqueId };
+      });
       const result: AlignmentDecision = {
         status,
         planningMode: parsed.planningMode === "follow_defined_plot" ? "follow_defined_plot" : "explore_options",
@@ -293,7 +333,12 @@ export function createStoryOutlineGenerationDeps() {
         resolvedUnderstanding: stringArray(parsed.resolvedUnderstanding),
         unresolvedIssues: stringArray(parsed.unresolvedIssues),
         questions,
-        ...(stringValue(parsed.summary) ? { summary: stringValue(parsed.summary) } : {}),
+        ...(stringValue(parsed.summary) ? { summary: normalizeRecommendedSummary(
+          stringValue(parsed.summary),
+          parsed.planningMode === "follow_defined_plot" ? "follow_defined_plot" : "explore_options",
+          input.replyContext,
+          input.needsBackgroundRefresh,
+        ) } : {}),
       };
       if (status === "ready_for_confirmation" && (!result.summary || result.unresolvedIssues.length || result.questions.length)) {
         throw new Error("故事需求对齐结果不完整，请重试");
@@ -311,8 +356,12 @@ export function createStoryOutlineGenerationDeps() {
           "判断后续创作是否需要人物事实、原作角色、人物关系、世界设定或其他背景知识；完全原创且不依赖外部对象时返回 not_needed。",
           "如果需要，优先使用你已有且有把握的知识直接整理；只有当已有知识不足以准确支持故事创作时，才返回 external_required，并说明缺少什么。",
           "只整理本次故事会使用的对象、版本、人物和必要关系，不做百科式介绍，不扩展到无关人物、支线、时期或作品。",
+          "老师明确点名的原作角色全部保留。老师未点名原作角色时，最多整理 4 个原作候选角色，只选择足以支持后续方向设计的核心人物；候选角色不代表都会进入最终故事。",
           "内容突出可直接用于故事创作的人物特点、关系、重要事实和世界规则。不确定的信息不能猜测，也不能混合不同版本。",
+          ...confirmedReferenceRules,
           "不生成故事方向或故事大纲，不实际执行联网搜索。",
+          "external_required 的 reason 会直接展示给老师：只用一句中文具体说明缺少哪项背景信息，不描述你的知识、能力或内部判断。",
+          ...teacherFacingReplyRules,
           "只返回 JSON。三种协议：{status:'not_needed',reason}；{status:'ready',references:[{name,type,sourceStatus,summary,usableFacts,avoidTopics,adaptationBoundary}]}；{status:'external_required',reason,researchPlan}。",
           ...contextPrompt(input),
           "<current_task>",
@@ -332,65 +381,27 @@ export function createStoryOutlineGenerationDeps() {
       if (!references.length) throw new Error("背景知识没有完整生成，请重试");
       return { status: "ready", references };
     },
-    decideFreeInput: async (input: {
-      task: string;
-      chapterCount: number;
-      coursePeople: CoursePersonPrompt;
-      conversationHistory: Array<{ role: string; content: string }>;
-      references: unknown[];
-      selectedDirection: unknown;
-      currentDirections?: unknown[];
-      currentOutline: unknown;
-    }) => {
+    checkChangeBoundary: async (input: StoryPromptContext & { task: string; targetScope: "direction" | "outline" | "chapter" }) => {
       const { text } = await client().generateOutline({
         writingProvider: "quickrouter_gpt",
-        operation: "story_decide_free_input",
+        operation: "story_check_change_boundary",
         prompt: [
-          "你是 Step 2 的流程判断助手，只判断流程下一步，不创作故事方向或故事大纲。",
-          "只返回 JSON 对象，字段：decision, assistantMessage, referenceName, referenceType, researchPlan, teacherReferences。decision 只能是 ask_clarification, ask_story_usage, prepare_reference_material, request_reference_material, generate_directions, generate_outline。",
-          "按以下顺序判断：意图或引用对象有歧义时返回 ask_clarification；需要背景资料时先准备资料；只有确认参考资料后，才能依据已保存资料判断是否存在完整原剧情、如何使用原剧情以及主线是否完整。",
-          "仅当已保存资料清楚包含某个小说、电影、动漫、游戏主线等既有作品的完整开端、关键转折、高潮和结局，而且老师尚未说明使用方式时，返回 ask_story_usage。不要仅凭对象名称或模型印象判断存在完整原剧情。assistantMessage 使用“资料中包含完整原剧情。你希望怎么讲这个故事？”。",
-          "老师选择“按原剧情讲”时，保留原作主线、关键转折和结局，原剧情本身视为完整主线，返回 generate_outline；学生默认只是课程学习者，不进入故事。老师选择“创作新剧情”时，只保留指定的原作人物、世界观或主题；没有明确新主线时返回 generate_directions。老师通过“我希望这样讲这个故事”补充时，按其具体要求和主线完整度判断。",
-          "当前存在未选择的故事方向时，老师继续补充人物、情节、风格或方向要求，默认返回 generate_directions 以替换旧方向；只有老师明确表示不再选择方向、要求直接生成大纲，且主线已经完整时才返回 generate_outline。",
-          "不需要背景资料且主线仍宽泛时返回 generate_directions；只有老师已经明确给出主角目标、核心冲突和关键推进方式、选择按原剧情讲，或修改要求足够具体时，才返回 generate_outline。只给出人物、主题、类型或氛围不算主线明确。",
-          "展示参考资料与是否联网是两个独立判断。故事依赖真实人物、历史背景、公众人物、既有作品角色、科学事实等背景知识时，应先为老师准备参考资料；你自身已有可靠、稳定知识时返回 prepare_reference_material，自身知识不足时才返回 request_reference_material。纯原创设定且不依赖外部背景知识时不需要资料。",
-          "先检查 current_state 中已保存参考资料。现有资料已经覆盖本轮所需背景时，不重复返回 prepare_reference_material 或 request_reference_material，直接按主线清晰度继续。只有新增对象或出现尚未覆盖的必要知识时才准备新资料。",
-          "只有对象冷门或有歧义、需要最新信息、精确时间线或专业细节、现有知识明显不足或老师明确要求核实时，才返回 request_reference_material。不得仅因对象属于真实人物、IP 或游戏角色就要求联网；例如你熟悉其稳定核心设定时应返回 prepare_reference_material。",
-          "assistantMessage 是直接展示给老师的聊天消息，只用中文说明已经理解到什么和马上要做什么，不复述全部需求。返回 generate_directions 时说明正在创作 3 个故事方向；返回 generate_outline 时说明正在生成章节大纲；返回 prepare_reference_material 时说明正在整理创作所需资料。不要使用“模型、prompt、JSON、调用”等技术词。不要自行发起联网；仅在返回 request_reference_material 后，由老师选择手动补充或联网整理。",
-          "在 prepare_reference_material 或 request_reference_material 时返回 researchPlan。researchPlan 结构为 {researchGoal, packets:[{title, subjects:[{name, context?}], researchQuestions, storyUseGoals}]}。研究既有故事时，必须覆盖完整主线、关键转折、结局和主要人物关系，不能只搜对象简介。",
-          "不要套用固定知识分类。根据完整对话和故事目标动态决定研究对象、问题和颗粒度；同一作品且需要共同参与故事、彼此有关联的多个角色通常放在同一个 packet，不相关对象可拆分。",
-          "老师手动补充的资料足够时，在 teacherReferences 中按可独立使用的资料组整理；若资料包含完整既有剧情但使用方式仍不明确，可以返回 ask_story_usage，否则按主线清晰度返回 generate_directions 或 generate_outline。每项字段为 name, type, summary, usableFacts, avoidTopics, adaptationBoundary，数组字段无内容时返回空数组。",
+          "你只判断老师的修改能否在指定范围内完成，不解释新的故事意图，也不改写任何内容。",
+          "只有修改会更换故事核心题材、真实或虚构来源、主要人物体系、原作或事实边界时，返回 new_requirement。",
+          "调整情节、难度、氛围、冲突、结局表达或指定范围内的事件，返回 within_target。不要因为修改幅度较大就误判为新需求。",
+          "如果返回 new_requirement，同时判断修改后的创作是否仍可完整沿用当前已保存参考资料。只有新增或更换作品、人物、历史事实、知识对象、版本或原作边界时，needsBackgroundRefresh 才为 true；只改变剧情走向、冲突、任务、反派、能力用法、地点、结局或师生参与方式时为 false。",
+          "只返回 JSON：范围内修改为 {scope:'within_target',needsBackgroundRefresh:false}；核心需求变化为 {scope:'new_requirement',reason,needsBackgroundRefresh}。reason 用一句中文说明变化。",
+          `指定修改范围：${input.targetScope}`,
           ...contextPrompt(input),
           "<current_task>",
           input.task,
           "</current_task>",
         ].join("\n"),
       });
-      const parsed = parseJson<FreeInputDecision>(text, "故事需求判断失败，请重试");
-      const latestTeacherMessage = [...input.conversationHistory].reverse().find((message) => message.role === "teacher")?.content || "";
-      const rawTeacherReferences = parsed.teacherReferences?.length
-        ? parsed.teacherReferences
-        : parsed.teacherReference
-          ? [parsed.teacherReference]
-          : [];
-      const teacherReferences = rawTeacherReferences.map((reference) => {
-        const normalized = normalizeReference(reference, parsed.referenceName || "", latestTeacherMessage);
-        return {
-          name: normalized.name,
-          type: normalized.type,
-          summary: normalized.summary,
-          usableFacts: normalized.usableFacts,
-          avoidTopics: normalized.avoidTopics,
-          adaptationBoundary: normalized.adaptationBoundary,
-        };
-      });
-      return {
-        ...parsed,
-        researchPlan: normalizeResearchPlan(parsed.researchPlan),
-        referenceName: parsed.referenceName || teacherReferences[0]?.name,
-        teacherReference: teacherReferences[0],
-        teacherReferences,
-      };
+      const parsed = parseJson<Record<string, unknown>>(text, "修改范围判断失败，请重试");
+      return parsed.scope === "new_requirement"
+        ? { scope: "new_requirement" as const, reason: stringValue(parsed.reason) || "这项修改会更换故事的核心创作需求。", needsBackgroundRefresh: parsed.needsBackgroundRefresh !== false }
+        : { scope: "within_target" as const, needsBackgroundRefresh: false as const };
     },
     generateDirections: async (input: StoryPromptContext & { task: string }) => {
       const { text } = await client().generateOutline({
@@ -401,8 +412,11 @@ export function createStoryOutlineGenerationDeps() {
           "只返回包含 3 项的 JSON 数组；每项字段为 title, hook, storyHighlight, growthCore, mainCharacters, whyFits, seedPrompt，所有内容使用中文。",
           "hook 必须用一句完整的话说明谁是主要角色、什么事件打破原有状态、角色需要完成什么、面临的主要困难或特殊规则。老师只阅读 hook，也应该能大致理解这个故事会怎样展开。禁止使用“一场奇妙冒险即将开始”等空泛悬念。",
           "storyHighlight 用一句话说明最有辨识度且真正影响剧情的设定、人物关系、冲突、视角、选择或结构，不强制使用奇幻规则。growthCore 说明角色原先如何理解或应对问题，以及故事后可能发生什么变化，不使用心理学术语或抽象品质口号。",
-          "完整保留老师明确指定的故事类型、人物或角色、学生参与方式和已确认资料边界；不得用自行新增角色替换老师点名的角色。",
-          "Step 1 人物快照描述的是课程参与者，不等于故事角色。只有老师明确要求学生或老师进入剧情时，才把他们列入 mainCharacters 或设计其剧情行动。",
+          "完整保留老师明确指定的故事类型、人物或角色、学生参与方式和已确认资料边界；不得用自行新增角色替换老师点名的角色。老师明确排除某位课堂人物时必须遵守。",
+          ...classroomParticipationRules,
+          "课堂人物必须获得明确剧情功能：1 名学生按单人行动设计，2 名学生按搭档设计，3 名及以上按团队设计；不要求平均戏份，但每个人至少要有一次改变局面的有效行动。不要让老师代替学生解决核心问题。",
+          ...confirmedReferenceRules,
+          "使用已有作品但老师未点名具体原作人物时，根据已确认参考资料选择与新剧情最相关的最小核心角色集合，每个方向默认最多选择 2 个原作角色；只有缺少第 3 个角色就无法成立核心冲突时才允许增加。老师明确点名的原作角色全部保留，不受默认上限影响；老师和学生不计入这个原作角色上限。",
           "老师选择“创作新剧情”时才设计新的故事主线；老师选择“按原剧情讲”时不得生成方向，应由流程判断直接进入大纲。当前存在未选择方向且老师提出新要求时，3 个新方向必须明显落实最新反馈并替换旧方向。",
           "mainCharacters 只列具体且需要保持视觉一致性的角色。机构、团队和背景群体只能写进 hook 或 seedPrompt，不得作为主要角色；参考资料提到某个实体不等于它必须成为角色。",
           "老师要求冒险时，设计任务、旅程、挑战、选择和行动；只有老师明确要求时才使用调查、推理或解谜主线。",
@@ -492,43 +506,6 @@ export function createStoryOutlineGenerationDeps() {
         },
       };
     },
-    generateReferenceFromKnowledge: async (input: StoryPromptContext & { task: string; researchPlan: CourseResearchPlan }) => {
-      const { text } = await client().generateOutline({
-        writingProvider: "quickrouter_gpt",
-        operation: "story_generate_reference_from_knowledge",
-        prompt: [
-          "你只负责把已有背景知识整理成老师可阅读、可用于故事创作的参考资料，不判断流程，不设计故事方向或大纲。",
-          "只使用你自身已有且有把握的稳定知识，不得联网。严格围绕 researchPlan 中每个 packet 的 researchQuestions 整理，并让结果能够完成 storyUseGoals。",
-          "不确定的细节不要编造，也不要用看似精确的日期、数字或情节填补记忆空白；可在 avoidTopics 或 adaptationBoundary 中明确知识边界。",
-          "只返回 JSON 数组，每个 packet 对应一个对象，顺序保持一致。字段：name, type, sourceStatus, summary, usableFacts, avoidTopics, adaptationBoundary。",
-          "不要使用 Markdown 代码块，不要在 JSON 前后添加说明。usableFacts 和 avoidTopics 必须是 JSON 字符串数组，没有内容时返回空数组。",
-          "type 只能是 real_person, historical_person, public_figure, ip, game_character, fictional_character, other；sourceStatus 返回 confirmed。",
-          "name 使用对应 packet 的 title。summary 用中文概括与故事目标直接相关的知识脉络；usableFacts 提取 4-10 条具体、带因果或规则、能直接转化为剧情的中文要点。",
-          ...contextPrompt(input),
-          "<research_plan>",
-          JSON.stringify(input.researchPlan),
-          "</research_plan>",
-          "<current_task>",
-          input.task,
-          "</current_task>",
-        ].join("\n"),
-      });
-      const parsed = parseJson<Array<{
-        name: string;
-        type: CourseSourceReferenceType;
-        sourceStatus: CourseSourceStatus;
-        summary: string;
-        usableFacts: string[];
-        avoidTopics: string[];
-        adaptationBoundary: string;
-      }>>(text, "参考资料解析失败，请重试");
-      const values = Array.isArray(parsed) ? parsed : [parsed];
-      return values.map((value, index) => {
-        const packet = input.researchPlan.packets[index];
-        const fallbackName = packet?.title || input.researchPlan.researchGoal;
-        return normalizeReference(value, fallbackName, `关于${fallbackName}的背景参考资料。`);
-      });
-    },
     searchReference: async (input: StoryPromptContext & { task: string; researchPlan: CourseResearchPlan }) => {
       const { text } = await client().searchReference({
         operation: "story_search_reference",
@@ -540,6 +517,7 @@ export function createStoryOutlineGenerationDeps() {
           "type 只能是 real_person, historical_person, public_figure, ip, game_character, fictional_character, other。",
           "sourceStatus 只能是 confirmed 或 insufficient。",
           "只能使用本次联网搜索能够支持的事实，不得用模型记忆补齐搜索缺口。无法确认完整且准确的核心信息、来源相互冲突、只能找到零散简介，或无法完成任一 researchQuestion / storyUseGoal 时必须返回 insufficient；不得为了凑够要点而捏造。",
+          ...confirmedReferenceRules,
           "只有权威来源能够直接支持，或多个独立可靠来源相互印证时，才能返回 confirmed。搜索摘要、转载片段或缺少上下文的单一说法不足以确认完整剧情与关键事实。",
           "name 使用对应 packet 的 title。summary 用中文概括与研究目标直接相关的完整知识脉络；usableFacts 提取 6-12 条具体、可核验、带因果或规则、能直接转化为剧情的中文要点。",
           "不要用空泛标签凑数。存在争议或儿童不宜内容时仍先保证事实完整，再放入 avoidTopics；adaptationBoundary 说明如何安全改编。",
@@ -594,14 +572,17 @@ export function createStoryOutlineGenerationDeps() {
           "外部真实人物或已有作品角色实际出场时，sourceType 必须为 referenced，并在能够对应已保存参考资料时填写 sourceReferenceId；原创人物才使用 original。",
           "roleInStory 只写简短故事定位；storyDescription 用 1-2 句话说明角色在本故事中的目标、剧情作用和必要关系，不写人物百科或空泛性格标签。课堂人物只能复用人物快照，不编造外貌、性格或背景；进入 characters 时 sourcePersonId 必须逐字复制对应人物快照的 personId。",
           "老师点名且要求出场的每个角色都必须通过行动推动故事；每个角色都必须服务核心冲突，AI 自行新增的原创角色最多 1 个，群像要求除外。",
+          "引用角色只保留已选故事方向实际使用的引用角色；参考资料中的其他候选角色不得自动进入 characters。老师明确点名且要求出场的引用角色仍须全部保留。",
           "chapters 每项字段为 order, title:{zh,en}, whatHappens, characterKeys, recommendedKnowledgePointKeys, knowledgePointRecommendationSummary；characterKeys 只能引用 characters 中的 key。章节数量必须等于指定章节数。",
           "忠实保留已选方向的主要剧情、storyHighlight、growthCore 和核心角色。每章发生一个改变当前局面的具体事件，角色行动产生结果，结果成为后续事件的原因；不能只是重复任务、更换地点或罗列知识。",
           "故事亮点必须贯穿并推动主要剧情。角色成长通过面对处境、作出有意义的选择并承担结果体现，不用旁白宣布品质，也不套用固定的失败—合作—成功结构。想象力必须服务剧情，不能随机堆叠。",
           "每章只在 whatHappens 中写约 50 字中文剧情概述，讲清角色做了什么、局面发生什么变化、这个变化如何推动后续故事。",
           "先完成各章剧情，再为每章匹配知识点。每章至少推荐 1 个知识点；recommendedKnowledgePointKeys 只能逐字复制“全课可选知识点”中的 key（例如 KP1），不要返回数据库 id、知识点名称或自行创造 key。根据本章语言情境、英语难度和课程时长控制知识密度，不合适的知识点可以不推荐。knowledgePointRecommendationSummary 用一句简洁中文说明该知识点能在本章什么表达中自然使用。不要生成词数、题型或题量。",
           "需求优先级从高到低为：老师历史中明确要求；已选择方向；已确认参考资料；当前大纲；通用创作建议。低优先级内容不得覆盖高优先级要求。",
-          "根据人物年龄、老师要求和引用对象选择叙事类型与主角；学生不强制成为主角，但如果进入故事，必须有自然身份和剧情功能。内容复杂度、风险和情绪强度适合学生年龄。",
-          "Step 1 人物快照默认只用于理解课程学习者。老师选择“按原剧情讲”时，严格保留原作主线、关键转折、结局和原作角色，学生与老师不得自动进入 characters 或正文；只有老师明确要求他们进入剧情时才加入。",
+          ...classroomParticipationRules,
+          ...confirmedReferenceRules,
+          "根据人物年龄、老师要求和引用对象选择叙事类型与主角；学生不强制成为唯一主角。老师和所有学生必须进入 characters 和正文，sourcePersonId 必须准确对应；1 名学生按单人行动设计，2 名按搭档设计，3 名及以上按团队设计，不要求平均戏份，但每个人至少有一次改变局面的有效行动。老师不能代替学生解决核心问题。",
+          "老师选择“按原剧情讲”时，严格保留原作主线、关键转折、结局和原作角色；老师和所有学生仍须以观察者、采访者、讲述者或不改变因果的同行者身份自然参与。只要课堂人物的行动改变了原作事件或结局，就属于改编，不能标成忠实复述。老师明确排除某人时除外。",
           "保持老师明确指定的故事类型。冒险故事以任务、旅程、挑战、选择和行动推进；只有老师明确要求解谜、侦探、调查、线索或推理时，才使用相应主线。返回前自行检查章节因果、故事亮点是否贯穿、成长是否通过选择与结果表现，但不要输出检查过程。",
           ...contextPrompt({ ...input, currentOutline: input.currentOutline ?? null }),
           "<current_task>",

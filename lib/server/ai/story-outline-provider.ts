@@ -27,7 +27,7 @@ export class StoryOutlineProviderConfigError extends Error {
 }
 
 function configFromEnvironment(): ProviderConfig {
-  const apiKey = process.env.QUICKROUTER_API_KEY;
+  const apiKey = process.env.QUICKROUTER_TEXT_API_KEY;
   if (!apiKey) throw new StoryOutlineProviderConfigError();
   const timeout = Number(process.env.TEXT_GENERATION_TIMEOUT_MS);
   return {

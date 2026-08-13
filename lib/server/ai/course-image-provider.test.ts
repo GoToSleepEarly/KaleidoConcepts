@@ -2,12 +2,34 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { createCourseImageProvider } from "./course-image-provider";
 
+const originalEnv = { ...process.env };
+
 afterEach(() => {
+  process.env = { ...originalEnv };
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe("course image provider", () => {
+  test("使用独立生图 token，不回退旧共享 token", async () => {
+    process.env.QUICKROUTER_IMAGE_API_KEY = "image-key";
+    process.env.QUICKROUTER_API_KEY = "legacy-key";
+    const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/image.webp" }] }));
+    vi.stubGlobal("fetch", request);
+
+    await createCourseImageProvider().generate({ prompt: "scene", quality: "low" });
+
+    const init = (request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer image-key");
+  });
+
+  test("缺少独立生图 token 时不回退旧共享 token", () => {
+    delete process.env.QUICKROUTER_IMAGE_API_KEY;
+    process.env.QUICKROUTER_API_KEY = "legacy-key";
+
+    expect(() => createCourseImageProvider()).toThrow("图片生成服务尚未配置");
+  });
+
   test("把界面默认的高画质作为 medium 发送给横版图生图接口", async () => {
     const request = vi.fn(async (...args: Parameters<typeof fetch>) => {
       void args;

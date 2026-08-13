@@ -62,9 +62,75 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("不是帮助老师补完整个故事");
     expect(prompt).toContain("后续系统会生成 3 个候选故事方向");
     expect(prompt).toContain("不查找或整理背景资料");
+    expect(prompt).toContain("Step 1 中的老师和所有学生默认全部参与故事");
+    expect(prompt).toContain("课堂人物的具体进入方式由故事剧情决定");
+    expect(prompt).toContain("通常不提问");
+    expect(prompt).toContain("每个问题都必须给出 2-3 个可直接选择的选项");
+    expect(prompt).toContain("必须同时给出一项具体推荐及简短理由");
     expect(prompt).not.toContain("researchPlan");
     expect(prompt).toContain("暮光闪闪和云宝黛西");
     expect(prompt).toContain('"personId":"student-1"');
+  });
+
+  test("presents every ready creative brief as an understanding awaiting teacher confirmation", async () => {
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        status: "ready_for_confirmation",
+        planningMode: "explore_options",
+        assistantMessage: "已整理完成。",
+        resolvedUnderstanding: ["使用指定作品创作新故事"],
+        unresolvedIssues: [],
+        questions: [],
+        summary: "已确认基于指定作品创作新的奇幻探险；老师和所有学生都会参与。当前不继续追问细节，下一步先提供3个候选故事方向供您选择。",
+      }),
+    });
+
+    const result = await createStoryOutlineGenerationDeps().alignRequirements({
+      task: "根据一部指定作品，创造一个奇幻探险故事。",
+      chapterCount: 4,
+      coursePeople: [],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+    });
+
+    expect(result.summary).toBe("我理解你的创作需求是：基于指定作品创作新的奇幻探险；老师和所有学生都会参与。确认后，我会准备 3 个不同的故事方向；如需背景资料，会先整理必要内容。");
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain("不使用“建议”“已确认”“已确定”等措辞");
+    expect(prompt).toContain("明确说明该来源在故事中如何使用");
+    expect(prompt).toContain("不得向老师播报“不继续追问”");
+    expect(prompt).toContain("如需背景资料，会先整理必要内容");
+    expect(prompt).toContain("follow_defined_plot");
+  });
+
+  test("does not append the normalized next step when the model already returned it", async () => {
+    const nextStep = "确认后，我会准备 3 个不同的故事方向；如需背景资料，会先整理必要内容。";
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        status: "ready_for_confirmation",
+        planningMode: "explore_options",
+        assistantMessage: "请确认创作理解。",
+        resolvedUnderstanding: ["使用《冰雪奇缘》创作新剧情"],
+        unresolvedIssues: [],
+        questions: [],
+        summary: `建议按这个方向创作：使用《冰雪奇缘》的原作世界和核心角色创作全新奇幻探险。${nextStep}`,
+      }),
+    });
+
+    const result = await createStoryOutlineGenerationDeps().alignRequirements({
+      task: "根据《冰雪奇缘》，创造一个奇幻探险故事。",
+      chapterCount: 4,
+      coursePeople: [],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+    });
+
+    expect(result.summary?.split(nextStep)).toHaveLength(2);
   });
 
   test("prepares background once from built-in knowledge before requesting external material", async () => {
@@ -101,6 +167,80 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("优先使用你已有且有把握的知识");
     expect(prompt).toContain("只有当已有知识不足");
     expect(prompt).toContain("不实际执行联网搜索");
+    expect(prompt).toContain("reason 会直接展示给老师");
+    expect(prompt).toContain("最多整理 4 个原作候选角色");
+    expect(prompt).toContain("候选角色不代表都会进入最终故事");
+  });
+
+  test("treats plot, antagonist, magic and classroom participation changes as local revisions", async () => {
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({ scope: "within_target" }) });
+
+    const result = await createStoryOutlineGenerationDeps().checkChangeBoundary({
+      task: "老师和学生一起和主角用魔法打败邪恶怪兽",
+      targetScope: "direction",
+      chapterCount: 4,
+      coursePeople: [],
+      conversationHistory: [],
+      references: [{ id: "ref-frozen", name: "《冰雪奇缘》核心设定" }],
+      selectedDirection: { title: "冰雪王国的新冒险" },
+      currentDirections: [],
+      currentOutline: null,
+    });
+
+    expect(result).toEqual({ scope: "within_target", needsBackgroundRefresh: false });
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain("needsBackgroundRefresh");
+    expect(prompt).toContain("反派、能力用法、地点、结局或师生参与方式");
+  });
+
+  test("labels a rerouted edit as a requirement change and explains background reuse", async () => {
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        status: "ready_for_confirmation",
+        planningMode: "explore_options",
+        assistantMessage: "请确认修改后的创作理解。",
+        resolvedUnderstanding: ["改为合作战斗故事"],
+        unresolvedIssues: [],
+        questions: [],
+        summary: "老师和学生与当前主角合作，用魔法打败怪兽",
+      }),
+    });
+
+    const result = await createStoryOutlineGenerationDeps().alignRequirements({
+      task: "修改当前创作需求",
+      replyContext: "requirement_change",
+      needsBackgroundRefresh: false,
+      chapterCount: 4,
+      coursePeople: [],
+      conversationHistory: [],
+      references: [{ id: "ref-frozen", name: "《冰雪奇缘》核心设定" }],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+    });
+
+    expect(result.summary).toBe("我理解你想将创作需求调整为：老师和学生与当前主角合作，用魔法打败怪兽。确认后，我会按新的创作需求继续，并沿用现有背景资料。");
+    expect(result.summary).not.toContain("建议");
+  });
+
+  test("returns the background refresh decision with a changed requirement", async () => {
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({ scope: "new_requirement", reason: "改为二战故事", needsBackgroundRefresh: true }),
+    });
+
+    const result = await createStoryOutlineGenerationDeps().checkChangeBoundary({
+      task: "改成二战故事",
+      targetScope: "outline",
+      chapterCount: 4,
+      coursePeople: [],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+    });
+
+    expect(result).toEqual({ scope: "new_requirement", reason: "改为二战故事", needsBackgroundRefresh: true });
   });
 
   test("keeps story outline prompt focused on necessary roles and short Chinese chapter summaries", async () => {
@@ -130,7 +270,10 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("约 50 字");
     expect(prompt).toContain("故事 title 和章节 title 返回中英文双语");
     expect(prompt).toContain("老师点名且要求出场的每个角色");
-    expect(prompt).toContain("学生与老师不得自动进入 characters 或正文");
+    expect(prompt).toContain("只保留已选故事方向实际使用的引用角色");
+    expect(prompt).toContain("参考资料中的其他候选角色不得自动进入 characters");
+    expect(prompt).toContain("老师和所有学生必须进入 characters 和正文");
+    expect(prompt).toContain("观察者、采访者、讲述者或不改变因果的同行者");
     expect(prompt).toContain("characters 是后续视觉资产名单");
     expect(prompt).toContain("机构、公司、团队、部门、监管方和其他背景群体不得进入 characters");
     expect(prompt).toContain("外部真实人物或已有作品角色实际出场时，sourceType 必须为 referenced");
@@ -204,8 +347,11 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("storyHighlight");
     expect(prompt).toContain("growthCore");
     expect(prompt).toContain("mainCharacters 只列具体且需要保持视觉一致性的角色");
+    expect(prompt).toContain("默认最多选择 2 个原作角色");
+    expect(prompt).toContain("老师明确点名的原作角色全部保留");
+    expect(prompt).toContain("老师和学生不计入这个原作角色上限");
     expect(prompt).toContain("机构、团队和背景群体只能写进 hook 或 seedPrompt");
-    expect(prompt).toContain("Step 1 人物快照描述的是课程参与者，不等于故事角色");
+    expect(prompt).toContain("Step 1 中的老师和所有学生默认全部参与故事");
     expect(directions[0]).toMatchObject({ storyHighlight: expect.any(String), growthCore: expect.any(String) });
   });
 
@@ -265,147 +411,4 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(references[0].sourceStatus).toBe("insufficient");
   });
 
-  test("routes known background knowledge to reference preparation without requesting internet", async () => {
-    generateOutlineMock.mockResolvedValueOnce({
-      text: JSON.stringify({
-        decision: "prepare_reference_material",
-        assistantMessage: "我会先整理可用于故事的角色设定。",
-        referenceName: "Jett 与 Sage",
-        researchPlan: {
-          researchGoal: "设计两人共同参与的冒险",
-          packets: [{
-            title: "Jett 与 Sage 的共同设定",
-            subjects: [{ name: "Jett", context: "《瓦罗兰特》" }, { name: "Sage", context: "《瓦罗兰特》" }],
-            researchQuestions: ["两人的能力如何互补？"],
-            storyUseGoals: ["形成合作冲突与解决方式"],
-          }],
-        },
-      }),
-    });
-
-    const decision = await createStoryOutlineGenerationDeps().decideFreeInput({
-      task: "判断下一步。",
-      chapterCount: 4,
-      coursePeople: [],
-      conversationHistory: [{ role: "teacher", content: "参考 Jett 和 Sage 生成冒险故事" }],
-      references: [],
-      selectedDirection: null,
-      currentOutline: null,
-    });
-
-    expect(decision.researchPlan?.packets[0]).toMatchObject({
-      title: "Jett 与 Sage 的共同设定",
-      subjects: [{ name: "Jett", context: "《瓦罗兰特》" }, { name: "Sage", context: "《瓦罗兰特》" }],
-    });
-    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(prompt).toContain("不要套用固定知识分类");
-    expect(prompt).toContain("同一作品且需要共同参与故事");
-    expect(prompt).toContain("只判断流程下一步");
-    expect(prompt).not.toContain("任务、旅程、挑战");
-    expect(prompt).toContain("只有老师已经明确给出主角目标、核心冲突和关键推进方式");
-    expect(prompt).toContain("展示参考资料与是否联网是两个独立判断");
-    expect(prompt).toContain("自身已有可靠、稳定知识时返回 prepare_reference_material");
-    expect(prompt).toContain("自身知识不足时才返回 request_reference_material");
-    expect(prompt).toContain("现有资料已经覆盖本轮所需背景时");
-    expect(prompt).toContain("只有确认参考资料后");
-    expect(prompt).toContain("ask_story_usage");
-  });
-
-  test("recognizes a complete source story only after references are available", async () => {
-    generateOutlineMock.mockResolvedValueOnce({
-      text: JSON.stringify({
-        decision: "ask_story_usage",
-        assistantMessage: "资料中包含完整原剧情。你希望怎么讲这个故事？",
-      }),
-    });
-
-    const decision = await createStoryOutlineGenerationDeps().decideFreeInput({
-      task: "确认资料后判断下一步。",
-      chapterCount: 4,
-      coursePeople: [],
-      conversationHistory: [{ role: "teacher", content: "我确认参考资料，请继续。" }],
-      references: [{ name: "某网络小说", summary: "包含开端、转折、高潮和结局。" }],
-      selectedDirection: null,
-      currentDirections: [],
-      currentOutline: null,
-    });
-
-    expect(decision.decision).toBe("ask_story_usage");
-    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(prompt).toContain("按原剧情讲");
-    expect(prompt).toContain("学生默认只是课程学习者");
-  });
-
-  test("generates teacher-facing reference cards from reliable model knowledge", async () => {
-    generateOutlineMock.mockResolvedValueOnce({
-      text: JSON.stringify([{
-        name: "Jett 与 Sage 的共同设定",
-        type: "game_character",
-        sourceStatus: "confirmed",
-        summary: "两位特工分别擅长机动突袭和防护支援。",
-        usableFacts: ["Jett 擅长快速移动", "Sage 能保护和支援队友"],
-        avoidTopics: [],
-        adaptationBoundary: "保留标志性能力，但改编为适合课堂的非暴力冒险。",
-      }]),
-    });
-
-    const references = await createStoryOutlineGenerationDeps().generateReferenceFromKnowledge({
-      task: "整理模型已有知识。",
-      chapterCount: 4,
-      coursePeople: [],
-      conversationHistory: [{ role: "teacher", content: "参考《瓦罗兰特》的 Jett 和 Sage 生成冒险故事" }],
-      references: [],
-      selectedDirection: null,
-      currentOutline: null,
-      researchPlan: {
-        researchGoal: "整理两名角色可用于故事的共同设定",
-        packets: [{
-          title: "Jett 与 Sage 的共同设定",
-          subjects: [{ name: "Jett", context: "《瓦罗兰特》" }, { name: "Sage", context: "《瓦罗兰特》" }],
-          researchQuestions: ["两人的能力和合作关系是什么？"],
-          storyUseGoals: ["设计合作冒险"],
-        }],
-      },
-    });
-
-    expect(references[0]).toMatchObject({
-      name: "Jett 与 Sage 的共同设定",
-      usableFacts: ["Jett 擅长快速移动", "Sage 能保护和支援队友"],
-    });
-    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(prompt).toContain("只使用你自身已有且有把握的稳定知识");
-    expect(prompt).toContain("不得联网");
-    expect(prompt).toContain("不确定的细节不要编造");
-    expect(prompt).toContain("两人的能力和合作关系是什么？");
-  });
-
-  test("normalizes an incomplete teacher supplied reference before persistence", async () => {
-    generateOutlineMock.mockResolvedValueOnce({
-      text: JSON.stringify({
-        decision: "generate_outline",
-        assistantMessage: "资料足够。",
-        referenceName: "Sage",
-        teacherReference: {
-          type: "game_character",
-          summary: "老师补充了 Sage 的治疗能力。",
-        },
-      }),
-    });
-
-    const decision = await createStoryOutlineGenerationDeps().decideFreeInput({
-      task: "判断下一步。",
-      chapterCount: 4,
-      coursePeople: [],
-      conversationHistory: [{ role: "teacher", content: "我补充资料：Sage 可以治疗队友。" }],
-      references: [],
-      selectedDirection: null,
-      currentOutline: null,
-    });
-
-    expect(decision.teacherReference).toMatchObject({
-      name: "Sage",
-      usableFacts: [],
-      avoidTopics: [],
-    });
-  });
 });

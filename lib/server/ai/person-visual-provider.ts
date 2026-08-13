@@ -21,7 +21,7 @@ export class PersonVisualProviderConfigError extends Error {
 }
 
 function configFromEnvironment(): ProviderConfig {
-  const apiKey = process.env.QUICKROUTER_API_KEY;
+  const apiKey = process.env.QUICKROUTER_IMAGE_API_KEY;
   if (!apiKey) throw new PersonVisualProviderConfigError();
   const qualityValue = process.env.QUICKROUTER_IMAGE_QUALITY;
   const quality =

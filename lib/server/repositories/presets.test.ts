@@ -10,7 +10,7 @@ describe("presets repository", () => {
           findMany: async (query) => {
             expect(query).toEqual({
               where: { archivedAt: null, kind: "grammar" },
-              orderBy: [{ category: "asc" }, { sortOrder: "asc" }, { label: "asc" }],
+              orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
             });
 
             return [
@@ -60,7 +60,7 @@ describe("presets repository", () => {
             return null;
           },
           create: async ({ data }) => {
-            expect(data).toEqual({ kind: "theme", label: "海洋生态", labelZh: null, category: "自然与生态", sortOrder: 0 });
+            expect(data).toEqual({ kind: "theme", label: "海洋生态", labelZh: null, category: "自然与生态", sortOrder: 10_000 });
             return {
               id: "preset-2",
               ...data,

@@ -104,6 +104,14 @@ type DbSetting = {
   alignmentSummary?: string | null;
   alignmentDetails?: unknown;
   alignmentConfirmedAt?: Date | null;
+  stateRevision?: number;
+  operationRequestId?: string | null;
+  operationAction?: string | null;
+  operationPhase?: string | null;
+  operationStatus?: "running" | "succeeded" | "failed" | "result_unknown" | "superseded" | null;
+  operationError?: string | null;
+  operationInput?: unknown;
+  operationStartedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -142,6 +150,7 @@ type Delegate<T> = {
   create?: (query: { data: Record<string, unknown> }) => Promise<T>;
   createMany?: (query: { data: Record<string, unknown>[] }) => Promise<{ count: number }>;
   update?: (query: { where: Record<string, unknown>; data: Record<string, unknown> }) => Promise<T | null>;
+  updateMany?: (query: { where: Record<string, unknown>; data: Record<string, unknown> }) => Promise<{ count: number }>;
   upsert?: (query: { where: Record<string, unknown>; create: Record<string, unknown>; update: Record<string, unknown> }) => Promise<T>;
   deleteMany?: (query: Record<string, unknown>) => Promise<{ count: number }>;
 };
@@ -155,7 +164,7 @@ export type StoryOutlineDb = {
   courseStoryDirection: Required<Pick<Delegate<DbDirection>, "findMany" | "deleteMany" | "createMany" | "update">>;
   courseSourceReference: Required<Pick<Delegate<DbReference>, "findMany" | "create" | "update" | "deleteMany">>;
   courseStoryOutline: Required<Pick<Delegate<DbOutline>, "findUnique" | "upsert" | "deleteMany">>;
-  courseStorySetting: Required<Pick<Delegate<DbSetting>, "findUnique" | "upsert" | "deleteMany">>;
+  courseStorySetting: Required<Pick<Delegate<DbSetting>, "findUnique" | "upsert" | "updateMany" | "deleteMany">>;
   courseStoryOutlineChapter: Required<Pick<Delegate<DbChapter>, "deleteMany" | "createMany" | "update">>;
   courseCharacter: Required<Pick<Delegate<DbCharacter>, "findMany" | "deleteMany" | "createMany">>;
   aiGenerationLog: Required<Pick<Delegate<Record<string, unknown>>, "create">>;
@@ -189,7 +198,11 @@ type StoryOutlineAiContext = {
 };
 
 export type StoryOutlineGenerationDeps = {
-  alignRequirements: (input: StoryOutlineAiContext & { task: string }) => Promise<{
+  alignRequirements: (input: StoryOutlineAiContext & {
+    task: string;
+    replyContext?: "initial" | "requirement_change";
+    needsBackgroundRefresh?: boolean;
+  }) => Promise<{
     status: "needs_clarification" | "ready_for_confirmation";
     planningMode: "explore_options" | "follow_defined_plot";
     assistantMessage: string;
@@ -203,22 +216,16 @@ export type StoryOutlineGenerationDeps = {
     | { status: "ready"; references: GeneratedReference[] }
     | { status: "external_required"; reason: string; researchPlan: CourseResearchPlan }
   >;
-  decideFreeInput: (input: StoryOutlineAiContext & { task: string }) => Promise<{
-    decision: "ask_clarification" | "ask_story_usage" | "prepare_reference_material" | "request_reference_material" | "generate_directions" | "generate_outline";
-    assistantMessage: string;
-    referenceName?: string;
-    referenceType?: CourseSourceReferenceType;
-    researchPlan?: CourseResearchPlan;
-    teacherReference?: Omit<GeneratedReference, "sourceStatus">;
-    teacherReferences?: Array<Omit<GeneratedReference, "sourceStatus">>;
-  }>;
+  checkChangeBoundary: (input: StoryOutlineAiContext & { task: string; targetScope: "direction" | "outline" | "chapter" }) => Promise<
+    | { scope: "within_target"; needsBackgroundRefresh: false }
+    | { scope: "new_requirement"; reason: string; needsBackgroundRefresh: boolean }
+  >;
   generateDirections: (input: StoryOutlineAiContext & { task: string }) => Promise<GeneratedDirection[]>;
   reviseDirection: (input: StoryOutlineAiContext & { task: string; direction: CourseStoryDirection }) => Promise<GeneratedDirection>;
   reviseChapter: (input: StoryOutlineAiContext & { task: string; chapterOrder: number }) => Promise<
     | { status: "requires_outline_revision"; reason: string }
     | { status: "ready"; chapter: Pick<CourseStoryOutlineChapter, "order" | "title" | "whatHappens" | "characterIds" | "recommendedKnowledgePointIds" | "knowledgePointRecommendationSummary"> }
   >;
-  generateReferenceFromKnowledge: (input: StoryOutlineAiContext & { task: string; researchPlan: CourseResearchPlan }) => Promise<GeneratedReference[]>;
   searchReference: (input: StoryOutlineAiContext & { task: string; researchPlan: CourseResearchPlan }) => Promise<GeneratedReference[]>;
   generateOutline: (input: StoryOutlineAiContext & { task: string; writingProvider: StoryWritingProvider }) => Promise<GeneratedOutline>;
 };
@@ -249,6 +256,20 @@ function safeReferenceForWrite(
       ? reference.adaptationBoundary.trim()
       : "仅使用已确认资料进行适合课堂的改编。",
   };
+}
+
+async function persistPreparedReferences(db: StoryOutlineDb, courseId: string, references: GeneratedReference[], replaceExisting: boolean, researchProvider: "none" | "quickrouter_gpt" = "none") {
+  const persist = async (target: StoryOutlineDb) => {
+    if (replaceExisting) await target.courseSourceReference.deleteMany({ where: { courseId } });
+    for (const generated of references) {
+      const reference = safeReferenceForWrite(generated, generated.name, generated.summary);
+      await target.courseSourceReference.create({
+        data: { courseId, ...reference, researchProvider, confirmedAt: null },
+      });
+    }
+  };
+  if (db.$transaction) await db.$transaction(persist);
+  else await persist(db);
 }
 
 function fallbackResearchPlan(objectName: string): CourseResearchPlan {
@@ -424,6 +445,13 @@ function toCoursePeople(course: DbCourse): CourseAudiencePerson[] {
     }));
 }
 
+export class CourseStoryOutlineOperationConflictError extends Error {
+  constructor(message = "当前步骤仍在处理中，请等待完成后再试") {
+    super(message);
+    this.name = "CourseStoryOutlineOperationConflictError";
+  }
+}
+
 async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<CourseStoryOutlineState> {
   const [messages, directions, references, characters, outline, setting] = await Promise.all([
     db.courseStoryChatMessage.findMany({ where: { courseId: course.id }, orderBy: { createdAt: "asc" } }),
@@ -454,7 +482,7 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
     },
     selectedKnowledgePoints,
     unrecommendedKnowledgePoints: selectedKnowledgePoints.filter((item) => !recommendedIds.has(item.id)),
-    chatMessages: messages.map(toMessage),
+    chatMessages: messages.filter((message) => message.role !== "system").map(toMessage),
     settings: {
       chapterCount: mappedOutline?.chapterCount ?? setting?.chapterCount ?? defaultChapterCount(course.durationMinutes),
       writingProvider: mappedOutline?.writingProvider ?? setting?.writingProvider ?? "quickrouter_gpt",
@@ -465,8 +493,18 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
       resolvedUnderstanding: Array.isArray(alignmentDetails.resolvedUnderstanding) ? alignmentDetails.resolvedUnderstanding : [],
       unresolvedIssues: Array.isArray(alignmentDetails.unresolvedIssues) ? alignmentDetails.unresolvedIssues : [],
       questions: Array.isArray(alignmentDetails.questions) ? alignmentDetails.questions : [],
+      ...(typeof alignmentDetails.needsBackgroundRefresh === "boolean" ? { needsBackgroundRefresh: alignmentDetails.needsBackgroundRefresh } : {}),
       ...(setting?.alignmentSummary ? { summary: setting.alignmentSummary } : {}),
     },
+    operation: setting?.operationRequestId && (setting.operationStatus === "running" || setting.operationStatus === "failed" || setting.operationStatus === "result_unknown") && setting.operationPhase && setting.operationStartedAt ? {
+      requestId: setting.operationRequestId,
+      action: setting.operationAction ?? "story_operation",
+      phase: setting.operationPhase as NonNullable<CourseStoryOutlineState["operation"]>["phase"],
+      status: setting.operationStatus,
+      errorMessage: setting.operationError ?? null,
+      startedAt: setting.operationStartedAt.toISOString(),
+      updatedAt: setting.updatedAt.toISOString(),
+    } : null,
     directions: directions.map(toDirection),
     referenceMaterials: mappedReferences,
     outline: mappedOutline,
@@ -558,6 +596,16 @@ async function currentSetting(db: StoryOutlineDb, course: DbCourse, input?: Pick
     return { chapterCount, writingProvider };
   }
   const setting = await db.courseStorySetting.findUnique({ where: { courseId: course.id } });
+  if (!setting) {
+    const chapterCount = defaultChapterCount(course.durationMinutes);
+    const writingProvider: StoryWritingProvider = "quickrouter_gpt";
+    await db.courseStorySetting.upsert({
+      where: { courseId: course.id },
+      create: { courseId: course.id, chapterCount, writingProvider },
+      update: {},
+    });
+    return { chapterCount, writingProvider };
+  }
   return {
     chapterCount: setting?.chapterCount ?? defaultChapterCount(course.durationMinutes),
     writingProvider: setting?.writingProvider ?? "quickrouter_gpt",
@@ -601,7 +649,9 @@ async function storyAiContext(
   };
 }
 
-async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task: string, deps: StoryOutlineGenerationDeps, setting?: { chapterCount: number; writingProvider: StoryWritingProvider }, selectedDirection?: CourseStoryDirection | null) {
+type OperationGuard = (db?: StoryOutlineDb) => Promise<void>;
+
+async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task: string, deps: StoryOutlineGenerationDeps, setting?: { chapterCount: number; writingProvider: StoryWritingProvider }, selectedDirection?: CourseStoryDirection | null, guard?: OperationGuard) {
   const started = Date.now();
   try {
     const resolved = setting ?? await currentSetting(db, course);
@@ -616,6 +666,7 @@ async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task
       throw new CourseStoryOutlineValidationError("章节知识点推荐没有完整生成，请重试本次大纲。");
     }
     const persistOutline = async (tx: StoryOutlineDb) => {
+      await guard?.(tx);
       await writeOutline(tx, course, outline, resolved.writingProvider, resolved.chapterCount);
       await tx.courseStoryDirection.deleteMany({ where: { courseId: course.id, selectedAt: null } });
     };
@@ -654,6 +705,7 @@ async function generateAndSaveDirections(
   deps: StoryOutlineGenerationDeps,
   chapterCount: number,
   assistantMessage = "我生成了 3 个故事方向，你可以选一个继续。",
+  guard?: OperationGuard,
 ) {
   const context = await storyAiContext(db, course, chapterCount);
   const directions = await deps.generateDirections({
@@ -661,6 +713,7 @@ async function generateAndSaveDirections(
     task: "根据老师当前要求和已确认资料生成 3 个故事方向。",
   });
   const replaceDirections = async (tx: StoryOutlineDb) => {
+    await guard?.(tx);
     await tx.courseStoryDirection.deleteMany({ where: { courseId: course.id } });
     await tx.courseStoryDirection.createMany({ data: directions.map((direction) => ({
       courseId: course.id,
@@ -686,8 +739,15 @@ async function saveAlignment(
     unresolvedIssues: string[];
     questions: StoryAlignmentQuestion[];
     summary?: string;
+    needsBackgroundRefresh?: boolean;
   },
 ) {
+  const alignmentDetails = {
+    resolvedUnderstanding: alignment.resolvedUnderstanding,
+    unresolvedIssues: alignment.unresolvedIssues,
+    questions: alignment.questions,
+    ...(typeof alignment.needsBackgroundRefresh === "boolean" ? { needsBackgroundRefresh: alignment.needsBackgroundRefresh } : {}),
+  };
   await db.courseStorySetting.upsert({
     where: { courseId: course.id },
     create: {
@@ -697,22 +757,14 @@ async function saveAlignment(
       alignmentStatus: alignment.status,
       planningMode: alignment.planningMode,
       alignmentSummary: alignment.summary ?? null,
-      alignmentDetails: {
-        resolvedUnderstanding: alignment.resolvedUnderstanding,
-        unresolvedIssues: alignment.unresolvedIssues,
-        questions: alignment.questions,
-      },
+      alignmentDetails,
       alignmentConfirmedAt: alignment.status === "confirmed" ? new Date() : null,
     },
     update: {
       alignmentStatus: alignment.status,
       planningMode: alignment.planningMode,
       alignmentSummary: alignment.summary ?? null,
-      alignmentDetails: {
-        resolvedUnderstanding: alignment.resolvedUnderstanding,
-        unresolvedIssues: alignment.unresolvedIssues,
-        questions: alignment.questions,
-      },
+      alignmentDetails,
       alignmentConfirmedAt: alignment.status === "confirmed" ? new Date() : null,
     },
   });
@@ -723,28 +775,80 @@ async function continueAfterBackground(
   course: DbCourse,
   deps: StoryOutlineGenerationDeps,
   setting: { chapterCount: number; writingProvider: StoryWritingProvider },
+  guard?: OperationGuard,
 ) {
   const stored = await db.courseStorySetting.findUnique({ where: { courseId: course.id } });
   if (stored?.planningMode === "follow_defined_plot") {
-    await addMessage(db, course.id, "system", "故事需求和背景资料已确认，正在生成章节大纲。");
-    await generateAndSaveOutline(db, course, "根据已确认的具体剧情生成完整故事大纲。", deps, setting);
+    await addMessage(db, course.id, "system", "创作需求已确认，正在生成章节大纲。");
+    await generateAndSaveOutline(db, course, "根据已确认的具体剧情生成完整故事大纲。", deps, setting, undefined, guard);
     return;
   }
-  await addMessage(db, course.id, "system", "故事需求和背景资料已确认，正在创作 3 个不同的故事方向。");
-  await generateAndSaveDirections(db, course, deps, setting.chapterCount);
+  await addMessage(db, course.id, "system", "创作需求已确认，正在创作 3 个不同的故事方向。");
+  await generateAndSaveDirections(db, course, deps, setting.chapterCount, undefined, guard);
 }
 
-export async function handleStoryOutlineMessage(
+type InternalStoryMessageInput = CourseStoryMessageInput & { isRetry?: boolean; operationRevision?: number };
+
+async function assertCurrentOperation(db: StoryOutlineDb, courseId: string, input: InternalStoryMessageInput) {
+  if (!input.requestId || input.operationRevision === undefined) return;
+  const setting = await db.courseStorySetting.findUnique({ where: { courseId } });
+  if (setting?.operationRequestId !== input.requestId || setting.operationStatus !== "running" || (setting.stateRevision ?? 0) !== input.operationRevision) {
+    throw new CourseStoryOutlineOperationConflictError("当前结果已被更新的操作取代");
+  }
+}
+
+function operationPhase(input: CourseStoryMessageInput): NonNullable<CourseStoryOutlineState["operation"]>["phase"] {
+  if (input.action === "choose_reference_search" || input.action === "request_reference_search") return "searching_reference";
+  if (input.action === "confirm_requirements") return "preparing_reference";
+  if (input.action === "generate_directions" || input.mode === "random") return "generating_directions";
+  if (input.action === "confirm_direction" || input.action === "generate_from_reference" || input.action === "regenerate_outline") return "generating_outline";
+  if (input.action === "revise_direction" || input.action === "revise_outline" || input.action === "revise_chapter") return "revising";
+  return "aligning";
+}
+
+async function executeStoryOutlineMessage(
   db: StoryOutlineDb,
   courseId: string,
-  input: CourseStoryMessageInput,
+  input: InternalStoryMessageInput,
   deps: StoryOutlineGenerationDeps,
 ) {
   const course = await getCourse(db, courseId);
   const setting = await currentSetting(db, course, input);
-  if (input.message.trim()) await addMessage(db, courseId, "teacher", input.message.trim());
+  const guard: OperationGuard = (targetDb = db) => assertCurrentOperation(targetDb, courseId, input);
+  if (input.message.trim() && !input.isRetry && input.action !== "confirm_requirements") {
+    await addMessage(db, courseId, "teacher", input.message.trim());
+  }
+  const rerouteRequirementChange = async (targetScope: "direction" | "outline" | "chapter") => {
+    if (!input.message.trim()) return null;
+    const context = await storyAiContext(db, course, setting.chapterCount);
+    const boundary = await deps.checkChangeBoundary({ ...context, task: input.message.trim(), targetScope });
+    await guard();
+    if (boundary.scope === "within_target") return null;
+    const alignment = await deps.alignRequirements({
+      ...context,
+      replyContext: "requirement_change",
+      needsBackgroundRefresh: boundary.needsBackgroundRefresh,
+      task: `老师希望修改当前成果，但该要求会更换核心创作需求。请把最新要求整理成修改后的创作理解，不执行原修改。\n修改原因：${boundary.reason}\n老师要求：${input.message.trim()}`,
+    });
+    await guard();
+    await saveAlignment(db, course, setting, { ...alignment, needsBackgroundRefresh: boundary.needsBackgroundRefresh });
+    if (alignment.status === "needs_clarification") {
+      await addMessage(db, courseId, "assistant", alignment.assistantMessage, [{
+        id: `alignment-${Date.now()}`,
+        label: "提交回答",
+        action: "submit_alignment_answers",
+        questions: alignment.questions,
+      }]);
+    } else {
+      await addMessage(db, courseId, "assistant", alignment.summary || alignment.assistantMessage, [
+        { id: "confirm-requirements", label: "确认修改需求", action: "confirm_requirements" },
+        { id: "modify-requirements", label: "调整我的意思", action: "modify_requirements" },
+      ]);
+    }
+    return getStoryOutlineState(db, courseId);
+  };
   if (input.action === "confirm_reference_materials" && !input.message.trim()) {
-    await addMessage(db, courseId, "teacher", "我确认参考资料，请继续判断故事生成方式。");
+    await addMessage(db, courseId, "teacher", "我确认这些参考资料，请继续。");
   }
   if (input.action === "choose_story_usage" && !input.message.trim()) {
     if (input.targetId !== "follow_original" && input.targetId !== "create_new") {
@@ -758,21 +862,30 @@ export async function handleStoryOutlineMessage(
 
   if (input.action === "confirm_requirements") {
     const stored = await db.courseStorySetting.findUnique({ where: { courseId } });
-    if (!stored?.alignmentSummary || stored.alignmentStatus !== "ready_for_confirmation") {
+    if (!stored?.alignmentSummary || (stored.alignmentStatus !== "ready_for_confirmation" && !(input.isRetry && stored.alignmentStatus === "confirmed"))) {
       throw new CourseStoryOutlineValidationError("请先完成并确认创作理解");
     }
     const details = typeof stored.alignmentDetails === "object" && stored.alignmentDetails !== null
       ? stored.alignmentDetails as Partial<StoryAlignmentState>
       : {};
-    await saveAlignment(db, course, setting, {
-      status: "confirmed",
-      planningMode: stored.planningMode ?? "explore_options",
-      resolvedUnderstanding: details.resolvedUnderstanding ?? [],
-      unresolvedIssues: [],
-      questions: [],
-      summary: stored.alignmentSummary,
-    });
-    await addMessage(db, courseId, "teacher", "我确认这份创作理解。");
+    if (stored.alignmentStatus !== "confirmed") {
+      await saveAlignment(db, course, setting, {
+        status: "confirmed",
+        planningMode: stored.planningMode ?? "explore_options",
+        resolvedUnderstanding: details.resolvedUnderstanding ?? [],
+        unresolvedIssues: [],
+        questions: [],
+        summary: stored.alignmentSummary,
+        needsBackgroundRefresh: details.needsBackgroundRefresh,
+      });
+      await addMessage(db, courseId, "teacher", "我确认这份创作理解。");
+    }
+    const shouldRefreshBackground = details.needsBackgroundRefresh !== false;
+    if (!shouldRefreshBackground) {
+      await addMessage(db, courseId, "system", "创作需求已确认，将沿用现有背景资料继续创作。");
+      await continueAfterBackground(db, course, deps, setting, guard);
+      return getStoryOutlineState(db, courseId);
+    }
     await addMessage(db, courseId, "system", "创作需求已确认，正在准备故事所需的背景知识。");
     const context = await storyAiContext(db, course, setting.chapterCount);
     const background = await deps.prepareBackgroundKnowledge({
@@ -780,8 +893,10 @@ export async function handleStoryOutlineMessage(
       task: "根据老师确认的创作理解，为后续故事生成准备一次必要背景知识。",
       confirmedRequirement: stored.alignmentSummary,
     });
+    await guard();
     if (background.status === "not_needed") {
-      await continueAfterBackground(db, course, deps, setting);
+      if (details.needsBackgroundRefresh === true) await db.courseSourceReference.deleteMany({ where: { courseId } });
+      await continueAfterBackground(db, course, deps, setting, guard);
       return getStoryOutlineState(db, courseId);
     }
     if (background.status === "external_required") {
@@ -791,16 +906,7 @@ export async function handleStoryOutlineMessage(
       ]);
       return getStoryOutlineState(db, courseId);
     }
-    for (const reference of background.references) {
-      await db.courseSourceReference.create({
-        data: {
-          courseId,
-          ...safeReferenceForWrite(reference, reference.name, reference.summary),
-          researchProvider: "none",
-          confirmedAt: null,
-        },
-      });
-    }
+    await persistPreparedReferences(db, courseId, background.references, details.needsBackgroundRefresh === true);
     await addMessage(db, courseId, "assistant", "背景资料已整理，请确认后继续。", [
       { id: "confirm-background-materials", label: "确认资料并继续", action: "confirm_reference_materials" },
     ]);
@@ -808,6 +914,8 @@ export async function handleStoryOutlineMessage(
   }
 
   if (input.action === "revise_direction") {
+    const rerouted = await rerouteRequirementChange("direction");
+    if (rerouted) return rerouted;
     const direction = (await db.courseStoryDirection.findMany({ where: { courseId }, orderBy: { createdAt: "asc" } }))
       .map(toDirection)
       .find((item) => item.id === input.targetId);
@@ -815,6 +923,7 @@ export async function handleStoryOutlineMessage(
     if (!input.message.trim()) throw new CourseStoryOutlineValidationError("请说明希望怎样调整这个方向");
     const context = await storyAiContext(db, course, setting.chapterCount, direction);
     const revised = await deps.reviseDirection({ ...context, direction, task: input.message.trim() });
+    await guard();
     await db.courseStoryDirection.update({
       where: { id: direction.id },
       data: { ...revised },
@@ -831,18 +940,22 @@ export async function handleStoryOutlineMessage(
     await addMessage(db, courseId, "teacher", `我确认使用故事方向：${direction.title}`);
     await addMessage(db, courseId, "system", "故事方向已确认，正在生成章节大纲和教学知识点建议。");
     const task = `请基于已确认方向生成大纲：${direction.title}\n${direction.seedPrompt || direction.hook}`;
-    await generateAndSaveOutline(db, course, task, deps, setting, direction);
+    await generateAndSaveOutline(db, course, task, deps, setting, direction, guard);
     return getStoryOutlineState(db, courseId);
   }
 
   if (input.action === "revise_outline") {
+    const rerouted = await rerouteRequirementChange("outline");
+    if (rerouted) return rerouted;
     if (!input.message.trim()) throw new CourseStoryOutlineValidationError("请说明希望怎样修改整体大纲");
     await addMessage(db, courseId, "system", "正在按你的要求调整整体大纲。");
-    await generateAndSaveOutline(db, course, `修改当前完整大纲：${input.message.trim()}`, deps, setting);
+    await generateAndSaveOutline(db, course, `修改当前完整大纲：${input.message.trim()}`, deps, setting, undefined, guard);
     return getStoryOutlineState(db, courseId);
   }
 
   if (input.action === "revise_chapter") {
+    const rerouted = await rerouteRequirementChange("chapter");
+    if (rerouted) return rerouted;
     if (!input.message.trim()) throw new CourseStoryOutlineValidationError("请说明希望怎样修改这一章");
     if (!input.targetChapterOrder) throw new CourseStoryOutlineValidationError("请选择要修改的章节");
     const current = await getStoryOutlineState(db, courseId);
@@ -850,6 +963,7 @@ export async function handleStoryOutlineMessage(
     if (!target) throw new CourseStoryOutlineValidationError("没有找到要修改的章节");
     const context = await storyAiContext(db, course, setting.chapterCount);
     const result = await deps.reviseChapter({ ...context, task: input.message.trim(), chapterOrder: input.targetChapterOrder });
+    await guard();
     if (result.status === "requires_outline_revision") {
       await addMessage(db, courseId, "assistant", `${result.reason} 你可以使用“修改整体大纲”。`);
       return getStoryOutlineState(db, courseId);
@@ -875,7 +989,7 @@ export async function handleStoryOutlineMessage(
     for (const reference of references) {
       if (!reference.confirmedAt) await db.courseSourceReference.update({ where: { id: reference.id }, data: { confirmedAt: new Date() } });
     }
-    await continueAfterBackground(db, course, deps, setting);
+    await continueAfterBackground(db, course, deps, setting, guard);
     return getStoryOutlineState(db, courseId);
   }
 
@@ -892,6 +1006,7 @@ export async function handleStoryOutlineMessage(
       task: "按照研究计划联网整理可直接用于当前故事的参考资料。",
       researchPlan,
     });
+    await guard();
     const incompletePackets = researchPlan.packets.filter((_, index) => {
       const reference = generatedReferences[index];
       return !reference
@@ -901,29 +1016,24 @@ export async function handleStoryOutlineMessage(
     });
     if (generatedReferences.length !== researchPlan.packets.length || incompletePackets.length) {
       const missingNames = incompletePackets.map((packet) => packet.title).join("、") || objectName;
-      await addMessage(db, courseId, "assistant", `联网搜索没有找到足够可靠的“${missingNames}”资料。请手动补充原文梗概、主要角色和关键剧情。`, [
+      await addMessage(db, courseId, "assistant", `联网搜索没有整理出足够完整、可用于创作的“${missingNames}”资料。请手动补充原文梗概、主要角色和关键剧情。`, [
         { id: "supply-missing-reference-material", label: "我来补充资料", action: "supply_reference_material", targetId: missingNames, researchPlan },
       ]);
       return getStoryOutlineState(db, courseId);
     }
-    for (const [index, generatedReference] of generatedReferences.entries()) {
+    const referencesToPersist = generatedReferences.map((generatedReference, index) => {
       const packet = researchPlan.packets[index];
-      const reference = safeReferenceForWrite(
+      return safeReferenceForWrite(
         generatedReference,
         packet?.title || objectName,
         `关于${packet?.title || objectName}的联网参考资料。`,
       );
-      await db.courseSourceReference.create({
-        data: {
-          courseId,
-          ...reference,
-          usableFacts: reference.usableFacts,
-          avoidTopics: reference.avoidTopics,
-          researchProvider: "quickrouter_gpt",
-          confirmedAt: null,
-        },
-      });
-    }
+    });
+    const stored = await db.courseStorySetting.findUnique({ where: { courseId } });
+    const details = typeof stored?.alignmentDetails === "object" && stored.alignmentDetails !== null
+      ? stored.alignmentDetails as Partial<StoryAlignmentState>
+      : {};
+    await persistPreparedReferences(db, courseId, referencesToPersist, details.needsBackgroundRefresh === true, "quickrouter_gpt");
     await addMessage(db, courseId, "assistant", "资料已整理，请确认后继续。", [
       { id: "confirm-reference-materials", label: "确认参考资料并继续", action: "confirm_reference_materials" },
     ]);
@@ -934,7 +1044,7 @@ export async function handleStoryOutlineMessage(
     const task = input.message.trim() || "我确认参考资料，请生成 3 个故事方向。";
     if (!input.message.trim()) await addMessage(db, courseId, "teacher", task);
     await addMessage(db, courseId, "system", "已收到你的要求，正在创作 3 个不同的故事方向。");
-    await generateAndSaveDirections(db, course, deps, setting.chapterCount);
+    await generateAndSaveDirections(db, course, deps, setting.chapterCount, undefined, guard);
     return getStoryOutlineState(db, courseId);
   }
 
@@ -942,7 +1052,7 @@ export async function handleStoryOutlineMessage(
     const task = input.message.trim() || "请用已确认的参考资料生成故事大纲。";
     if (!input.message.trim()) await addMessage(db, courseId, "teacher", task);
     await addMessage(db, courseId, "system", "参考资料和故事要求已确认，正在生成章节大纲。");
-    await generateAndSaveOutline(db, course, task, deps, setting);
+    await generateAndSaveOutline(db, course, task, deps, setting, undefined, guard);
     return getStoryOutlineState(db, courseId);
   }
 
@@ -966,13 +1076,13 @@ export async function handleStoryOutlineMessage(
     const task = input.message.trim() || "请基于当前全部要求重新生成故事大纲。";
     if (!input.message.trim()) await addMessage(db, courseId, "teacher", task);
     await addMessage(db, courseId, "system", "已收到修改要求，正在重新生成章节大纲。");
-    await generateAndSaveOutline(db, course, task, deps, setting);
+    await generateAndSaveOutline(db, course, task, deps, setting, undefined, guard);
     return getStoryOutlineState(db, courseId);
   }
 
   if (input.mode === "random") {
     await addMessage(db, courseId, "system", "已收到灵感设置，正在创作 3 个不同的故事方向。");
-    await generateAndSaveDirections(db, course, deps, setting.chapterCount);
+    await generateAndSaveDirections(db, course, deps, setting.chapterCount, undefined, guard);
     return getStoryOutlineState(db, courseId);
   }
 
@@ -981,6 +1091,7 @@ export async function handleStoryOutlineMessage(
     ...context,
     task: input.message.trim() || "根据老师最新回答继续对齐大体创作需求。",
   });
+  await guard();
   await saveAlignment(db, course, setting, alignment);
   if (alignment.status === "needs_clarification") {
     await addMessage(db, courseId, "assistant", alignment.assistantMessage, [
@@ -1000,15 +1111,100 @@ export async function handleStoryOutlineMessage(
   return getStoryOutlineState(db, courseId);
 }
 
+export async function handleStoryOutlineMessage(
+  db: StoryOutlineDb,
+  courseId: string,
+  originalInput: CourseStoryMessageInput,
+  deps: StoryOutlineGenerationDeps,
+) {
+  const course = await getCourse(db, courseId);
+  await currentSetting(db, course, originalInput);
+  const before = await db.courseStorySetting.findUnique({ where: { courseId } });
+  const requestId = originalInput.requestId ?? crypto.randomUUID();
+  if (before?.operationRequestId === requestId) return getStoryOutlineState(db, courseId);
+  if (before?.operationStatus === "running") throw new CourseStoryOutlineOperationConflictError();
+
+  let input: InternalStoryMessageInput = { ...originalInput, requestId };
+  if (originalInput.action === "retry_operation") {
+    if (before?.operationStatus !== "failed" || typeof before.operationInput !== "object" || before.operationInput === null) {
+      throw new CourseStoryOutlineValidationError("当前没有可以重试的失败步骤");
+    }
+    input = { ...(before.operationInput as CourseStoryMessageInput), requestId, isRetry: true };
+  }
+  const startedAt = new Date();
+  const previousRevision = before?.stateRevision ?? 0;
+  const operationRevision = previousRevision + 1;
+  input.operationRevision = operationRevision;
+  const persistedInput = JSON.parse(JSON.stringify({ ...input, requestId: undefined, isRetry: undefined, operationRevision: undefined })) as CourseStoryMessageInput;
+  const claimed = await db.courseStorySetting.updateMany({
+    where: { courseId, stateRevision: previousRevision },
+    data: {
+      stateRevision: operationRevision,
+      operationRequestId: requestId,
+      operationAction: input.action ?? input.mode,
+      operationPhase: operationPhase(input),
+      operationStatus: "running",
+      operationError: null,
+      operationInput: persistedInput,
+      operationStartedAt: startedAt,
+    },
+  });
+  if (!claimed.count) {
+    const current = await db.courseStorySetting.findUnique({ where: { courseId } });
+    if (current?.operationRequestId === requestId) return getStoryOutlineState(db, courseId);
+    throw new CourseStoryOutlineOperationConflictError("页面状态已经更新，请刷新后重试");
+  }
+  try {
+    await executeStoryOutlineMessage(db, courseId, input, deps);
+    await db.courseStorySetting.updateMany({
+      where: { courseId, operationRequestId: requestId, operationStatus: "running" },
+      data: { operationStatus: "succeeded", operationError: null },
+    });
+    return getStoryOutlineState(db, courseId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "故事大纲生成失败";
+    const updated = await db.courseStorySetting.updateMany({
+      where: { courseId, operationRequestId: requestId, operationStatus: "running" },
+      data: { operationStatus: "failed", operationError: message },
+    });
+    if (updated.count) await addMessage(db, courseId, "assistant", `${message}。你可以重试本步，或修改要求后重新提交。`);
+    throw error;
+  }
+}
+
 export async function resetStoryOutline(db: StoryOutlineDb, courseId: string) {
-  await getCourse(db, courseId);
+  const course = await getCourse(db, courseId);
   const reset = async (tx: StoryOutlineDb) => {
+    const setting = await tx.courseStorySetting.findUnique({ where: { courseId } });
     await tx.courseStoryChatMessage.deleteMany({ where: { courseId } });
     await tx.courseStoryDirection.deleteMany({ where: { courseId } });
     await tx.courseSourceReference.deleteMany({ where: { courseId } });
     await tx.courseCharacter.deleteMany({ where: { courseId } });
     await tx.courseStoryOutline.deleteMany({ where: { courseId } });
-    await tx.courseStorySetting.deleteMany({ where: { courseId } });
+    await tx.courseStorySetting.upsert({
+      where: { courseId },
+      create: {
+        courseId,
+        chapterCount: defaultChapterCount(course.durationMinutes),
+        writingProvider: "quickrouter_gpt",
+        stateRevision: 1,
+      },
+      update: {
+        alignmentStatus: "idle",
+        planningMode: "explore_options",
+        alignmentSummary: null,
+        alignmentDetails: {},
+        alignmentConfirmedAt: null,
+        stateRevision: (setting?.stateRevision ?? 0) + 1,
+        operationStatus: setting?.operationStatus === "running" ? "superseded" : null,
+        operationRequestId: null,
+        operationAction: null,
+        operationPhase: null,
+        operationError: null,
+        operationInput: null,
+        operationStartedAt: null,
+      },
+    });
     return getStoryOutlineState(tx, courseId);
   };
   return db.$transaction ? db.$transaction(reset) : reset(db);

@@ -515,7 +515,7 @@ type CourseImage = {
 - Prisma：`pnpm exec prisma validate`、`pnpm prisma:generate`（通过）。
 - 定向 ESLint：视觉资源领域、仓储、provider、存储、API 和页面文件均通过 `--max-warnings=0`。
 - 项目级 `tsc --noEmit` 与全量 ESLint 仍被本模块开发前已存在的 `course-content-workspace.test.tsx`、`dev-ai-log.test.ts` 和 `course-content-workspace.tsx` 问题阻断；输出中没有视觉资源新增错误。
-- 待真实生成验收：配置 `DATABASE_URL`、`STORAGE_DIR`、`QUICKROUTER_API_KEY` 后执行 migration，并完成一次外部角色上传、原创角色基准图、封面、段落图、聊天修改和采用版本的端到端验证。
+- 待真实生成验收：配置 `DATABASE_URL`、`STORAGE_DIR`、`QUICKROUTER_TEXT_API_KEY`、`QUICKROUTER_IMAGE_API_KEY` 后执行 migration，并完成一次外部角色上传、原创角色基准图、封面、段落图、聊天修改和采用版本的端到端验证。文本与图片 token 不得互相回退。
 - 提交号：待实现后记录。
 
 ### 2026-08-10 用户验收修复

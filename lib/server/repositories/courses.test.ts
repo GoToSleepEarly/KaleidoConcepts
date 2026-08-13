@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   CourseAudienceConflictError,
+  CoursePersonValidationError,
   archiveCourse,
   createCourse,
   getCourseAudience,
@@ -29,7 +30,7 @@ const student = {
   age: 9,
   gender: "female" as const,
   archivedAt: null,
-  activeVisualAssetId: null,
+  activeVisualAssetId: "visual-student",
 };
 
 const input = {
@@ -90,7 +91,7 @@ describe("course audience repository", () => {
               englishNameSnapshot: "Summer",
               ageSnapshot: 9,
               genderSnapshot: "female",
-              visualAssetIdSnapshot: null,
+              visualAssetIdSnapshot: "visual-student",
             },
           ]);
           return { id: "course-1", lifecycleStatus: "draft", currentStage: "story_outline" };
@@ -105,6 +106,13 @@ describe("course audience repository", () => {
     );
 
     expect(course).toEqual({ id: "course-1", lifecycleStatus: "draft", currentStage: "story_outline" });
+  });
+
+  test("rejects a course person without a current visual", async () => {
+    await expect(createCourse({
+      person: { findMany: async () => [teacher, { ...student, activeVisualAssetId: null }] },
+      course: { findUnique: async () => null },
+    } as unknown as CoursesDb, input, "missing-visual-key")).rejects.toBeInstanceOf(CoursePersonValidationError);
   });
 
   test("returns the original course for an idempotent retry", async () => {

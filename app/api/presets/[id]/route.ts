@@ -5,7 +5,7 @@ import { getDb } from "@/lib/server/db";
 import { archivePreset, PresetConflictError, PresetNotFoundError, updatePreset } from "@/lib/server/repositories/presets";
 
 const presetInputSchema = z.object({
-  kind: z.enum(["theme", "grammar"]),
+  kind: z.enum(["theme", "story_type", "story_tone", "grammar"]),
   label: z.string().trim().min(1),
   labelZh: z.string().trim().optional(),
   category: z.string().trim().min(1),

@@ -6,7 +6,7 @@ import { createPreset, listPresets, PresetConflictError } from "@/lib/server/rep
 import type { PresetKind } from "@/lib/contracts/api";
 
 const presetInputSchema = z.object({
-  kind: z.enum(["theme", "grammar"]),
+  kind: z.enum(["theme", "story_type", "story_tone", "grammar"]),
   label: z.string().trim().min(1),
   labelZh: z.string().trim().optional(),
   category: z.string().trim().min(1),
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const kindParam = searchParams.get("kind");
 
-  if (kindParam && kindParam !== "theme" && kindParam !== "grammar") {
+  if (kindParam && !["theme", "story_type", "story_tone", "grammar"].includes(kindParam)) {
     return NextResponse.json({ message: "预设类型无效" }, { status: 400 });
   }
 

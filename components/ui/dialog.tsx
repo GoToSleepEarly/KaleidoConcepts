@@ -21,7 +21,7 @@ export function Dialog({
   description?: string;
   icon?: React.ReactNode;
   variant?: "modal" | "drawer";
-  size?: "compact" | "default" | "medium" | "wide";
+  size?: "compact" | "default" | "medium-fit" | "medium" | "wide";
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -44,6 +44,7 @@ export function Dialog({
         variant === "drawer" &&
           "fixed inset-y-0 right-0 m-0 h-dvh max-h-dvh w-[min(94vw,520px)] max-w-none rounded-none border-l border-border",
         size === "compact" && variant === "modal" && "w-[min(92vw,560px)]",
+        size === "medium-fit" && variant === "modal" && "w-[min(94vw,900px)]",
         size === "medium" &&
           variant === "modal" &&
           "h-[min(720px,calc(100dvh-2rem))] w-[min(94vw,900px)]",

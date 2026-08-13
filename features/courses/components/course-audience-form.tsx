@@ -2,7 +2,7 @@
 
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, Check, Clock3, GraduationCap, Loader2, Pencil, Plus, Search, Target, UserRound, UsersRound, X } from "lucide-react";
+import { BookOpen, Check, Clock3, GraduationCap, Loader2, Pencil, Plus, Search, Target, Trash2, UserRound, UsersRound, X } from "lucide-react";
 
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   const router = useRouter();
   const createKey = useRef(crypto.randomUUID());
   const [title, setTitle] = useState("");
-  const [duration, setDuration] = useState<30 | 45 | 60 | null>(null);
+  const [duration, setDuration] = useState<30 | 45 | 60 | null>(60);
   const [englishLevel, setEnglishLevel] = useState<EnglishLevel | null>(null);
   const [knowledgePoints, setKnowledgePoints] = useState<PresetOption[]>([]);
   const [selectedKnowledgePointIds, setSelectedKnowledgePointIds] = useState<string[]>([]);
@@ -34,6 +34,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   const [error, setError] = useState("");
   const [pickerRole, setPickerRole] = useState<PersonRole | null>(null);
   const [editing, setEditing] = useState<PersonProfile | null>(null);
+  const [returnToPickerRole, setReturnToPickerRole] = useState<PersonRole | null>(null);
   const [furthestStep, setFurthestStep] = useState(1);
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(courseId ? null : "");
 
@@ -92,7 +93,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
     return () => { active = false; };
   }, [courseId]);
 
-  const disabledReason = !title.trim() ? "填写课程名称" : !teacher ? "添加老师" : !students.length ? "添加学生" : !duration ? "选择时长" : !englishLevel ? "选择英语难度" : !selectedKnowledgePointIds.length ? "选择知识点" : null;
+  const disabledReason = !title.trim() ? "填写课程名称" : !teacher ? "添加老师" : !teacher.activeVisual ? "完善老师形象" : !students.length ? "添加学生" : students.some((student) => !student.activeVisual) ? "完善学生形象" : !duration ? "选择时长" : !englishLevel ? "选择英语难度" : !selectedKnowledgePointIds.length ? "选择知识点" : null;
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => { if (hasUnsavedChanges) event.preventDefault(); };
@@ -153,85 +154,62 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   if (loading) return <div className="mx-auto max-w-5xl space-y-5"><div className="skeleton h-12 rounded-md" /><div className="skeleton h-80 rounded-lg" /></div>;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <CourseCreateSteps courseId={courseId} currentStep={1} furthestStep={furthestStep} onNavigate={(href) => { if (hasUnsavedChanges) void saveAndNavigate(href); else router.push(href); }} />
+    <div className="mx-auto max-w-5xl space-y-4">
+      <CourseCreateSteps courseId={courseId} currentStep={1} furthestStep={disabledReason ? 1 : furthestStep} onNavigate={(href) => { if (hasUnsavedChanges) void saveAndNavigate(href); else router.push(href); }} />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-foreground">基础信息</h2>
         </div>
       </div>
 
-      <form className="space-y-5" onSubmit={submit}>
-        <section className="rounded-lg bg-card p-5 shadow-sm sm:p-6">
-          <div className="flex items-center gap-3">
-            <span className="flex size-9 items-center justify-center rounded-md bg-primary-50 text-primary" data-testid="course-title-icon"><BookOpen className="size-4" /></span>
-            <h3 className="text-sm font-semibold text-foreground">课程名称</h3>
-          </div>
+      <form className="space-y-4" onSubmit={submit}>
+        <AudienceSection icon={<BookOpen className="size-4" />} title="课程名称">
           <label className="block">
             <span className="sr-only">课程名称</span>
             <input
               aria-label="课程名称"
               autoFocus
-              className="mt-3 min-h-12 w-full rounded-md border border-input bg-background px-4 text-base font-medium outline-none placeholder:font-normal placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary-100"
+              className="min-h-12 w-full rounded-md border border-input bg-background px-4 text-base font-medium outline-none placeholder:font-normal placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary-100"
               maxLength={120}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="例如：海底图书馆"
               value={title}
             />
           </label>
-        </section>
+        </AudienceSection>
 
-        <section className="rounded-lg bg-card p-5 shadow-sm sm:p-6">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="flex size-9 items-center justify-center rounded-md bg-primary-50 text-primary"><UserRound className="size-4" /></span>
-              <h3 className="text-sm font-semibold text-foreground">老师</h3>
-            </div>
+        <AudienceSection icon={<UserRound className="size-4" />} title="老师">
+          <div>
+            {teacher ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><SelectedPerson person={teacher} onEdit={() => setEditing(teacher)} onRemove={() => setTeacher(null)} /></div> : <AddPersonButton label="添加老师" onClick={() => setPickerRole("teacher")} />}
           </div>
-          <div className="mt-4">
-            {teacher ? <SelectedPerson person={teacher} onEdit={() => setEditing(teacher)} onRemove={() => setTeacher(null)} /> : <AddPersonButton label="添加老师" onClick={() => setPickerRole("teacher")} />}
-          </div>
-        </section>
+        </AudienceSection>
 
-        <section className="rounded-lg bg-card p-5 shadow-sm sm:p-6">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="flex size-9 items-center justify-center rounded-md bg-primary-50 text-primary"><UsersRound className="size-4" /></span>
-              <h3 className="text-sm font-semibold text-foreground">学生</h3>
-            </div>
-            <span className="text-xs text-muted-foreground">{students.length ? `${students.length} 位` : "未选择"}</span>
-          </div>
-          <div className="mt-4 space-y-2">
-            {students.map((student) => <SelectedPerson key={student.id} person={student} onEdit={() => setEditing(student)} onRemove={() => setStudents((current) => current.filter((person) => person.id !== student.id))} />)}
+        <AudienceSection icon={<UsersRound className="size-4" />} title="学生">
+          <div className="space-y-3">
+            {students.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{students.map((student) => <SelectedPerson key={student.id} person={student} onEdit={() => setEditing(student)} onRemove={() => setStudents((current) => current.filter((person) => person.id !== student.id))} />)}</div> : null}
             <AddPersonButton label={students.length ? "继续添加学生" : "添加学生"} onClick={() => setPickerRole("student")} />
           </div>
-        </section>
+        </AudienceSection>
 
-        <section className="rounded-lg bg-card p-5 shadow-sm sm:p-6">
-          <div className="flex items-center gap-3">
-            <span className="flex size-9 items-center justify-center rounded-md bg-primary-50 text-primary"><Clock3 className="size-4" /></span>
-            <h3 className="text-sm font-semibold text-foreground">课程时长</h3>
-          </div>
-          <div className="mt-4 grid grid-cols-3 gap-2 rounded-lg bg-muted p-1">
+        <AudienceSection icon={<Clock3 className="size-4" />} title="课程时长">
+          <div className="grid grid-cols-3 gap-2 rounded-lg bg-muted p-1">
             {([30, 45, 60] as const).map((value) => <button aria-pressed={duration === value} className={cn("min-h-11 rounded-md px-3 text-sm font-medium transition-colors", duration === value ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70 hover:text-foreground")} key={value} onClick={() => setDuration(value)} type="button">{value} 分钟</button>)}
           </div>
-        </section>
+        </AudienceSection>
 
-        <section className="rounded-lg bg-card p-5 shadow-sm sm:p-6">
-          <div className="flex items-center gap-3"><span className="flex size-9 items-center justify-center rounded-md bg-primary-50 text-primary"><GraduationCap className="size-4" /></span><div><h3 className="text-sm font-semibold text-foreground">英语难度</h3><p className="mt-0.5 text-xs text-muted-foreground">用于计算正文词数，并帮助 AI 控制知识密度。</p></div></div>
-          <div className="mt-4 grid grid-cols-6 gap-2">{(["A1", "A2", "B1", "B2", "C1", "C2"] as const).map((level) => <button aria-pressed={englishLevel === level} className={cn("min-h-11 rounded-md border px-3 text-sm font-semibold transition-colors", englishLevel === level ? "border-primary bg-primary-50 text-primary-700" : "border-border bg-background text-muted-foreground hover:border-primary-300 hover:text-foreground")} key={level} onClick={() => setEnglishLevel(level)} type="button">{level}</button>)}</div>
-        </section>
+        <AudienceSection icon={<GraduationCap className="size-4" />} title="英语难度">
+          <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">{(["Starter", "A1", "A2", "B1", "B2", "C1", "C2"] as const).map((level) => <button aria-pressed={englishLevel === level} className={cn("min-h-11 rounded-md border px-3 text-sm font-semibold transition-colors", englishLevel === level ? "border-primary bg-primary-50 text-primary-700" : "border-border bg-background text-muted-foreground hover:border-primary-300 hover:text-foreground")} key={level} onClick={() => setEnglishLevel(level)} type="button">{level}</button>)}</div>
+        </AudienceSection>
 
-        <section className="rounded-lg bg-card p-5 shadow-sm sm:p-6">
-          <div className="flex items-center justify-between gap-4"><div className="flex items-center gap-3"><span className="flex size-9 items-center justify-center rounded-md bg-primary-50 text-primary"><Target className="size-4" /></span><div><h3 className="text-sm font-semibold text-foreground">全课知识点</h3><p className="mt-0.5 text-xs text-muted-foreground">明确教学目标；AI 会在下一步按章节智能匹配。</p></div></div><Button onClick={() => setKnowledgePickerOpen(true)} type="button" variant="outline">选择知识点</Button></div>
-          <div className="mt-4 flex min-h-12 flex-wrap gap-2 rounded-md bg-muted/45 p-3">{selectedKnowledgePointIds.length ? selectedKnowledgePointIds.map((id) => { const point = knowledgePoints.find((item) => item.id === id); return point ? <span className="inline-flex items-center gap-1 rounded-full bg-card px-3 py-1.5 text-sm shadow-sm" key={id}>{knowledgePointName(point)}<button aria-label={`移除${point.labelZh ?? point.label}`} onClick={() => setSelectedKnowledgePointIds((current) => current.filter((item) => item !== id))} type="button"><X aria-hidden className="size-3.5 text-muted-foreground" /></button></span> : null; }) : <span className="text-sm text-muted-foreground">至少选择 1 个知识点</span>}</div>
+        <AudienceSection action={<Button onClick={() => setKnowledgePickerOpen(true)} size="sm" type="button" variant="outline">选择知识点</Button>} icon={<Target className="size-4" />} title="全课知识点">
+          <div className="flex min-h-12 flex-wrap gap-2 rounded-md border border-primary-100 bg-primary-50/45 p-3">{selectedKnowledgePointIds.length ? selectedKnowledgePointIds.map((id) => { const point = knowledgePoints.find((item) => item.id === id); return point ? <span className="inline-flex items-center gap-1 rounded-full border border-primary-200 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-800" key={id}>{knowledgePointName(point)}<button aria-label={`移除${point.labelZh ?? point.label}`} onClick={() => setSelectedKnowledgePointIds((current) => current.filter((item) => item !== id))} type="button"><X aria-hidden className="size-3.5 text-primary-600" /></button></span> : null; }) : <span className="text-sm text-muted-foreground">至少选择 1 个知识点</span>}</div>
           {selectedKnowledgePointIds.length > 10 ? <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">已选择 {selectedKnowledgePointIds.length} 个知识点，知识密度可能偏高。AI 会优先匹配适合各章节的重点，未推荐内容可在配置页调整。</p> : null}
-        </section>
+        </AudienceSection>
 
         {error ? <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div> : null}
 
         <div className="sticky bottom-4 flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-md sm:px-5">
-          <p aria-live="polite" className="text-sm text-muted-foreground">{disabledReason ? `还需：${disabledReason}` : saving ? "正在保存…" : hasUnsavedChanges ? "有未保存修改，跳转时将先保存" : courseId ? "已保存" : `已选择 1 位老师、${students.length} 位学生`}</p>
+          <p aria-live="polite" className={cn("text-sm font-medium", disabledReason ? "text-red-600" : "text-muted-foreground")}>{disabledReason ? `还需：${disabledReason}` : saving ? "正在保存…" : hasUnsavedChanges ? "有未保存修改，跳转时将先保存" : courseId ? "已保存" : `已选择 1 位老师、${students.length} 位学生`}</p>
           <Button disabled={Boolean(disabledReason) || saving} type="submit">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{saving ? "保存中" : "下一步：故事大纲"}</Button>
         </div>
       </form>
@@ -246,11 +224,31 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
           }}
           role={pickerRole}
           selectedPeople={pickerRole === "teacher" ? teacher ? [teacher] : [] : students}
+          onCompleteVisual={(person) => { setReturnToPickerRole(pickerRole); setPickerRole(null); setEditing(person); }}
         />
       ) : null}
       {knowledgePickerOpen ? <KnowledgePointPicker knowledgePoints={knowledgePoints} onClose={() => setKnowledgePickerOpen(false)} onConfirm={(ids) => { setSelectedKnowledgePointIds(ids); setKnowledgePickerOpen(false); }} selectedIds={selectedKnowledgePointIds} /> : null}
-      <PersonEditorDialog defaultRole={editing?.role ?? "student"} key={editing?.id ?? "closed-course-person-form"} onClose={() => setEditing(null)} onSaved={replacePerson} open={Boolean(editing)} person={editing} />
+      <PersonEditorDialog defaultRole={editing?.role ?? "student"} key={editing?.id ?? "closed-course-person-form"} onClose={() => { setEditing(null); if (returnToPickerRole) setPickerRole(returnToPickerRole); setReturnToPickerRole(null); }} onSaved={replacePerson} open={Boolean(editing)} person={editing} />
     </div>
+  );
+}
+
+function RequiredMark() {
+  return <span aria-hidden className="ml-0.5 text-red-500">*</span>;
+}
+
+function AudienceSection({ action, children, icon, title }: { action?: React.ReactNode; children: React.ReactNode; icon: React.ReactNode; title: string }) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-card shadow-sm">
+      <div className="flex min-h-12 items-center justify-between gap-4 border-b border-[#CCD8F8] bg-[#E9EEFF] px-4 py-2.5 sm:px-5" data-testid="audience-section-header">
+        <div className="flex items-center gap-3">
+          <span className="flex size-8 items-center justify-center rounded-md bg-white/80 text-[#4659DC] ring-1 ring-[#CCD8F8]" data-testid={title === "课程名称" ? "course-title-icon" : undefined}>{icon}</span>
+          <h3 className="text-balance text-sm font-bold text-[#30459E]">{title} <RequiredMark /></h3>
+        </div>
+        {action}
+      </div>
+      <div className="p-4 sm:p-5">{children}</div>
+    </section>
   );
 }
 
@@ -277,17 +275,20 @@ function AddPersonButton({ label, onClick }: { label: string; onClick: () => voi
 
 function SelectedPerson({ person, onEdit, onRemove }: { person: AudiencePerson; onEdit: () => void; onRemove: () => void }) {
   return (
-    <article className="flex flex-col gap-3 rounded-md bg-muted/45 p-3 sm:flex-row sm:items-center">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <PersonAvatar avatarUrl={person.role === "teacher" ? person.activeVisual?.publicUrl : undefined} gender={person.gender} name={person.chineseName} seed={person.id} size={48} />
-        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h4 className="truncate text-sm font-semibold text-foreground">{person.chineseName}</h4><span className="text-xs text-muted-foreground">{person.englishName} · {person.age} 岁 · {person.gender === "female" ? "女" : "男"}</span>{person.profileChanged ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">档案已更新，保存后同步</span> : null}</div></div>
+    <article className="relative flex min-h-32 w-full max-w-sm gap-3 rounded-lg border border-border bg-card p-3 pr-11" data-testid={`selected-person-${person.id}`}>
+      <PersonAvatar avatarUrl={person.activeVisual?.publicUrl} gender={person.gender} imageHeight={120} imageWidth={80} name={person.chineseName} seed={person.id} shape={person.activeVisual ? "square" : "circle"} size={64} />
+      <div className="flex min-w-0 flex-1 flex-col items-center justify-center self-stretch rounded-md bg-primary-50/70 px-3 py-2 text-center">
+        <h4 className="max-w-full truncate text-base font-bold text-foreground">{person.chineseName}</h4>
+        <p className="mt-0.5 max-w-full truncate text-sm font-medium text-muted-foreground">{person.englishName}</p>
+        <PersonMetaBadges person={person} />
+        {person.profileChanged ? <span className="mt-2 w-fit rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">档案已更新</span> : null}
       </div>
-      <div className="flex shrink-0 gap-1 sm:justify-end"><Button className="border-border bg-card shadow-sm hover:border-primary hover:bg-primary-50 hover:text-primary-700" onClick={onEdit} size="sm" type="button" variant="outline"><Pencil className="size-4" />编辑</Button><Button onClick={onRemove} size="icon-sm" title="移除" type="button" variant="ghost"><X className="size-4" /></Button></div>
+      <div className="absolute right-2 top-1/2 flex -translate-y-1/2 flex-col gap-0.5"><Button aria-label={`编辑${person.chineseName}`} className="text-muted-foreground hover:bg-muted hover:text-foreground" onClick={onEdit} size="icon-sm" title="编辑" type="button" variant="ghost"><Pencil className="size-3.5" /></Button><Button aria-label={`移除${person.chineseName}`} className="text-muted-foreground hover:bg-red-50 hover:text-red-600" onClick={onRemove} size="icon-sm" title="移除" type="button" variant="ghost"><Trash2 className="size-3.5" /></Button></div>
     </article>
   );
 }
 
-function PeoplePicker({ role, selectedPeople, onClose, onConfirm }: { role: PersonRole; selectedPeople: PersonProfile[]; onClose: () => void; onConfirm: (people: PersonProfile[]) => void }) {
+function PeoplePicker({ role, selectedPeople, onClose, onConfirm, onCompleteVisual }: { role: PersonRole; selectedPeople: PersonProfile[]; onClose: () => void; onConfirm: (people: PersonProfile[]) => void; onCompleteVisual: (person: PersonProfile) => void }) {
   const [query, setQuery] = useState("");
   const [people, setPeople] = useState<PersonProfile[]>([]);
   const [selected, setSelected] = useState<Map<string, PersonProfile>>(() => new Map(selectedPeople.map((person) => [person.id, person])));
@@ -305,6 +306,7 @@ function PeoplePicker({ role, selectedPeople, onClose, onConfirm }: { role: Pers
   }, [query, role]);
 
   function toggle(person: PersonProfile) {
+    if (!person.activeVisual) return;
     if (role === "teacher") {
       onConfirm([person]);
       return;
@@ -317,15 +319,42 @@ function PeoplePicker({ role, selectedPeople, onClose, onConfirm }: { role: Pers
     });
   }
   return (
-    <Dialog description={role === "teacher" ? "选择一位老师。" : "可以选择多位学生。"} onClose={onClose} open title={role === "teacher" ? "添加老师" : "添加学生"}>
-      <div className="flex max-h-[70dvh] min-h-[480px] flex-col">
+    <Dialog onClose={onClose} open size="medium-fit" title={role === "teacher" ? "添加老师" : "添加学生"}>
+      <div className="flex max-h-[70dvh] flex-col">
         <div className="border-b border-border p-4"><label className="relative block"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><span className="sr-only">搜索人物</span><input autoFocus className="min-h-11 w-full rounded-md border border-input bg-muted/40 pl-9 pr-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" onChange={(event) => setQuery(event.target.value)} placeholder="搜索中文名或英文名" value={query} /></label></div>
-        <div className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
-          {loading ? <p className="p-6 text-center text-sm text-muted-foreground">正在查找人物…</p> : people.map((person) => { const active = selected.has(person.id); return <button aria-pressed={active} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50" key={person.id} onClick={() => toggle(person)} type="button"><PersonAvatar avatarUrl={person.role === "teacher" ? person.activeVisual?.publicUrl : undefined} gender={person.gender} name={person.chineseName} seed={person.id} size={44} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-foreground">{person.chineseName} <span className="font-normal text-muted-foreground">· {person.englishName}</span></span><span className="mt-1 block text-xs text-muted-foreground">{person.age} 岁 · {person.gender === "female" ? "女" : "男"} · {person.activeVisual ? "形象可用" : "未创建形象"}</span></span><span className={cn("flex size-6 items-center justify-center rounded-full border", active ? "border-primary bg-primary text-white" : "border-border")} >{active ? <Check className="size-4" /> : null}</span></button>; })}
+        <div className="min-h-0 overflow-y-auto p-4">
+          {loading ? <p className="p-6 text-center text-sm text-muted-foreground">正在查找人物…</p> : <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="person-picker-grid">{people.map((person) => { const active = selected.has(person.id); return person.activeVisual ? <button aria-label={`${active ? "取消选择" : "选择"}${person.chineseName}`} aria-pressed={active} className={cn("relative flex h-36 min-w-0 w-full self-start gap-3 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2", active ? "border-primary bg-primary-50/60" : "border-slate-200 bg-card hover:border-primary-300 hover:bg-primary-50/25")} data-testid={`person-picker-card-${person.id}`} key={person.id} onClick={() => toggle(person)} type="button"><PersonPickerCardContent active={active} person={person} /></button> : <article className="relative flex h-36 min-w-0 w-full self-start gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3" data-testid={`person-picker-card-${person.id}`} key={person.id}><PersonPickerCardContent onCompleteVisual={() => onCompleteVisual(person)} person={person} /></article>; })}</div>}
           {!loading && !people.length ? <p className="p-8 text-center text-sm text-muted-foreground">没有找到可选人物，请先到人物档案新增。</p> : null}
         </div>
         {role === "student" ? <div className="flex items-center justify-between border-t border-border p-4"><span className="text-sm text-muted-foreground">已选择 {selected.size} 位学生</span><div className="flex gap-2"><Button onClick={onClose} type="button" variant="outline">取消</Button><Button disabled={!selected.size} onClick={() => onConfirm(Array.from(selected.values()))} type="button">确认选择</Button></div></div> : null}
       </div>
     </Dialog>
+  );
+}
+
+function PersonPickerCardContent({ active = false, person, onCompleteVisual }: { active?: boolean; person: PersonProfile; onCompleteVisual?: () => void }) {
+  const hasVisual = Boolean(person.activeVisual);
+  return (
+    <>
+      <div className={cn("flex h-[108px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-md", hasVisual ? "bg-white" : "bg-[#E9EEFF]")}>
+        <PersonAvatar avatarUrl={person.activeVisual?.publicUrl} gender={person.gender} imageHeight={108} imageWidth={72} name={person.chineseName} seed={person.id} shape={hasVisual ? "square" : "circle"} size={60} />
+      </div>
+      <div className={cn("flex min-w-0 flex-1 flex-col items-center justify-center rounded-md px-2.5 py-2 text-center", active ? "bg-white/85" : "bg-white")}>
+        <h3 className="max-w-full truncate text-sm font-bold text-[#19324D]">{person.chineseName}</h3>
+        <p className="mt-0.5 max-w-full truncate text-xs font-medium text-[#69829B]">{person.englishName}</p>
+        <PersonMetaBadges person={person} />
+        {!hasVisual ? <div className="mt-2 flex max-w-full items-center justify-center gap-1.5"><span className="truncate rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">形象未生成</span><button aria-label={`创建${person.chineseName}的形象`} className="min-h-7 shrink-0 rounded-md border border-primary-200 bg-primary-50 px-2 text-xs font-semibold text-primary-700 hover:bg-primary-100" onClick={onCompleteVisual} type="button">创建形象</button></div> : null}
+      </div>
+      {active ? <span aria-hidden className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-primary text-white shadow-sm"><Check className="size-3.5" /></span> : null}
+    </>
+  );
+}
+
+function PersonMetaBadges({ person }: { person: Pick<PersonProfile, "age" | "gender"> }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5">
+      <span className="inline-flex rounded-full bg-[#E9EEFF] px-2.5 py-1 text-xs font-semibold text-[#30459E]">{person.age} 岁</span>
+      <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", person.gender === "female" ? "bg-pink-50 text-pink-700" : "bg-sky-50 text-sky-700")}>{person.gender === "female" ? "女" : "男"}</span>
+    </div>
   );
 }

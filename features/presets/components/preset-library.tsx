@@ -20,6 +20,7 @@ type CopyConfig = {
   categoryField: string;
   categoryPlaceholder: string;
   searchLabel: string;
+  fixedCategory?: string;
 };
 
 const copyByKind: Record<PresetKind, CopyConfig> = {
@@ -34,6 +35,30 @@ const copyByKind: Record<PresetKind, CopyConfig> = {
     categoryPlaceholder: "如：科学与未来",
     searchLabel: "搜索主题库",
   },
+  story_type: {
+    description: "维护随机灵感可选择的故事类型，也允许老师在 Step2 临时自定义。",
+    addLabel: "新增故事类型",
+    emptyTitle: "还没有故事类型",
+    emptyHint: "新增后即可在随机灵感中选择。",
+    labelField: "故事类型名称",
+    labelPlaceholder: "如：历史穿越",
+    categoryField: "所属分类",
+    categoryPlaceholder: "故事类型",
+    searchLabel: "搜索故事类型",
+    fixedCategory: "故事类型",
+  },
+  story_tone: {
+    description: "维护随机灵感可选择的故事氛围，也允许老师在 Step2 临时自定义。",
+    addLabel: "新增故事氛围",
+    emptyTitle: "还没有故事氛围",
+    emptyHint: "新增后即可在随机灵感中选择。",
+    labelField: "故事氛围名称",
+    labelPlaceholder: "如：奇妙梦幻",
+    categoryField: "所属分类",
+    categoryPlaceholder: "故事氛围",
+    searchLabel: "搜索故事氛围",
+    fixedCategory: "故事氛围",
+  },
   grammar: {
     description: "维护课程可选择的语法点，支持按中文或英文名称快速查找。",
     addLabel: "新增语法点",
@@ -42,7 +67,7 @@ const copyByKind: Record<PresetKind, CopyConfig> = {
     labelField: "英文名称",
     labelPlaceholder: "如：Past Simple",
     categoryField: "语法分类",
-    categoryPlaceholder: "如：时态与体",
+    categoryPlaceholder: "如：时态",
     searchLabel: "搜索语法库",
   },
 };
@@ -55,8 +80,27 @@ type FormState = { label: string; labelZh: string; category: string };
 type CategoryMode = "existing" | "new";
 const emptyForm: FormState = { label: "", labelZh: "", category: "" };
 
+const themeLibrarySections: Array<{ kind: "theme" | "story_type" | "story_tone"; label: string }> = [
+  { kind: "theme", label: "主题灵感" },
+  { kind: "story_type", label: "故事类型" },
+  { kind: "story_tone", label: "故事氛围" },
+];
+
+export function ThemePresetLibrary() {
+  const [kind, setKind] = useState<(typeof themeLibrarySections)[number]["kind"]>("theme");
+  return (
+    <div className="mx-auto max-w-7xl space-y-4">
+      <div className="flex rounded-xl border border-[#CCD8F8] bg-[#E9EEFF] p-1.5 shadow-sm" role="tablist" aria-label="主题库内容">
+        {themeLibrarySections.map((section) => <button aria-selected={kind === section.kind} className={cn("min-h-10 flex-1 rounded-lg px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5365EC] focus-visible:ring-offset-2", kind === section.kind ? "bg-[#5365EC] text-white shadow-sm" : "text-[#30459E] hover:bg-white/75 hover:text-[#20327F]")} key={section.kind} onClick={() => setKind(section.kind)} role="tab" type="button">{section.label}</button>)}
+      </div>
+      <PresetLibrary key={kind} kind={kind} />
+    </div>
+  );
+}
+
 export function PresetLibrary({ kind }: PresetLibraryProps) {
   const copy = copyByKind[kind];
+  const isFlatKind = Boolean(copy.fixedCategory);
   const [presets, setPresets] = useState<PresetOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -131,7 +175,7 @@ export function PresetLibrary({ kind }: PresetLibraryProps) {
 
   function openCreateDrawer() {
     setEditingPreset(null);
-    const selectedCategory = activeCategory === ALL_CATEGORIES ? "" : activeCategory;
+    const selectedCategory = copy.fixedCategory ?? (activeCategory === ALL_CATEGORIES ? "" : activeCategory);
     setForm({ ...emptyForm, category: selectedCategory });
     setCategoryMode(selectedCategory || categories.length ? "existing" : "new");
     setError("");
@@ -224,7 +268,7 @@ export function PresetLibrary({ kind }: PresetLibraryProps) {
         </Button>
       </div>
 
-      {!isLoading && !loadError && presets.length ? (
+      {!isFlatKind && !isLoading && !loadError && presets.length ? (
         <div className="overflow-hidden rounded-xl border border-[#CCD8F8] bg-[#E9EEFF] shadow-[0_2px_8px_rgba(46,78,108,0.08)]">
           <div aria-label={kind === "grammar" ? "语法分类" : "主题大类"} className="flex min-h-12 gap-1 overflow-x-auto px-2.5 py-2" role="tablist">
             {[ALL_CATEGORIES, ...categories].map((category) => {
@@ -283,7 +327,7 @@ export function PresetLibrary({ kind }: PresetLibraryProps) {
       <Dialog onClose={() => setIsDrawerOpen(false)} open={isDrawerOpen} size="compact" title={editingPreset ? `编辑${copy.addLabel.replace("新增", "")}` : copy.addLabel}>
         <form className="flex max-h-[calc(100dvh-8rem)] min-h-0 flex-col" onSubmit={handleSubmit}>
           <div className="flex-1 space-y-5 px-6 py-6">
-            <CategoryField
+            {!isFlatKind ? <CategoryField
               categoryMode={categoryMode}
               error={Boolean(error) && !form.category.trim()}
               label={copy.categoryField}
@@ -293,9 +337,9 @@ export function PresetLibrary({ kind }: PresetLibraryProps) {
               options={categories.filter((category) => category !== UNCATEGORIZED)}
               placeholder={copy.categoryPlaceholder}
               value={form.category}
-            />
+            /> : null}
             {kind === "grammar" ? <FormField error={Boolean(error) && !form.labelZh.trim()} label="中文名称" onChange={(value) => setForm((current) => ({ ...current, labelZh: value }))} placeholder="如：一般过去时" value={form.labelZh} /> : null}
-            <FormField autoFocus={kind === "theme"} error={Boolean(error) && !form.label.trim()} label={copy.labelField} onChange={(value) => setForm((current) => ({ ...current, label: value }))} placeholder={copy.labelPlaceholder} value={form.label} />
+            <FormField autoFocus={kind !== "grammar"} error={Boolean(error) && !form.label.trim()} label={copy.labelField} onChange={(value) => setForm((current) => ({ ...current, label: value }))} placeholder={copy.labelPlaceholder} value={form.label} />
             {error ? <div aria-live="assertive" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600" role="alert">{error}</div> : null}
           </div>
           <footer className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">

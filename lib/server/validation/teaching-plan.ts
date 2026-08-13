@@ -4,6 +4,7 @@ import type { TeachingPlan } from "@/lib/contracts/api";
 import { defaultPracticeConfig, defaultReadingExerciseConfig, grammarExerciseTotal, minimumReadingParagraphCount, recommendedChapterWordCount } from "@/lib/domain/teaching-plan-policy";
 
 export const englishLevelSchema = z.union([
+  z.literal("Starter"),
   z.literal("A1"),
   z.literal("A2"),
   z.literal("B1"),

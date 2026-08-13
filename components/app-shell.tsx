@@ -16,7 +16,7 @@ const navItems = [
   { href: "/grammar", label: "语法库", icon: ListChecks, key: "grammar" },
 ];
 
-const routeInfo: Record<string, { title: string; subtitle: string; activeKey: string }> = {
+const routeInfo: Record<string, { title: string; subtitle?: string; activeKey: string }> = {
   courses: {
     title: "课程列表",
     subtitle: "管理正在创作、待发布和已发布的课程",
@@ -29,7 +29,7 @@ const routeInfo: Record<string, { title: string; subtitle: string; activeKey: st
   },
   themes: {
     title: "主题库",
-    subtitle: "整理课程世界观和场景灵感",
+    subtitle: "管理主题灵感、故事类型和故事氛围",
     activeKey: "themes",
   },
   grammar: {
@@ -55,7 +55,6 @@ function getRouteMeta(pathname: string) {
   if (pathname === "/courses/new" || (pathname.includes("/create/") && pathname.startsWith("/courses/"))) {
     return {
       title: "新建课程",
-      subtitle: "先填写基础信息，再进入故事创作",
       activeKey: "courses",
     };
   }
@@ -85,6 +84,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const routeMeta = getRouteMeta(pathname);
+  const isCourseCreateRoute = pathname === "/courses/new" || (pathname.includes("/create/") && pathname.startsWith("/courses/"));
   const session = useMemo(() => getStoredSession(), []);
   const displayName = session?.user.displayName ?? "教师账号";
 
@@ -154,11 +154,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-h-dvh min-w-0 flex-1 flex-col lg:pl-60">
-        <header className="print-hidden sticky top-0 z-sticky flex min-h-[64px] items-center justify-between gap-3 border-b border-[#DCEAF6] bg-white px-4 py-3 sm:px-6 lg:h-[72px] lg:px-8 lg:py-0">
-          <div className="min-w-0">
+        <header className="print-hidden sticky top-0 z-sticky flex min-h-[64px] items-center gap-4 border-b border-[#DCEAF6] bg-white px-4 py-3 sm:px-6 lg:h-[72px] lg:px-8 lg:py-0">
+          <div className="min-w-0 shrink-0">
             <h1 className="truncate text-lg font-semibold text-[#19324D] sm:text-xl">{routeMeta.title}</h1>
-            <p className="mt-0.5 line-clamp-1 text-[13px] text-[#69829B]">{routeMeta.subtitle}</p>
+            {routeMeta.subtitle ? <p className="mt-0.5 line-clamp-1 text-[13px] text-[#69829B]">{routeMeta.subtitle}</p> : null}
           </div>
+
+          {isCourseCreateRoute ? <div className="min-w-0 flex-1" id="course-create-progress-slot" /> : <div className="flex-1" />}
 
           <div className="relative w-40 shrink-0" ref={accountMenuRef}>
             <button

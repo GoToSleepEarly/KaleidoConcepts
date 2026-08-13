@@ -7,13 +7,15 @@ import { getStoryOutlineState } from "@/lib/server/repositories/story-outline";
 export default async function StoryOutlinePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = getDb();
-  const [state, themePresets] = await Promise.all([
+  const [state, themePresets, storyTypePresets, storyTonePresets] = await Promise.all([
     getStoryOutlineState(db, id),
     listPresets(db, { kind: "theme" }),
+    listPresets(db, { kind: "story_type" }),
+    listPresets(db, { kind: "story_tone" }),
   ]);
   return (
     <ProtectedLayout>
-      <CourseStoryOutlineWorkspace initialState={state} themePresets={themePresets} />
+      <CourseStoryOutlineWorkspace initialState={state} storyTonePresets={storyTonePresets} storyTypePresets={storyTypePresets} themePresets={themePresets} />
     </ProtectedLayout>
   );
 }

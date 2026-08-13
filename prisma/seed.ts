@@ -23,8 +23,10 @@ const themePresetGroups = [
   { category: "社区与社会", labels: ["职业体验", "社区服务", "公共交通", "志愿行动", "城市问题"] },
   { category: "运动与挑战", labels: ["团队运动", "个人突破", "公平竞争", "户外挑战", "健康生活"] },
 ];
+const storyTypePresets = ["冒险", "侦探推理", "奇幻", "科幻", "校园生活", "人物成长", "历史穿越", "寓言", "喜剧", "任务闯关"];
+const storyTonePresets = ["轻松幽默", "温暖治愈", "紧张刺激", "神秘悬疑", "奇妙梦幻", "热血振奋", "安静诗意"];
 const grammarPresetGroups = [
-  { category: "时态与体", labels: [
+  { category: "时态", labels: [
     ["Present Simple", "一般现在时"], ["Present Continuous", "现在进行时"], ["Past Simple", "一般过去时"],
     ["Past Continuous", "过去进行时"], ["Future with Will", "will 表将来"], ["Future with Be Going To", "be going to 表将来"],
     ["Present Perfect", "现在完成时"], ["Past Perfect", "过去完成时"], ["Present Perfect Continuous", "现在完成进行时"],
@@ -83,6 +85,22 @@ async function main() {
       });
       themeSortOrder += 1;
     }
+  }
+
+  for (const [sortOrder, label] of storyTypePresets.entries()) {
+    await prisma.presetOption.upsert({
+      where: { kind_label: { kind: "story_type", label } },
+      update: { category: "故事类型", sortOrder, archivedAt: null },
+      create: { kind: "story_type", label, category: "故事类型", sortOrder },
+    });
+  }
+
+  for (const [sortOrder, label] of storyTonePresets.entries()) {
+    await prisma.presetOption.upsert({
+      where: { kind_label: { kind: "story_tone", label } },
+      update: { category: "故事氛围", sortOrder, archivedAt: null },
+      create: { kind: "story_tone", label, category: "故事氛围", sortOrder },
+    });
   }
 
   let sortOrder = 0;

@@ -26,8 +26,23 @@ function fetchBody(fetchMock: ReturnType<typeof vi.fn>, index = 0) {
 }
 
 describe("createStoryOutlineProvider", () => {
+  test("uses the dedicated text token and ignores the legacy shared token", async () => {
+    process.env.QUICKROUTER_TEXT_API_KEY = "text-key";
+    process.env.QUICKROUTER_API_KEY = "legacy-key";
+    const fetchMock = mockTextResponse();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createStoryOutlineProvider().generateOutline({
+      writingProvider: "quickrouter_gpt",
+      prompt: "生成大纲",
+    });
+
+    const init = (fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer text-key");
+  });
+
   test("uses the configured GPT model for GPT writing", async () => {
-    process.env.QUICKROUTER_API_KEY = "key";
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
     process.env.QUICKROUTER_GPT_TEXT_MODEL = "gpt-model";
     const fetchMock = mockTextResponse();
     vi.stubGlobal("fetch", fetchMock);
@@ -44,7 +59,7 @@ describe("createStoryOutlineProvider", () => {
   });
 
   test("allows a large generation request to override the default timeout", async () => {
-    process.env.QUICKROUTER_API_KEY = "key";
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
     const fetchMock = mockTextResponse();
     vi.stubGlobal("fetch", fetchMock);
     const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
@@ -59,7 +74,7 @@ describe("createStoryOutlineProvider", () => {
   });
 
   test("uses the configured DeepSeek model for DeepSeek writing", async () => {
-    process.env.QUICKROUTER_API_KEY = "key";
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
     process.env.QUICKROUTER_DEEPSEEK_TEXT_MODEL = "deepseek-model";
     const fetchMock = mockTextResponse();
     vi.stubGlobal("fetch", fetchMock);
@@ -74,7 +89,7 @@ describe("createStoryOutlineProvider", () => {
   });
 
   test("uses the configured research model for reference search", async () => {
-    process.env.QUICKROUTER_API_KEY = "key";
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
     process.env.QUICKROUTER_RESEARCH_MODEL = "research-model";
     const fetchMock = mockTextResponse();
     vi.stubGlobal("fetch", fetchMock);
@@ -87,14 +102,14 @@ describe("createStoryOutlineProvider", () => {
   });
 
   test("throws a business configuration error when QuickRouter key is missing", () => {
-    delete process.env.QUICKROUTER_API_KEY;
+    delete process.env.QUICKROUTER_TEXT_API_KEY;
 
     expect(() => createStoryOutlineProvider()).toThrow(StoryOutlineProviderConfigError);
     expect(() => createStoryOutlineProvider()).toThrow("故事大纲服务尚未配置");
   });
 
   test("retries once when the connection times out before a request is established", async () => {
-    process.env.QUICKROUTER_API_KEY = "key";
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
     const connectionError = new TypeError("fetch failed", {
       cause: Object.assign(new Error("Connect Timeout Error"), { code: "UND_ERR_CONNECT_TIMEOUT" }),
     });
@@ -113,7 +128,7 @@ describe("createStoryOutlineProvider", () => {
   });
 
   test("does not retry an ambiguous connection reset that may have reached the provider", async () => {
-    process.env.QUICKROUTER_API_KEY = "key";
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
     const connectionError = new TypeError("fetch failed", {
       cause: Object.assign(new Error("socket reset"), { code: "ECONNRESET" }),
     });

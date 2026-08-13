@@ -11,6 +11,14 @@ const themePresets = [
   { id: "theme-robot", kind: "theme" as const, label: "机器人", category: "科学与未来", sortOrder: 1, createdAt: "", updatedAt: "" },
   { id: "theme-ocean", kind: "theme" as const, label: "海洋生态", category: "自然与生态", sortOrder: 2, createdAt: "", updatedAt: "" },
 ];
+const storyTypePresets = [
+  { id: "type-adventure", kind: "story_type" as const, label: "冒险", category: "故事类型", sortOrder: 0, createdAt: "", updatedAt: "" },
+  { id: "type-detective", kind: "story_type" as const, label: "侦探推理", category: "故事类型", sortOrder: 1, createdAt: "", updatedAt: "" },
+];
+const storyTonePresets = [
+  { id: "tone-warm", kind: "story_tone" as const, label: "温暖治愈", category: "故事氛围", sortOrder: 0, createdAt: "", updatedAt: "" },
+  { id: "tone-tense", kind: "story_tone" as const, label: "紧张刺激", category: "故事氛围", sortOrder: 1, createdAt: "", updatedAt: "" },
+];
 
 const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
 
@@ -103,18 +111,21 @@ describe("CourseStoryOutlineWorkspace", () => {
   });
 
   test("shows guided idea input and keeps the right panel empty before results exist", () => {
-    render(<CourseStoryOutlineWorkspace initialState={emptyState} themePresets={themePresets} />);
+    render(<CourseStoryOutlineWorkspace initialState={emptyState} storyTonePresets={storyTonePresets} storyTypePresets={storyTypePresets} themePresets={themePresets} />);
 
     expect(screen.getByRole("heading", { name: "故事大纲" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "故事想法" })).toBeInTheDocument();
     expect(screen.getByText("说说你的故事想法")).toBeInTheDocument();
-    expect(screen.getByText(/参考《瓦罗兰特》的 Jett 和 Sage/)).toBeInTheDocument();
+    expect(screen.getByText("可以写参考人物、IP、故事类型，以及希望老师学生如何参与。例如：老师和学生一起穿越到魔法世界经历了一场奇幻冒险。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始讨论故事" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "随机灵感" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "随机灵感" }));
     expect(screen.getByRole("button", { name: "选择主题" })).toBeInTheDocument();
-    expect(screen.getByLabelText("故事类型")).toBeInTheDocument();
+    expect(screen.getByLabelText("故事类型")).toHaveValue("");
+    expect(screen.getByLabelText("故事氛围")).toHaveValue("");
+    expect(screen.queryByText("选择基本方向，也可以补充一个特别要求。")).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "补充要求（可选）" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("例如：希望学生成为大侦探")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "故事想法" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "生成 3 个故事方向" })).toBeInTheDocument();
     expect(screen.getByText("还没有生成结果")).toBeInTheDocument();
@@ -122,7 +133,7 @@ describe("CourseStoryOutlineWorkspace", () => {
 
   test("does not silently discard an unsent chat draft when navigating steps", () => {
     const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(false);
-    render(<CourseStoryOutlineWorkspace initialState={emptyState} themePresets={themePresets} />);
+    render(<CourseStoryOutlineWorkspace initialState={emptyState} storyTonePresets={storyTonePresets} storyTypePresets={storyTypePresets} themePresets={themePresets} />);
     fireEvent.change(screen.getByRole("textbox", { name: "故事想法" }), { target: { value: "先不要丢掉这段想法" } });
     fireEvent.click(screen.getByRole("link", { name: "基础信息" }));
     expect(confirmMock).toHaveBeenCalled();
@@ -162,13 +173,15 @@ describe("CourseStoryOutlineWorkspace", () => {
   test("formats the random form as a teacher chat message", async () => {
     const fetchMock = vi.fn(async () => Response.json(emptyState));
     vi.stubGlobal("fetch", fetchMock);
-    render(<CourseStoryOutlineWorkspace initialState={emptyState} themePresets={themePresets} />);
+    render(<CourseStoryOutlineWorkspace initialState={emptyState} storyTonePresets={storyTonePresets} storyTypePresets={storyTypePresets} themePresets={themePresets} />);
 
     fireEvent.click(screen.getByRole("button", { name: "随机灵感" }));
     fireEvent.click(screen.getByRole("button", { name: "选择主题" }));
     fireEvent.click(screen.getByRole("tab", { name: /科学与未来/ }));
     fireEvent.click(screen.getByRole("button", { name: "太空探索" }));
     fireEvent.click(screen.getByRole("button", { name: "确认主题" }));
+    expect(screen.getByRole("button", { name: "选择主题" })).toHaveTextContent("科学与未来 / 太空探索");
+    fireEvent.change(screen.getByLabelText("故事类型"), { target: { value: "冒险" } });
     fireEvent.change(screen.getByLabelText("故事氛围"), { target: { value: "紧张刺激" } });
     fireEvent.change(screen.getByRole("textbox", { name: "补充要求（可选）" }), {
       target: { value: "希望学生和老师共同参与" },
@@ -177,8 +190,19 @@ describe("CourseStoryOutlineWorkspace", () => {
 
     await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({
       mode: "random",
-      message: "请帮我生成随机故事方向。\n\n主题：科学与未来 / 太空探索\n故事类型：冒险解谜\n故事氛围：紧张刺激\n补充要求：希望学生和老师共同参与",
+      message: "请帮我生成随机故事方向。\n\n主题：科学与未来 / 太空探索\n故事类型：冒险\n故事氛围：紧张刺激\n补充要求：希望学生和老师共同参与",
     }));
+  });
+
+  test("supports custom story type and tone without preset defaults", () => {
+    render(<CourseStoryOutlineWorkspace initialState={emptyState} storyTonePresets={storyTonePresets} storyTypePresets={storyTypePresets} themePresets={themePresets} />);
+    fireEvent.click(screen.getByRole("button", { name: "随机灵感" }));
+
+    fireEvent.change(screen.getByLabelText("故事类型"), { target: { value: "__custom__" } });
+    fireEvent.change(screen.getByLabelText("故事氛围"), { target: { value: "__custom__" } });
+
+    expect(screen.getByRole("textbox", { name: "自定义故事类型" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "自定义故事氛围" })).toBeInTheDocument();
   });
 
   test("forwards the AI research plan when a teacher starts reference search", async () => {
@@ -234,6 +258,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByRole("heading", { name: "特朗普" })).toBeInTheDocument();
     expect(screen.getByText("公众人物，可做课堂化成长改编。")).toBeInTheDocument();
     expect(screen.getByText("公众表达")).toBeInTheDocument();
+    expect(screen.getByText("参考资料中的角色是创作候选，不代表都会在最终故事中出场。")).toBeInTheDocument();
     expect(screen.queryByLabelText("引用对象")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("资料摘要")).not.toBeInTheDocument();
     expect(screen.queryByText("现实政治争议")).not.toBeInTheDocument();
@@ -286,6 +311,33 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByText("还没有生成结果")).toBeInTheDocument();
   });
 
+  test("visually identifies AI and teacher chat messages", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      chatMessages: [
+        {
+          id: "teacher-message",
+          courseId: "course-1",
+          role: "teacher",
+          content: "我想创作一个海底故事。",
+          actions: [],
+          createdAt: "2026-08-14T00:00:00.000Z",
+        },
+        {
+          id: "assistant-message",
+          courseId: "course-1",
+          role: "assistant",
+          content: "建议按这个方向创作。",
+          actions: [],
+          createdAt: "2026-08-14T00:00:01.000Z",
+        },
+      ],
+    }} />);
+
+    expect(screen.getByRole("img", { name: "老师" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "AI 助手" })).toBeInTheDocument();
+  });
+
   test("submits teacher input to the message endpoint", async () => {
     const nextState = {
       ...emptyState,
@@ -315,7 +367,96 @@ describe("CourseStoryOutlineWorkspace", () => {
     ));
     expect(fetchBody(fetchMock)).toMatchObject({
       message: "我的故事想法：\n学生们进入海底图书馆",
+      requestId: expect.any(String),
     });
+  });
+
+  test("uses accurate model and flow status copy", async () => {
+    const responsePromise = new Promise<Response>(() => undefined);
+    vi.stubGlobal("fetch", vi.fn(() => responsePromise));
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      chatMessages: [{
+        id: "confirm-copy",
+        courseId: "course-1",
+        role: "assistant",
+        content: "请确认创作理解。",
+        actions: [{ id: "confirm-requirements", label: "确认需求", action: "confirm_requirements" }],
+        createdAt: "2026-08-14T00:00:00.000Z",
+      }],
+    }} />);
+
+    expect(screen.getByRole("option", { name: "GPT（大纲更稳）" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("故事想法"), { target: { value: "我确认需求" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认需求" }));
+    expect(screen.getByText("我确认这份创作理解。")).toBeInTheDocument();
+    expect(screen.queryByText("确认需求", { selector: "article p" })).not.toBeInTheDocument();
+    expect(screen.getByText("正在准备故事创作")).toBeInTheDocument();
+    expect(fetchBody(vi.mocked(fetch))).toMatchObject({ message: "", action: "confirm_requirements" });
+    expect(screen.getByLabelText("故事想法")).toHaveValue("我确认需求");
+  });
+
+  test("describes reference confirmation without implying another requirement decision", async () => {
+    const responsePromise = new Promise<Response>(() => undefined);
+    vi.stubGlobal("fetch", vi.fn(() => responsePromise));
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      chatMessages: [{
+        id: "confirm-reference-copy",
+        courseId: "course-1",
+        role: "assistant",
+        content: "资料已整理，请确认后继续。",
+        actions: [{ id: "confirm-reference", label: "确认参考资料并继续", action: "confirm_reference_materials" }],
+        createdAt: "2026-08-14T00:00:00.000Z",
+      }],
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "确认参考资料并继续" }));
+    expect(screen.getByText("我确认这些参考资料，请继续。")).toBeInTheDocument();
+    expect(screen.getByText("正在继续构思故事")).toBeInTheDocument();
+  });
+
+  test("restores a persisted running operation after refresh", async () => {
+    vi.useFakeTimers();
+    const completedState = { ...emptyState, operation: null };
+    const fetchMock = vi.fn(async () => Response.json(completedState));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      operation: {
+        requestId: "request-running",
+        action: "confirm_requirements",
+        phase: "generating_directions",
+        status: "running",
+        errorMessage: null,
+        startedAt: "2026-08-14T00:00:00.000Z",
+        updatedAt: "2026-08-14T00:00:00.000Z",
+      },
+    }} />);
+
+    expect(screen.getAllByText("正在构思 3 个故事方向").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "处理中" })).toBeDisabled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+    expect(fetchMock).toHaveBeenCalledWith("/api/courses/course-1/story-outline", { cache: "no-store" });
+  });
+
+  test("shows a persisted failed operation with a retry action", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      operation: {
+        requestId: "request-failed",
+        action: "confirm_requirements",
+        phase: "preparing_reference",
+        status: "failed",
+        errorMessage: "故事大纲生成超时，请稍后重试",
+        startedAt: "2026-08-14T00:00:00.000Z",
+        updatedAt: "2026-08-14T00:01:00.000Z",
+      },
+    }} />);
+
+    expect(screen.getByText("故事大纲生成超时，请稍后重试")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重试本步" })).toBeInTheDocument();
   });
 
   test("clears the composer as soon as the teacher sends an idea", async () => {
@@ -490,13 +631,92 @@ describe("CourseStoryOutlineWorkspace", () => {
     }} />);
 
     fireEvent.click(screen.getByText("使用角色创作新剧情"));
-    fireEvent.change(screen.getByLabelText("希望哪些角色出场？补充说明"), { target: { value: "暮光闪闪和云宝" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交回答" }));
+    fireEvent.change(screen.getByPlaceholderText("输入你的回答"), { target: { value: "暮光闪闪和云宝" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认回答并继续" }));
 
     await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({
       action: "submit_alignment_answers",
       alignmentAnswers: { usage: "使用角色创作新剧情", roles: "暮光闪闪和云宝" },
     }));
+  });
+
+  test("preselects AI recommendations for every clarification question and allows immediate confirmation", async () => {
+    const fetchMock = vi.fn(async () => Response.json(emptyState));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      chatMessages: [{
+        id: "alignment-recommendations",
+        courseId: "course-1",
+        role: "assistant",
+        content: "只需要确认一个会改变故事本质的选择。",
+        actions: [{
+          id: "submit-recommendations",
+          label: "确认建议",
+          action: "submit_alignment_answers",
+          questions: [
+            {
+              id: "usage",
+              label: "怎样使用原作？",
+              required: true,
+              answerMode: "single_choice",
+              options: [{ id: "new", label: "使用原作人物创作新剧情" }],
+              allowCustom: true,
+              allowRecommendation: true,
+              recommendation: { value: "使用原作人物创作新剧情", reason: "老师已经提出新的课堂冒险。" },
+            },
+            {
+              id: "focus",
+              label: "故事聚焦谁？",
+              required: true,
+              answerMode: "text",
+              allowCustom: true,
+              allowRecommendation: true,
+              recommendation: { value: "所有学生组成行动团队，老师共同参与", reason: "课堂人物默认全部进入故事。" },
+            },
+          ],
+        }],
+        createdAt: "2026-08-13T00:00:00.000Z",
+      }],
+    }} />);
+
+    expect(screen.getAllByText(/建议：/)).toHaveLength(2);
+    const submit = screen.getByRole("button", { name: "确认回答并继续" });
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({
+      action: "submit_alignment_answers",
+      alignmentAnswers: {
+        usage: "采用建议：使用原作人物创作新剧情",
+        focus: "采用建议：所有学生组成行动团队，老师共同参与",
+      },
+    }));
+  });
+
+  test("renders a separate fallback input for every malformed choice question", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      chatMessages: [{
+        id: "alignment-fallback",
+        courseId: "course-1",
+        role: "assistant",
+        content: "请补充信息。",
+        actions: [{
+          id: "submit-fallback",
+          label: "提交回答",
+          action: "submit_alignment_answers",
+          questions: [
+            { id: "first", label: "第一个问题", required: true, answerMode: "single_choice", allowCustom: false, allowRecommendation: false },
+            { id: "second", label: "第二个问题", required: true, answerMode: "single_choice", allowCustom: false, allowRecommendation: false },
+          ],
+        }],
+        createdAt: "2026-08-13T00:00:00.000Z",
+      }],
+    }} />);
+
+    expect(screen.getByLabelText("第一个问题回答")).toBeInTheDocument();
+    expect(screen.getByLabelText("第二个问题回答")).toBeInTheDocument();
   });
 
   test("lets the teacher revise only one direction and explicitly confirm it before outline generation", async () => {
@@ -624,7 +844,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "重新开始本轮构思" }));
-    expect(screen.getByText("将清空本轮 Step 2 的聊天记录、故事方向、参考资料和故事大纲。")).toBeInTheDocument();
+    expect(screen.getByText("将清空本阶段的聊天记录、故事方向、参考资料和故事大纲。")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "清空并重新开始" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(

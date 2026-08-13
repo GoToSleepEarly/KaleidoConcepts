@@ -181,6 +181,7 @@ export type StoryAlignmentState = {
   unresolvedIssues: string[];
   questions: StoryAlignmentQuestion[];
   summary?: string;
+  needsBackgroundRefresh?: boolean;
 };
 
 export type CourseStoryChatAction = {
@@ -204,7 +205,8 @@ export type CourseStoryChatAction = {
     | "revise_direction"
     | "confirm_direction"
     | "revise_outline"
-    | "revise_chapter";
+    | "revise_chapter"
+    | "retry_operation";
   targetId?: string;
   researchPlan?: CourseResearchPlan;
   questions?: StoryAlignmentQuestion[];
@@ -321,6 +323,15 @@ export type CourseStoryOutlineState = {
   referenceMaterials: CourseSourceReference[];
   outline: CourseStoryOutline | null;
   coursePeople: CourseAudiencePerson[];
+  operation?: {
+    requestId: string;
+    action: string;
+    phase: "aligning" | "preparing_reference" | "searching_reference" | "generating_directions" | "generating_outline" | "revising";
+    status: "running" | "succeeded" | "failed" | "result_unknown" | "superseded";
+    errorMessage: string | null;
+    startedAt: string;
+    updatedAt: string;
+  } | null;
 };
 
 export type CourseStoryMessageInput = {
@@ -333,9 +344,10 @@ export type CourseStoryMessageInput = {
   researchPlan?: CourseResearchPlan;
   chapterCount?: number;
   writingProvider?: StoryWritingProvider;
+  requestId?: string;
 };
 
-export type PresetKind = "theme" | "grammar";
+export type PresetKind = "theme" | "story_type" | "story_tone" | "grammar";
 
 export type PresetOption = {
   id: string;
@@ -355,7 +367,7 @@ export type PresetOptionInput = {
   category: string;
 };
 
-export type EnglishLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
+export type EnglishLevel = "Starter" | "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
 export type TeachingPlanStatus = "draft" | "confirmed";
 export type GrammarExerciseType = "optionCloze" | "wordForm";
 export type ReadingExerciseMode = "complete" | "interactive";

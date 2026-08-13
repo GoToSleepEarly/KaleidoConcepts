@@ -12,6 +12,7 @@ import {
 
 describe("teaching plan policy", () => {
   it("uses stable word budgets from difficulty and duration", () => {
+    expect(courseWordBudget("Starter", 60)).toBe(320);
     expect(courseWordBudget("A2", 30)).toBe(200);
     expect(courseWordBudget("B1", 45)).toBe(360);
     expect(courseWordBudget("C2", 60)).toBe(560);

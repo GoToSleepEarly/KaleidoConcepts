@@ -22,7 +22,7 @@ type PresetWriteData = {
 
 type PresetFindManyQuery = {
   where: { archivedAt: null; kind?: PresetKind };
-  orderBy: [{ category: "asc" }, { sortOrder: "asc" }, { label: "asc" }];
+  orderBy: [{ sortOrder: "asc" }, { label: "asc" }];
 };
 
 type PresetDelegate = {
@@ -77,7 +77,7 @@ export async function listPresets(db: PresetsDb, options: { kind?: PresetKind } 
       archivedAt: null,
       ...(options.kind ? { kind: options.kind } : {}),
     },
-    orderBy: [{ category: "asc" }, { sortOrder: "asc" }, { label: "asc" }],
+    orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
   });
 
   return presets.map(toPresetOption);
@@ -114,7 +114,7 @@ export async function createPreset(db: PresetsDb, input: PresetOptionInput) {
       label,
       labelZh: normalizeOptionalText(input.labelZh),
       category: normalizeOptionalText(input.category),
-      sortOrder: 0,
+      sortOrder: 10_000,
     },
   });
 

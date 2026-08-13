@@ -2,7 +2,7 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { PresetLibrary } from "./preset-library";
+import { PresetLibrary, ThemePresetLibrary } from "./preset-library";
 
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function showModal() { this.setAttribute("open", ""); };
@@ -106,5 +106,30 @@ describe("PresetLibrary", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith("/api/presets", expect.objectContaining({ method: "POST" })));
+  });
+
+  test("manages story types and tones inside the theme library", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (!init) {
+        if (url.includes("story_type")) return Response.json({ presets: [{ id: "type-1", kind: "story_type", label: "冒险", category: "故事类型", sortOrder: 0, createdAt: "", updatedAt: "" }] });
+        if (url.includes("story_tone")) return Response.json({ presets: [{ id: "tone-1", kind: "story_tone", label: "温暖治愈", category: "故事氛围", sortOrder: 0, createdAt: "", updatedAt: "" }] });
+        return Response.json({ presets: [] });
+      }
+      return Response.json({ preset: { id: "type-2", kind: "story_type", label: "历史穿越", category: "故事类型", sortOrder: 1, createdAt: "", updatedAt: "" } }, { status: 201 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ThemePresetLibrary />);
+    fireEvent.click(screen.getByRole("tab", { name: "故事类型" }));
+    expect(await screen.findByText("冒险")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "新增故事类型" }));
+    fireEvent.change(screen.getByLabelText("故事类型名称"), { target: { value: "历史穿越" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith("/api/presets", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ kind: "story_type", label: "历史穿越", category: "故事类型" }),
+    })));
   });
 });

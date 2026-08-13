@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
   CourseStoryOutlineConflictError,
+  CourseStoryOutlineOperationConflictError,
   confirmStoryOutline,
   getStoryOutlineState,
   handleStoryOutlineMessage,
@@ -140,6 +141,15 @@ function createDb(overrides: Partial<StoryOutlineDb> = {}) {
         state.setting = record(state.setting ? { ...state.setting, ...update } : create);
         return state.setting;
       }),
+      updateMany: vi.fn(async ({ where, data }) => {
+        if (!state.setting) return { count: 0 };
+        if (where.courseId && state.setting.courseId !== where.courseId) return { count: 0 };
+        if (where.stateRevision !== undefined && (state.setting.stateRevision ?? 0) !== where.stateRevision) return { count: 0 };
+        if (where.operationRequestId && state.setting.operationRequestId !== where.operationRequestId) return { count: 0 };
+        if (where.operationStatus && state.setting.operationStatus !== where.operationStatus) return { count: 0 };
+        state.setting = record({ ...state.setting, ...data });
+        return { count: 1 };
+      }),
       deleteMany: vi.fn(async () => {
         state.setting = null;
         return { count: 1 };
@@ -193,10 +203,7 @@ const deps: StoryOutlineGenerationDeps = {
     summary: "创作一个海底冒险，具体主线从 3 个方向中选择。",
   })),
   prepareBackgroundKnowledge: vi.fn(async () => ({ status: "not_needed" as const, reason: "完全原创" })),
-  decideFreeInput: vi.fn(async () => ({
-    decision: "generate_outline" as const,
-    assistantMessage: "可以直接生成故事大纲。",
-  })),
+  checkChangeBoundary: vi.fn(async () => ({ scope: "within_target" as const, needsBackgroundRefresh: false as const })),
   generateDirections: vi.fn(async () => [
     {
       title: "海底图书馆",
@@ -224,15 +231,6 @@ const deps: StoryOutlineGenerationDeps = {
       knowledgePointRecommendationSummary: "练习表达选择与结果。",
     },
   })),
-  generateReferenceFromKnowledge: vi.fn(async () => [{
-    name: "Jett 与 Sage",
-    type: "game_character" as const,
-    sourceStatus: "confirmed" as const,
-    summary: "两位角色的可靠核心设定。",
-    usableFacts: ["Jett 擅长机动", "Sage 擅长保护与支援"],
-    avoidTopics: [],
-    adaptationBoundary: "保留核心设定，改编为适合课堂的冒险。",
-  }]),
   searchReference: vi.fn(async () => [{
     name: "特朗普",
     type: "public_figure" as const,
@@ -304,7 +302,7 @@ describe("story outline repository", () => {
     const scopedDeps = { ...deps, prepareBackgroundKnowledge, generateDirections };
     await handleStoryOutlineMessage(db, "course-1", { message: "参考小马宝莉创作新故事", mode: "idea" }, scopedDeps);
 
-    const state = await handleStoryOutlineMessage(db, "course-1", { message: "", mode: "idea", action: "confirm_requirements" }, scopedDeps);
+    const state = await handleStoryOutlineMessage(db, "course-1", { message: "我确认需求", mode: "idea", action: "confirm_requirements" }, scopedDeps);
 
     expect(prepareBackgroundKnowledge).toHaveBeenCalledTimes(1);
     expect(prepareBackgroundKnowledge).toHaveBeenCalledWith(expect.objectContaining({
@@ -316,33 +314,100 @@ describe("story outline repository", () => {
     expect(state.alignment?.status).toBe("confirmed");
     expect(state.directions).toHaveLength(1);
     expect(state.outline).toBeNull();
+    expect(state.chatMessages.some((message) => message.role === "system")).toBe(false);
+    expect(db.state.messages.filter((message) => message.content === "我确认这份创作理解。")).toHaveLength(1);
+    expect(db.state.messages.some((message) => message.content === "我确认需求")).toBe(false);
+    expect(db.state.messages.some((message) => message.content === "创作需求已确认，正在创作 3 个不同的故事方向。")).toBe(true);
   });
 
-  test.skip("does not generate an outline before high-risk reference material is confirmed", async () => {
-    const researchPlan = {
-      researchGoal: "提取可转化为成长故事的关键经历",
-      packets: [{
-        title: "特朗普人生经历",
-        subjects: [{ name: "特朗普" }],
-        researchQuestions: ["哪些转折最能体现选择与结果？"],
-        storyUseGoals: ["构建有因果关系的成长主线"],
-      }],
+  test("replaces existing references after a confirmed requirement change needs fresh background", async () => {
+    const db = createDb();
+    await handleStoryOutlineMessage(db, "course-1", { message: "根据《冰雪奇缘》创作新冒险", mode: "idea" }, deps);
+    db.state.setting = {
+      ...db.state.setting!,
+      alignmentDetails: {
+        resolvedUnderstanding: ["根据新的作品创作"],
+        unresolvedIssues: [],
+        questions: [],
+        needsBackgroundRefresh: true,
+      },
     };
-    const decideFreeInput = vi.fn(async () => ({
-      decision: "request_reference_material" as const,
-      assistantMessage: "这个想法需要更多参考资料。",
-      referenceName: "特朗普",
-      researchPlan,
+    db.state.references.push(record({
+      courseId: "course-1",
+      name: "《冰雪奇缘》核心设定",
+      type: "ip",
+      sourceStatus: "confirmed",
+      summary: "已有的冰雪世界和核心角色资料。",
+      usableFacts: ["冰雪魔法"],
+      avoidTopics: [],
+      adaptationBoundary: "创作新剧情。",
+      researchProvider: "none",
+      confirmedAt: new Date("2026-08-14T00:00:00.000Z"),
     }));
-    const state = await handleStoryOutlineMessage(createDb(), "course-1", {
-      message: "我希望参考特朗普的一生讲个课程",
-      mode: "idea",
-    }, { ...deps, decideFreeInput });
+    const prepareBackgroundKnowledge = vi.fn(async () => ({
+      status: "ready" as const,
+      references: [{
+        name: "冰雪奇缘核心设定",
+        type: "ip" as const,
+        sourceStatus: "confirmed" as const,
+        summary: "补充后的冰雪世界和核心角色资料。",
+        usableFacts: ["冰雪魔法", "角色能够合作战斗"],
+        avoidTopics: [],
+        adaptationBoundary: "创作新剧情。",
+      }],
+    }));
 
-    expect(state.outline).toBeNull();
-    expect(state.chatMessages.at(-1)?.actions.map((action) => action.action)).toEqual(["supply_reference_material", "choose_reference_search"]);
-    expect(state.chatMessages.at(-1)?.actions[1].researchPlan).toEqual(researchPlan);
+    await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "confirm_requirements",
+    }, { ...deps, prepareBackgroundKnowledge });
+
+    expect(db.state.references).toHaveLength(1);
+    expect(db.state.references[0]).toMatchObject({
+      name: "冰雪奇缘核心设定",
+      summary: "补充后的冰雪世界和核心角色资料。",
+    });
   });
+
+  test("skips background generation when the boundary check says existing material is sufficient", async () => {
+    const db = createDb();
+    await handleStoryOutlineMessage(db, "course-1", { message: "根据一个作品创作新冒险", mode: "idea" }, deps);
+    db.state.setting = {
+      ...db.state.setting!,
+      alignmentStatus: "ready_for_confirmation",
+      alignmentSummary: "继续使用同一个作品创作新冒险。",
+      alignmentDetails: {
+        resolvedUnderstanding: ["继续使用同一个作品"],
+        unresolvedIssues: [],
+        questions: [],
+        needsBackgroundRefresh: false,
+      },
+    };
+    db.state.references.push(record({
+      courseId: "course-1",
+      name: "同一个作品",
+      type: "ip",
+      sourceStatus: "confirmed",
+      summary: "已有资料。",
+      usableFacts: ["核心设定"],
+      avoidTopics: [],
+      adaptationBoundary: "创作新剧情。",
+      researchProvider: "none",
+      confirmedAt: new Date("2026-08-14T00:00:00.000Z"),
+    }));
+    const prepareBackgroundKnowledge = vi.fn(deps.prepareBackgroundKnowledge);
+
+    await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "confirm_requirements",
+    }, { ...deps, prepareBackgroundKnowledge });
+
+    expect(prepareBackgroundKnowledge).not.toHaveBeenCalled();
+    expect(db.state.references).toHaveLength(1);
+  });
+
 
   test("waits for teacher confirmation after researching a broad idea", async () => {
     const db = createDb();
@@ -363,91 +428,8 @@ describe("story outline repository", () => {
     });
   });
 
-  test.skip("prepares references from model knowledge and waits for teacher confirmation", async () => {
-    const db = createDb();
-    const researchPlan = {
-      researchGoal: "整理两名角色可用于故事的共同设定",
-      packets: [{
-        title: "Jett 与 Sage",
-        subjects: [{ name: "Jett" }, { name: "Sage" }],
-        researchQuestions: ["两人的能力和合作关系是什么？"],
-        storyUseGoals: ["设计合作冒险"],
-      }],
-    };
-    const decideFreeInput = vi.fn(async () => ({
-      decision: "prepare_reference_material" as const,
-      assistantMessage: "我先整理已有的角色背景知识。",
-      referenceName: "Jett 与 Sage",
-      researchPlan,
-    }));
-    const generateReferenceFromKnowledge = vi.fn(deps.generateReferenceFromKnowledge);
 
-    const state = await handleStoryOutlineMessage(db, "course-1", {
-      message: "参考 Jett 和 Sage 生成一个冒险故事",
-      mode: "idea",
-    }, { ...deps, decideFreeInput, generateReferenceFromKnowledge });
 
-    expect(generateReferenceFromKnowledge).toHaveBeenCalledWith(expect.objectContaining({ researchPlan }));
-    expect(state.referenceMaterials[0]).toMatchObject({
-      name: "Jett 与 Sage",
-      researchProvider: "none",
-    });
-    expect(state.directions).toEqual([]);
-    expect(state.outline).toBeNull();
-    expect(state.chatMessages.at(-1)?.content).toBe("参考资料已整理，请确认后继续。");
-    expect(state.chatMessages.at(-1)?.actions[0]).toMatchObject({
-      action: "confirm_reference_materials",
-      label: "确认参考资料并继续",
-    });
-  });
-
-  test.skip("asks how to use a complete source story only after references are confirmed", async () => {
-    const db = createDb();
-    await handleStoryOutlineMessage(db, "course-1", {
-      message: "",
-      mode: "idea",
-      action: "request_reference_search",
-      targetId: "某网络小说",
-    }, deps);
-    const decideFreeInput = vi.fn(async () => ({
-      decision: "ask_story_usage" as const,
-      assistantMessage: "资料中包含完整原剧情。你希望怎么讲这个故事？",
-    }));
-    const state = await handleStoryOutlineMessage(db, "course-1", {
-      message: "",
-      mode: "idea",
-      action: "confirm_reference_materials",
-    }, { ...deps, decideFreeInput });
-
-    expect(state.directions).toEqual([]);
-    expect(state.outline).toBeNull();
-    expect(decideFreeInput).toHaveBeenCalledWith(expect.objectContaining({
-      references: expect.arrayContaining([expect.objectContaining({ name: "特朗普" })]),
-    }));
-    expect(state.chatMessages.at(-1)?.actions.map((action) => action.label)).toEqual(["按原剧情讲", "创作新剧情", "我有具体想法"]);
-  });
-
-  test.skip("uses the complete source plot after the teacher chooses to follow the original story", async () => {
-    const db = createDb();
-    const decideFreeInput = vi.fn(async () => ({
-      decision: "generate_outline" as const,
-      assistantMessage: "按原剧情生成大纲。",
-    }));
-    const generateOutline = vi.fn(deps.generateOutline);
-
-    const state = await handleStoryOutlineMessage(db, "course-1", {
-      message: "",
-      mode: "idea",
-      action: "choose_story_usage",
-      targetId: "follow_original",
-    }, { ...deps, decideFreeInput, generateOutline });
-
-    expect(state.chatMessages.map((message) => message.content)).toContain("我选择按原剧情讲，保留原作主线、关键转折和结局。");
-    expect(generateOutline).toHaveBeenCalledWith(expect.objectContaining({
-      conversationHistory: expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining("按原剧情讲") })]),
-    }));
-    expect(state.outline).not.toBeNull();
-  });
 
   test("rejects incomplete search results and asks the teacher to supply material", async () => {
     const db = createDb();
@@ -468,7 +450,7 @@ describe("story outline repository", () => {
     }, { ...deps, searchReference });
 
     expect(state.referenceMaterials).toEqual([]);
-    expect(state.chatMessages.at(-1)?.content).toContain("没有找到足够可靠");
+    expect(state.chatMessages.at(-1)?.content).toContain("没有整理出足够完整、可用于创作");
     expect(state.chatMessages.at(-1)?.actions.map((action) => action.action)).toEqual(["supply_reference_material"]);
   });
 
@@ -572,165 +554,11 @@ describe("story outline repository", () => {
     expect(state.chatMessages.some((message) => message.content === "故事大纲已生成。")).toBe(false);
   });
 
-  test.skip("asks AI to decide free input instead of local keyword detection", async () => {
-    const db = createDb();
-    const decideFreeInput = vi.fn(async () => ({
-      decision: "request_reference_material" as const,
-      assistantMessage: "这个对象需要更多资料。",
-      referenceName: "Jett",
-    }));
 
-    const state = await handleStoryOutlineMessage(db, "course-1", {
-      message: "参考 Jett 做一个故事",
-      mode: "idea",
-    }, { ...deps, decideFreeInput });
 
-    expect(decideFreeInput).toHaveBeenCalledWith(expect.objectContaining({
-      chapterCount: 4,
-      coursePeople: expect.arrayContaining([expect.objectContaining({ chineseName: "夏天", age: 10 })]),
-      conversationHistory: expect.arrayContaining([
-        expect.objectContaining({ role: "teacher", content: "参考 Jett 做一个故事" }),
-      ]),
-    }));
-    expect(state.outline).toBeNull();
-    expect(state.chatMessages.at(-1)?.actions.map((action) => action.action)).toEqual([
-      "supply_reference_material",
-      "choose_reference_search",
-    ]);
-  });
 
-  test.skip("generates direction cards when AI decides free input is broad", async () => {
-    const db = createDb();
-    const decideFreeInput = vi.fn(async () => ({
-      decision: "generate_directions" as const,
-      assistantMessage: "这个想法方向明确，但主线还可以先选一个方向。",
-    }));
-    const generateDirections = vi.fn(deps.generateDirections);
 
-    const state = await handleStoryOutlineMessage(db, "course-1", {
-      message: "写一个冒险故事",
-      mode: "idea",
-    }, { ...deps, decideFreeInput, generateDirections });
 
-    expect(generateDirections).toHaveBeenCalledWith(expect.objectContaining({
-      task: "根据老师当前要求和已确认资料生成 3 个故事方向。",
-      chapterCount: 4,
-      coursePeople: expect.arrayContaining([expect.objectContaining({ chineseName: "夏天" })]),
-      conversationHistory: expect.arrayContaining([
-        expect.objectContaining({ role: "teacher", content: "写一个冒险故事" }),
-      ]),
-    }));
-    expect(state.outline).toBeNull();
-    expect(state.directions.length).toBeGreaterThan(0);
-    expect(state.chatMessages.map((message) => message.content)).toContain("这个想法方向明确，但主线还可以先选一个方向。");
-    expect(state.chatMessages.at(-1)?.content).toBe("我生成了 3 个故事方向，你可以选一个继续。");
-  });
-
-  test.skip("replaces unselected directions when the teacher adds direction requirements", async () => {
-    const db = createDb();
-    db.state.directions.push(record({
-      courseId: "course-1",
-      title: "旧方向",
-      hook: "旧剧情",
-      whyFits: "旧说明",
-      mainCharacters: [],
-      classroomValue: "旧价值",
-      seedPrompt: "old",
-      selectedAt: null,
-    }));
-    const decideFreeInput = vi.fn(async () => ({
-      decision: "generate_directions" as const,
-      assistantMessage: "我会按新要求重新生成方向。",
-    }));
-    const generateDirections = vi.fn(async () => [{
-      title: "新的太空方向",
-      hook: "按老师的新要求展开。",
-      whyFits: "符合最新要求。",
-      mainCharacters: ["原作主角"],
-      classroomValue: "理解剧情",
-      seedPrompt: "new",
-    }]);
-
-    const state = await handleStoryOutlineMessage(db, "course-1", {
-      message: "我希望故事方向更忠于原作",
-      mode: "idea",
-    }, { ...deps, decideFreeInput, generateDirections });
-
-    expect(decideFreeInput).toHaveBeenCalledWith(expect.objectContaining({
-      currentDirections: expect.arrayContaining([expect.objectContaining({ title: "旧方向" })]),
-    }));
-    expect(state.directions.map((direction) => direction.title)).toEqual(["新的太空方向"]);
-  });
-
-  test.skip("removes stale unselected directions when free input directly generates an outline", async () => {
-    const db = createDb();
-    db.state.directions.push(record({
-      courseId: "course-1",
-      title: "旧方向",
-      hook: "旧剧情",
-      whyFits: "旧说明",
-      mainCharacters: [],
-      classroomValue: "旧价值",
-      seedPrompt: "old",
-      selectedAt: null,
-    }));
-
-    const state = await handleStoryOutlineMessage(db, "course-1", {
-      message: "不用再选方向，直接按原剧情生成大纲",
-      mode: "idea",
-    }, deps);
-
-    expect(state.outline).not.toBeNull();
-    expect(state.directions).toEqual([]);
-  });
-
-  test.skip("saves teacher supplied reference and directly generates outline when AI says it is enough", async () => {
-    const db = createDb();
-    const decideFreeInput = vi.fn(async () => ({
-      decision: "generate_outline" as const,
-      assistantMessage: "资料足够，可以生成。",
-      teacherReference: {
-        name: "马斯克",
-        type: "public_figure" as const,
-        summary: "老师补充的人物资料。",
-        usableFacts: ["创业经历"],
-        avoidTopics: ["现实争议"],
-        adaptationBoundary: "只做课堂化改编。",
-      },
-    }));
-
-    const state = await handleStoryOutlineMessage(db, "course-1", {
-      message: "我补充资料：马斯克做过很多工程项目",
-      mode: "idea",
-    }, { ...deps, decideFreeInput });
-
-    expect(state.referenceMaterials[0]).toMatchObject({ name: "马斯克", sourceStatus: "teacher_supplied", researchProvider: "none" });
-    expect(state.outline).not.toBeNull();
-  });
-
-  test.skip("saves teacher supplied reference before generating directions for a broad idea", async () => {
-    const decideFreeInput = vi.fn(async () => ({
-      decision: "generate_directions" as const,
-      assistantMessage: "资料足够，先选择故事方向。",
-      teacherReference: {
-        name: "马斯克",
-        type: "public_figure" as const,
-        summary: "老师补充的人物资料。",
-        usableFacts: ["火箭工程经历"],
-        avoidTopics: [],
-        adaptationBoundary: "课堂化改编。",
-      },
-    }));
-
-    const state = await handleStoryOutlineMessage(createDb(), "course-1", {
-      message: "我补充资料：马斯克参与火箭工程",
-      mode: "idea",
-    }, { ...deps, decideFreeInput });
-
-    expect(state.referenceMaterials[0]).toMatchObject({ name: "马斯克", sourceStatus: "teacher_supplied" });
-    expect(state.directions).toHaveLength(1);
-    expect(state.outline).toBeNull();
-  });
 
   test("searches and persists every packet in the AI research plan", async () => {
     const db = createDb();
@@ -761,30 +589,6 @@ describe("story outline repository", () => {
     expect(state.referenceMaterials.map((reference) => reference.name)).toEqual(["Jett 与 Sage", "火山环境"]);
   });
 
-  test.skip("fills missing teacher reference fields before writing to the database", async () => {
-    const db = createDb();
-    const decideFreeInput = vi.fn(async () => ({
-      decision: "generate_outline" as const,
-      assistantMessage: "资料足够，可以生成。",
-      referenceName: "Sage",
-      teacherReference: {
-        type: "game_character" as const,
-        summary: "老师补充了 Sage 的治疗能力。",
-      } as never,
-    }));
-
-    const state = await handleStoryOutlineMessage(db, "course-1", {
-      message: "我补充资料：Sage 可以治疗队友",
-      mode: "idea",
-    }, { ...deps, decideFreeInput });
-
-    expect(state.referenceMaterials[0]).toMatchObject({
-      name: "Sage",
-      usableFacts: [],
-      avoidTopics: [],
-      sourceStatus: "teacher_supplied",
-    });
-  });
 
   test("selects a direction without generating until the teacher confirms it", async () => {
     const db = createDb();
@@ -836,6 +640,97 @@ describe("story outline repository", () => {
     expect(db.state.chapters.find((chapter) => chapter.id === targetId)).toMatchObject({ title: "改变路线 / A Changed Route", storyGoal: expect.stringContaining("承担选择") });
     expect(db.state.characters).toEqual(originalCharacters);
     expect(state.chatMessages.at(-1)?.content).toContain("其他章节和角色保持不变");
+  });
+
+  test("routes an out-of-scope outline revision back through requirement alignment", async () => {
+    const db = createDb();
+    await generateConfirmedOutline(db);
+    const checkChangeBoundary = vi.fn(async () => ({ scope: "new_requirement" as const, reason: "故事主题从海底冒险改为二战历史", needsBackgroundRefresh: true }));
+    const alignRequirements = vi.fn(async () => ({
+      status: "ready_for_confirmation" as const,
+      planningMode: "explore_options" as const,
+      assistantMessage: "请确认新的创作理解。",
+      resolvedUnderstanding: ["二战历史故事"],
+      unresolvedIssues: [],
+      questions: [],
+      summary: "将当前故事整体改为适龄的二战历史故事，接下来提供 3 个历史视角。",
+    }));
+    const generateOutline = vi.fn(deps.generateOutline);
+
+    const state = await handleStoryOutlineMessage(db, "course-1", {
+      message: "修改成二战故事",
+      mode: "revise",
+      action: "revise_outline",
+      requestId: "request-change-story",
+    }, { ...deps, checkChangeBoundary, alignRequirements, generateOutline });
+
+    expect(checkChangeBoundary).toHaveBeenCalled();
+    expect(alignRequirements).toHaveBeenCalled();
+    expect(alignRequirements).toHaveBeenCalledWith(expect.objectContaining({
+      replyContext: "requirement_change",
+      needsBackgroundRefresh: true,
+    }));
+    expect(generateOutline).not.toHaveBeenCalled();
+    expect(state.alignment).toMatchObject({ status: "ready_for_confirmation", summary: expect.stringContaining("二战"), needsBackgroundRefresh: true });
+    expect(state.chatMessages.at(-1)?.actions[0]).toMatchObject({ label: "确认修改需求" });
+  });
+
+  test("does not execute the same request id twice", async () => {
+    const db = createDb();
+    const alignRequirements = vi.fn(deps.alignRequirements);
+    const scopedDeps = { ...deps, alignRequirements };
+    const input = { message: "学生进入海底图书馆", mode: "idea" as const, requestId: "same-request" };
+
+    await handleStoryOutlineMessage(db, "course-1", input, scopedDeps);
+    await handleStoryOutlineMessage(db, "course-1", input, scopedDeps);
+
+    expect(alignRequirements).toHaveBeenCalledTimes(1);
+    expect(db.state.messages.filter((message) => message.content === input.message)).toHaveLength(1);
+  });
+
+  test("retries a failed confirmed requirement operation without asking for confirmation again", async () => {
+    const db = createDb();
+    const prepareBackgroundKnowledge = vi.fn()
+      .mockRejectedValueOnce(new Error("背景资料生成超时"))
+      .mockResolvedValueOnce({ status: "not_needed", reason: "无需补充资料", references: [] });
+    const scopedDeps = { ...deps, prepareBackgroundKnowledge };
+    await handleStoryOutlineMessage(db, "course-1", { message: "学生进入海底图书馆", mode: "idea" }, scopedDeps);
+
+    await expect(handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "confirm_requirements",
+      requestId: "confirm-failed",
+    }, scopedDeps)).rejects.toThrow("背景资料生成超时");
+
+    const state = await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "retry_operation",
+      requestId: "confirm-retry",
+    }, scopedDeps);
+
+    expect(prepareBackgroundKnowledge).toHaveBeenCalledTimes(2);
+    expect(state.directions.length).toBeGreaterThan(0);
+    expect(db.state.messages.filter((message) => message.content === "我确认这份创作理解。")).toHaveLength(1);
+  });
+
+  test("does not let a late AI result overwrite a reset", async () => {
+    const db = createDb();
+    let finishGeneration!: (value: Awaited<ReturnType<typeof deps.generateDirections>>) => void;
+    const generateDirections = vi.fn(() => new Promise<Awaited<ReturnType<typeof deps.generateDirections>>>((resolve) => { finishGeneration = resolve; }));
+    const running = handleStoryOutlineMessage(db, "course-1", {
+      message: "海底冒险",
+      mode: "random",
+      requestId: "slow-generation",
+    }, { ...deps, generateDirections });
+    await vi.waitFor(() => expect(generateDirections).toHaveBeenCalledTimes(1));
+
+    await resetStoryOutline(db, "course-1");
+    finishGeneration(await deps.generateDirections({} as never));
+
+    await expect(running).rejects.toBeInstanceOf(CourseStoryOutlineOperationConflictError);
+    expect((await getStoryOutlineState(db, "course-1")).directions).toEqual([]);
   });
 
   test("resets story outline state without changing course audience", async () => {

@@ -158,6 +158,14 @@ model CourseStorySetting {
   alignmentSummary String?
   alignmentDetails Json @default("{}")
   alignmentConfirmedAt DateTime?
+  stateRevision Int @default(0)
+  operationRequestId String?
+  operationAction String?
+  operationPhase String?
+  operationStatus StoryOperationStatus?
+  operationError String?
+  operationInput Json?
+  operationStartedAt DateTime?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
   course          Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -480,6 +488,8 @@ enum CourseStage {
 
 enum PresetOptionKind {
   theme
+  story_type
+  story_tone
   grammar
 }
 
@@ -591,6 +601,14 @@ enum TeachingPlanStatus {
   confirmed
 }
 
+enum StoryOperationStatus {
+  running
+  succeeded
+  failed
+  result_unknown
+  superseded
+}
+
 enum CourseContentStatus {
   empty
   generating_reading
@@ -635,6 +653,7 @@ enum CourseContentTargetType {
 }
 
 enum EnglishLevel {
+  Starter
   A1
   A2
   B1

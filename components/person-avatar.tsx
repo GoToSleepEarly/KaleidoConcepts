@@ -23,7 +23,7 @@ export function PersonAvatar({ name, seed, gender, avatarUrl, size = 56, imageWi
     const height = imageHeight ?? size;
     return (
       <div className={cn("relative shrink-0 overflow-visible", className)} style={{ width, height }}>
-        <Image alt="" className={cn("block size-full object-contain", shape === "circle" ? "rounded-full" : "rounded-none")} height={height} src={avatarUrl} width={width} />
+        <Image alt={`${name}的人物形象`} className={cn("block size-full object-contain", shape === "circle" ? "rounded-full" : "rounded-none")} height={height} src={avatarUrl} width={width} />
         {gender ? <span aria-label={gender === "male" ? "男" : "女"} className={cn("absolute bottom-1 right-1 z-10 flex size-5 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm ring-2 ring-white", gender === "male" ? "bg-sky-500" : "bg-pink-500")}>{gender === "male" ? "♂" : "♀"}</span> : null}
       </div>
     );

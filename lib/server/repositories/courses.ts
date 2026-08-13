@@ -111,6 +111,9 @@ async function snapshots(db: CoursesDb, input: CourseAudienceInput) {
   const teacher = people.find((person) => person.id === input.teacherId && person.role === "teacher");
   const students = studentIds.map((id) => people.find((person) => person.id === id && person.role === "student"));
   if (!teacher || students.some((person) => !person)) throw new CoursePersonValidationError();
+  if (!teacher.activeVisualAssetId || students.some((person) => !person?.activeVisualAssetId)) {
+    throw new CoursePersonValidationError("请先为老师和学生完善人物形象");
+  }
 
   return [teacher, ...(students as DbSnapshotPerson[])].map((person) => ({
     personId: person.id,

@@ -57,7 +57,15 @@ describe("CourseAudienceForm basic information UI", () => {
     expect(screen.getByRole("button", { name: "30 分钟" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "45 分钟" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "60 分钟" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "60 分钟" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Starter" })).toBeInTheDocument();
+    expect(screen.getAllByText("*")).toHaveLength(6);
+    expect(screen.getAllByTestId("audience-section-header")).toHaveLength(6);
+    expect(screen.getAllByTestId("audience-section-header")[0]).toHaveClass("bg-[#E9EEFF]");
+    expect(screen.queryByText("未选择")).not.toBeInTheDocument();
     expect(screen.getByText("还需：填写课程名称")).toBeInTheDocument();
+    expect(screen.getByText("还需：填写课程名称")).toHaveClass("text-red-600");
+    expect(screen.getByLabelText("故事大纲")).toHaveAttribute("aria-disabled", "true");
 
     expect(screen.queryByText("阶段一 · 授课对象")).not.toBeInTheDocument();
     expect(screen.queryByText("填写课程名称，选择老师、学生和时长。")).not.toBeInTheDocument();
@@ -67,6 +75,41 @@ describe("CourseAudienceForm basic information UI", () => {
     expect(screen.queryByText("一门课程只能选择一位老师。")).not.toBeInTheDocument();
     expect(screen.queryByText("至少选择一位学生，可以继续添加多人。")).not.toBeInTheDocument();
     expect(screen.queryByText("时长会影响后续章节数和内容密度。")).not.toBeInTheDocument();
+  });
+
+  test("shows people as visual cards and blocks profiles without a current visual", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/people")) return Response.json({
+        people: [
+          { id: "student-ready", role: "student", chineseName: "夏天", englishName: "Summer", age: 9, gender: "female", notes: "", visualStatus: "ready", activeVisual: { id: "visual-1", publicUrl: "/summer.png", sourceMode: "description", createdAt: "" }, createdAt: "", updatedAt: "" },
+          { id: "student-missing", role: "student", chineseName: "小宇", englishName: "Leo", age: 8, gender: "male", notes: "", visualStatus: "missing", activeVisual: null, createdAt: "", updatedAt: "" },
+        ], page: 1, pageSize: 100, total: 2, totalPages: 1,
+      });
+      return Response.json({ presets: [] });
+    }));
+    render(<CourseAudienceForm />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加学生" }));
+    const readyCard = await screen.findByTestId("person-picker-card-student-ready");
+    expect(screen.getByTestId("person-picker-grid")).toHaveClass("items-start");
+    expect(readyCard).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("button", { name: "选择" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /选择小宇/ })).not.toBeInTheDocument();
+    expect(screen.getByText("形象未生成")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建小宇的形象" })).toBeInTheDocument();
+    expect(screen.getByTestId("person-picker-card-student-missing")).toHaveClass("h-36", "self-start");
+    expect(screen.queryByText("未创建形象")).not.toBeInTheDocument();
+    expect(screen.getByAltText("夏天的人物形象")).toHaveAttribute("src", expect.stringContaining("summer.png"));
+    expect(screen.getAllByText("9 岁")[0]).toHaveClass("bg-[#E9EEFF]");
+    expect(screen.getAllByText("女")[0]).toHaveClass("bg-pink-50");
+
+    fireEvent.click(readyCard);
+    expect(readyCard).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "确认选择" }));
+    expect(screen.getByTestId("selected-person-student-ready")).toHaveClass("max-w-sm");
+    expect(screen.getByRole("button", { name: "编辑夏天" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "移除夏天" })).toBeInTheDocument();
   });
 
   test("does not show a separate teacher replace action after a teacher is selected", async () => {

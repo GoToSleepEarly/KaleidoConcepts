@@ -46,6 +46,7 @@ export const storyOutlineMessageSchema = z.object({
       z.literal("confirm_direction"),
       z.literal("revise_outline"),
       z.literal("revise_chapter"),
+      z.literal("retry_operation"),
     ])
     .optional(),
   targetId: z.string().optional(),
@@ -54,6 +55,7 @@ export const storyOutlineMessageSchema = z.object({
   researchPlan: researchPlanSchema.optional(),
   chapterCount: z.number().int().min(1).max(8).optional(),
   writingProvider: storyWritingProviderSchema.optional(),
+  requestId: z.string().uuid().optional(),
 });
 
 const sourceReferenceSchema = z.object({
