@@ -1,11 +1,15 @@
+import type { CourseImageQuality } from "@/lib/contracts/api";
 import { devAiLog } from "./dev-ai-log";
+import { imageQualityForModel } from "./image-model-capabilities";
 
 type ProviderConfig = {
   apiKey: string;
   model: string;
-  quality: "low" | "medium" | "high";
   timeoutMs: number;
 };
+
+const PERSON_VISUAL_QUALITY = "low" as const;
+const FALLBACK_MODEL = "gpt-image-2-c";
 
 type ProviderResponse = {
   data?: Array<{ url?: string; b64_json?: string }>;
@@ -23,14 +27,10 @@ export class PersonVisualProviderConfigError extends Error {
 function configFromEnvironment(): ProviderConfig {
   const apiKey = process.env.QUICKROUTER_IMAGE_API_KEY;
   if (!apiKey) throw new PersonVisualProviderConfigError();
-  const qualityValue = process.env.QUICKROUTER_IMAGE_QUALITY;
-  const quality =
-    qualityValue === "medium" || qualityValue === "high" ? qualityValue : "low";
   const timeout = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS);
   return {
     apiKey,
     model: process.env.QUICKROUTER_IMAGE_MODEL || "gpt-image-2",
-    quality,
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };
 }
@@ -65,46 +65,55 @@ export function createPersonVisualProvider(config = configFromEnvironment()) {
       devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
       throw new Error("人物形象服务返回异常", { cause: error });
     }
-    if (!response.ok) {
-      const error = new Error(data.error?.message || data.message || "人物形象生成失败");
-      devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
-      throw error;
-    }
-    const imageUrl = resultImage(data);
-    if (!imageUrl) {
-      const error = new Error("人物形象服务未返回图片");
-      devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
-      throw error;
-    }
-    return { imageUrl };
+    return data;
   }
 
-  async function request(operation: string, path: string, body: BodyInit, headers: HeadersInit, logPayload: unknown) {
-    const startedAt = Date.now();
-    devAiLog({ operation, phase: "request", payload: logPayload });
-    let response: Response;
-    try {
-      response = await fetch(`https://api.quickrouter.ai${path}`, {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${config.apiKey}`,
-          ...headers,
-        },
-        body,
-        signal: AbortSignal.timeout(config.timeoutMs),
-      });
-    } catch (error) {
-      devAiLog({ operation, phase: "error", latencyMs: Date.now() - startedAt, error });
-      if (
-        error instanceof Error &&
-        (error.name === "TimeoutError" || error.name === "AbortError")
-      ) {
-        throw new Error("人物形象生成超时，请确认后再重试", { cause: error });
+  async function request(operation: string, path: string, buildBody: (requestModel: string, quality: CourseImageQuality) => BodyInit, headers: HeadersInit, logPayload: Record<string, unknown>) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const requestModel = attempt === 0 ? config.model : FALLBACK_MODEL;
+      const quality = imageQualityForModel(requestModel, PERSON_VISUAL_QUALITY);
+      devAiLog({ operation, phase: "request", payload: { ...logPayload, model: requestModel, quality, ...(attempt ? { fallbackForStatus: 429 } : {}) } });
+      const startedAt = Date.now();
+      let response: Response;
+      try {
+        response = await fetch(`https://api.quickrouter.ai${path}`, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${config.apiKey}`,
+            ...headers,
+          },
+          body: buildBody(requestModel, quality),
+          signal: AbortSignal.timeout(config.timeoutMs),
+        });
+      } catch (error) {
+        devAiLog({ operation, phase: "error", latencyMs: Date.now() - startedAt, error });
+        if (
+          error instanceof Error &&
+          (error.name === "TimeoutError" || error.name === "AbortError")
+        ) {
+          throw new Error("人物形象生成超时，请确认后再重试", { cause: error });
+        }
+        throw new Error("人物形象服务连接失败，请稍后重试", { cause: error });
       }
-      throw new Error("人物形象服务连接失败，请稍后重试", { cause: error });
+      const data = await readResponse(response, operation, startedAt);
+      if (response.status === 429 && attempt === 0 && config.model !== FALLBACK_MODEL) {
+        continue;
+      }
+      if (!response.ok) {
+        const error = new Error(data.error?.message || data.message || "人物形象生成失败");
+        devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+        throw error;
+      }
+      const imageUrl = resultImage(data);
+      if (!imageUrl) {
+        const error = new Error("人物形象服务未返回图片");
+        devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+        throw error;
+      }
+      return { imageUrl, model: requestModel, quality };
     }
-    return readResponse(response, operation, startedAt);
+    throw new Error("人物形象生成失败");
   }
 
   return {
@@ -112,16 +121,16 @@ export function createPersonVisualProvider(config = configFromEnvironment()) {
       request(
         "person_visual_generate",
         "/v1/images/generations",
-        JSON.stringify({
-          model: config.model,
+        (requestModel, quality) => JSON.stringify({
+          model: requestModel,
           prompt,
           n: 1,
           size: "1024x1536",
-          quality: config.quality,
+          quality,
           format: "webp",
         }),
         { "Content-Type": "application/json" },
-        { model: config.model, prompt, size: "1024x1536", quality: config.quality, format: "webp" },
+        { prompt, size: "1024x1536", format: "webp" },
       ),
     edit: ({
       prompt,
@@ -130,23 +139,23 @@ export function createPersonVisualProvider(config = configFromEnvironment()) {
       prompt: string;
       imageDataUrl: string;
     }) => {
-      const body = new FormData();
-      body.set("model", config.model);
-      body.set("image", imageBlob(imageDataUrl), "person-reference.png");
-      body.set("prompt", prompt);
-      body.set("n", "1");
-      body.set("size", "1024x1536");
-      body.set("quality", config.quality);
       return request(
         "person_visual_edit",
         "/v1/images/edits",
-        body,
+        (requestModel, quality) => {
+          const body = new FormData();
+          body.set("model", requestModel);
+          body.set("image", imageBlob(imageDataUrl), "person-reference.png");
+          body.set("prompt", prompt);
+          body.set("n", "1");
+          body.set("size", "1024x1536");
+          body.set("quality", quality);
+          return body;
+        },
         {},
         {
-          model: config.model,
           prompt,
           size: "1024x1536",
-          quality: config.quality,
           format: "webp",
           imageDataUrl,
         },

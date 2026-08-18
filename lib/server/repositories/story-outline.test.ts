@@ -196,6 +196,8 @@ const deps: StoryOutlineGenerationDeps = {
   alignRequirements: vi.fn(async () => ({
     status: "ready_for_confirmation" as const,
     planningMode: "explore_options" as const,
+    storyMode: "new_story" as const,
+    classroomPresence: "participant" as const,
     assistantMessage: "请确认创作理解。",
     resolvedUnderstanding: ["海底冒险"],
     unresolvedIssues: [],
@@ -246,7 +248,9 @@ const deps: StoryOutlineGenerationDeps = {
     characters: [
       {
         displayName: "夏天",
+        englishName: "Summer",
         sourceType: "person" as const,
+        sourcePersonId: "student-1",
         roleInStory: "学生主角",
         shortDescription: "喜欢观察线索。",
         shouldAppearInImages: true,
@@ -291,7 +295,7 @@ describe("story outline repository", () => {
 
     expect(state.chatMessages.map((message) => message.content)).toContain("学生们进入海底图书馆");
     expect(state.outline).toBeNull();
-    expect(state.alignment).toMatchObject({ status: "ready_for_confirmation", summary: expect.stringContaining("海底冒险") });
+    expect(state.alignment).toMatchObject({ status: "ready_for_confirmation", storyMode: "new_story", classroomPresence: "participant", summary: expect.stringContaining("海底冒险") });
     expect(state.chatMessages.at(-1)?.actions.map((action) => action.action)).toEqual(["confirm_requirements", "modify_requirements"]);
   });
 
@@ -519,7 +523,9 @@ describe("story outline repository", () => {
       characters: [
         {
           displayName: "夏天",
+          englishName: "Summer",
           sourceType: "person" as const,
+          sourcePersonId: "student-1",
           roleInStory: "学生主角",
           shortDescription: "重新生成后的角色描述。",
           shouldAppearInImages: true,
@@ -588,7 +594,7 @@ describe("story outline repository", () => {
   });
 
 
-  test("selects a direction without generating until the teacher confirms it", async () => {
+  test("selects a direction and generates the outline in one operation", async () => {
     const db = createDb();
     await handleStoryOutlineMessage(db, "course-1", { message: "主题：海底", mode: "random" }, deps);
     const directionId = String(db.state.directions[0]?.id);
@@ -597,27 +603,52 @@ describe("story outline repository", () => {
     await handleStoryOutlineMessage(db, "course-1", {
       message: "",
       mode: "idea",
-      action: "choose_direction",
-      targetId: directionId,
-    }, { ...deps, generateOutline });
-
-    expect(generateOutline).not.toHaveBeenCalled();
-    expect(db.state.directions.find((direction) => direction.id === directionId)?.selectedAt).toBeInstanceOf(Date);
-
-    await handleStoryOutlineMessage(db, "course-1", {
-      message: "",
-      mode: "idea",
       action: "confirm_direction",
       targetId: directionId,
     }, { ...deps, generateOutline });
 
+    expect(db.state.directions.find((direction) => direction.id === directionId)?.selectedAt).toBeInstanceOf(Date);
+    expect(db.state.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "teacher", content: "我选择并生成故事大纲：海底图书馆" }),
+    ]));
     expect(generateOutline).toHaveBeenCalledWith(expect.objectContaining({
-      task: expect.stringContaining("海底图书馆"),
+      task: "请基于已确认方向生成大纲：海底图书馆",
       selectedDirection: expect.objectContaining({ title: "海底图书馆" }),
-      conversationHistory: expect.arrayContaining([
-        expect.objectContaining({ role: "teacher", content: expect.stringContaining("我选择故事方向：海底图书馆") }),
-      ]),
+      conversationHistory: [],
+      currentDirections: [],
     }));
+  });
+
+  test("keeps the selected direction when outline generation fails so the same operation can be retried", async () => {
+    const db = createDb();
+    await handleStoryOutlineMessage(db, "course-1", { message: "主题：海底", mode: "random" }, deps);
+    const directionId = String(db.state.directions[0]?.id);
+    const generateOutline = vi.fn(async () => { throw new Error("大纲生成暂时失败"); });
+
+    await expect(handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "confirm_direction",
+      targetId: directionId,
+    }, { ...deps, generateOutline })).rejects.toThrow("大纲生成暂时失败");
+
+    expect(db.state.directions.find((direction) => direction.id === directionId)?.selectedAt).toBeInstanceOf(Date);
+    expect(db.state.outline).toBeNull();
+    expect(db.state.setting?.operationStatus).toBe("failed");
+    expect(db.state.messages.at(-1)).toMatchObject({
+      role: "assistant",
+      content: "大纲生成暂时失败。你可以重试本步，或修改要求后重新提交。",
+      actions: [expect.objectContaining({ action: "retry_operation", targetId: db.state.setting?.operationRequestId })],
+    });
+
+    await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "retry_operation",
+    }, { ...deps, generateOutline: deps.generateOutline });
+
+    expect(db.state.outline).not.toBeNull();
+    expect(db.state.messages.filter((message) => String(message.content).startsWith("我选择并生成故事大纲："))).toHaveLength(1);
   });
 
   test("revises one chapter without replacing characters or other chapters", async () => {
@@ -640,13 +671,15 @@ describe("story outline repository", () => {
     expect(state.chatMessages.at(-1)?.content).toContain("其他章节和角色保持不变");
   });
 
-  test("routes an out-of-scope outline revision back through requirement alignment", async () => {
+  test("explains a requirement-changing edit and waits for confirmation before realignment", async () => {
     const db = createDb();
     await generateConfirmedOutline(db);
     const checkChangeBoundary = vi.fn(async () => ({ scope: "new_requirement" as const, reason: "故事主题从海底冒险改为二战历史", needsBackgroundRefresh: true }));
     const alignRequirements = vi.fn(async () => ({
       status: "ready_for_confirmation" as const,
       planningMode: "explore_options" as const,
+      storyMode: "new_story" as const,
+      classroomPresence: "participant" as const,
       assistantMessage: "请确认新的创作理解。",
       resolvedUnderstanding: ["二战历史故事"],
       unresolvedIssues: [],
@@ -663,14 +696,88 @@ describe("story outline repository", () => {
     }, { ...deps, checkChangeBoundary, alignRequirements, generateOutline });
 
     expect(checkChangeBoundary).toHaveBeenCalled();
-    expect(alignRequirements).toHaveBeenCalled();
+    expect(alignRequirements).not.toHaveBeenCalled();
+    expect(generateOutline).not.toHaveBeenCalled();
+    expect(state.outline).not.toBeNull();
+    expect(state.alignment?.pendingChange).toMatchObject({
+      kind: "requirement_change",
+      request: "修改成二战故事",
+      reason: "故事主题从海底冒险改为二战历史",
+      needsBackgroundRefresh: true,
+    });
+    expect(state.chatMessages.at(-1)?.content).toContain("故事主题从海底冒险改为二战历史");
+    expect(state.chatMessages.at(-1)?.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: "confirm_story_change", label: "调整创作需求并继续" }),
+      expect.objectContaining({ action: "cancel_story_change", label: "保留当前内容" }),
+    ]));
+
+    const confirmed = await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "revise",
+      action: "confirm_story_change",
+    }, { ...deps, checkChangeBoundary, alignRequirements, generateOutline });
+
+    expect(alignRequirements).toHaveBeenCalledTimes(1);
     expect(alignRequirements).toHaveBeenCalledWith(expect.objectContaining({
       replyContext: "requirement_change",
       needsBackgroundRefresh: true,
     }));
     expect(generateOutline).not.toHaveBeenCalled();
-    expect(state.alignment).toMatchObject({ status: "ready_for_confirmation", summary: expect.stringContaining("二战"), needsBackgroundRefresh: true, artifactsOutdated: true });
-    expect(state.chatMessages.at(-1)?.actions[0]).toMatchObject({ label: "确认修改需求" });
+    expect(confirmed.alignment).toMatchObject({ status: "ready_for_confirmation", summary: expect.stringContaining("二战"), needsBackgroundRefresh: true, artifactsOutdated: true });
+    expect(confirmed.alignment?.pendingChange).toBeUndefined();
+    expect(confirmed.chatMessages.at(-1)?.actions[0]).toMatchObject({ label: "确认修改需求" });
+  });
+
+  test("cancels a pending requirement change without touching the current outline", async () => {
+    const db = createDb();
+    await generateConfirmedOutline(db);
+    const originalOutline = db.state.outline;
+    const alignRequirements = vi.fn(deps.alignRequirements);
+    const checkChangeBoundary = vi.fn(async () => ({ scope: "new_requirement" as const, reason: "改变原作结局会离开忠实讲述模式", needsBackgroundRefresh: false }));
+
+    await handleStoryOutlineMessage(db, "course-1", {
+      message: "让灰姑娘和王子远走高飞",
+      mode: "revise",
+      action: "revise_outline",
+    }, { ...deps, checkChangeBoundary, alignRequirements });
+    const state = await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "revise",
+      action: "cancel_story_change",
+    }, { ...deps, checkChangeBoundary, alignRequirements });
+
+    expect(alignRequirements).not.toHaveBeenCalled();
+    expect(db.state.outline).toEqual(originalOutline);
+    expect(state.alignment?.pendingChange).toBeUndefined();
+    expect(state.chatMessages.at(-1)?.content).toContain("已保留当前内容");
+  });
+
+  test("confirms an outline-wide impact without restarting requirement alignment", async () => {
+    const db = createDb();
+    await generateConfirmedOutline(db);
+    const alignRequirements = vi.fn(deps.alignRequirements);
+    const generateOutline = vi.fn(deps.generateOutline);
+    const checkChangeBoundary = vi.fn(async () => ({ scope: "outline_revision" as const, reason: "这个结局会改变前面多章的因果铺垫", needsBackgroundRefresh: false as const }));
+
+    const pending = await handleStoryOutlineMessage(db, "course-1", {
+      message: "让第一章的选择最终改变结局",
+      mode: "revise",
+      action: "revise_chapter",
+      targetChapterOrder: 1,
+    }, { ...deps, checkChangeBoundary, alignRequirements, generateOutline });
+
+    expect(generateOutline).not.toHaveBeenCalled();
+    expect(pending.alignment?.pendingChange).toMatchObject({ kind: "outline_revision", targetScope: "chapter" });
+    const pendingId = pending.alignment?.pendingChange?.id;
+    await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "revise",
+      action: "confirm_story_change",
+      targetId: pendingId,
+    }, { ...deps, checkChangeBoundary, alignRequirements, generateOutline });
+
+    expect(alignRequirements).not.toHaveBeenCalled();
+    expect(generateOutline).toHaveBeenCalledWith(expect.objectContaining({ task: expect.stringContaining("让第一章的选择最终改变结局") }));
   });
 
   test("keeps the refresh decision through another alignment round and replaces old references", async () => {
@@ -705,6 +812,8 @@ describe("story outline repository", () => {
     const alignRequirements = vi.fn(async () => ({
       status: "ready_for_confirmation" as const,
       planningMode: "explore_options" as const,
+      storyMode: "new_story" as const,
+      classroomPresence: "participant" as const,
       assistantMessage: "请确认。",
       resolvedUnderstanding: ["改用新作品"],
       unresolvedIssues: [],
@@ -822,6 +931,17 @@ describe("story outline repository", () => {
     expect(db.state.updates.at(-1)).toEqual({ currentStage: "teaching_plan" });
   });
 
+  test("reconfirming a viewed outline does not move a later course backwards", async () => {
+    const db = createDb();
+    await generateConfirmedOutline(db);
+    db.state.course = { ...db.state.course, currentStage: "preview" };
+
+    const course = await confirmStoryOutline(db, "course-1");
+
+    expect(course.currentStage).toBe("preview");
+    expect(db.state.updates.at(-1)).not.toEqual({ currentStage: "teaching_plan" });
+  });
+
   test("requires reset confirmation when saving after downstream work exists", async () => {
     const db = createDb();
     db.state.course = { ...db.state.course, currentStage: "content" };
@@ -859,5 +979,29 @@ describe("story outline repository", () => {
       setting: "",
       endingHook: "",
     });
+  });
+
+  test("持久化边界拒绝没有参考资料关联的引用角色", async () => {
+    const db = createDb();
+
+    await expect(saveStoryOutline(db, "course-1", {
+      title: "Jett Story",
+      summary: "Jett joins the class.",
+      chapterCount: 1,
+      writingProvider: "quickrouter_gpt",
+      chapters: [],
+      characters: [{
+        displayName: "捷特",
+        englishName: "Jett",
+        sourceType: "referenced",
+        sourcePersonId: null,
+        sourceReferenceId: null,
+        roleInStory: "带领学生完成训练。",
+        shortDescription: "带领学生完成训练。",
+        visualDescription: null,
+        shouldAppearInImages: true,
+      }],
+      sourceReferences: [],
+    }, false)).rejects.toThrow("引用角色 捷特 缺少有效参考资料关联");
   });
 });

@@ -11,4 +11,5 @@ prisma/dev.db
 .superpowers/
 .playwright-cli/
 output/
+tmp/
 tsconfig.tsbuildinfo

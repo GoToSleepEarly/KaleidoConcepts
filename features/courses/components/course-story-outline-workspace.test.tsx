@@ -2,7 +2,7 @@ import React from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import type { CourseStoryOutlineState } from "@/lib/contracts/api";
+import type { CourseStoryMessageInput, CourseStoryOutlineState } from "@/lib/contracts/api";
 
 import { CourseStoryOutlineWorkspace } from "./course-story-outline-workspace";
 
@@ -57,8 +57,9 @@ const outlineState: CourseStoryOutlineState = {
     characters: [
       {
         id: "char-1",
-        courseId: "course-1",
-        displayName: "夏天",
+      courseId: "course-1",
+      displayName: "夏天",
+      englishName: "Summer",
         sourceType: "person",
         sourcePersonId: null,
         sourceReferenceId: null,
@@ -113,6 +114,8 @@ describe("CourseStoryOutlineWorkspace", () => {
   test("shows guided idea input and keeps the right panel empty before results exist", () => {
     render(<CourseStoryOutlineWorkspace initialState={emptyState} storyTonePresets={storyTonePresets} storyTypePresets={storyTypePresets} themePresets={themePresets} />);
 
+    expect(screen.getByTestId("story-outline-layout")).toHaveAttribute("data-layout", "focus");
+    expect(screen.getByTestId("story-outline-layout")).toHaveClass("max-w-5xl");
     expect(screen.getByRole("heading", { name: "故事大纲" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "故事想法" })).toBeInTheDocument();
     expect(screen.getByText("说说你的故事想法")).toBeInTheDocument();
@@ -121,26 +124,63 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByRole("button", { name: "随机灵感" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "随机灵感" }));
     expect(screen.getByRole("button", { name: "选择主题" })).toBeInTheDocument();
-    expect(screen.getByLabelText("故事类型")).toHaveValue("");
-    expect(screen.getByLabelText("故事氛围")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "选择故事类型" })).toHaveTextContent("不限");
+    expect(screen.getByRole("button", { name: "选择故事氛围" })).toHaveTextContent("不限");
+    expect(screen.queryByRole("combobox", { name: "故事类型" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "故事氛围" })).not.toBeInTheDocument();
     expect(screen.queryByText("选择基本方向，也可以补充一个特别要求。")).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "补充要求（可选）" })).toBeInTheDocument();
     expect(screen.getByPlaceholderText("例如：希望学生成为大侦探")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "故事想法" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "生成 3 个故事方向" })).toBeInTheDocument();
-    expect(screen.getByText("还没有生成结果")).toBeInTheDocument();
+    expect(screen.queryByText("还没有生成结果")).not.toBeInTheDocument();
+  });
+
+  test("shows knowledge point labels without a Step 2 word recommendation and names the teaching-plan stage", () => {
+    const state = structuredClone(outlineState);
+    state.course = { ...state.course, englishLevel: "A1", durationMinutes: 30 };
+    state.selectedKnowledgePoints = [
+      { id: "knowledge-2", label: "Present Simple", category: "时态" },
+      { id: "knowledge-3", label: "Present Continuous", category: "时态" },
+      { id: "knowledge-4", label: "Past Continuous", category: "时态" },
+    ];
+    state.unrecommendedKnowledgePoints = [state.selectedKnowledgePoints[2]];
+    state.outline!.chapters[0] = {
+      ...state.outline!.chapters[0],
+      recommendedKnowledgePointIds: ["knowledge-2", "knowledge-3"],
+      knowledgePointRecommendationSummary: "Present Simple 描述固定状态；Present Continuous 描述正在发生的行动。",
+    };
+
+    render(<CourseStoryOutlineWorkspace initialState={state} storyTonePresets={storyTonePresets} storyTypePresets={storyTypePresets} themePresets={themePresets} />);
+
+    expect(screen.getByText("Present Simple")).toBeInTheDocument();
+    expect(screen.getByText("Present Continuous")).toBeInTheDocument();
+    expect(screen.queryByText(/^KP\d+$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^建议\s+\d+\s+词$/)).not.toBeInTheDocument();
+    expect(screen.getByText("已根据 A1 难度和 30 分钟课时智能匹配。Past Continuous 暂未放入章节推荐，可在下一阶段：教学规划手动调整。")).toBeInTheDocument();
+  });
+
+  test("switches to an iPad-compatible two-column layout only after a result exists", () => {
+    render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
+
+    expect(screen.getByTestId("story-outline-layout")).toHaveAttribute("data-layout", "split");
+    expect(screen.getByTestId("story-outline-layout")).toHaveClass("md:grid-cols-[minmax(300px,0.85fr)_minmax(360px,1.15fr)]");
+    expect(screen.getByTestId("story-outline-layout")).toHaveClass("md:h-[calc(100dvh-13.5rem)]");
+    expect(screen.getByTestId("story-chat-pane")).toHaveClass("md:h-full", "md:overflow-hidden");
+    expect(screen.getByTestId("story-chat-scroll")).toHaveClass("overflow-y-auto", "overscroll-contain");
+    expect(screen.getByTestId("story-result-scroll")).toHaveClass("md:h-full", "md:overflow-y-auto", "overscroll-contain");
+    expect(screen.getByTestId("story-chat-settings")).toHaveClass("grid-cols-1", "xl:grid-cols-2");
+    expect(screen.getByRole("button", { name: "故事大纲" })).toHaveClass("min-h-11");
   });
 
   test("does not silently discard an unsent chat draft when navigating steps", () => {
-    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<CourseStoryOutlineWorkspace initialState={emptyState} storyTonePresets={storyTonePresets} storyTypePresets={storyTypePresets} themePresets={themePresets} />);
     fireEvent.change(screen.getByRole("textbox", { name: "故事想法" }), { target: { value: "先不要丢掉这段想法" } });
     fireEvent.click(screen.getByRole("link", { name: "基础信息" }));
-    expect(confirmMock).toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "放弃未发送的内容？" })).toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();
 
-    confirmMock.mockReturnValue(true);
-    fireEvent.click(screen.getByRole("link", { name: "基础信息" }));
+    fireEvent.click(screen.getByRole("button", { name: "放弃并离开" }));
     expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/audience");
   });
 
@@ -181,8 +221,12 @@ describe("CourseStoryOutlineWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "太空探索" }));
     fireEvent.click(screen.getByRole("button", { name: "确认主题" }));
     expect(screen.getByRole("button", { name: "选择主题" })).toHaveTextContent("科学与未来 / 太空探索");
-    fireEvent.change(screen.getByLabelText("故事类型"), { target: { value: "冒险" } });
-    fireEvent.change(screen.getByLabelText("故事氛围"), { target: { value: "紧张刺激" } });
+    fireEvent.click(screen.getByRole("button", { name: "选择故事类型" }));
+    fireEvent.click(screen.getByRole("button", { name: "冒险" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认故事类型" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择故事氛围" }));
+    fireEvent.click(screen.getByRole("button", { name: "紧张刺激" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认故事氛围" }));
     fireEvent.change(screen.getByRole("textbox", { name: "补充要求（可选）" }), {
       target: { value: "希望学生和老师共同参与" },
     });
@@ -194,14 +238,21 @@ describe("CourseStoryOutlineWorkspace", () => {
     }));
   });
 
-  test("supports custom story type and tone without preset defaults", () => {
+  test("supports custom story type and tone in the shared card picker", () => {
     render(<CourseStoryOutlineWorkspace initialState={emptyState} storyTonePresets={storyTonePresets} storyTypePresets={storyTypePresets} themePresets={themePresets} />);
     fireEvent.click(screen.getByRole("button", { name: "随机灵感" }));
 
-    fireEvent.change(screen.getByLabelText("故事类型"), { target: { value: "__custom__" } });
-    fireEvent.change(screen.getByLabelText("故事氛围"), { target: { value: "__custom__" } });
-
+    fireEvent.click(screen.getByRole("button", { name: "选择故事类型" }));
+    fireEvent.click(screen.getByRole("button", { name: "自定义" }));
     expect(screen.getByRole("textbox", { name: "自定义故事类型" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认故事类型" })).toBeDisabled();
+    fireEvent.change(screen.getByRole("textbox", { name: "自定义故事类型" }), { target: { value: "带有多次时空跳跃与团队协作任务的公路喜剧" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认故事类型" }));
+    expect(screen.getByRole("button", { name: "选择故事类型" })).toHaveTextContent("带有多次时空跳跃与团队协作任务的公路喜剧");
+    expect(screen.getByRole("button", { name: "选择故事类型" }).querySelector("span")).toHaveClass("line-clamp-2", "break-words");
+
+    fireEvent.click(screen.getByRole("button", { name: "选择故事氛围" }));
+    fireEvent.click(screen.getByRole("button", { name: "自定义" }));
     expect(screen.getByRole("textbox", { name: "自定义故事氛围" })).toBeInTheDocument();
   });
 
@@ -308,7 +359,8 @@ describe("CourseStoryOutlineWorkspace", () => {
 
     expect(screen.getByText("我不确定你指的是哪一个 Jett。请补充一下具体对象。")).toBeInTheDocument();
     expect(screen.queryByText("候选对象")).not.toBeInTheDocument();
-    expect(screen.getByText("还没有生成结果")).toBeInTheDocument();
+    expect(screen.queryByText("还没有生成结果")).not.toBeInTheDocument();
+    expect(screen.getByTestId("story-outline-layout")).toHaveAttribute("data-layout", "focus");
   });
 
   test("visually identifies AI and teacher chat messages", () => {
@@ -416,6 +468,50 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByText("正在继续构思故事")).toBeInTheDocument();
   });
 
+  test("confirms only the current pending story change and preserves the composer draft", () => {
+    const responsePromise = new Promise<Response>(() => undefined);
+    vi.stubGlobal("fetch", vi.fn(() => responsePromise));
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      alignment: {
+        status: "confirmed",
+        planningMode: "follow_defined_plot",
+        storyMode: "faithful",
+        classroomPresence: "observer",
+        resolvedUnderstanding: [],
+        unresolvedIssues: [],
+        questions: [],
+        pendingChange: {
+          id: "pending-current",
+          kind: "requirement_change",
+          request: "改变原作结局",
+          reason: "会离开忠实讲述模式",
+          targetScope: "outline",
+          needsBackgroundRefresh: false,
+        },
+      },
+      chatMessages: [{
+        id: "impact-confirmation",
+        courseId: "course-1",
+        role: "assistant",
+        content: "改变原作结局会离开忠实讲述模式。是否继续？",
+        actions: [
+          { id: "stale", label: "旧确认", action: "confirm_story_change", targetId: "pending-old" },
+          { id: "current", label: "调整创作需求并继续", action: "confirm_story_change", targetId: "pending-current" },
+        ],
+        createdAt: "2026-08-14T00:00:00.000Z",
+      }],
+    }} />);
+
+    expect(screen.queryByRole("button", { name: "旧确认" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("故事想法"), { target: { value: "另一条尚未发送的想法" } });
+    fireEvent.click(screen.getByRole("button", { name: "调整创作需求并继续" }));
+
+    expect(fetchBody(vi.mocked(fetch))).toMatchObject({ action: "confirm_story_change", targetId: "pending-current", message: "" });
+    expect(screen.getByLabelText("故事想法")).toHaveValue("另一条尚未发送的想法");
+    expect(screen.getByText("正在应用已确认的故事修改")).toBeInTheDocument();
+  });
+
   test("restores a persisted running operation after refresh", async () => {
     vi.useFakeTimers();
     const completedState = { ...emptyState, operation: null };
@@ -457,6 +553,79 @@ describe("CourseStoryOutlineWorkspace", () => {
 
     expect(screen.getByText("故事大纲生成超时，请稍后重试")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重试本步" })).toBeInTheDocument();
+  });
+
+  test("shows alignment format repair as a visible running phase", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      operation: {
+        requestId: "request-repairing",
+        action: "idea",
+        phase: "repairing_alignment_format",
+        status: "running",
+        errorMessage: null,
+        startedAt: "2026-08-14T00:00:00.000Z",
+        updatedAt: "2026-08-14T00:00:10.000Z",
+      },
+    }} />);
+
+    expect(screen.getAllByText("AI 返回格式需要整理，正在自动修复").length).toBeGreaterThan(0);
+  });
+
+  test("reconciles an accepted failed request without restoring or resending the original text", async () => {
+    const failedState: CourseStoryOutlineState = {
+      ...emptyState,
+      chatMessages: [
+        { id: "teacher-1", courseId: "course-1", role: "teacher", content: "我的故事想法：\n学生进入海底图书馆", actions: [], createdAt: "2026-08-14T00:00:00.000Z" },
+        { id: "failed-1", courseId: "course-1", role: "assistant", content: "AI 返回的需求对齐内容不是有效 JSON，自动修复后仍未通过。", actions: [{ id: "retry-request-1", label: "重试本步", action: "retry_operation", targetId: "request-1" }], createdAt: "2026-08-14T00:00:01.000Z" },
+      ],
+      operation: {
+        requestId: "request-1",
+        action: "idea",
+        phase: "repairing_alignment_format",
+        status: "failed",
+        errorMessage: "AI 返回的需求对齐内容不是有效 JSON，自动修复后仍未通过。",
+        startedAt: "2026-08-14T00:00:00.000Z",
+        updatedAt: "2026-08-14T00:00:01.000Z",
+      },
+    };
+    vi.spyOn(crypto, "randomUUID").mockReturnValue("request-1");
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as CourseStoryMessageInput;
+        if (body.action === "retry_operation") return Response.json({ ...failedState, operation: null });
+        return Response.json({ message: failedState.operation?.errorMessage, errorCode: "STORY_ALIGNMENT_INVALID_JSON", requestId: "request-1" }, { status: 502 });
+      }
+      return Response.json(failedState);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseStoryOutlineWorkspace initialState={emptyState} />);
+
+    const textbox = screen.getByRole("textbox", { name: "故事想法" });
+    fireEvent.change(textbox, { target: { value: "学生进入海底图书馆" } });
+    fireEvent.click(screen.getByRole("button", { name: "开始讨论故事" }));
+
+    await waitFor(() => expect(screen.getByText("AI 返回的需求对齐内容不是有效 JSON，自动修复后仍未通过。")).toBeInTheDocument());
+    expect(textbox).toHaveValue("");
+    expect(screen.getAllByText(/学生进入海底图书馆/)).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "重试本步" })).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "重试本步" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const retryBody = JSON.parse(String((fetchMock.mock.calls[2]?.[1] as RequestInit | undefined)?.body));
+    expect(retryBody).toMatchObject({ action: "retry_operation", message: "" });
+  });
+
+  test("restores the draft only when the server cannot confirm receiving the request", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("network unavailable")));
+    render(<CourseStoryOutlineWorkspace initialState={emptyState} />);
+
+    const textbox = screen.getByRole("textbox", { name: "故事想法" });
+    fireEvent.change(textbox, { target: { value: "学生进入海底图书馆" } });
+    fireEvent.click(screen.getByRole("button", { name: "开始讨论故事" }));
+
+    await waitFor(() => expect(textbox).toHaveValue("学生进入海底图书馆"));
+    expect(screen.getByText("请求未能确认送达，请检查网络后重新发送。")).toBeInTheDocument();
   });
 
   test("clears the composer as soon as the teacher sends an idea", async () => {
@@ -593,18 +762,137 @@ describe("CourseStoryOutlineWorkspace", () => {
       }],
     }} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "选择这个方向" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择并生成大纲" }));
 
-    expect(screen.getByText(/我选择故事方向：海底谜题/)).toBeInTheDocument();
+    const selectionMessage = screen.getByText("我选择并生成故事大纲：海底谜题");
+    expect(selectionMessage).toBeInTheDocument();
+    expect(selectionMessage.closest("article")).toHaveTextContent(/^我选择并生成故事大纲：海底谜题$/);
 
     await waitFor(() => {
       const body = fetchBody(fetchMock);
-      expect(body).toMatchObject({ action: "choose_direction", targetId: "direction-1" });
+      expect(body).toMatchObject({ action: "confirm_direction", targetId: "direction-1" });
     });
     await act(async () => {
       resolveResponse(Response.json(outlineState));
       await responsePromise;
     });
+  });
+
+  test("asks before regenerating an outline that already has later results", async () => {
+    const fetchMock = vi.fn(async () => Response.json(outlineState));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      course: { ...outlineState.course, currentStage: "preview" },
+      chatMessages: [{ id: "m-generated", courseId: "course-1", role: "assistant", content: "故事大纲已生成。", actions: [{ id: "regenerate-outline", label: "重新生成", action: "regenerate_outline" }], createdAt: "2026-08-06T08:00:00.000Z" }],
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+    expect(screen.getByRole("heading", { name: "重新生成会清除后续内容" })).toBeInTheDocument();
+    expect(screen.getByText(/教学规划、文案与练习、视觉资源、图片和预览发布设置/)).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认并重新生成" }));
+
+    await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({ action: "regenerate_outline", resetDownstream: true }));
+  });
+
+  test("asks before revising a chapter that already has a teaching plan", async () => {
+    const fetchMock = vi.fn(async () => Response.json(outlineState));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      course: { ...outlineState.course, currentStage: "teaching_plan" },
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "修改本章" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "故事想法" }), {
+      target: { value: "修改第 1 章：增加一次困难选择" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(screen.getByRole("heading", { name: "修改故事大纲会清除后续内容" })).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "清空后续内容并继续" }));
+
+    await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({
+      action: "revise_chapter",
+      resetDownstream: true,
+      targetChapterOrder: 1,
+    }));
+  });
+
+  test("shows the reset dialog when the server finds downstream data behind a stale course stage", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({ message: "需要重置", requiresReset: true }, { status: 409 }))
+      .mockResolvedValueOnce(Response.json(outlineState));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "修改本章" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "故事想法" }), {
+      target: { value: "修改第 1 章：增加一次困难选择" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "修改故事大纲会清除后续内容" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "清空后续内容并继续" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchBody(fetchMock, 1)).toMatchObject({ action: "revise_chapter", resetDownstream: true });
+  });
+
+  test("lands on the outline when one response adds references and finishes the outline", async () => {
+    const reference = {
+      id: "ref-1",
+      courseId: "course-1",
+      name: "海洋资料",
+      type: "knowledge_topic" as const,
+      sourceStatus: "confirmed" as const,
+      summary: "海底图书馆的背景资料。",
+      usableFacts: ["海洋生态"],
+      avoidTopics: [],
+      adaptationBoundary: "适合课堂改编。",
+      researchProvider: "quickrouter_gpt" as const,
+      confirmedAt: "2026-08-14T08:00:00.000Z",
+      createdAt: "2026-08-14T08:00:00.000Z",
+      updatedAt: "2026-08-14T08:00:00.000Z",
+    };
+    const fetchMock = vi.fn(async () => Response.json({ ...outlineState, referenceMaterials: [reference] }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      directions: [{
+        id: "direction-1", courseId: "course-1", title: "海底谜题", hook: "一本发光海图出现。", whyFits: "适合合作。", mainCharacters: ["夏天"], classroomValue: "观察表达", seedPrompt: "ocean clue", selectedAt: null, createdAt: "2026-08-06T08:00:00.000Z",
+      }],
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "选择并生成大纲" }));
+
+    await waitFor(() => expect(screen.getByText("剧情概述")).toBeInTheDocument());
+    expect(screen.queryByRole("heading", { name: "海洋资料" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "故事大纲" })).toHaveClass("bg-primary");
+  });
+
+  test("keeps background references available while the teacher chooses a story direction", () => {
+    const reference = {
+      id: "ref-1", courseId: "course-1", name: "海洋背景资料", type: "other" as const, sourceStatus: "confirmed" as const,
+      summary: "故事发生在一座海底图书馆。", usableFacts: ["图书馆由海洋生物共同维护"], avoidTopics: [], adaptationBoundary: "适合课堂创作。",
+      researchProvider: "quickrouter_gpt" as const, confirmedAt: "2026-08-14T08:00:00.000Z", createdAt: "2026-08-14T08:00:00.000Z", updatedAt: "2026-08-14T08:00:00.000Z",
+    };
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      referenceMaterials: [reference],
+      directions: [{
+        id: "direction-1", courseId: "course-1", title: "海底谜题", hook: "一本发光海图出现。", whyFits: "适合合作。", mainCharacters: ["夏天"], classroomValue: "观察表达", seedPrompt: "ocean clue", selectedAt: null, createdAt: "2026-08-15T08:00:00.000Z",
+      }],
+    }} />);
+
+    expect(screen.getByRole("button", { name: "故事方向" })).toHaveClass("bg-primary");
+    fireEvent.click(screen.getByRole("button", { name: "参考资料" }));
+    expect(screen.getByRole("heading", { name: "海洋背景资料" })).toBeInTheDocument();
+    expect(screen.getByText("故事发生在一座海底图书馆。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "故事方向" }));
+    expect(screen.getByRole("button", { name: "选择并生成大纲" })).toBeEnabled();
   });
 
   test("renders AI clarification as a mixed-choice form and submits every answer", async () => {
@@ -622,8 +910,8 @@ describe("CourseStoryOutlineWorkspace", () => {
           label: "提交回答",
           action: "submit_alignment_answers",
           questions: [
-            { id: "usage", label: "怎样使用小马宝莉角色？", required: true, answerMode: "single_choice", options: [{ id: "new", label: "使用角色创作新剧情" }], allowCustom: true, allowRecommendation: false },
-            { id: "roles", label: "希望哪些角色出场？", required: true, answerMode: "text", allowCustom: true, allowRecommendation: false },
+            { id: "usage", label: "怎样使用小马宝莉角色？", required: true, answerMode: "single_choice", options: [{ id: "new", label: "使用角色创作新剧情" }], allowCustom: true },
+            { id: "roles", label: "希望哪些角色出场？", required: true, answerMode: "text", allowCustom: true },
           ],
         }],
         createdAt: "2026-08-12T00:00:00.000Z",
@@ -640,7 +928,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     }));
   });
 
-  test("preselects AI recommendations for every clarification question and allows immediate confirmation", async () => {
+  test("shows every option, puts the recommendation first with its reason, and hides internal ids", async () => {
     const fetchMock = vi.fn(async () => Response.json(emptyState));
     vi.stubGlobal("fetch", fetchMock);
     render(<CourseStoryOutlineWorkspace initialState={{
@@ -660,19 +948,14 @@ describe("CourseStoryOutlineWorkspace", () => {
               label: "怎样使用原作？",
               required: true,
               answerMode: "single_choice",
-              options: [{ id: "new", label: "使用原作人物创作新剧情" }],
+              options: [
+                { id: "follow_original", label: "忠实讲述原剧情" },
+                { id: "new_story", label: "使用原作人物创作新剧情" },
+                { id: "theme_only", label: "只借用主题重新创作" },
+              ],
               allowCustom: true,
-              allowRecommendation: true,
-              recommendation: { value: "使用原作人物创作新剧情", reason: "老师已经提出新的课堂冒险。" },
-            },
-            {
-              id: "focus",
-              label: "故事聚焦谁？",
-              required: true,
-              answerMode: "text",
-              allowCustom: true,
-              allowRecommendation: true,
-              recommendation: { value: "所有学生组成行动团队，老师共同参与", reason: "课堂人物默认全部进入故事。" },
+              recommendedOptionId: "new_story",
+              recommendationReason: "老师已经提出新的课堂冒险。",
             },
           ],
         }],
@@ -680,7 +963,12 @@ describe("CourseStoryOutlineWorkspace", () => {
       }],
     }} />);
 
-    expect(screen.getAllByText(/建议：/)).toHaveLength(2);
+    expect(screen.getByText("使用原作人物创作新剧情（推荐）")).toBeInTheDocument();
+    expect(screen.getByText("忠实讲述原剧情")).toBeInTheDocument();
+    expect(screen.getByText("只借用主题重新创作")).toBeInTheDocument();
+    expect(screen.getByText("老师已经提出新的课堂冒险。")).toBeInTheDocument();
+    expect(screen.queryByText("new_story")).not.toBeInTheDocument();
+    expect(screen.queryByText("采用 AI 推荐")).not.toBeInTheDocument();
     const submit = screen.getByRole("button", { name: "确认回答并继续" });
     expect(submit).toBeEnabled();
     fireEvent.click(submit);
@@ -688,8 +976,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({
       action: "submit_alignment_answers",
       alignmentAnswers: {
-        usage: "采用建议：使用原作人物创作新剧情",
-        focus: "采用建议：所有学生组成行动团队，老师共同参与",
+        usage: "使用原作人物创作新剧情",
       },
     }));
   });
@@ -707,8 +994,8 @@ describe("CourseStoryOutlineWorkspace", () => {
           label: "提交回答",
           action: "submit_alignment_answers",
           questions: [
-            { id: "first", label: "第一个问题", required: true, answerMode: "single_choice", allowCustom: false, allowRecommendation: false },
-            { id: "second", label: "第二个问题", required: true, answerMode: "single_choice", allowCustom: false, allowRecommendation: false },
+            { id: "first", label: "第一个问题", required: true, answerMode: "single_choice", allowCustom: false },
+            { id: "second", label: "第二个问题", required: true, answerMode: "single_choice", allowCustom: false },
           ],
         }],
         createdAt: "2026-08-13T00:00:00.000Z",
@@ -719,14 +1006,14 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByLabelText("第二个问题回答")).toBeInTheDocument();
   });
 
-  test("lets the teacher revise only one direction and explicitly confirm it before outline generation", async () => {
+  test("lets the teacher revise a direction before selecting it and then generates in one click", async () => {
     const selectedState: CourseStoryOutlineState = {
       ...emptyState,
       directions: [{
         id: "direction-1", courseId: "course-1", title: "情绪天气城",
         hook: "暮光闪闪和云宝误入情绪会改变天气的城市，必须在风暴吞没城市前帮助居民表达真实感受。",
         storyHighlight: "情绪直接改变天气和道路。", growthCore: "从压抑情绪转向理解和表达。",
-        whyFits: "适合讨论情绪表达。", mainCharacters: ["暮光闪闪", "云宝"], seedPrompt: "weather", selectedAt: "2026-08-12T00:00:00.000Z", createdAt: "2026-08-12T00:00:00.000Z",
+        whyFits: "适合讨论情绪表达。", mainCharacters: ["暮光闪闪", "云宝"], seedPrompt: "weather", selectedAt: null, createdAt: "2026-08-12T00:00:00.000Z",
       }],
     };
     const fetchMock = vi.fn(async () => Response.json(selectedState));
@@ -736,12 +1023,30 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByText("情绪直接改变天气和道路。")).toBeInTheDocument();
     expect(screen.getByText("从压抑情绪转向理解和表达。")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "调整这张卡" }));
-    fireEvent.change(screen.getByPlaceholderText("例如：保留角色，但把冲突改得更离奇一些"), { target: { value: "保留角色，把城市改成漂浮在梦境里" } });
-    fireEvent.click(screen.getByRole("button", { name: "应用修改" }));
-    await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({ action: "revise_direction", targetId: "direction-1" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "故事想法" }), { target: { value: "调整故事方向「情绪天气城」：保留角色，把城市改成漂浮在梦境里" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({ action: "revise_direction", targetId: "direction-1", message: expect.stringContaining("保留角色") }));
 
-    fireEvent.click(screen.getByRole("button", { name: "确认方向，生成大纲" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择并生成大纲" }));
     await waitFor(() => expect(fetchBody(fetchMock, 1)).toMatchObject({ action: "confirm_direction", targetId: "direction-1" }));
+  });
+
+  test("keeps all generated directions in a final read-only tab after the outline exists", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      directions: [
+        { id: "direction-1", courseId: "course-1", title: "海底图书馆", hook: "寻找失落书页。", whyFits: "适合合作。", mainCharacters: ["夏天"], seedPrompt: "library", selectedAt: "2026-08-06T07:00:00.000Z", createdAt: "2026-08-06T07:00:00.000Z" },
+        { id: "direction-2", courseId: "course-1", title: "珊瑚邮局", hook: "送回迷路的信。", whyFits: "适合表达。", mainCharacters: ["夏天"], seedPrompt: "post", selectedAt: null, createdAt: "2026-08-06T07:00:00.000Z" },
+      ],
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "故事方向" }));
+    expect(screen.getByText("故事方向已确定，仅供查看")).toBeInTheDocument();
+    expect(screen.getByText("海底图书馆")).toBeInTheDocument();
+    expect(screen.getByText("珊瑚邮局")).toBeInTheDocument();
+    expect(screen.getByText("已选择")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "选择并生成大纲" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "调整这张卡" })).not.toBeInTheDocument();
   });
 
   test("shows newly generated directions before an existing outline", () => {
@@ -766,6 +1071,56 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.queryByText("剧情概述")).not.toBeInTheDocument();
     expect(screen.getByText("都不合适？告诉我你希望的故事方向，我会重新生成。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "描述我想要的方向" })).toBeInTheDocument();
+  });
+
+  test("moves the cursor to the end when prefilling a direction request", async () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      directions: [{
+        id: "direction-new",
+        courseId: "course-1",
+        title: "新的中文方向",
+        hook: "重新选择一条故事主线。",
+        whyFits: "符合老师最新修改。",
+        mainCharacters: ["夏天"],
+        classroomValue: "合作表达",
+        seedPrompt: "新的故事方向",
+        selectedAt: null,
+        createdAt: "2026-08-06T08:00:00.000Z",
+      }],
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "描述我想要的方向" }));
+    const input = screen.getByRole("textbox", { name: "故事想法" }) as HTMLTextAreaElement;
+    await waitFor(() => {
+      expect(input).toHaveFocus();
+      expect(input).toHaveValue("我希望的故事方向：");
+      expect(input.selectionStart).toBe("我希望的故事方向：".length);
+      expect(input.selectionEnd).toBe("我希望的故事方向：".length);
+    });
+  });
+
+  test("routes direction edits to the shared chat composer", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      directions: [{
+        id: "direction-new",
+        courseId: "course-1",
+        title: "新的中文方向",
+        hook: "重新选择一条故事主线。",
+        whyFits: "符合老师最新修改。",
+        mainCharacters: ["夏天"],
+        classroomValue: "合作表达",
+        seedPrompt: "新的故事方向",
+        selectedAt: null,
+        createdAt: "2026-08-06T08:00:00.000Z",
+      }],
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "调整这张卡" }));
+    expect(screen.queryByText("只修改这张方向卡")).not.toBeInTheDocument();
+    expect(screen.getByText("正在修改：故事方向「新的中文方向」")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "故事想法" })).toHaveValue("调整故事方向「新的中文方向」：");
   });
 
   test("lets the teacher describe a specific way to use the source story", () => {
@@ -844,7 +1199,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "重新开始本轮构思" }));
-    expect(screen.getByText("将清空本阶段的聊天记录、故事方向、参考资料和故事大纲。")).toBeInTheDocument();
+    expect(screen.getByText(/将立即删除故事构思、教学规划、文案与练习、视觉资源、图片和预览发布设置/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "清空并重新开始" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
@@ -886,10 +1241,61 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByRole("button", { name: "角色" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "参考资料" })).toBeInTheDocument();
     expect(screen.getByText("剧情概述")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "修改本章" }).parentElement).toHaveClass("border-t");
 
     fireEvent.click(screen.getByRole("button", { name: "角色" }));
     expect(screen.getByText("故事出场角色")).toBeInTheDocument();
     expect(screen.queryByText("剧情概述")).not.toBeInTheDocument();
+  });
+
+  test("does not repeat the same generated role description in a character card", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      outline: outlineState.outline ? {
+        ...outlineState.outline,
+        characters: outlineState.outline.characters.map((character) => ({
+          ...character,
+          shortDescription: character.roleInStory,
+        })),
+      } : null,
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "角色" }));
+    expect(screen.queryByText("学生主角", { exact: true })).not.toBeInTheDocument();
+    expect(screen.getByText(/课堂人物 · 学生主角/)).toBeInTheDocument();
+  });
+
+  test("routes chapter and outline edits through the shared chat composer with explicit targets", () => {
+    const responsePromise = new Promise<Response>(() => undefined);
+    const fetchMock = vi.fn(() => responsePromise);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "修改本章" }));
+    expect(screen.queryByLabelText("第 1 章修改要求")).not.toBeInTheDocument();
+    expect(screen.getByText("正在修改：第 1 章")).toBeInTheDocument();
+    const input = screen.getByRole("textbox", { name: "故事想法" });
+    expect(input).toHaveValue("修改第 1 章：");
+    fireEvent.change(input, { target: { value: "修改第 1 章：增加一次困难选择" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(fetchBody(fetchMock)).toMatchObject({
+      action: "revise_chapter",
+      targetChapterOrder: 1,
+      message: "修改第 1 章：增加一次困难选择",
+    });
+  });
+
+  test("moves whole-outline editing to the shared chat composer", () => {
+    render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "修改整体大纲" }));
+    expect(screen.queryByLabelText("整体大纲修改要求")).not.toBeInTheDocument();
+    expect(screen.getByText("正在修改：整体大纲")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "故事想法" })).toHaveValue("修改整体大纲：");
+    fireEvent.click(screen.getByRole("button", { name: "取消修改" }));
+    expect(screen.queryByText("正在修改：整体大纲")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "故事想法" })).toHaveValue("");
   });
 
   test("shows only story characters and hides audience-only people", () => {
@@ -913,6 +1319,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "角色" }));
 
     expect(screen.getByText("夏天")).toBeInTheDocument();
+    expect(screen.getByText("Summer")).toBeInTheDocument();
     expect(screen.getByText("课堂人物 · 学生主角")).toBeInTheDocument();
     expect(screen.getByText("喜欢观察线索。")).toBeInTheDocument();
     expect(screen.queryByText("林老师 · Ms. Lin")).not.toBeInTheDocument();
@@ -966,5 +1373,28 @@ describe("CourseStoryOutlineWorkspace", () => {
       { method: "POST" },
     ));
     expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/teaching-plan");
+  });
+
+  test("keeps outline confirmation out of the chat timeline", async () => {
+    let resolveResponse!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { resolveResponse = resolve; })));
+    render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "确认故事大纲并进入教学规划" }));
+
+    expect(screen.queryByText("正在确认故事大纲...", { exact: false })).not.toBeInTheDocument();
+    resolveResponse(Response.json({ course: { id: "course-1", currentStage: "teaching_plan" } }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/teaching-plan"));
+  });
+
+  test("continues directly from the result panel when an existing outline is only viewed", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseStoryOutlineWorkspace initialState={{ ...outlineState, course: { ...outlineState.course, currentStage: "preview" } }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "进入教学规划" }));
+
+    expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/teaching-plan");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

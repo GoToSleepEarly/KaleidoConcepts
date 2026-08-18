@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import type { PrismaClient } from "@prisma/client";
 
 import type {
@@ -11,18 +13,24 @@ import type {
 } from "@/lib/contracts/api";
 import { compilePreviewPages, DEFAULT_COURSE_PRESENTATION } from "@/lib/domain/course-preview";
 
-export type CoursePreviewDb = Pick<PrismaClient, "course" | "coursePresentation" | "presetOption">;
+export type CoursePreviewDb = Pick<PrismaClient, "$transaction" | "course" | "coursePresentation" | "presetOption">;
 
 export class CoursePreviewNotFoundError extends Error {}
 export class CoursePreviewPrerequisiteError extends Error {}
 
 type PreviewVisualSlot = {
   activeImage?: { status: string; publicUrl?: string | null } | null;
-  images?: Array<{ status: string }>;
+  images?: Array<{ status: string; leaseExpiresAt?: Date | null; updatedAt?: Date; startedAt?: Date | null }>;
 };
 
 function assertVisualResourcesReady(slots: PreviewVisualSlot[]) {
-  const inFlight = slots.filter((slot) => slot.images?.some((image) => ["pending", "submitting", "generating"].includes(image.status))).length;
+  const now = Date.now();
+  const hardDeadline = now - 12 * 60 * 1000;
+  const inFlight = slots.filter((slot) => slot.images?.some((image) => {
+    if (!["pending", "submitting", "generating"].includes(image.status)) return false;
+    if (image.startedAt && image.startedAt.getTime() <= hardDeadline) return false;
+    return image.leaseExpiresAt ? image.leaseExpiresAt.getTime() > now : true;
+  })).length;
   if (inFlight) throw new CoursePreviewPrerequisiteError(`还有 ${inFlight} 张图片正在生成，请等待全部完成后再进入预览发布`);
 }
 
@@ -47,7 +55,7 @@ export async function getCoursePreview(db: CoursePreviewDb, courseId: string): P
       people: true,
       lessonContent: true,
       storyOutline: { include: { chapters: true } },
-      visualImageSlots: { include: { activeImage: { select: { publicUrl: true, status: true } }, images: { select: { status: true } } } },
+      visualImageSlots: { include: { activeImage: { select: { publicUrl: true, status: true } }, images: { select: { status: true, leaseExpiresAt: true, updatedAt: true, startedAt: true } } } },
       presentation: true,
       teachingPlan: true,
     },
@@ -106,16 +114,43 @@ export async function getCoursePreview(db: CoursePreviewDb, courseId: string): P
   };
 }
 
-export async function savePresentation(db: CoursePreviewDb, courseId: string, input: Partial<CoursePresentationUpdate>) {
-  const course = await db.course.findUnique({ where: { id: courseId }, select: { id: true } });
+export async function savePresentation(
+  db: CoursePreviewDb,
+  courseId: string,
+  input: Partial<CoursePresentationUpdate>,
+  options: { preservePublished?: boolean } = {},
+) {
+  const course = await db.course.findUnique({
+    where: { id: courseId },
+    select: {
+      id: true,
+      lifecycleStatus: true,
+      presentation: { select: { coverTheme: true, coverTitleFontSize: true, chapterTheme: true, slideOverrides: true } },
+    },
+  });
   if (!course) throw new CoursePreviewNotFoundError("课程不存在");
   const value = normalizedPresentation(input);
-  await db.coursePresentation.upsert({ where: { courseId }, create: { courseId, ...value }, update: value });
+  const currentValue = normalizedPresentation(course.presentation ? {
+    coverTheme: course.presentation.coverTheme,
+    coverTitleFontSize: course.presentation.coverTitleFontSize,
+    chapterTheme: course.presentation.chapterTheme,
+    slideOverrides: course.presentation.slideOverrides as CoursePresentationConfig["slideOverrides"],
+  } : null);
+  if (isDeepStrictEqual(currentValue, value)) return value;
+
+  if (course.lifecycleStatus === "published" && !options.preservePublished) {
+    await db.$transaction(async (tx) => {
+      await tx.coursePresentation.upsert({ where: { courseId }, create: { courseId, ...value }, update: value });
+      await tx.course.update({ where: { id: courseId }, data: { lifecycleStatus: "draft" } });
+    });
+  } else {
+    await db.coursePresentation.upsert({ where: { courseId }, create: { courseId, ...value }, update: value });
+  }
   return value;
 }
 
 export async function confirmVisualResources(db: Pick<PrismaClient, "course">, courseId: string) {
-  const course = await db.course.findUnique({ where: { id: courseId }, include: { lessonContent: true, visualImageSlots: { include: { activeImage: { select: { status: true } }, images: { select: { status: true } } } } } });
+  const course = await db.course.findUnique({ where: { id: courseId }, include: { lessonContent: true, visualImageSlots: { include: { activeImage: { select: { status: true } }, images: { select: { status: true, leaseExpiresAt: true, updatedAt: true, startedAt: true } } } } } });
   if (!course) throw new CoursePreviewNotFoundError("课程不存在");
   if (!course.lessonContent) throw new CoursePreviewPrerequisiteError("请先完成文案与练习");
   assertVisualResourcesReady(course.visualImageSlots);
@@ -124,11 +159,11 @@ export async function confirmVisualResources(db: Pick<PrismaClient, "course">, c
 }
 
 export async function publishCourse(db: CoursePreviewDb, courseId: string, input?: Partial<CoursePresentationUpdate>): Promise<PublishCourseResponse> {
-  const course = await db.course.findUnique({ where: { id: courseId }, include: { lessonContent: true, visualImageSlots: { include: { activeImage: { select: { status: true } }, images: { select: { status: true } } } } } });
+  const course = await db.course.findUnique({ where: { id: courseId }, include: { lessonContent: true, visualImageSlots: { include: { activeImage: { select: { status: true } }, images: { select: { status: true, leaseExpiresAt: true, updatedAt: true, startedAt: true } } } } } });
   if (!course) throw new CoursePreviewNotFoundError("课程不存在");
   if (!course.lessonContent) throw new CoursePreviewPrerequisiteError("请先完成文案与练习");
   assertVisualResourcesReady(course.visualImageSlots);
-  if (input) await savePresentation(db, courseId, input);
+  if (input) await savePresentation(db, courseId, input, { preservePublished: true });
   if (course.lifecycleStatus !== "published") await db.course.update({ where: { id: courseId }, data: { lifecycleStatus: "published", currentStage: "preview" } });
   return { redirectUrl: `/courses/${courseId}` };
 }

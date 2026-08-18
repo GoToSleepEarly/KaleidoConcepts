@@ -170,19 +170,33 @@ export type StoryAlignmentQuestion = {
     textPlaceholder?: string;
   }>;
   allowCustom: boolean;
-  allowRecommendation: boolean;
+  recommendedOptionId?: string;
+  recommendationReason?: string;
+  /** 兼容已持久化的旧消息；新响应统一使用 recommendedOptionId。 */
+  allowRecommendation?: boolean;
+  /** 兼容已持久化的旧消息；不得直接把 value 渲染为用户文案。 */
   recommendation?: { value: string; reason: string };
 };
 
 export type StoryAlignmentState = {
   status: "idle" | "needs_clarification" | "ready_for_confirmation" | "confirmed";
   planningMode: "explore_options" | "follow_defined_plot";
+  storyMode?: "faithful" | "new_story";
+  classroomPresence?: "observer" | "participant" | "absent";
   resolvedUnderstanding: string[];
   unresolvedIssues: string[];
   questions: StoryAlignmentQuestion[];
   summary?: string;
   needsBackgroundRefresh?: boolean;
   artifactsOutdated?: boolean;
+  pendingChange?: {
+    id: string;
+    kind: "outline_revision" | "requirement_change";
+    request: string;
+    reason: string;
+    targetScope: "direction" | "outline" | "chapter";
+    needsBackgroundRefresh: boolean;
+  };
 };
 
 export type CourseStoryChatAction = {
@@ -207,6 +221,8 @@ export type CourseStoryChatAction = {
     | "confirm_direction"
     | "revise_outline"
     | "revise_chapter"
+    | "confirm_story_change"
+    | "cancel_story_change"
     | "retry_operation";
   targetId?: string;
   researchPlan?: CourseResearchPlan;
@@ -257,6 +273,7 @@ export type CourseCharacter = {
   id: string;
   courseId: string;
   displayName: string;
+  englishName: string;
   sourceType: CourseCharacterSourceType;
   sourcePersonId?: string | null;
   sourceReferenceId?: string | null;
@@ -284,7 +301,6 @@ export type CourseStoryOutlineChapter = {
   endingHook: string;
   recommendedKnowledgePointIds?: string[];
   knowledgePointRecommendationSummary?: string;
-  recommendedWordCount?: number;
 };
 
 export type CourseStoryOutline = {
@@ -293,7 +309,6 @@ export type CourseStoryOutline = {
   chapterCount: number;
   title: string;
   summary: string;
-  narrativeType?: string;
   storyHook?: string;
   writingProvider: StoryWritingProvider;
   sourceReferences: CourseSourceReference[];
@@ -327,7 +342,7 @@ export type CourseStoryOutlineState = {
   operation?: {
     requestId: string;
     action: string;
-    phase: "aligning" | "preparing_reference" | "searching_reference" | "generating_directions" | "generating_outline" | "revising";
+    phase: "aligning" | "repairing_alignment_format" | "preparing_reference" | "searching_reference" | "generating_directions" | "generating_outline" | "revising";
     status: "running" | "succeeded" | "failed" | "result_unknown" | "superseded";
     errorMessage: string | null;
     startedAt: string;
@@ -346,6 +361,7 @@ export type CourseStoryMessageInput = {
   chapterCount?: number;
   writingProvider?: StoryWritingProvider;
   requestId?: string;
+  resetDownstream?: boolean;
 };
 
 export type PresetKind = "theme" | "story_type" | "story_tone" | "grammar";
@@ -406,6 +422,7 @@ export type TeachingPlanChapter = {
 
 export type AfterClassPracticeConfig = {
   enabled: boolean;
+  vocabularyReviewEnabled: boolean;
   knowledgePointIds: string[];
   practice: GrammarPracticeConfig;
   touched: {
@@ -444,6 +461,7 @@ export type TeachingPlanState = {
   outline: {
     id: string;
     title: string;
+    summary?: string;
     chapters: Array<{
       id: string;
       order: number;
@@ -523,6 +541,7 @@ export type CourseContentMessage = {
 
 export type CourseContentState = {
   course: { id: string; title: string; currentStage: CourseStage; englishLevel: EnglishLevel };
+  storyTitle: string;
   knowledgePoints: Array<{ id: string; label: string }>;
   chapterKnowledgePointIds: Record<string, string[]>;
   homeworkKnowledgePointIds: string[];
@@ -538,6 +557,13 @@ export type CourseContentState = {
   messages: CourseContentMessage[];
   errorMessage: string | null;
   updatedAt: string | null;
+  operation: {
+    id: string;
+    type: "reading" | "exercises" | "modify";
+    status: "running";
+    startedAt: string;
+    updatedAt: string;
+  } | null;
 };
 
 export type CourseImageQuality = "low" | "medium" | "high";
@@ -546,6 +572,9 @@ export type CharacterVisualSource = "person_asset" | "uploaded_reference" | "gen
 export type CharacterVisualStatus = "missing" | "generating" | "ready" | "failed" | "stale";
 export type CourseImageStatus = "pending" | "submitting" | "generating" | "succeeded" | "failed";
 export type CourseImageSlotType = "character_baseline" | "visual_cover" | "lesson_shot";
+export type VisualPlanMode = "faithful" | "originalized";
+export type CharacterVisualAnchorMode = "reference" | "semantic" | "description";
+export type CourseImageFailureCode = "retryable" | "storage_recoverable" | "invalid_request" | "policy_blocked" | "unknown";
 
 export type CourseVisualAsset = {
   id: string;
@@ -553,9 +582,12 @@ export type CourseVisualAsset = {
   operation: "initial" | "revision";
   userInstruction: string | null;
   quality: CourseImageQuality;
+  planRevision: number;
   status: CourseImageStatus;
   publicUrl: string | null;
+  failureCode: CourseImageFailureCode | null;
   failureReason: string | null;
+  startedAt: string | null;
   createdAt: string;
 };
 
@@ -563,9 +595,17 @@ export type CourseCharacterVisual = {
   id: string;
   characterId: string;
   displayName: string;
+  chineseName: string;
+  englishName: string;
   sourceType: CourseCharacterSourceType;
   sourceReferenceType: CourseSourceReferenceType | null;
+  sourceReferenceName: string | null;
+  visualAnchorMode: CharacterVisualAnchorMode | null;
+  visualAnchorLabel: string | null;
+  visualAnchorContext: string | null;
+  appearanceDescription: string | null;
   shouldAppearInImages: boolean;
+  isMain: boolean;
   intent: CharacterVisualIntent | null;
   source: CharacterVisualSource | null;
   status: CharacterVisualStatus;
@@ -587,7 +627,9 @@ export type CourseVisualImageSlot = {
   sourceText: string;
   characterIds: string[];
   focus: string;
+  sceneDescription: string;
   prompt: string;
+  hasUnsyncedChanges: boolean;
   activeAssetId: string | null;
   activeAsset: CourseVisualAsset | null;
   versions: CourseVisualAsset[];
@@ -597,6 +639,10 @@ export type CourseVisualResourcesState = {
   course: { id: string; title: string; currentStage: CourseStage };
   quality: CourseImageQuality;
   planReady: boolean;
+  planRevision: number | null;
+  planMode: VisualPlanMode | null;
+  confirmedCoverAssetId: string | null;
+  policyBlocked: boolean;
   characters: CourseCharacterVisual[];
   slots: CourseVisualImageSlot[];
 };
@@ -604,7 +650,7 @@ export type CourseVisualResourcesState = {
 export type CoursePreviewImage = { publicUrl: string | null };
 export type CoursePreviewReadingPart =
   | { type: "text"; text: string }
-  | { type: "exercise"; id: string; number: number; exerciseType: GrammarExerciseType | "vocabulary"; answer: string; knowledgePointId: string | null; knowledgePointLabel: string; spaceBefore: boolean; hint?: string; options?: string[] };
+  | { type: "exercise"; id: string; number: number; exerciseType: GrammarExerciseType | "vocabulary"; answer: string; knowledgePointId: string | null; knowledgePointLabel: string; spaceBefore: boolean; hint?: string; meaningZh?: string; options?: string[] };
 
 export type CoursePreviewKnowledgePoint = { id: string; label: string };
 

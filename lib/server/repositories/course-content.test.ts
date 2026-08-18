@@ -1,16 +1,17 @@
 import { describe, expect, test, vi } from "vitest";
 
 import type { CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
-import { exerciseQuestionIssues, generateCourseExercises, generateCourseReading, requiresExerciseAi, resetCourseContent, type CourseContentDb } from "@/lib/server/repositories/course-content";
+import { CourseContentConflictError, exerciseQuestionIssues, generateCourseExercises, generateCourseReading, modifyCourseContent, recoverStaleCourseContentOperation, requiresExerciseAi, resetCourseContent, type CourseContentDb } from "@/lib/server/repositories/course-content";
 
 describe("course content repository", () => {
   test("skips the exercise AI stage when Step 3 has no grammar exercises", () => {
     const plan = {
       chapters: [{ chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } } }],
-      afterClassPractice: { enabled: false, practice: { grammar: { optionCloze: 0, wordForm: 0 } } },
+      afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } } },
     };
 
     expect(requiresExerciseAi(plan as never)).toBe(false);
+    expect(requiresExerciseAi({ ...plan, afterClassPractice: { ...plan.afterClassPractice, enabled: true, vocabularyReviewEnabled: true } } as never)).toBe(false);
     expect(requiresExerciseAi({
       ...plan,
       chapters: [{ chapterPractice: { enabled: true, grammar: { optionCloze: 1, wordForm: 0 } } }],
@@ -54,6 +55,110 @@ describe("course content repository", () => {
     ]);
   });
 
+  test("releases an expired generation lease instead of leaving the stage locked", async () => {
+    const now = new Date("2026-08-15T06:00:00.000Z");
+    let content = {
+      id: "content-1", courseId: "course-1", status: "generating_reading", phase: "generating_chapters",
+      writingProvider: "quickrouter_gpt", sourceRevision: "r1", contentVersion: 0, chapters: [], mainIdea: null,
+      homework: null, exercisesStale: false, errorMessage: null, activeGenerationId: "generation-1", updatedAt: now,
+    };
+    let generation = {
+      id: "generation-1", courseId: "course-1", operation: "reading", status: "running", baseContentVersion: 0,
+      previousStatus: "empty", leaseExpiresAt: new Date("2026-08-15T05:59:00.000Z"), startedAt: new Date("2026-08-15T05:50:00.000Z"), updatedAt: now,
+    };
+    const db = {
+      courseLessonContent: {
+        findUnique: vi.fn(async () => content),
+        updateMany: vi.fn(async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          if (where.activeGenerationId !== content.activeGenerationId) return { count: 0 };
+          content = { ...content, ...data } as typeof content;
+          return { count: 1 };
+        }),
+      },
+      courseContentGeneration: {
+        findUnique: vi.fn(async () => generation),
+        updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          generation = { ...generation, ...data } as typeof generation;
+          return { count: 1 };
+        }),
+      },
+      $transaction: vi.fn(async (callback: (tx: CourseContentDb) => Promise<unknown>) => callback(db as unknown as CourseContentDb)),
+    } as unknown as CourseContentDb;
+
+    expect(await recoverStaleCourseContentOperation(db, "course-1", now)).toBe(true);
+    expect(generation.status).toBe("result_unknown");
+    expect(content.status).toBe("failed");
+    expect(content.activeGenerationId).toBeNull();
+    expect(content.errorMessage).toContain("处理已中断");
+  });
+
+  test("blocks a second write operation while a modification lease is active", async () => {
+    const now = new Date("2026-08-15T06:00:00.000Z");
+    const course = { id: "course-1", title: "Hidden Door", durationMinutes: 30, currentStage: "content", englishLevel: "A2", knowledgePointIds: ["kp-1"] };
+    const outline = { id: "outline-1", title: "Hidden Door", summary: "A hidden door", chapters: [{ id: "chapter-1", order: 1, title: "The Map", storyGoal: "Find it", keyEvents: ["Find it"], recommendedKnowledgePointIds: ["kp-1"] }] };
+    const plan = { id: "plan-1", courseId: "course-1", status: "confirmed", englishLevel: "A2", mainIdeaTargetWordCount: 120, chapters: [{ outlineChapterId: "chapter-1", targetWordCount: 50, paragraphCount: 1, knowledgePointIds: ["kp-1"], readingExerciseMode: "complete", readingExercises: { enabled: true, grammar: { optionCloze: 0, wordForm: 0 }, vocabulary: { chineseHint: 0 } }, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: {} }], afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: {} }, updatedAt: now, confirmedAt: now };
+    const content = { id: "content-1", courseId: "course-1", status: "ready", phase: null, writingProvider: "quickrouter_gpt", sourceRevision: "r1", contentVersion: 1, chapters: [{ id: "chapter-chapter-1", outlineChapterId: "chapter-1", order: 1, title: "The Map", targetWordCount: 50, readingExerciseMode: "complete", paragraphs: [{ id: "p1", parts: [{ type: "text", text: "A complete paragraph." }] }], chapterPractice: [], validationIssues: [] }], mainIdea: { id: "main-idea", title: "Main Idea", text: "A summary." }, homework: null, exercisesStale: false, errorMessage: null, activeGenerationId: "generation-1", updatedAt: now };
+    const activeGeneration = { id: "generation-1", courseId: "course-1", operation: "modify", status: "running", baseContentVersion: 1, previousStatus: "ready", leaseExpiresAt: new Date(Date.now() + 60_000), startedAt: now, updatedAt: now };
+    const db = {
+      course: { findUnique: vi.fn(async () => course), update: vi.fn(async () => course) },
+      courseStoryOutline: { findUnique: vi.fn(async () => outline) },
+      courseTeachingPlan: { findUnique: vi.fn(async () => plan) },
+      presetOption: { findMany: vi.fn(async () => [{ id: "kp-1", kind: "grammar", label: "Past Simple", category: "时态", archivedAt: null }]) },
+      courseLessonContent: { findUnique: vi.fn(async () => content), upsert: vi.fn(async () => content) },
+      courseContentGeneration: { findUnique: vi.fn(async () => activeGeneration) },
+      courseContentChatMessage: { findMany: vi.fn(async () => []) },
+      $transaction: vi.fn(async (callback: (tx: CourseContentDb) => Promise<unknown>) => callback(db as unknown as CourseContentDb)),
+    } as unknown as CourseContentDb;
+    const modifyContent = vi.fn();
+
+    await expect(modifyCourseContent(db, "course-1", { targetType: "paragraph", targetId: "p1", instruction: "写得更紧张" }, "request-2", { modifyContent } as unknown as CourseContentGenerationDeps)).rejects.toBeInstanceOf(CourseContentConflictError);
+    expect(modifyContent).not.toHaveBeenCalled();
+  });
+
+  test("rejects a late modification result after reset invalidates its operation", async () => {
+    const now = new Date("2026-08-15T06:00:00.000Z");
+    const course = { id: "course-1", title: "Hidden Door", durationMinutes: 30, currentStage: "content", englishLevel: "A2", knowledgePointIds: ["kp-1"] };
+    const outline = { id: "outline-1", title: "Hidden Door", summary: "A hidden door", chapters: [{ id: "chapter-1", order: 1, title: "The Map", storyGoal: "Find it", keyEvents: ["Find it"], recommendedKnowledgePointIds: ["kp-1"] }] };
+    const plan = { id: "plan-1", courseId: "course-1", status: "confirmed", englishLevel: "A2", mainIdeaTargetWordCount: 120, chapters: [{ outlineChapterId: "chapter-1", targetWordCount: 50, paragraphCount: 1, knowledgePointIds: ["kp-1"], readingExerciseMode: "complete", readingExercises: { enabled: true, grammar: { optionCloze: 0, wordForm: 0 }, vocabulary: { chineseHint: 0 } }, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: {} }], afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: {} }, updatedAt: now, confirmedAt: now };
+    let content: Record<string, unknown> = { id: "content-1", courseId: "course-1", status: "ready", phase: null, writingProvider: "quickrouter_gpt", sourceRevision: "r1", contentVersion: 1, chapters: [{ id: "chapter-chapter-1", outlineChapterId: "chapter-1", order: 1, title: "The Map", targetWordCount: 50, readingExerciseMode: "complete", paragraphs: [{ id: "p1", parts: [{ type: "text", text: "A complete paragraph." }] }], chapterPractice: [], validationIssues: [] }], mainIdea: { id: "main-idea", title: "Main Idea", text: "A summary." }, homework: null, exercisesStale: false, errorMessage: null, activeGenerationId: null, updatedAt: now };
+    let generation: Record<string, unknown> | null = null;
+    const applyData = (current: Record<string, unknown>, data: Record<string, unknown>) => Object.fromEntries(Object.entries({ ...current, ...data }).map(([key, value]) => [key, typeof value === "object" && value && "increment" in value ? Number(current[key] ?? 0) + Number(Reflect.get(value, "increment")) : value]));
+    const db = {
+      course: { findUnique: vi.fn(async () => course), update: vi.fn(async () => course) },
+      courseStoryOutline: { findUnique: vi.fn(async () => outline) },
+      courseTeachingPlan: { findUnique: vi.fn(async () => plan) },
+      presetOption: { findMany: vi.fn(async () => [{ id: "kp-1", kind: "grammar", label: "Past Simple", category: "时态", archivedAt: null }]) },
+      courseLessonContent: {
+        findUnique: vi.fn(async () => content), upsert: vi.fn(async () => content),
+        updateMany: vi.fn(async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          if ("activeGenerationId" in where && where.activeGenerationId !== content.activeGenerationId) return { count: 0 };
+          if ("contentVersion" in where && where.contentVersion !== content.contentVersion) return { count: 0 };
+          content = applyData(content, data); return { count: 1 };
+        }),
+      },
+      courseContentGeneration: {
+        findUnique: vi.fn(async ({ where }: { where: Record<string, unknown> }) => "id" in where ? generation : null),
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { generation = { id: "generation-1", status: "running", updatedAt: now, ...data }; return generation; }),
+        update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { generation = generation ? { ...generation, ...data } : null; return generation; }),
+        updateMany: vi.fn(async () => ({ count: generation ? 1 : 0 })),
+      },
+      courseContentChatMessage: { findMany: vi.fn(async () => []), create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "message-1", createdAt: now, ...data })) },
+      $transaction: vi.fn(async (callback: (tx: CourseContentDb) => Promise<unknown>) => callback(db as unknown as CourseContentDb)),
+    } as unknown as CourseContentDb;
+    let resolveModification!: (value: unknown) => void;
+    const modifyContent = vi.fn(() => new Promise((resolve) => { resolveModification = resolve; }));
+
+    const pending = modifyCourseContent(db, "course-1", { targetType: "paragraph", targetId: "p1", instruction: "写得更紧张" }, "request-1", { modifyContent } as unknown as CourseContentGenerationDeps);
+    await vi.waitFor(() => expect(modifyContent).toHaveBeenCalled());
+    expect((modifyContent.mock.calls as unknown[][])[0]?.[5]).toMatchObject({ englishLevel: "A2" });
+    content = { ...content, status: "empty", contentVersion: 0, chapters: [], mainIdea: null, activeGenerationId: null };
+    generation = null;
+    resolveModification({ kind: "paragraph", paragraph: { parts: [{ type: "text", text: "A tense new paragraph." }] } });
+
+    await expect(pending).rejects.toMatchObject({ name: "CourseContentSupersededError" });
+    expect(content.chapters).toEqual([]);
+  });
+
   test("keeps the Prisma transaction method bound while resetting Step 4", async () => {
     const now = new Date("2026-08-10T00:00:00.000Z");
     const course = { id: "course-1", title: "Hidden Door", durationMinutes: 45, currentStage: "content", englishLevel: "B1", knowledgePointIds: ["kp-1"] };
@@ -69,7 +174,7 @@ describe("course content repository", () => {
       _engineConfig: "available",
       course: { findUnique: vi.fn(async () => course), update: vi.fn(async () => course) },
       courseStoryOutline: { findUnique: vi.fn(async () => ({ id: "outline-1", title: "Hidden Door", chapters: [{ id: "chapter-1", order: 1, title: "The Map", storyGoal: "Find it", keyEvents: ["Find it"], recommendedKnowledgePointIds: ["kp-1"] }] })) },
-      courseTeachingPlan: { findUnique: vi.fn(async () => ({ id: "plan-1", courseId: "course-1", status: "confirmed", englishLevel: "B1", chapters: [{ outlineChapterId: "chapter-1", targetWordCount: 90, paragraphCount: 1, knowledgePointIds: ["kp-1"], readingExerciseMode: "complete", readingExercises: { enabled: true, grammar: { optionCloze: 1, wordForm: 0 }, vocabulary: { chineseHint: 0 } }, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { targetWordCount: false, paragraphCount: false, knowledgePointIds: false, readingExerciseMode: false, readingExercises: false, chapterPractice: false } }], afterClassPractice: { enabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { knowledgePointIds: false, practice: false } }, updatedAt: now, confirmedAt: now })) },
+      courseTeachingPlan: { findUnique: vi.fn(async () => ({ id: "plan-1", courseId: "course-1", status: "confirmed", englishLevel: "B1", chapters: [{ outlineChapterId: "chapter-1", targetWordCount: 90, paragraphCount: 1, knowledgePointIds: ["kp-1"], readingExerciseMode: "complete", readingExercises: { enabled: true, grammar: { optionCloze: 1, wordForm: 0 }, vocabulary: { chineseHint: 0 } }, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { targetWordCount: false, paragraphCount: false, knowledgePointIds: false, readingExerciseMode: false, readingExercises: false, chapterPractice: false } }], afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { knowledgePointIds: false, practice: false } }, updatedAt: now, confirmedAt: now })) },
       presetOption: { findMany: vi.fn(async () => [{ id: "kp-1", kind: "grammar", label: "Past Simple", category: "时态", archivedAt: null }]) },
       courseLessonContent: { findUnique: vi.fn(async () => null), upsert: vi.fn(async () => emptyContent), deleteMany: deleteContent },
       courseContentGeneration: { findUnique: vi.fn(async () => null), deleteMany: deleteGenerations },
@@ -92,7 +197,7 @@ describe("course content repository", () => {
     const now = new Date("2026-08-10T00:00:00.000Z");
     const course = { id: "course-1", title: "Hidden Door", durationMinutes: 30, currentStage: "content", englishLevel: "A2", knowledgePointIds: ["kp-1"] };
     const outline = { id: "outline-1", title: "隐藏的门 / The Hidden Door", chapters: [{ id: "chapter-1", order: 1, title: "发光地图 / The Glowing Map", storyGoal: "Find it", keyEvents: ["Find it"], recommendedKnowledgePointIds: ["kp-1"] }] };
-    const plan = { id: "plan-1", courseId: "course-1", status: "confirmed", englishLevel: "A2", chapters: [{ outlineChapterId: "chapter-1", targetWordCount: 50, paragraphCount: 1, knowledgePointIds: ["kp-1"], readingExerciseMode: "complete", readingExercises: { enabled: true, grammar: { optionCloze: 0, wordForm: 1 }, vocabulary: { chineseHint: 0 } }, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { targetWordCount: false, paragraphCount: false, knowledgePointIds: false, readingExerciseMode: false, readingExercises: false, chapterPractice: false } }], afterClassPractice: { enabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { knowledgePointIds: false, practice: false } }, updatedAt: now, confirmedAt: now };
+    const plan = { id: "plan-1", courseId: "course-1", status: "confirmed", englishLevel: "A2", chapters: [{ outlineChapterId: "chapter-1", targetWordCount: 50, paragraphCount: 1, knowledgePointIds: ["kp-1"], readingExerciseMode: "complete", readingExercises: { enabled: true, grammar: { optionCloze: 0, wordForm: 1 }, vocabulary: { chineseHint: 0 } }, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { targetWordCount: false, paragraphCount: false, knowledgePointIds: false, readingExerciseMode: false, readingExercises: false, chapterPractice: false } }], afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { knowledgePointIds: false, practice: false } }, updatedAt: now, confirmedAt: now };
     let content = { id: "content-1", courseId: "course-1", status: "empty", phase: null, writingProvider: "quickrouter_gpt", sourceRevision: "", contentVersion: 0, chapters: [] as unknown[], mainIdea: null as unknown, homework: null, exercisesStale: false, errorMessage: null as string | null, updatedAt: now };
     let generation: Record<string, unknown> | null = null;
     const applyData = (current: Record<string, unknown>, data: Record<string, unknown>) => Object.fromEntries(Object.entries({ ...current, ...data }).map(([key, value]) => [key, typeof value === "object" && value && "increment" in value ? Number(current[key] ?? 0) + Number(Reflect.get(value, "increment")) : value]));
@@ -108,7 +213,11 @@ describe("course content repository", () => {
         update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { content = applyData(content, data) as typeof content; content.updatedAt = now; return content; }),
       },
       courseContentGeneration: {
-        findUnique: vi.fn(async () => generation),
+        findUnique: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+          if ("id" in where) return generation;
+          const requestedOperation = Reflect.get(Reflect.get(where, "courseId_sourceRevision_operation") ?? {}, "operation");
+          return generation && generation.operation === requestedOperation ? generation : null;
+        }),
         create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { generation = { id: "generation-1", status: "running", ...data }; return generation; }),
         update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { generation = { ...generation, ...data }; return generation; }),
       },
@@ -136,6 +245,10 @@ describe("course content repository", () => {
     expect(generateReading).toHaveBeenCalledTimes(1);
     expect(generateExercises).not.toHaveBeenCalled();
     expect(repairMainIdea).toHaveBeenCalledTimes(1);
-    expect(messages.at(-1)?.content).toContain("单独修复 Main Idea");
+    expect((repairMainIdea.mock.calls as unknown[][])[0]?.[1]).toBe("A2");
+    expect(result.mainIdea?.title).toBe("Main Idea Reading Practice");
+    expect(messages.some((message) => message.content.includes("正在单独修复课后阅读"))).toBe(true);
+    expect(messages.map((message) => message.content)).toContain("我确认正文与课后阅读，请生成章节与课后练习。");
+    expect(exerciseResult.messages.map((message) => message.content)).toEqual(messages.map((message) => message.content));
   });
 });

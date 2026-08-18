@@ -5,6 +5,7 @@ import {
   buildCleanParagraphText,
   buildInteractiveParagraphText,
   collectVocabularyMatching,
+  vocabularyExerciseHint,
   validateGrammarCoverage,
   validateParagraphParts,
   stableShuffle,
@@ -33,11 +34,13 @@ describe("course content domain", () => {
     expect(validateParagraphParts({ ...paragraph, parts: [{ type: "vocabulary", id: "v", answer: "look-after", canonicalForm: "look-after", meaningZh: "照顾" }] })).toContain("词汇答案暂不支持连字符或缩写");
   });
 
-  test("rejects word-form questions that do not require a real form change", () => {
-    expect(validateParagraphParts({ ...paragraph, parts: [{ type: "grammar", id: "g", exerciseType: "wordForm", knowledgePointId: "should", answer: "should", baseForm: "should" }] }))
-      .toContain("给词变形必须发生真实词形变化");
-    expect(validateParagraphParts({ ...paragraph, parts: [{ type: "grammar", id: "g", exerciseType: "wordForm", knowledgePointId: "should", answer: "should look", baseForm: "look" }] }))
-      .toContain("给词变形不能用情态动词代替词形变化");
+  test("allows a word-form answer to stay in its base form when the sentence requires it", () => {
+    expect(validateParagraphParts({ ...paragraph, parts: [{ type: "grammar", id: "g", exerciseType: "wordForm", knowledgePointId: "infinitive", answer: "look", baseForm: "look" }] })).toEqual([]);
+    expect(validateParagraphParts({ ...paragraph, parts: [{ type: "grammar", id: "g", exerciseType: "wordForm", knowledgePointId: "modal", answer: "should look", baseForm: "look" }] })).toEqual([]);
+  });
+
+  test("formats vocabulary blanks from the actual answer", () => {
+    expect(vocabularyExerciseHint("hidden door", "隐藏的门")).toBe("隐藏的门，6+4个字母");
   });
 
   test("repairs missing spaces at structured part boundaries without spacing punctuation", () => {

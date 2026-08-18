@@ -2,13 +2,14 @@
 
 import React, { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { BookOpen, ChevronLeft, ChevronRight, Clock3, ExternalLink, Loader2, Plus, Search, Trash2, UsersRound, X } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, Clock3, Loader2, Plus, Search, Trash2, UsersRound, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Dialog } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import type { CourseListItem, CoursesListResponse } from "@/lib/contracts/api";
+import { readJsonResponse } from "@/lib/utils/response-json";
 
 const stageLabels: Record<CourseListItem["currentStage"], string> = {
   audience: "基础信息",
@@ -36,7 +37,7 @@ function editPath(course: CourseListItem) {
   return course.lifecycleStatus === "published" ? `/courses/${course.id}/create/preview` : course.nextEditPath;
 }
 
-export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
+export function CoursesManager() {
   const [courses, setCourses] = useState<CourseListItem[]>([]);
   const [page, setPage] = useState(1);
   const [queryInput, setQueryInput] = useState("");
@@ -54,7 +55,7 @@ export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
     if (query) params.set("query", query);
     fetch(`/api/courses?${params.toString()}`, { signal: controller.signal })
       .then(async (response) => {
-        const data = (await response.json()) as Partial<CoursesListResponse> & { message?: string };
+        const data = await readJsonResponse<CoursesListResponse & { message?: string }>(response);
         if (!response.ok) throw new Error(data.message || "课程列表加载失败");
         return data;
       })
@@ -93,7 +94,7 @@ export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
     try {
       const response = await fetch(`/api/courses/${courseToDelete.id}`, { method: "DELETE" });
       if (!response.ok) {
-        const data = (await response.json()) as { message?: string };
+        const data = await readJsonResponse<{ message?: string }>(response);
         throw new Error(data.message || "课程删除失败，请重试");
       }
       setCourses((current) => current.filter((course) => course.id !== courseToDelete.id));
@@ -119,7 +120,6 @@ export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
           <Button type="submit" variant="outline">搜索</Button>
         </form>
         <div className="flex flex-wrap justify-end gap-2">
-          {legacyUrl ? <Button asChild variant="outline"><a href={legacyUrl} rel="noreferrer" target="_blank"><ExternalLink className="size-4" />旧版课程</a></Button> : null}
           <Button asChild><Link href="/courses/new"><Plus className="size-4" />新建课程</Link></Button>
         </div>
       </section>
@@ -154,7 +154,7 @@ export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
               <div><p className="text-xs font-medium text-[#7890A7] xl:hidden">状态与更新</p><div className="mt-1 flex items-center gap-2 xl:mt-0 xl:block"><Badge variant={course.lifecycleStatus === "published" ? "success" : "secondary"}>{course.lifecycleStatus === "published" ? "已发布" : "草稿"}</Badge><p className="text-xs tabular-nums text-[#69829B] xl:mt-2">{formatDate(course.updatedAt)}</p></div></div>
               <div className="flex items-center gap-1 self-center sm:col-span-2 sm:justify-end xl:col-span-1 xl:justify-end">
                 <Button asChild size="sm" variant="outline"><Link href={editPath(course)}>编辑</Link></Button>
-                {course.lifecycleStatus === "published" ? <Button asChild size="sm"><Link href={`/courses/${course.id}`}>授课</Link></Button> : course.lessonDraftExists ? <Button asChild size="sm" variant="outline"><Link href={`/courses/${course.id}/create/preview`}>预览</Link></Button> : <span title="请先生成课文草稿"><Button aria-disabled="true" disabled size="sm" variant="outline">预览</Button></span>}
+                {course.lifecycleStatus === "published" ? <Button asChild size="sm"><Link href={`/courses/${course.id}`} rel="noopener noreferrer" target="_blank">授课</Link></Button> : course.lessonDraftExists ? <Button asChild size="sm" variant="outline"><Link href={`/courses/${course.id}/create/preview`}>预览</Link></Button> : <span title="请先生成课文草稿"><Button aria-disabled="true" disabled size="sm" variant="outline">预览</Button></span>}
                 <Button aria-label={`删除课程 ${course.title}`} onClick={() => setCourseToDelete(course)} size="icon-sm" title="删除课程" type="button" variant="ghost"><Trash2 className="size-4" /></Button>
               </div>
             </article>
@@ -162,7 +162,7 @@ export function CoursesManager({ legacyUrl }: { legacyUrl?: string }) {
         </div>
         {!loading && !courses.length ? (
           <div className="p-8">
-            <EmptyState action={<Button asChild><Link href="/courses/new"><Plus className="size-4" />创建第一门课程</Link></Button>} icon={UsersRound} title="还没有新系统课程" />
+            <EmptyState action={<Button asChild><Link href="/courses/new"><Plus className="size-4" />创建第一门课程</Link></Button>} icon={UsersRound} title="还没有课程" />
           </div>
         ) : null}
         {!loading && total > 0 ? (

@@ -19,7 +19,7 @@ describe("CoursePreviewWorkspace", () => {
     expect(screen.getByText("发光地图")).toBeInTheDocument();
     expect(screen.getByText("The Glowing Map")).toBeInTheDocument();
 
-    rerender(<PreviewSlide page={{ id: "legacy-chapter", type: "chapter_divider", chapterOrder: 1, chapterTitleZh: "发光地图", chapterTitleEn: "Chapter 1" }} presentation={presentation} />);
+    rerender(<PreviewSlide page={{ id: "chapter-divider", type: "chapter_divider", chapterOrder: 1, chapterTitleZh: "发光地图", chapterTitleEn: "Chapter 1" }} presentation={presentation} />);
     expect(screen.getByText("Chapter 01")).toBeInTheDocument();
     expect(screen.queryByText("Chapter 1", { exact: true })).not.toBeInTheDocument();
   });
@@ -99,7 +99,7 @@ describe("CoursePreviewWorkspace", () => {
           { type: "text", text: "She" },
           { type: "exercise", id: "q1", number: 1, exerciseType: "wordForm", answer: "went", knowledgePointId: "past", knowledgePointLabel: "一般过去时", spaceBefore: true, hint: "go" },
           { type: "text", text: " home and found a " },
-          { type: "exercise", id: "q2", number: 2, exerciseType: "vocabulary", answer: "clue", knowledgePointId: null, knowledgePointLabel: "词汇", spaceBefore: false, hint: "线索" },
+          { type: "exercise", id: "q2", number: 2, exerciseType: "vocabulary", answer: "clue", knowledgePointId: null, knowledgePointLabel: "词汇", spaceBefore: false, hint: "线索", meaningZh: "线索" },
           { type: "text", text: "." },
         ], textBox: { opacity: 0.85, fontSize: 1 } },
       ],

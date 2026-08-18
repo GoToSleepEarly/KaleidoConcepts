@@ -2,11 +2,12 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, BookOpenText, Check, ChevronRight, Clock3, Loader2, Minus, PencilLine, Plus, RotateCcw, Search, X } from "lucide-react";
+import { ArrowLeft, BookOpenText, Check, ChevronRight, Clock3, Loader2, Minus, PencilLine, Plus, RotateCcw, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
+import { KnowledgePointPickerDialog } from "@/features/courses/components/knowledge-point-picker-dialog";
 import type {
   GrammarExerciseType,
   GrammarPracticeConfig,
@@ -15,8 +16,9 @@ import type {
   TeachingPlanChapter,
   TeachingPlanState,
 } from "@/lib/contracts/api";
-import { grammarExerciseTotal, minimumReadingParagraphCount, practicePageCount, readingExerciseTotal, readingPageCount } from "@/lib/domain/teaching-plan-policy";
+import { grammarExerciseTotal, MAX_CHAPTER_TARGET_WORD_COUNT, MIN_CHAPTER_TARGET_WORD_COUNT, minimumReadingParagraphCount, practicePageCount, readingExerciseTotal, readingPageCount } from "@/lib/domain/teaching-plan-policy";
 import { cn } from "@/lib/utils";
+import { readJsonResponse } from "@/lib/utils/response-json";
 
 const grammarLabels: Record<GrammarExerciseType, string> = { optionCloze: "选项填空", wordForm: "给词变形" };
 const grammarExamples: Record<GrammarExerciseType, string> = {
@@ -51,8 +53,8 @@ function hasValidExercisePlan(plan: TeachingPlan) {
   });
   if (!chaptersValid) return false;
   if (!plan.afterClassPractice.enabled) return true;
-  return plan.afterClassPractice.practice.enabled
-    && grammarExerciseTotal(plan.afterClassPractice.practice.grammar) >= Math.max(1, plan.afterClassPractice.knowledgePointIds.length);
+  if (!plan.afterClassPractice.practice.enabled) return plan.afterClassPractice.vocabularyReviewEnabled;
+  return grammarExerciseTotal(plan.afterClassPractice.practice.grammar) >= Math.max(1, plan.afterClassPractice.knowledgePointIds.length);
 }
 
 function sameIdSet(left: string[], right: string[]) {
@@ -65,13 +67,19 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
   const [activePanel, setActivePanel] = useState<ActivePanel>("chapters");
   const [selectedChapterIndex, setSelectedChapterIndex] = useState(0);
   const [confirming, setConfirming] = useState(false);
+  const [downstreamConfirmOpen, setDownstreamConfirmOpen] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [affectedResources, setAffectedResources] = useState<string[]>([]);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [error, setError] = useState("");
   const hasMounted = useRef(false);
   const saveController = useRef<AbortController | null>(null);
+  const saveInFlight = useRef<Promise<boolean> | null>(null);
   const selectedChapter = plan.chapters[selectedChapterIndex];
   const selectedOutlineChapter = initialState.outline.chapters[selectedChapterIndex];
   const readyChapterCount = plan.chapters.filter(chapterReady).length;
+  const courseKnowledgePointCount = unionKnowledgePointIds(plan.chapters).length;
   const exercisePlanValid = hasValidExercisePlan(plan);
   const confirmHint = plan.englishLevel
     ? `章节 ${readyChapterCount}/${plan.chapters.length} · ${plan.afterClassPractice.enabled ? "课后练习已开启" : "课后练习不生成"}`
@@ -81,11 +89,15 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
     const union = new Set(unionKnowledgePointIds(plan.chapters));
     return plan.afterClassPractice.knowledgePointIds.some((id) => !union.has(id));
   }, [plan.afterClassPractice.knowledgePointIds, plan.afterClassPractice.touched.knowledgePointIds, plan.chapters]);
+  const unrecommendedSelectedKnowledgePointIds = useMemo(() => {
+    const recommended = new Set(initialState.outline.chapters.flatMap((chapter) => chapter.recommendedKnowledgePointIds));
+    return (initialState.course.knowledgePointIds ?? []).filter((id) => !recommended.has(id));
+  }, [initialState.course.knowledgePointIds, initialState.outline.chapters]);
 
   function updatePlan(updater: (current: TeachingPlan) => TeachingPlan) {
     setError("");
     setSaveStatus("dirty");
-    setPlan(updater);
+    setPlan((current) => ({ ...updater(current), status: "draft", confirmedAt: null }));
   }
 
   function updateChapter(index: number, updater: (chapter: TeachingPlanChapter) => TeachingPlanChapter) {
@@ -148,30 +160,34 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
     });
   }
 
-  const saveDraft = useCallback(async (targetPlan: TeachingPlan) => {
+  const saveDraft = useCallback((targetPlan: TeachingPlan) => {
     saveController.current?.abort();
     const controller = new AbortController();
     saveController.current = controller;
     setSaveStatus("saving");
     setError("");
-    try {
-      const response = await fetch(`/api/courses/${initialState.course.id}/teaching-plan`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: targetPlan }),
-        signal: controller.signal,
-      });
-      const data = (await response.json()) as { plan?: TeachingPlan; message?: string };
-      if (!response.ok || !data.plan) throw new Error(data.message || "保存失败，请重试。");
-      setPlan(data.plan);
-      setSaveStatus("saved");
-      return true;
-    } catch (caught) {
-      if (caught instanceof DOMException && caught.name === "AbortError") return false;
-      setSaveStatus("failed");
-      setError(caught instanceof Error ? caught.message : "保存失败，请重试。");
-      return false;
-    }
+    const operation = (async () => {
+      try {
+        const response = await fetch(`/api/courses/${initialState.course.id}/teaching-plan`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ plan: targetPlan }),
+          signal: controller.signal,
+        });
+        const data = await readJsonResponse<{ plan?: TeachingPlan; message?: string }>(response);
+        if (!response.ok || !data.plan) throw new Error(data.message || "保存失败，请重试。");
+        setPlan(data.plan);
+        setSaveStatus("saved");
+        return true;
+      } catch (caught) {
+        if (caught instanceof DOMException && caught.name === "AbortError") return false;
+        setSaveStatus("failed");
+        setError(caught instanceof Error ? caught.message : "保存失败，请重试。");
+        return false;
+      }
+    })();
+    saveInFlight.current = operation;
+    return operation;
   }, [initialState.course.id]);
 
   useEffect(() => {
@@ -195,7 +211,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
     router.push(href);
   }
 
-  async function confirmPlan(resetDownstream = false) {
+  async function confirmPlan(downstreamAction: "check" | "preserve" | "clear" = "check") {
     if (!exercisePlanValid) {
       setActivePanel("chapters");
       setError("");
@@ -204,17 +220,17 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
     setConfirming(true);
     setError("");
     try {
-      if (saveStatus === "dirty" && !(await saveDraft(plan))) return;
+      if (saveStatus === "saving" && saveInFlight.current) await saveInFlight.current;
+      if (saveStatus !== "saved" && !(await saveDraft(plan))) return;
       const response = await fetch(`/api/courses/${initialState.course.id}/teaching-plan/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resetDownstream }),
+        body: JSON.stringify({ downstreamAction }),
       });
-      const data = (await response.json()) as { plan?: TeachingPlan; course?: { id: string; currentStage: string }; message?: string; requiresReset?: boolean };
+      const data = await readJsonResponse<{ plan?: TeachingPlan; course?: { id: string; currentStage: string }; message?: string; requiresReset?: boolean; affectedResources?: string[] }>(response);
       if (response.status === 409 && data.requiresReset) {
-        const confirmed = window.confirm("确认后会重置已生成的文案、练习和视觉资源。");
-        if (!confirmed) return;
-        await confirmPlan(true);
+        setAffectedResources(data.affectedResources ?? ["文案与练习", "视觉资源和图片", "预览发布设置"]);
+        setDownstreamConfirmOpen(true);
         return;
       }
       if (!response.ok || !data.course) throw new Error(data.message || "教学规划确认失败");
@@ -226,19 +242,49 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
     }
   }
 
+  function advanceToContent() {
+    if (plan.status === "confirmed" && saveStatus === "saved") {
+      router.push(`/courses/${initialState.course.id}/create/content`);
+      return;
+    }
+    void confirmPlan();
+  }
+
+  async function resetPlan() {
+    saveController.current?.abort();
+    setResetting(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/courses/${initialState.course.id}/teaching-plan/reset`, { method: "POST" });
+      const data = await readJsonResponse<{ plan?: TeachingPlan; message?: string }>(response);
+      if (!response.ok || !data.plan) throw new Error(data.message || "教学规划重置失败，请重试。");
+      setPlan(data.plan);
+      setSelectedChapterIndex(0);
+      setActivePanel("chapters");
+      setSaveStatus("saved");
+      setResetConfirmOpen(false);
+    } catch (caught) {
+      setSaveStatus("failed");
+      setError(caught instanceof Error ? caught.message : "教学规划重置失败，请重试。");
+    } finally {
+      setResetting(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <CourseCreateSteps currentStep={3} courseId={initialState.course.id} furthestStep={courseStageStep(initialState.course.currentStage)} onNavigate={(href) => void navigate(href)} />
+      <CourseCreateSteps currentStep={3} courseId={initialState.course.id} furthestStep={plan.status === "confirmed" ? courseStageStep(initialState.course.currentStage) : 3} onNavigate={(href) => void navigate(href)} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <p className="text-sm font-medium text-muted-foreground">教学规划</p>
           <h2 className="mt-1 truncate text-2xl font-semibold text-foreground">{initialState.outline.title}</h2>
         </div>
-        <div className="flex flex-wrap items-center gap-3 text-sm">
+        <div className="flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap text-sm">
+          <Button disabled={confirming || resetting || saveStatus === "saving"} onClick={() => setResetConfirmOpen(true)} size="sm" type="button" variant="outline"><RotateCcw className="size-4" />重置教学规划</Button>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 font-medium text-muted-foreground"><Clock3 className="size-4" />{initialState.course.durationMinutes} 分钟</span>
           <span className="rounded-full bg-primary-50 px-3 py-1.5 text-sm font-semibold text-primary-700">{initialState.course.englishLevel}</span>
-          <span className="rounded-full bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">全课 {initialState.knowledgePoints.length} 个知识点</span>
-          <span className={cn("rounded-full px-3 py-1.5 text-xs font-medium", saveStatus === "failed" ? "bg-red-50 text-red-700" : !exercisePlanValid ? "bg-amber-50 text-amber-800" : saveStatus === "saving" ? "bg-primary-50 text-primary-700" : "bg-muted text-muted-foreground")}>{saveStatusLabel(saveStatus, !exercisePlanValid)}</span>
+          <span className="rounded-full bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">全课 {courseKnowledgePointCount} 个知识点</span>
+          <span className={cn("shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium", saveStatus === "failed" ? "bg-red-50 text-red-700" : !exercisePlanValid ? "bg-amber-50 text-amber-800" : saveStatus === "saving" ? "bg-primary-50 text-primary-700" : "bg-muted text-muted-foreground")}>{saveStatusLabel(saveStatus, !exercisePlanValid)}</span>
         </div>
       </div>
 
@@ -256,7 +302,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
                 active={activePanel === "afterClass"}
                 label="课后"
                 onClick={() => setActivePanel("afterClass")}
-                summary={`课后阅读 ${plan.mainIdeaTargetWordCount ?? 120} 词 · ${plan.afterClassPractice.enabled ? `${grammarExerciseTotal(plan.afterClassPractice.practice.grammar)} 道练习` : "无课后练习"}`}
+                summary={`课后阅读 ${plan.mainIdeaTargetWordCount ?? 120} 词 · ${plan.afterClassPractice.enabled ? plan.afterClassPractice.practice.enabled ? `${grammarExerciseTotal(plan.afterClassPractice.practice.grammar)} 道语法题${plan.afterClassPractice.vocabularyReviewEnabled ? " + 词汇复习" : ""}` : "仅词汇复习" : "无课后练习"}`}
               />
             </div>
           </section>
@@ -294,6 +340,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
               chapter={selectedChapter}
               index={selectedChapterIndex}
               knowledgePoints={initialState.knowledgePoints}
+              unrecommendedSelectedKnowledgePointIds={unrecommendedSelectedKnowledgePointIds}
               onApplyChapterPracticeToAll={applyCurrentChapterPracticeToAll}
               onApplyReadingToAll={applyCurrentChapterReadingToAll}
               onChange={(updater) => updateChapter(selectedChapterIndex, updater)}
@@ -319,18 +366,38 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
         </main>
       </div>
 
-      {error ? <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div> : null}
-
       <div className="sticky bottom-4 flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-md sm:px-5">
         <div className="min-w-0">
           <p className="text-sm font-medium text-foreground">{confirmHint}</p>
-          <p className={cn("mt-0.5 text-xs", saveStatus === "failed" ? "text-red-700" : !exercisePlanValid ? "text-amber-700" : "text-muted-foreground")}>{saveStatusLabel(saveStatus, !exercisePlanValid)}</p>
+          {error ? <p className="mt-0.5 text-xs text-red-700" role="alert">{error}</p> : <p className={cn("mt-0.5 text-xs", saveStatus === "failed" ? "text-red-700" : !exercisePlanValid ? "text-amber-700" : "text-muted-foreground")}>{saveStatusLabel(saveStatus, !exercisePlanValid)}</p>}
         </div>
         <div className="flex gap-2">
           <Button disabled={confirming || saveStatus === "saving"} onClick={() => void navigate(`/courses/${initialState.course.id}/create/story-outline`)} type="button" variant="outline"><ArrowLeft className="size-4" />上一步</Button>
-          <Button disabled={confirming || saveStatus === "saving" || !exercisePlanValid} onClick={() => void confirmPlan(false)} type="button">{confirming ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}{confirming ? "确认中" : "确认并进入文案与练习"}</Button>
+          <Button disabled={confirming || !exercisePlanValid} onClick={advanceToContent} type="button">{confirming ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}{confirming ? "确认中" : plan.status === "confirmed" ? "进入文案与练习" : "确认并进入文案与练习"}</Button>
         </div>
       </div>
+      <Dialog description="将放弃本阶段的手动调整" onClose={() => setResetConfirmOpen(false)} open={resetConfirmOpen} title="重置教学规划？">
+        <div className="space-y-5 p-5 sm:p-6">
+          <p className="text-sm leading-6 text-muted-foreground">将根据当前故事大纲和 AI 推荐重新创建教学规划草稿。Step 3 中手动修改的词数、知识点和练习设置会被清除，后续已有内容暂时保留。</p>
+          <div className="flex justify-end gap-2">
+            <Button disabled={resetting} onClick={() => setResetConfirmOpen(false)} type="button" variant="outline">取消</Button>
+            <Button disabled={resetting} onClick={() => void resetPlan()} type="button" variant="destructive">{resetting ? <Loader2 className="size-4 animate-spin" /> : null}确认重置</Button>
+          </div>
+        </div>
+      </Dialog>
+      <Dialog description="后续已有内容可能不再适配新的教学规划" onClose={() => setDownstreamConfirmOpen(false)} open={downstreamConfirmOpen} title="当前配置已变更">
+        <div className="space-y-5 p-5 sm:p-6">
+          <div className="space-y-2 text-sm leading-6 text-muted-foreground">
+            <p>检测到后续流程中已有以下内容：</p>
+            <ul className="list-disc pl-5 text-foreground">{affectedResources.map((item) => <li key={item}>{item}</li>)}</ul>
+            <p>两种选择都会应用当前教学规划。保留后可以继续使用已有内容，但它们可能与新配置不一致；清空后可按新配置重新生成。</p>
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button disabled={confirming} onClick={() => { setDownstreamConfirmOpen(false); void confirmPlan("preserve"); }} type="button" variant="outline">保留后续内容并继续</Button>
+            <Button disabled={confirming} onClick={() => { setDownstreamConfirmOpen(false); void confirmPlan("clear"); }} type="button" variant="destructive">清空后续内容并继续</Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
@@ -353,11 +420,12 @@ function PanelTab({ active, label, summary, onClick }: { active: boolean; label:
   );
 }
 
-function ChapterEditor({ chapter, outline, index, knowledgePoints, onApplyReadingToAll, onApplyChapterPracticeToAll, onChange }: {
+function ChapterEditor({ chapter, outline, index, knowledgePoints, unrecommendedSelectedKnowledgePointIds, onApplyReadingToAll, onApplyChapterPracticeToAll, onChange }: {
   chapter: TeachingPlanChapter;
   outline: TeachingPlanState["outline"]["chapters"][number];
   index: number;
   knowledgePoints: TeachingPlanState["knowledgePoints"];
+  unrecommendedSelectedKnowledgePointIds: string[];
   onApplyReadingToAll: () => void;
   onApplyChapterPracticeToAll: () => void;
   onChange: (updater: (chapter: TeachingPlanChapter) => TeachingPlanChapter) => void;
@@ -379,7 +447,7 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, onApplyReadin
               <label className="rounded-md border border-input bg-background px-3 py-2">
                 <span className="block text-xs font-medium text-muted-foreground">目标词数</span>
                 <span className="mt-1 flex items-center gap-2">
-                  <input aria-label={`${chapterLabel}目标词数`} className="h-9 w-20 rounded-md border border-input bg-card px-2 text-center text-sm font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" max={200} min={50} onChange={(event) => onChange((current) => { const targetWordCount = Number(event.target.value); return { ...current, targetWordCount, paragraphCount: minimumReadingParagraphCount(targetWordCount, current.readingExercises), touched: { ...current.touched, targetWordCount: true } }; })} type="number" value={chapter.targetWordCount ?? ""} />
+                  <input aria-label={`${chapterLabel}目标词数`} className="h-9 w-20 rounded-md border border-input bg-card px-2 text-center text-sm font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" max={MAX_CHAPTER_TARGET_WORD_COUNT} min={MIN_CHAPTER_TARGET_WORD_COUNT} onChange={(event) => onChange((current) => { const targetWordCount = Number(event.target.value); return { ...current, targetWordCount, paragraphCount: minimumReadingParagraphCount(targetWordCount, current.readingExercises), touched: { ...current.touched, targetWordCount: true } }; })} type="number" value={chapter.targetWordCount ?? ""} />
                   <span className="text-sm text-muted-foreground">词</span>
                 </span>
               </label>
@@ -423,14 +491,17 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, onApplyReadin
             {chapter.knowledgePointIds.length > 3 ? <p className="mt-2 text-sm text-amber-700">建议一章不超过 3 个知识点。</p> : null}
           </div>
           {pickerOpen ? (
-            <GrammarLibraryPicker
+            <KnowledgePointPickerDialog
+              description="按类别选择本章教学目标；可使用完整语法库，不受 Step 1 预选范围限制。"
+              highlightedIds={unrecommendedSelectedKnowledgePointIds}
               knowledgePoints={knowledgePoints}
-              onApply={(ids) => {
+              onConfirm={(ids) => {
                 onChange((current) => ({ ...current, knowledgePointIds: ids, touched: { ...current.touched, knowledgePointIds: !sameIdSet(ids, recommendedIds) } }));
                 setPickerOpen(false);
               }}
               onClose={() => setPickerOpen(false)}
               selectedIds={chapter.knowledgePointIds}
+              title="选择本章知识点"
             />
           ) : null}
         </div>
@@ -508,65 +579,6 @@ function ReadingModeOption({ checked, title, description, answerState, name, val
   );
 }
 
-function GrammarLibraryPicker({ knowledgePoints, selectedIds, onApply, onClose }: { knowledgePoints: TeachingPlanState["knowledgePoints"]; selectedIds: string[]; onApply: (ids: string[]) => void; onClose: () => void }) {
-  const [query, setQuery] = useState("");
-  const [localIds, setLocalIds] = useState(selectedIds);
-  const categories = useMemo(() => [...new Set(knowledgePoints.map((point) => point.category || "未分类"))], [knowledgePoints]);
-  const [activeCategory, setActiveCategory] = useState("全部");
-  const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
-  const filtered = knowledgePoints.filter((point) => {
-    const category = point.category || "未分类";
-    const categoryMatches = Boolean(normalizedQuery) || activeCategory === "全部" || category === activeCategory;
-    return categoryMatches && `${point.labelZh ?? ""} ${point.label} ${category}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery);
-  });
-  return (
-    <Dialog description="支持按中文名称、英文名称或分类查找。" onClose={onClose} open title="语法库">
-      <div className="flex max-h-[72dvh] min-h-[520px] flex-col">
-        <div className="border-b border-border p-4">
-          <div aria-label="语法分类" className="mt-3 flex gap-1 overflow-x-auto rounded-md bg-muted p-1" role="tablist">
-            {["全部", ...categories].map((category) => (
-              <button
-                aria-selected={activeCategory === category}
-                className={cn("min-h-9 shrink-0 rounded px-3 text-sm font-medium transition-colors", activeCategory === category ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70 hover:text-foreground")}
-                key={category}
-                onClick={() => { setActiveCategory(category); setQuery(""); }}
-                role="tab"
-                type="button"
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-          <label className="relative mt-3 block">
-            <Search aria-hidden className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <span className="sr-only">搜索语法点</span>
-            <input aria-label="搜索语法点" autoFocus className="min-h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" onChange={(event) => setQuery(event.target.value)} placeholder="搜索中文名、英文名或分类" role="searchbox" value={query} />
-          </label>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          {filtered.map((point) => (
-            <label className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 hover:bg-muted/50" key={point.id}>
-              <input aria-label={`选择语法点 ${point.label}`} checked={localIds.includes(point.id)} onChange={() => setLocalIds((current) => current.includes(point.id) ? current.filter((id) => id !== point.id) : [...current, point.id])} type="checkbox" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-foreground">{point.labelZh ?? point.label}</span>
-                <span className="text-xs text-muted-foreground">{point.labelZh ? `${point.label} · ` : ""}{point.category}</span>
-              </span>
-            </label>
-          ))}
-          {!filtered.length ? <p className="p-6 text-center text-sm text-muted-foreground">没有匹配的语法点</p> : null}
-        </div>
-        <div className="flex items-center justify-between border-t border-border p-4">
-          <span className="text-sm text-muted-foreground">已选择 {localIds.length} 个</span>
-          <div className="flex gap-2">
-            <Button onClick={onClose} type="button" variant="outline">取消</Button>
-            <Button onClick={() => onApply(localIds)} type="button">应用选择</Button>
-          </div>
-        </div>
-      </div>
-    </Dialog>
-  );
-}
-
 function knowledgePointName(point: TeachingPlanState["knowledgePoints"][number]) {
   return point.labelZh ? `${point.labelZh} · ${point.label}` : point.label;
 }
@@ -576,8 +588,8 @@ function ToggleHeader({ enabled, label, onChange }: { enabled: boolean; label: s
     <div className="flex items-center gap-3">
       <h4 className="text-sm font-semibold text-foreground">{label}</h4>
       <button aria-label={`${label}${enabled ? "已开启" : "已关闭"}`} aria-pressed={enabled} className={cn("inline-flex min-h-9 items-center gap-2 rounded-full border px-2.5 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", enabled ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:border-primary-300 hover:text-foreground")} onClick={() => onChange(!enabled)} type="button">
-        <span aria-hidden="true" className={cn("relative h-5 w-9 rounded-full transition-colors", enabled ? "bg-white/30" : "bg-muted")}><span className={cn("absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform", enabled ? "translate-x-[18px]" : "translate-x-0.5")} /></span>
-        {enabled ? "已开启" : "已关闭"}
+        <span aria-hidden="true" className={cn("relative h-5 w-9 rounded-full transition-colors", enabled ? "bg-white/30" : "bg-muted")}><span className={cn("absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform", enabled ? "translate-x-4" : "translate-x-0")} /></span>
+        <span className="min-w-12 text-center">{enabled ? "已开启" : "已关闭"}</span>
       </button>
     </div>
   );
@@ -680,30 +692,36 @@ function AfterClassEditor({ plan, knowledgePoints, knowledgePointIds, afterClass
       </div>
       {!decisionMade ? <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">请选择是否生成课后练习</p> : null}
       <div className="mt-4 grid grid-cols-2 gap-2 rounded-lg bg-muted p-1">
-        <button aria-pressed={decisionMade && plan.afterClassPractice.enabled} className={cn("min-h-11 rounded-md text-sm font-semibold transition-colors", decisionMade && plan.afterClassPractice.enabled ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-card hover:text-foreground")} onClick={() => onChange((current) => ({ ...current, enabled: true, knowledgePointIds: !current.knowledgePointIds.length || !current.touched.knowledgePointIds ? knowledgePointIds : current.knowledgePointIds, practice: { enabled: true, grammar: grammarExerciseTotal(current.practice.grammar) ? current.practice.grammar : { optionCloze: 5, wordForm: 5 } }, touched: { ...current.touched, practice: true } }))} type="button">生成课后练习</button>
-        <button aria-pressed={decisionMade && !plan.afterClassPractice.enabled} className={cn("min-h-11 rounded-md text-sm font-semibold transition-colors", decisionMade && !plan.afterClassPractice.enabled ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:bg-card hover:text-foreground")} onClick={() => onChange((current) => ({ ...current, enabled: false, practice: { ...current.practice, enabled: false }, touched: { ...current.touched, practice: true } }))} type="button">不生成课后练习</button>
+        <button aria-pressed={decisionMade && plan.afterClassPractice.enabled} className={cn("min-h-11 rounded-md text-sm font-semibold transition-colors", decisionMade && plan.afterClassPractice.enabled ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-card hover:text-foreground")} onClick={() => onChange((current) => ({ ...current, enabled: true, vocabularyReviewEnabled: includesVocabularyReview, knowledgePointIds: !current.knowledgePointIds.length || !current.touched.knowledgePointIds ? knowledgePointIds : current.knowledgePointIds, practice: { enabled: true, grammar: grammarExerciseTotal(current.practice.grammar) ? current.practice.grammar : { optionCloze: 5, wordForm: 5 } }, touched: { ...current.touched, practice: true } }))} type="button">生成课后练习</button>
+        <button aria-pressed={decisionMade && !plan.afterClassPractice.enabled} className={cn("min-h-11 rounded-md text-sm font-semibold transition-colors", decisionMade && !plan.afterClassPractice.enabled ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:bg-card hover:text-foreground")} onClick={() => onChange((current) => ({ ...current, enabled: false, vocabularyReviewEnabled: false, practice: { ...current.practice, enabled: false }, touched: { ...current.touched, practice: true } }))} type="button">不生成课后练习</button>
       </div>
       {afterClassNeedsReview ? <p className="mt-3 text-sm text-amber-700">课后练习知识点可能需要检查。</p> : null}
       {decisionMade && plan.afterClassPractice.enabled ? (
         <>
-          <div className="mt-5 text-sm font-medium text-foreground">课后考查知识点</div>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">已默认选中各章节使用的知识点；取消勾选即可排除不需要考查的内容。</p>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {availablePoints.map((point) => (
-              <label className={cn("flex min-h-11 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors", plan.afterClassPractice.knowledgePointIds.includes(point.id) ? "border-primary bg-primary-50 text-primary-700" : "border-border bg-background text-muted-foreground hover:border-primary-200 hover:text-foreground")} key={point.id}>
-                <input checked={plan.afterClassPractice.knowledgePointIds.includes(point.id)} className="sr-only" onChange={() => onChange((current) => ({ ...current, knowledgePointIds: current.knowledgePointIds.includes(point.id) ? current.knowledgePointIds.filter((id) => id !== point.id) : [...current.knowledgePointIds, point.id], touched: { ...current.touched, knowledgePointIds: true } }))} type="checkbox" />
-                <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded border", plan.afterClassPractice.knowledgePointIds.includes(point.id) ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card")}>{plan.afterClassPractice.knowledgePointIds.includes(point.id) ? <Check className="size-3.5" /> : null}</span>
-                <span className="min-w-0 flex-1 font-medium">{knowledgePointName(point)}</span>
-              </label>
-            ))}
-          </div>
-          {includesVocabularyReview ? (
-            <div className="mt-5 rounded-md border border-primary-200 bg-primary-50/50 p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-foreground"><Check className="size-4 text-primary" />词汇复习 · 中英配对</div>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">自动使用正文整理出的词汇词组，去重后生成固定配对练习，无需设置题量。</p>
+          <div className="mt-5 space-y-3">
+            <div className={cn("rounded-md border p-4", plan.afterClassPractice.vocabularyReviewEnabled ? "border-primary-200 bg-primary-50/50" : "border-border bg-background")}>
+              <ToggleHeader enabled={plan.afterClassPractice.vocabularyReviewEnabled} label="词汇复习" onChange={(vocabularyReviewEnabled) => onChange((current) => ({ ...current, enabled: vocabularyReviewEnabled || current.practice.enabled, vocabularyReviewEnabled, touched: { ...current.touched, practice: true } }))} />
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">从各章节正文的词汇习题自动汇总并去重，生成中英配对复习；不与语法知识点联动，也无需设置题量。</p>
             </div>
-          ) : null}
-          <GrammarPracticeEditor ariaPrefix="课后练习" config={plan.afterClassPractice.practice} max={20} onChange={(practice) => onChange((current) => ({ ...current, practice, touched: { ...current.touched, practice: true } }))} />
+            <div className={cn("rounded-md border p-4", plan.afterClassPractice.practice.enabled ? "border-primary-200 bg-primary-50/50" : "border-border bg-background")}>
+              <ToggleHeader enabled={plan.afterClassPractice.practice.enabled} label="语法习题" onChange={(enabled) => onChange((current) => ({ ...current, enabled: current.vocabularyReviewEnabled || enabled, practice: { ...current.practice, enabled }, touched: { ...current.touched, practice: true } }))} />
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">仅本模块与下方语法知识点联动，按所选知识点生成选项填空或给词填空。</p>
+              {plan.afterClassPractice.practice.enabled ? <>
+                <div className="mt-5 border-t border-primary-100 pt-4 text-sm font-medium text-foreground">课后考查知识点</div>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">已默认选中各章节使用的知识点；取消勾选即可排除不需要考查的内容。</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {availablePoints.map((point) => (
+                    <label className={cn("flex min-h-11 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors", plan.afterClassPractice.knowledgePointIds.includes(point.id) ? "border-primary bg-primary-50 text-primary-700" : "border-border bg-background text-muted-foreground hover:border-primary-200 hover:text-foreground")} key={point.id}>
+                      <input checked={plan.afterClassPractice.knowledgePointIds.includes(point.id)} className="sr-only" onChange={() => onChange((current) => ({ ...current, knowledgePointIds: current.knowledgePointIds.includes(point.id) ? current.knowledgePointIds.filter((id) => id !== point.id) : [...current.knowledgePointIds, point.id], touched: { ...current.touched, knowledgePointIds: true } }))} type="checkbox" />
+                      <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded border", plan.afterClassPractice.knowledgePointIds.includes(point.id) ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card")}>{plan.afterClassPractice.knowledgePointIds.includes(point.id) ? <Check className="size-3.5" /> : null}</span>
+                      <span className="min-w-0 flex-1 font-medium">{knowledgePointName(point)}</span>
+                    </label>
+                  ))}
+                </div>
+                <GrammarPracticeEditor ariaPrefix="课后练习" config={plan.afterClassPractice.practice} max={20} onChange={(practice) => onChange((current) => ({ ...current, enabled: current.vocabularyReviewEnabled || practice.enabled, practice, touched: { ...current.touched, practice: true } }))} />
+              </> : null}
+            </div>
+          </div>
         </>
       ) : null}
     </section>

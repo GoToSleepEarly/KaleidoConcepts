@@ -69,7 +69,7 @@ describe("compilePreviewPages", () => {
         { type: "text" },
         { type: "exercise", exerciseType: "wordForm", knowledgePointLabel: "一般过去时", hint: "find" },
         { type: "text" },
-        { type: "exercise", exerciseType: "vocabulary", knowledgePointLabel: "词汇", hint: "线索" },
+        { type: "exercise", exerciseType: "vocabulary", knowledgePointLabel: "词汇", hint: "线索，4个字母", meaningZh: "线索" },
         { type: "text" },
       ],
     });

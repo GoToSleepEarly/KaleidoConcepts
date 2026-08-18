@@ -3,14 +3,10 @@ import path from "node:path";
 
 import sharp from "sharp";
 
+import { createStorageKey, resolveStorageDirectory, resolveStorageKey } from "./storage-path";
+
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maxUploadBytes = 10 * 1024 * 1024;
-
-function storageRoot() {
-  const root = process.env.STORAGE_DIR;
-  if (!root) throw new Error("STORAGE_DIR is required");
-  return root;
-}
 
 function decodeDataUrl(value: string) {
   const marker = ";base64,";
@@ -31,9 +27,10 @@ export async function prepareCourseCharacterReference(courseId: string, assetId:
   if (file.size <= 0 || file.size > maxUploadBytes) throw new Error("图片大小必须在 10 MB 以内");
   const buffer = Buffer.from(await file.arrayBuffer());
   const prepared = await sharp(buffer).rotate().resize(1024, 1536, { fit: "inside", withoutEnlargement: true }).webp({ quality: 88 }).toBuffer();
-  const temporarySourcePath = path.join(storageRoot(), "course-images", "tmp", courseId, `${assetId}.webp`);
-  await mkdir(path.dirname(temporarySourcePath), { recursive: true });
-  await writeFile(temporarySourcePath, prepared);
+  const temporarySourcePath = createStorageKey("course-images", "tmp", courseId, `${assetId}.webp`);
+  const absolutePath = resolveStorageKey(temporarySourcePath);
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  await writeFile(absolutePath, prepared);
   return { temporarySourcePath, sourceDataUrl: `data:image/webp;base64,${prepared.toString("base64")}` };
 }
 
@@ -44,9 +41,10 @@ export async function persistCourseImage(input: { sourceUrl: string; courseId: s
   const encoded = await sharp(buffer).rotate().resize(width, height, input.portrait
     ? { fit: "contain", background: { r: 248, g: 250, b: 252, alpha: 1 } }
     : { fit: "cover", position: "attention" }).webp({ quality: 86 }).toBuffer();
-  const storagePath = path.join(storageRoot(), "course-images", input.courseId, `${input.assetId}.webp`);
-  await mkdir(path.dirname(storagePath), { recursive: true });
-  await writeFile(storagePath, encoded);
+  const storagePath = createStorageKey("course-images", input.courseId, `${input.assetId}.webp`);
+  const absolutePath = resolveStorageKey(storagePath);
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  await writeFile(absolutePath, encoded);
   return { storagePath, publicUrl: `/api/course-images/${input.courseId}/${input.assetId}.webp` };
 }
 
@@ -59,7 +57,7 @@ export async function composeCourseImageReferences(storagePaths: string[]) {
   const width = Math.floor(canvasWidth / columns);
   const height = Math.floor(canvasHeight / rows);
   const cells = await Promise.all(storagePaths.map(async (storagePath, index) => ({
-    input: await sharp(await readFile(storagePath)).resize(width, height, { fit: "contain", background: "#f8fafc" }).webp().toBuffer(),
+    input: await sharp(await readFile(resolveStorageKey(storagePath))).resize(width, height, { fit: "contain", background: "#f8fafc" }).webp().toBuffer(),
     left: (index % columns) * width,
     top: Math.floor(index / columns) * height,
   })));
@@ -68,10 +66,24 @@ export async function composeCourseImageReferences(storagePaths: string[]) {
 }
 
 export async function removeTemporaryCourseImage(storagePath: string) {
-  await rm(storagePath, { force: true });
+  await rm(resolveStorageKey(storagePath), { force: true });
+}
+
+export async function removeCourseImageFiles(courseId: string) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(courseId)) throw new Error("课程图片目录无效");
+  const root = resolveStorageDirectory("course-images");
+  const imageDirectory = resolveStorageDirectory("course-images", courseId);
+  const temporaryDirectory = resolveStorageDirectory("course-images", "tmp", courseId);
+  if (!imageDirectory.startsWith(`${root}${path.sep}`) || !temporaryDirectory.startsWith(`${root}${path.sep}`)) {
+    throw new Error("课程图片目录超出存储范围");
+  }
+  await Promise.all([
+    rm(imageDirectory, { force: true, recursive: true }),
+    rm(temporaryDirectory, { force: true, recursive: true }),
+  ]);
 }
 
 export function resolveCourseImageFile(courseId: string, assetFile: string) {
   if (!/^[a-zA-Z0-9_-]+$/.test(courseId) || !/^[a-zA-Z0-9_-]+\.webp$/.test(assetFile)) return null;
-  return path.join(storageRoot(), "course-images", courseId, assetFile);
+  return resolveStorageDirectory("course-images", courseId, assetFile);
 }

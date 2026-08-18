@@ -50,11 +50,11 @@ describe("视觉资源领域规则", () => {
     expect(matchCoursePersonForCharacter({ sourcePersonId: "teacher-1", displayName: "其他名字" }, people)?.personId).toBe("teacher-1");
   });
 
-  test("批量生成不会重复生成尚未采用的成功版本", () => {
+  test("批量生成跳过进行中和当前采用版本，但会补齐形象修改后失效的空槽", () => {
     expect(needsInitialVisualGeneration({ activeAssetId: null, versions: [] })).toBe(true);
     expect(needsInitialVisualGeneration({ activeAssetId: null, versions: [{ status: "submitting" }] })).toBe(false);
     expect(needsInitialVisualGeneration({ activeAssetId: null, versions: [{ status: "generating" }] })).toBe(false);
-    expect(needsInitialVisualGeneration({ activeAssetId: null, versions: [{ status: "succeeded" }] })).toBe(false);
+    expect(needsInitialVisualGeneration({ activeAssetId: null, versions: [{ status: "succeeded" }] })).toBe(true);
     expect(needsInitialVisualGeneration({ activeAssetId: "asset-1", versions: [{ status: "succeeded" }] })).toBe(false);
     expect(hasInFlightVisualVersion([{ status: "failed" }, { status: "submitting" }])).toBe(true);
   });

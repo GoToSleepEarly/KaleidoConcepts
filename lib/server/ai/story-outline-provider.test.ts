@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
+  StoryOutlineIncompleteResponseError,
   StoryOutlineProviderConfigError,
   createStoryOutlineProvider,
 } from "./story-outline-provider";
@@ -26,9 +27,8 @@ function fetchBody(fetchMock: ReturnType<typeof vi.fn>, index = 0) {
 }
 
 describe("createStoryOutlineProvider", () => {
-  test("uses the dedicated text token and ignores the legacy shared token", async () => {
+  test("uses the dedicated text token", async () => {
     process.env.QUICKROUTER_TEXT_API_KEY = "text-key";
-    process.env.QUICKROUTER_API_KEY = "legacy-key";
     const fetchMock = mockTextResponse();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -73,6 +73,37 @@ describe("createStoryOutlineProvider", () => {
     expect(timeoutSpy).toHaveBeenCalledWith(360_000);
   });
 
+  test("returns provider token usage for cost diagnostics", async () => {
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      output_text: "{\"ok\":true}",
+      usage: { input_tokens: 120, output_tokens: 80, total_tokens: 200, output_tokens_details: { reasoning_tokens: 60 } },
+    })));
+
+    const result = await createStoryOutlineProvider().generateOutline({ writingProvider: "quickrouter_gpt", prompt: "生成正文" });
+
+    expect(result.usage).toEqual({ inputTokens: 120, outputTokens: 80, visibleOutputTokens: 20, reasoningTokens: 60, totalTokens: 200 });
+  });
+
+  test("reports an incomplete provider response before downstream JSON parsing", async () => {
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output_text: "{\"visualStyle\":",
+      usage: { input_tokens: 100, output_tokens: 8000, total_tokens: 8100, output_tokens_details: { reasoning_tokens: 6500 } },
+    })));
+
+    const result = createStoryOutlineProvider().generateOutline({
+      writingProvider: "quickrouter_gpt",
+      prompt: "生成视觉方案",
+    });
+    await expect(result).rejects.toBeInstanceOf(StoryOutlineIncompleteResponseError);
+    await expect(result).rejects.toMatchObject({
+      usage: { inputTokens: 100, outputTokens: 8000, visibleOutputTokens: 1500, reasoningTokens: 6500, totalTokens: 8100 },
+    });
+  });
+
   test("uses the configured DeepSeek model for DeepSeek writing", async () => {
     process.env.QUICKROUTER_TEXT_API_KEY = "key";
     process.env.QUICKROUTER_DEEPSEEK_TEXT_MODEL = "deepseek-model";
@@ -106,6 +137,21 @@ describe("createStoryOutlineProvider", () => {
 
     expect(() => createStoryOutlineProvider()).toThrow(StoryOutlineProviderConfigError);
     expect(() => createStoryOutlineProvider()).toThrow("故事大纲服务尚未配置");
+  });
+
+  test("supports a bounded low-reasoning request for structured visual plans", async () => {
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
+    const fetchMock = mockTextResponse();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createStoryOutlineProvider().generateOutline({
+      writingProvider: "quickrouter_gpt",
+      prompt: "生成视觉方案",
+      reasoningEffort: "low",
+      maxOutputTokens: 8_000,
+    });
+
+    expect(fetchBody(fetchMock)).toMatchObject({ reasoning: { effort: "low" }, max_output_tokens: 8_000 });
   });
 
   test("retries once when the connection times out before a request is established", async () => {

@@ -5,13 +5,17 @@ function wordBlank(answer: string) {
 }
 
 function letterPattern(answer: string) {
-  return answer.trim().split(/\s+/).map((word) => word.length).join("+");
+  return answer.trim().split(/\s+/).map((word) => [...word].filter((character) => /[\p{L}\p{N}]/u.test(character)).length).join("+");
+}
+
+export function vocabularyExerciseHint(answer: string, meaningZh: string) {
+  return `${meaningZh}，${letterPattern(answer)}个字母`;
 }
 
 export function renderPart(part: CourseContentPart, interactive: boolean) {
   if (part.type === "text") return part.text;
   if (!interactive) return part.answer;
-  if (part.type === "vocabulary") return `${wordBlank(part.answer)} (${part.meaningZh}，${letterPattern(part.answer)}个字母)`;
+  if (part.type === "vocabulary") return `${wordBlank(part.answer)} (${vocabularyExerciseHint(part.answer, part.meaningZh)})`;
   if (part.exerciseType === "wordForm") return `______ (${part.baseForm ?? part.answer})`;
   return `______ (${(part.options ?? []).join(" / ")})`;
 }
@@ -42,20 +46,11 @@ export function validateParagraphParts(paragraph: CourseContentParagraph) {
     }
     if (part.type === "grammar" && part.exerciseType === "wordForm") {
       if (!part.baseForm) issues.push("给词变形必须包含原形提示");
-      else if (part.answer.trim().toLowerCase() === part.baseForm.trim().toLowerCase()) issues.push("给词变形必须发生真实词形变化");
-      else if (/^(can|could|may|might|must|shall|should|will|would)\b/i.test(part.answer.trim())) issues.push("给词变形不能用情态动词代替词形变化");
     }
     if (part.type === "vocabulary" && /[-’']/.test(part.answer)) issues.push("词汇答案暂不支持连字符或缩写");
     if (part.type !== "text" && !part.answer.trim()) issues.push("题目答案不能为空");
   }
   return [...new Set(issues)];
-}
-
-export function wordFormQuestionIssue(question: CourseGrammarQuestion) {
-  if (question.type !== "wordForm" || !question.baseForm) return null;
-  if (question.answer.trim().toLowerCase() === question.baseForm.trim().toLowerCase()) return "给词变形必须发生真实词形变化";
-  if (/^(can|could|may|might|must|shall|should|will|would)\b/i.test(question.answer.trim())) return "给词变形不能用情态动词代替词形变化";
-  return null;
 }
 
 export function validateGrammarCoverage(knowledgePointIds: string[], questions: Array<CourseGrammarQuestion | Extract<CourseContentPart, { type: "grammar" }>>) {

@@ -225,6 +225,7 @@ model CourseCharacter {
   id                   String                    @id @default(cuid())
   courseId             String
   displayName          String
+  englishName          String
   sourceType           CourseCharacterSourceType
   sourcePersonId       String?
   sourceReferenceId    String?
@@ -296,13 +297,16 @@ model CourseCharacterVisual {
 }
 
 model CourseVisualResourcePlan {
-  id             String   @id @default(cuid())
-  courseId       String   @unique
-  sourceRevision String
-  coverBrief     Json
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  course         Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  id                    String         @id @default(cuid())
+  courseId              String         @unique
+  sourceRevision        String
+  revision              Int            @default(1)
+  mode                  VisualPlanMode @default(faithful)
+  coverBrief            Json
+  confirmedCoverAssetId String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  course                Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
 
 model CourseVisualImageSlot {
@@ -315,6 +319,7 @@ model CourseVisualImageSlot {
   sourceText    String
   characterIds  Json
   focus         String
+  sceneDescription String              @default("")
   prompt        String
   activeImageId String?
   createdAt     DateTime            @default(now())
@@ -339,6 +344,7 @@ model CourseImage {
   quality           CourseImageQuality
   referenceAssetIds Json                     @default("[]")
   sourceHash        String
+  planRevision      Int                      @default(1)
   idempotencyKey    String
   status            CourseImageStatus        @default(pending)
   provider          CourseImageProvider      @default(quickrouter_gpt_image_2)
@@ -348,6 +354,11 @@ model CourseImage {
   publicUrl          String?
   temporarySourcePath String?
   failureReason     String?
+  failureCode       CourseImageFailureCode?
+  attempt           Int                      @default(0)
+  leaseToken        String?
+  leaseExpiresAt    DateTime?
+  startedAt         DateTime?
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
   course            Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -360,6 +371,7 @@ model CourseImage {
 
   @@unique([courseId, idempotencyKey])
   @@index([courseId, status])
+  @@index([courseId, status, leaseExpiresAt])
   @@index([slotId, createdAt])
   @@index([characterVisualId, createdAt])
 }
@@ -377,6 +389,7 @@ model CourseLessonContent {
   homework           Json?
   exercisesStale     Boolean             @default(false)
   errorMessage       String?
+  activeGenerationId String?
   confirmedAt        DateTime?
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
@@ -402,6 +415,10 @@ model CourseContentGeneration {
   idempotencyKey String
   status         CourseContentGenerationStatus @default(running)
   attempt        Int                           @default(0)
+  baseContentVersion Int                       @default(0)
+  previousStatus CourseContentStatus           @default(empty)
+  leaseExpiresAt DateTime                      @default(now())
+  startedAt      DateTime                      @default(now())
   errorMessage   String?
   createdAt      DateTime                      @default(now())
   updatedAt      DateTime                      @updatedAt
@@ -410,6 +427,7 @@ model CourseContentGeneration {
   @@unique([courseId, idempotencyKey])
   @@unique([courseId, sourceRevision, operation])
   @@index([courseId, createdAt])
+  @@index([courseId, status, leaseExpiresAt])
 }
 
 model CourseContentChatMessage {
@@ -427,6 +445,7 @@ model CourseContentChatMessage {
 
 model AiGenerationLog {
   id               String                  @id @default(cuid())
+  requestId        String?                 @unique
   courseId         String?
   stage            String
   operation        String
@@ -579,6 +598,19 @@ enum CourseImageQuality {
   high
 }
 
+enum VisualPlanMode {
+  faithful
+  originalized
+}
+
+enum CourseImageFailureCode {
+  retryable
+  storage_recoverable
+  invalid_request
+  policy_blocked
+  unknown
+}
+
 enum CourseImageStatus {
   pending
   submitting
@@ -592,6 +624,7 @@ enum CourseImageProvider {
 }
 
 enum AiGenerationStatus {
+  running
   succeeded
   failed
 }

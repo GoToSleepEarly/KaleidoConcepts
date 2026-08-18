@@ -1,34 +1,39 @@
-# Frontend Module Index
+# 前后端模块索引
 
-This directory keeps only current module context. Historical plans, old PRD drafts, and superseded module notes have been removed for the release branch.
+本目录只保留当前产品的有效模块契约。历史方案、重构期版本目录和已被替代的模块文档均不作为开发依据；历史实现需要追溯时使用 Git。
 
-## Current Entry Points
+## 契约优先级
 
-- Login: `/login`
-- After login: `/courses`
-- Default account: `teacher`
-- Default password: `123456`
+1. 根目录 `PRODUCT.md`
+2. 本索引列出的当前模块文档
+3. 当前代码、数据库 schema 与 migration
 
-## Current Modules
+## 当前课程流程
 
-| Module | Document | Status |
+```text
+基础信息 -> 故事大纲 -> 教学规划 -> 文案与练习 -> 视觉资源 -> 预览发布
+```
+
+## 当前模块
+
+| 模块 | 文档 | 状态 |
 | --- | --- | --- |
-| App shell and auth | `docs/frontend/app-shell-and-auth.md` | Implemented |
-| People profiles | `docs/frontend/people-profiles.md` | Implemented |
-| Course list | `docs/frontend/courses-list-management.md` | Implemented |
-| Course create Step 1 | `docs/frontend/course-create-basic.md` | Implemented |
-| Course create navigation | `docs/frontend/course-create-navigation.md` | Implemented |
-| Lesson chat Step 2 | `docs/frontend/course-create-lesson-chat.md` | Implemented; prompt and UI copy reviewed |
-| Lesson draft Step 3 | `docs/frontend/course-create-lesson-draft.md` | Implemented |
-| Resources Step 4 | `docs/frontend/course-create-resources.md` | Implemented |
-| Preview and PDF Step 5 | `docs/frontend/course-preview-and-pdf.md` | Implemented |
-| Preset library | `docs/frontend/preset-library.md` | Implemented |
+| 应用框架与登录 | `docs/frontend/app-shell-and-auth.md` | 已实现 |
+| 人物档案 | `docs/frontend/people-profiles.md` | 已实现，待用户验收 |
+| 课程列表 | `docs/frontend/courses-list-management.md` | 已实现，待用户验收 |
+| 课程步骤导航 | `docs/frontend/course-create-navigation.md` | 已实现 |
+| 基础信息 | `docs/frontend/course-create-audience.md` | 已实现 |
+| 故事大纲 | `docs/frontend/course-create-story-outline.md` | 已实现 |
+| 教学规划 | `docs/frontend/course-create-teaching-plan.md` | 已实现，待用户验收 |
+| 文案与练习 | `docs/frontend/course-create-content-and-exercises.md` | 已实现，待用户验收 |
+| 视觉资源 | `docs/frontend/course-create-visual-resources.md` | 已实现，待用户验收 |
+| 预览发布 | `docs/frontend/course-preview-and-publish.md` | 已实现，待用户验收 |
+| 预设库 | `docs/frontend/preset-library.md` | 已实现 |
 
-## Release Notes
+## 开发约束
 
-- Production schema changes must use Prisma migrations.
-- Production deploy should run `pnpm prisma:deploy`, not `prisma migrate dev`.
-- Production data and generated images must live outside the deployment code directory.
-- Back up the database and image directory before destructive production migrations.
-- Course images are managed through `course_images`; `structured_lesson` must not store image URLs, prompts, or image state.
-- Production one-click deploy command: `pnpm deploy:prod`.
+- 新任务先读本索引，再读目标模块文档。
+- 模块文档必须同时记录前端交互、后台 API、数据结构、状态恢复与验证结果。
+- 生产字段变更只通过 `prisma/migrations/`，服务器只执行 `pnpm prisma:deploy`。
+- 图片统一由 `course_images` 管理；课程结构化内容不保存图片 URL、prompt 或状态。
+- PDF 与 Preview 共用课程内容组件，PDF 永远隐藏答案和操作区。

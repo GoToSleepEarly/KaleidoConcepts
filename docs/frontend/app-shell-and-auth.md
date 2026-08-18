@@ -21,7 +21,7 @@ Not included:
 
 The login page uses a generated local background image:
 
-- `public/mock-assets/login-learning-lab-v2.png`
+- `public/mock-assets/login-learning-lab.png`
 
 Visible brand copy is intentionally limited to:
 
@@ -169,7 +169,7 @@ Failed login attempts continue to preserve the entered account, password, and re
 
 ### Login Refactor Status
 
-- Selected background: confirmed (`login-learning-lab-v2.png`)
+- Selected background: confirmed (`login-learning-lab.png`)
 - Landscape split composition specification: confirmed
 - Frontend implementation: implemented, including continuous-background crop, progressive blur transition, hierarchy, and field-icon refinement
 - Backend changes: not required

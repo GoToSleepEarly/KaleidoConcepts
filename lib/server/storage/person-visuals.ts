@@ -3,14 +3,10 @@ import path from "node:path";
 
 import sharp from "sharp";
 
+import { createStorageKey, resolveStorageDirectory, resolveStorageKey } from "./storage-path";
+
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maxUploadBytes = 10 * 1024 * 1024;
-
-function storageRoot() {
-  const root = process.env.STORAGE_DIR;
-  if (!root) throw new Error("STORAGE_DIR is required");
-  return root;
-}
 
 function decodeDataUrl(value: string) {
   const marker = ";base64,";
@@ -31,9 +27,10 @@ export async function preparePersonPhoto(personId: string, uploadId: string, fil
   if (file.size <= 0 || file.size > maxUploadBytes) throw new Error("照片大小必须在 10 MB 以内");
   const buffer = Buffer.from(await file.arrayBuffer());
   const prepared = await sharp(buffer).rotate().resize(1024, 1536, { fit: "inside", withoutEnlargement: true }).webp({ quality: 88 }).toBuffer();
-  const temporarySourcePath = path.join(storageRoot(), "person-visuals", "tmp", personId, `${uploadId}.webp`);
-  await mkdir(path.dirname(temporarySourcePath), { recursive: true });
-  await writeFile(temporarySourcePath, prepared);
+  const temporarySourcePath = createStorageKey("person-visuals", "tmp", personId, `${uploadId}.webp`);
+  const absolutePath = resolveStorageKey(temporarySourcePath);
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  await writeFile(absolutePath, prepared);
   return { temporarySourcePath, sourceDataUrl: `data:image/webp;base64,${prepared.toString("base64")}` };
 }
 
@@ -43,26 +40,27 @@ export async function persistPersonVisual(input: { sourceUrl: string; personId: 
     fit: "contain",
     background: { r: 248, g: 250, b: 252, alpha: 1 },
   }).webp({ quality: 86 }).toBuffer();
-  const storagePath = path.join(storageRoot(), "person-visuals", input.personId, `${input.assetId}.webp`);
-  await mkdir(path.dirname(storagePath), { recursive: true });
-  await writeFile(storagePath, encoded);
+  const storagePath = createStorageKey("person-visuals", input.personId, `${input.assetId}.webp`);
+  const absolutePath = resolveStorageKey(storagePath);
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  await writeFile(absolutePath, encoded);
   return { storagePath, publicUrl: `/api/person-visuals/${input.personId}/${input.assetId}.webp` };
 }
 
 export async function readPersonVisualAsDataUrl(storagePath: string) {
-  const buffer = await readFile(storagePath);
+  const buffer = await readFile(resolveStorageKey(storagePath));
   return `data:image/webp;base64,${buffer.toString("base64")}`;
 }
 
 export async function removeTemporaryPersonPhoto(storagePath: string) {
-  await rm(storagePath, { force: true });
+  await rm(resolveStorageKey(storagePath), { force: true });
 }
 
 export async function removeStoredPersonVisual(storagePath: string) {
-  await rm(storagePath, { force: true });
+  await rm(resolveStorageKey(storagePath), { force: true });
 }
 
 export function resolvePersonVisualFile(personId: string, assetFile: string) {
   if (!/^[a-zA-Z0-9_-]+$/.test(personId) || !/^[a-zA-Z0-9_-]+\.webp$/.test(assetFile)) return null;
-  return path.join(storageRoot(), "person-visuals", personId, assetFile);
+  return resolveStorageDirectory("person-visuals", personId, assetFile);
 }

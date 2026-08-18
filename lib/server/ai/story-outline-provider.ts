@@ -11,12 +11,28 @@ type ProviderConfig = {
 };
 
 type ResponsesData = {
+  status?: string;
+  incomplete_details?: { reason?: string };
   output_text?: string;
   output?: Array<{
     content?: Array<{ text?: string; type?: string }>;
   }>;
   error?: { message?: string };
   message?: string;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    total_tokens?: number;
+    output_tokens_details?: { reasoning_tokens?: number };
+  };
+};
+
+export type StoryOutlineUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  visibleOutputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
 };
 
 export class StoryOutlineProviderConfigError extends Error {
@@ -46,6 +62,26 @@ function outputText(data: ResponsesData) {
     .map((content) => content.text)
     .filter((text): text is string => Boolean(text));
   return parts?.join("\n").trim() || null;
+}
+
+export class StoryOutlineIncompleteResponseError extends Error {
+  constructor(readonly reason?: string, readonly usage?: StoryOutlineUsage) {
+    super(reason === "max_output_tokens" ? "模型输出达到上限，返回内容未完成" : "模型返回内容未完成");
+    this.name = "StoryOutlineIncompleteResponseError";
+  }
+}
+
+function responseUsage(data: ResponsesData): StoryOutlineUsage | undefined {
+  if (!data.usage) return undefined;
+  const outputTokens = data.usage.output_tokens ?? 0;
+  const reasoningTokens = data.usage.output_tokens_details?.reasoning_tokens ?? 0;
+  return {
+    inputTokens: data.usage.input_tokens ?? 0,
+    outputTokens,
+    visibleOutputTokens: Math.max(0, outputTokens - reasoningTokens),
+    reasoningTokens,
+    totalTokens: data.usage.total_tokens ?? 0,
+  };
 }
 
 const RETRYABLE_CONNECT_CODES = new Set([
@@ -127,13 +163,28 @@ export function createStoryOutlineProvider(config = configFromEnvironment()) {
       devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
       throw error;
     }
+    if (data.status === "incomplete") {
+      const error = new StoryOutlineIncompleteResponseError(data.incomplete_details?.reason, responseUsage(data));
+      devAiLog({
+        operation,
+        phase: "error",
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        payload: { incompleteReason: data.incomplete_details?.reason },
+        error,
+      });
+      throw error;
+    }
     const text = outputText(data);
     if (!text) {
       const error = new Error("故事大纲服务未返回内容");
       devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
       throw error;
     }
-    return { text };
+    return {
+      text,
+      usage: responseUsage(data),
+    };
   }
 
   return {
@@ -142,11 +193,15 @@ export function createStoryOutlineProvider(config = configFromEnvironment()) {
       prompt,
       operation,
       timeoutMs,
+      reasoningEffort,
+      maxOutputTokens,
     }: {
       writingProvider: StoryWritingProvider;
       prompt: string;
       operation?: string;
       timeoutMs?: number;
+      reasoningEffort?: "low" | "medium" | "high";
+      maxOutputTokens?: number;
     }) =>
       request(operation || "story_outline", {
         model:
@@ -154,6 +209,8 @@ export function createStoryOutlineProvider(config = configFromEnvironment()) {
             ? config.deepseekModel
             : config.gptModel,
         input: prompt,
+        ...(writingProvider === "quickrouter_gpt" && reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
+        ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
       }, timeoutMs),
     searchReference: ({ prompt, operation = "search_reference" }: { prompt: string; operation?: string }) =>
       request(operation, {

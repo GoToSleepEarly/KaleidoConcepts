@@ -21,7 +21,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const body: unknown = await request.json();
+  const body: unknown = await request.json().catch(() => null);
   let plan;
   try {
     plan = parseTeachingPlan(typeof body === "object" && body !== null && "plan" in body ? body.plan : body);

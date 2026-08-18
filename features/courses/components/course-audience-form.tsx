@@ -8,9 +8,11 @@ import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
+import { KnowledgePointPickerDialog } from "@/features/courses/components/knowledge-point-picker-dialog";
 import { PersonEditorDialog } from "@/features/people/components/person-form-drawer";
 import type { CourseAudienceDetail, EnglishLevel, PeopleListResponse, PersonProfile, PersonRole, PresetOption } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
+import { readJsonResponse } from "@/lib/utils/response-json";
 
 type AudiencePerson = PersonProfile & { profileChanged?: boolean };
 
@@ -37,6 +39,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   const [returnToPickerRole, setReturnToPickerRole] = useState<PersonRole | null>(null);
   const [furthestStep, setFurthestStep] = useState(1);
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(courseId ? null : "");
+  const [downstreamChoice, setDownstreamChoice] = useState<{ targetPath?: string; affectedResources: string[] } | null>(null);
 
   const currentSnapshot = audienceSnapshot({ title, duration, englishLevel, teacherId: teacher?.id ?? null, studentIds: students.map((student) => student.id), knowledgePointIds: selectedKnowledgePointIds });
   const hasUnsavedChanges = Boolean(courseId && savedSnapshot !== null && currentSnapshot !== savedSnapshot);
@@ -123,18 +126,16 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
     });
   }
 
-  async function saveAndNavigate(targetPath?: string) {
+  async function saveAndNavigate(targetPath?: string, resetDownstream = false) {
     if (disabledReason) { setError(`还需：${disabledReason}，当前修改尚未保存。`); return; }
     setSaving(true);
     setError("");
     try {
-      let response = await submitRequest(false);
-      let data = (await response.json()) as { course?: { id: string }; message?: string; requiresReset?: boolean };
+      const response = await submitRequest(resetDownstream);
+      const data = await readJsonResponse<{ course?: { id: string }; message?: string; requiresReset?: boolean; affectedResources?: string[] }>(response);
       if (response.status === 409 && data.requiresReset) {
-        const confirmed = window.confirm("修改老师、学生、课程时长、英语难度或知识点会重置后续内容，但会保留已成功图片作为过期版本。是否继续？");
-        if (!confirmed) return;
-        response = await submitRequest(true);
-        data = (await response.json()) as typeof data;
+        setDownstreamChoice({ targetPath, affectedResources: data.affectedResources ?? ["故事大纲", "教学规划", "文案与练习", "视觉资源和图片", "预览发布设置"] });
+        return;
       }
       if (!response.ok || !data.course) throw new Error(data.message || "课程保存失败");
       setSavedSnapshot(currentSnapshot);
@@ -227,7 +228,20 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
           onCompleteVisual={(person) => { setReturnToPickerRole(pickerRole); setPickerRole(null); setEditing(person); }}
         />
       ) : null}
-      {knowledgePickerOpen ? <KnowledgePointPicker knowledgePoints={knowledgePoints} onClose={() => setKnowledgePickerOpen(false)} onConfirm={(ids) => { setSelectedKnowledgePointIds(ids); setKnowledgePickerOpen(false); }} selectedIds={selectedKnowledgePointIds} /> : null}
+      {knowledgePickerOpen ? <KnowledgePointPickerDialog description="按类别选择本课教学目标。AI 只会在已选知识点中进行章节匹配。" knowledgePoints={knowledgePoints} onClose={() => setKnowledgePickerOpen(false)} onConfirm={(ids) => { setSelectedKnowledgePointIds(ids); setKnowledgePickerOpen(false); }} selectedIds={selectedKnowledgePointIds} title="选择全课知识点" /> : null}
+      {downstreamChoice ? <Dialog onClose={() => setDownstreamChoice(null)} open size="compact" title="本次修改可能影响后续内容">
+        <div className="space-y-5 p-5 sm:p-6">
+          <div className="space-y-2 text-pretty text-sm leading-6 text-muted-foreground">
+            <p>如果应用新的授课人物、时长、英语难度或知识点，以下旧成果将不再匹配：</p>
+            <ul className="list-disc pl-5 text-foreground">{downstreamChoice.affectedResources.map((item) => <li key={item}>{item}</li>)}</ul>
+            <p>选择保留时，本次修改不会保存，你可以继续调整后再决定。</p>
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button disabled={saving} onClick={() => setDownstreamChoice(null)} type="button" variant="outline">保留后续成果，暂不应用</Button>
+            <Button disabled={saving} onClick={() => { const choice = downstreamChoice; setDownstreamChoice(null); void saveAndNavigate(choice.targetPath, true); }} type="button" variant="destructive">应用修改并清理以上内容</Button>
+          </div>
+        </div>
+      </Dialog> : null}
       <PersonEditorDialog defaultRole={editing?.role ?? "student"} key={editing?.id ?? "closed-course-person-form"} onClose={() => { setEditing(null); if (returnToPickerRole) setPickerRole(returnToPickerRole); setReturnToPickerRole(null); }} onSaved={replacePerson} open={Boolean(editing)} person={editing} />
     </div>
   );
@@ -250,19 +264,6 @@ function AudienceSection({ action, children, icon, title }: { action?: React.Rea
       <div className="p-4 sm:p-5">{children}</div>
     </section>
   );
-}
-
-function KnowledgePointPicker({ knowledgePoints, selectedIds, onClose, onConfirm }: { knowledgePoints: PresetOption[]; selectedIds: string[]; onClose: () => void; onConfirm: (ids: string[]) => void }) {
-  const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState(() => new Set(selectedIds));
-  const [activeCategory, setActiveCategory] = useState("全部");
-  const categories = [...new Set(knowledgePoints.map((item) => item.category || "未分类"))];
-  const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
-  const filtered = knowledgePoints.filter((item) => {
-    const categoryMatches = Boolean(normalizedQuery) || activeCategory === "全部" || (item.category || "未分类") === activeCategory;
-    return categoryMatches && `${item.labelZh ?? ""} ${item.label} ${item.category ?? ""}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery);
-  });
-  return <Dialog description="按类别选择本课教学目标。AI 只会在已选知识点中进行章节匹配。" onClose={onClose} open title="选择全课知识点"><div className="flex max-h-[70dvh] min-h-[500px] flex-col"><div className="border-b p-4"><div aria-label="知识点类别" className="mb-3 flex gap-1 overflow-x-auto rounded-md bg-muted p-1" role="tablist">{["全部", ...categories].map((category) => <button aria-selected={activeCategory === category} className={cn("min-h-9 shrink-0 rounded px-3 text-sm font-medium transition-colors", activeCategory === category ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70 hover:text-foreground")} key={category} onClick={() => { setActiveCategory(category); setQuery(""); }} role="tab" type="button">{category}</button>)}</div><label className="relative block"><Search aria-hidden className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><span className="sr-only">搜索语法点</span><input aria-label="搜索语法点" autoFocus className="min-h-11 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" onChange={(event) => setQuery(event.target.value)} placeholder="搜索中文名、英文名或分类" role="searchbox" value={query} /></label></div><div className="min-h-0 flex-1 overflow-y-auto p-4"><div className="grid gap-2 sm:grid-cols-2">{filtered.map((item) => { const active = selected.has(item.id); return <button aria-pressed={active} className={cn("min-h-14 rounded-md border px-3 py-2 text-left transition-colors", active ? "border-primary bg-primary-50 text-primary-700" : "border-border hover:border-primary-300")} key={item.id} onClick={() => setSelected((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} type="button"><span className="block text-sm font-medium">{item.labelZh ?? item.label}</span>{item.labelZh ? <span className="mt-0.5 block text-xs opacity-70">{item.label}</span> : null}</button>; })}</div>{!filtered.length ? <p className="py-10 text-center text-sm text-muted-foreground">没有匹配的知识点</p> : null}</div><div className="flex items-center justify-between border-t p-4"><span className="text-sm text-muted-foreground">已选择 {selected.size} 个</span><div className="flex gap-2"><Button onClick={onClose} type="button" variant="outline">取消</Button><Button disabled={!selected.size} onClick={() => onConfirm([...selected])} type="button">确认选择</Button></div></div></div></Dialog>;
 }
 
 function knowledgePointName(point: Pick<PresetOption, "label" | "labelZh">) {

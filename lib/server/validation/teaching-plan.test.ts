@@ -21,12 +21,13 @@ function completePlan(overrides: Partial<TeachingPlan> = {}): TeachingPlan {
     englishLevel: "B1",
     chapters: draft.chapters.map((chapter) => ({
       ...chapter,
-      targetWordCount: 90,
+      targetWordCount: 120,
       knowledgePointIds: chapter.outlineChapterId === "chapter-1" ? ["grammar-1"] : ["grammar-2"],
       chapterPractice: { enabled: true, grammar: { optionCloze: 2, wordForm: 2 } },
     })),
     afterClassPractice: {
       enabled: true,
+      vocabularyReviewEnabled: true,
       knowledgePointIds: ["grammar-1", "grammar-2"],
       practice: { enabled: true, grammar: { optionCloze: 4, wordForm: 0 } },
       touched: { knowledgePointIds: false, practice: true },
@@ -66,6 +67,7 @@ describe("teaching plan validation", () => {
     });
     expect(draft.afterClassPractice).toMatchObject({
       enabled: false,
+      vocabularyReviewEnabled: false,
       knowledgePointIds: ["grammar-1", "grammar-2"],
       practice: { enabled: false, grammar: { optionCloze: 5, wordForm: 5 } },
       touched: { knowledgePointIds: false, practice: false },
@@ -89,12 +91,29 @@ describe("teaching plan validation", () => {
 
   test("accepts the default decision to skip after-class practice", () => {
     const plan = completePlan();
-    plan.afterClassPractice = { ...plan.afterClassPractice, enabled: false, practice: { ...plan.afterClassPractice.practice, enabled: false }, touched: { ...plan.afterClassPractice.touched, practice: false } };
+    plan.afterClassPractice = { ...plan.afterClassPractice, enabled: false, vocabularyReviewEnabled: false, practice: { ...plan.afterClassPractice.practice, enabled: false }, touched: { ...plan.afterClassPractice.touched, practice: false } };
 
     expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id))).not.toThrow();
   });
 
-  test("accepts target word count up to 200 and rejects values above it", () => {
+  test("accepts vocabulary-only after-class review without grammar questions", () => {
+    const plan = completePlan();
+    plan.afterClassPractice = {
+      ...plan.afterClassPractice,
+      enabled: true,
+      vocabularyReviewEnabled: true,
+      practice: { ...plan.afterClassPractice.practice, enabled: false },
+    };
+
+    expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id))).not.toThrow();
+  });
+
+  test("accepts chapter targets from 120 to 200 and rejects values outside the range", () => {
+    expect(() => validateTeachingPlanForConfirm(completePlan({
+      chapters: completePlan().chapters.map((chapter, index) => index === 0 ? { ...chapter, targetWordCount: 119 } : chapter),
+    }), outlineChapters.map((chapter) => chapter.id)))
+      .toThrow(new TeachingPlanValidationError("第 1 章目标词数需在 120-200 之间。"));
+
     expect(() => validateTeachingPlanForConfirm(completePlan({
       chapters: completePlan().chapters.map((chapter, index) => index === 1 ? { ...chapter, targetWordCount: 200 } : chapter),
     }), outlineChapters.map((chapter) => chapter.id))).not.toThrow();
@@ -104,7 +123,7 @@ describe("teaching plan validation", () => {
     });
 
     expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id)))
-      .toThrow(new TeachingPlanValidationError("第 2 章目标词数需在 50-200 之间。"));
+      .toThrow(new TeachingPlanValidationError("第 2 章目标词数需在 120-200 之间。"));
   });
 
   test("allows optional正文 types but requires at least one grammar question", () => {
@@ -129,6 +148,7 @@ describe("teaching plan validation", () => {
     const plan = completePlan({
       afterClassPractice: {
         enabled: true,
+        vocabularyReviewEnabled: true,
         knowledgePointIds: ["grammar-3"],
         practice: { enabled: true, grammar: { optionCloze: 6, wordForm: 0 } },
         touched: { knowledgePointIds: true, practice: true },

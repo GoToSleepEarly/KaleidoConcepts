@@ -50,7 +50,10 @@ describe("PeopleManager", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<PeopleManager />);
-    expect(await screen.findByRole("heading", { name: "小一" })).toBeInTheDocument();
+    const heading = await screen.findByRole("heading", { name: "小一" });
+    expect(heading).toBeInTheDocument();
+    expect(heading.parentElement).toHaveClass("items-center", "justify-center", "text-center");
+    expect(screen.getByText("9 岁").parentElement).toHaveClass("justify-center");
     expect(screen.getByRole("article")).not.toHaveTextContent("喜欢阅读和表达");
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
 

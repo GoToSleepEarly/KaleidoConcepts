@@ -1,5 +1,6 @@
 import type { CourseImageQuality } from "@/lib/contracts/api";
 import { devAiLog } from "./dev-ai-log";
+import { imageQualityForModel } from "./image-model-capabilities";
 
 type ProviderResponse = {
   data?: Array<{ url?: string; b64_json?: string }>;
@@ -9,7 +10,7 @@ type ProviderResponse = {
 
 type ProviderConfig = { apiKey: string; model: string; timeoutMs: number; retryDelaysMs?: readonly number[] };
 
-const DEFAULT_SATURATION_RETRY_DELAYS_MS = [1_000, 2_000] as const;
+const FALLBACK_MODEL = "gpt-image-2-c";
 
 function configFromEnvironment(): ProviderConfig {
   const apiKey = process.env.QUICKROUTER_IMAGE_API_KEY;
@@ -37,7 +38,6 @@ function resultImage(data: ProviderResponse) {
 
 export function createCourseImageProvider(config = configFromEnvironment()) {
   const { apiKey, model, timeoutMs } = config;
-  const retryDelaysMs = config.retryDelaysMs ?? DEFAULT_SATURATION_RETRY_DELAYS_MS;
 
   function isUpstreamSaturated(response: Response, data: ProviderResponse) {
     const message = data.error?.message || data.message || "";
@@ -52,21 +52,18 @@ export function createCourseImageProvider(config = configFromEnvironment()) {
       : "图片生成服务繁忙，请稍后重试";
   }
 
-  async function waitBeforeRetry(delayMs: number) {
-    if (delayMs <= 0) return;
-    await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
-  }
-
-  async function request(operation: string, path: string, body: BodyInit, headers: HeadersInit, logPayload: unknown) {
-    devAiLog({ operation, phase: "request", payload: logPayload });
-    for (let attempt = 0; ; attempt += 1) {
+  async function request(operation: string, path: string, requestedQuality: CourseImageQuality, buildBody: (requestModel: string, quality: CourseImageQuality) => BodyInit, headers: HeadersInit, logPayload: Record<string, unknown>) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const requestModel = attempt === 0 ? model : FALLBACK_MODEL;
+      const quality = imageQualityForModel(requestModel, requestedQuality);
+      devAiLog({ operation, phase: "request", payload: { ...logPayload, model: requestModel, quality, ...(attempt ? { fallbackForStatus: 429 } : {}) } });
       const startedAt = Date.now();
       let response: Response;
       try {
         response = await fetch(`https://api.quickrouter.ai${path}`, {
           method: "POST",
           headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}`, ...headers },
-          body,
+          body: buildBody(requestModel, quality),
           signal: AbortSignal.timeout(timeoutMs),
         });
       } catch (error) {
@@ -80,8 +77,7 @@ export function createCourseImageProvider(config = configFromEnvironment()) {
       catch (error) { throw new Error("图片生成服务返回异常", { cause: error }); }
       devAiLog({ operation, phase: response.ok ? "response" : "error", status: response.status, latencyMs: Date.now() - startedAt, payload: data });
       if (!response.ok) {
-        if (isUpstreamSaturated(response, data) && attempt < retryDelaysMs.length) {
-          await waitBeforeRetry(retryDelaysMs[attempt] ?? 0);
+        if (response.status === 429 && attempt === 0 && model !== FALLBACK_MODEL) {
           continue;
         }
         if (isUpstreamSaturated(response, data)) throw new Error(saturatedMessage(data));
@@ -89,25 +85,28 @@ export function createCourseImageProvider(config = configFromEnvironment()) {
       }
       const imageUrl = resultImage(data);
       if (!imageUrl) throw new Error("图片生成服务未返回图片");
-      return { imageUrl };
+      return { imageUrl, model: requestModel, quality };
     }
+    throw new Error("图片生成失败");
   }
 
   return {
     generate(input: { prompt: string; quality: CourseImageQuality; portrait?: boolean }) {
       const size = input.portrait ? "1024x1536" : "1536x864";
-      return request("course_image_generate", "/v1/images/generations", JSON.stringify({ model, prompt: input.prompt, n: 1, size, quality: input.quality, format: "webp" }), { "Content-Type": "application/json" }, { model, prompt: input.prompt, size, quality: input.quality });
+      return request("course_image_generate", "/v1/images/generations", input.quality, (requestModel, quality) => JSON.stringify({ model: requestModel, prompt: input.prompt, n: 1, size, quality, format: "webp" }), { "Content-Type": "application/json" }, { prompt: input.prompt, size });
     },
     edit(input: { prompt: string; quality: CourseImageQuality; imageDataUrl: string; portrait?: boolean }) {
       const size = input.portrait ? "1024x1536" : "1536x1024";
-      const body = new FormData();
-      body.set("model", model);
-      body.set("image", imageBlob(input.imageDataUrl), "visual-reference.webp");
-      body.set("prompt", input.prompt);
-      body.set("n", "1");
-      body.set("size", size);
-      body.set("quality", input.quality);
-      return request("course_image_edit", "/v1/images/edits", body, {}, { model, prompt: input.prompt, size, quality: input.quality, requestEncoding: "multipart/form-data" });
+      return request("course_image_edit", "/v1/images/edits", input.quality, (requestModel, quality) => {
+        const body = new FormData();
+        body.set("model", requestModel);
+        body.set("image", imageBlob(input.imageDataUrl), "visual-reference.webp");
+        body.set("prompt", input.prompt);
+        body.set("n", "1");
+        body.set("size", size);
+        body.set("quality", quality);
+        return body;
+      }, {}, { prompt: input.prompt, size, requestEncoding: "multipart/form-data" });
     },
   };
 }

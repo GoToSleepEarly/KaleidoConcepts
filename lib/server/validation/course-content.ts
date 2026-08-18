@@ -15,7 +15,7 @@ function normalized(value: string) {
   return value.trim().toLocaleLowerCase();
 }
 
-function normalizeLegacyExerciseShape(value: unknown, discriminator: "type" | "exerciseType") {
+function normalizeExerciseOptionShape(value: unknown, discriminator: "type" | "exerciseType") {
   if (typeof value !== "object" || value === null) return value;
   const current = { ...value } as Record<string, unknown>;
   if (current[discriminator] === "optionCloze") {
@@ -47,7 +47,7 @@ function normalizeGeneratedQuestionShape(value: unknown) {
   delete current.exerciseType;
   if (!current.distractors && Array.isArray(current.choices)) current.options = current.choices;
   delete current.choices;
-  return normalizeLegacyExerciseShape(current, "type");
+  return normalizeExerciseOptionShape(current, "type");
 }
 
 function normalizeExercisesEnvelope(value: unknown) {
@@ -69,7 +69,7 @@ function validateDistractors(value: { answer: string; distractors: [string, stri
   if (new Set(values).size !== 3) context.addIssue({ code: z.ZodIssueCode.custom, message: "答案和两个干扰项必须互不重复" });
 }
 
-const textPartSchema = z.object({ type: z.literal("text"), text: requiredText }).strict();
+const textPartSchema = z.object({ type: z.literal("text"), text: z.string() }).strict();
 const optionGrammarPartSchema = z.object({
   type: z.literal("grammar"),
   exerciseType: z.literal("optionCloze"),
@@ -88,21 +88,46 @@ const vocabularyPartSchema = z.object({
   type: z.literal("vocabulary"), answer: requiredText, canonicalForm: requiredText, meaningZh: requiredText,
 }).strict();
 const readingPartSchema = z.preprocess(
-  (value) => typeof value === "object" && value !== null && Reflect.get(value, "type") === "grammar" ? normalizeLegacyExerciseShape(value, "exerciseType") : value,
+  (value) => typeof value === "object" && value !== null && Reflect.get(value, "type") === "grammar" ? normalizeExerciseOptionShape(value, "exerciseType") : value,
   z.union([textPartSchema, optionGrammarPartSchema, wordFormGrammarPartSchema, vocabularyPartSchema]).superRefine((value, context) => {
     if (value.type === "grammar" && value.exerciseType === "optionCloze") validateDistractors(value, context);
   }),
 );
 
-export const generatedReadingSchema = z.object({
-  chapters: z.array(z.object({
+function withoutTitle(value: unknown) {
+  if (typeof value !== "object" || value === null) return value;
+  const current = { ...value } as Record<string, unknown>;
+  delete current.title;
+  return current;
+}
+
+function normalizeReadingChapter(value: unknown) {
+  const chapter = withoutTitle(value);
+  if (typeof chapter !== "object" || chapter === null || !Array.isArray(Reflect.get(chapter, "paragraphs"))) return chapter;
+  return {
+    ...chapter,
+    paragraphs: (Reflect.get(chapter, "paragraphs") as unknown[]).map((paragraph) => {
+      if (typeof paragraph !== "object" || paragraph === null || !Array.isArray(Reflect.get(paragraph, "parts"))) return paragraph;
+      return {
+        ...paragraph,
+        parts: (Reflect.get(paragraph, "parts") as unknown[]).filter((part) => !(
+          typeof part === "object" && part !== null && Reflect.get(part, "type") === "text" && Reflect.get(part, "text") === ""
+        )),
+      };
+    }),
+  };
+}
+
+const generatedReadingChapterSchema = z.preprocess(normalizeReadingChapter, z.object({
     outlineChapterId: z.string(),
-    title: z.string(),
     paragraphs: z.array(z.object({ parts: z.array(readingPartSchema) }).strict()).min(1),
-  }).strict()),
+  }).strict());
+
+export const generatedReadingSchema = z.object({
+  chapters: z.array(generatedReadingChapterSchema),
 }).strict();
 
-export const generatedMainIdeaSchema = z.object({ title: z.string(), text: z.string() }).strict();
+export const generatedMainIdeaSchema = z.preprocess(withoutTitle, z.object({ text: z.string() }).strict());
 export const generatedReadingBundleSchema = generatedReadingSchema.extend({ mainIdea: generatedMainIdeaSchema }).strict();
 
 const optionQuestionSchema = z.object({
@@ -142,7 +167,7 @@ export const generatedExercisesSchema = z.preprocess(normalizeExercisesEnvelope,
 
 export const generatedModificationSchema = z.object({
   kind: z.enum(["chapter", "paragraph", "chapter_practice", "main_idea", "homework"]),
-  chapter: generatedReadingSchema.shape.chapters.element.optional(),
+  chapter: generatedReadingChapterSchema.optional(),
   paragraph: z.object({ parts: z.array(readingPartSchema) }).strict().optional(),
   questions: z.array(generatedQuestionSchema).optional(),
   mainIdea: generatedMainIdeaSchema.optional(),

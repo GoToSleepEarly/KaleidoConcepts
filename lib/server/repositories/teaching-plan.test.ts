@@ -2,9 +2,11 @@ import { describe, expect, test, vi } from "vitest";
 
 import type { TeachingPlan } from "@/lib/contracts/api";
 import {
+  CourseTeachingPlanConflictError,
   CourseTeachingPlanPrerequisiteError,
   confirmTeachingPlan,
   getTeachingPlanState,
+  resetTeachingPlan,
   saveTeachingPlan,
   type TeachingPlanDb,
 } from "@/lib/server/repositories/teaching-plan";
@@ -24,12 +26,13 @@ function completePlan(plan: TeachingPlan): TeachingPlan {
     englishLevel: "B1",
     chapters: plan.chapters.map((chapter, index) => ({
       ...chapter,
-      targetWordCount: 90,
+      targetWordCount: 120,
       knowledgePointIds: [`grammar-${index + 1}`],
       chapterPractice: { enabled: true, grammar: { optionCloze: 4, wordForm: 0 } },
     })),
     afterClassPractice: {
       enabled: true,
+      vocabularyReviewEnabled: true,
       knowledgePointIds: ["grammar-1", "grammar-2"],
       practice: { enabled: true, grammar: { optionCloze: 8, wordForm: 0 } },
       touched: { knowledgePointIds: false, practice: true },
@@ -44,6 +47,7 @@ function createDb() {
     chapters: Record<string, unknown>[];
     plan: Record<string, unknown> | null;
     presets: Record<string, unknown>[];
+    contentExists: boolean;
   } = {
     course: record({
       id: "course-1",
@@ -69,6 +73,7 @@ function createDb() {
       record({ id: "grammar-2", kind: "grammar", label: "Wh- Questions", category: "句型", sortOrder: 1, archivedAt: null }),
       record({ id: "grammar-3", kind: "grammar", label: "Present Perfect", category: "时态", sortOrder: 2, archivedAt: null }),
     ],
+    contentExists: false,
   };
 
   const db: TeachingPlanDb & { state: typeof state } = {
@@ -99,6 +104,12 @@ function createDb() {
     presetOption: {
       findMany: vi.fn(async () => state.presets),
     },
+    courseLessonContent: {
+      findUnique: vi.fn(async () => state.contentExists ? { courseId: "course-1" } : null),
+      deleteMany: vi.fn(async () => { state.contentExists = false; return { count: 1 }; }),
+    },
+    courseContentGeneration: { deleteMany: vi.fn(async () => ({ count: 1 })) },
+    courseContentChatMessage: { deleteMany: vi.fn(async () => ({ count: 1 })) },
     $transaction: async <T>(callback: (tx: TeachingPlanDb) => Promise<T>) => callback(db),
   } as unknown as TeachingPlanDb & { state: typeof state };
   return db;
@@ -125,6 +136,54 @@ describe("teaching plan repository", () => {
     });
   });
 
+  test("rebuilds a stale plan when Step 2 has replaced its outline chapters", async () => {
+    const db = createDb();
+    db.state.plan = record({
+      courseId: "course-1",
+      status: "confirmed",
+      englishLevel: "B1",
+      mainIdeaTargetWordCount: 120,
+      chapters: [{
+        outlineChapterId: "old-outline-chapter",
+        targetWordCount: 120,
+        knowledgePointIds: ["grammar-1"],
+        readingExerciseMode: "interactive",
+        readingExercises: { enabled: true, grammar: { optionCloze: 5, wordForm: 5 }, vocabulary: { chineseHint: 3 } },
+        chapterPractice: { enabled: false, grammar: { optionCloze: 5, wordForm: 5 } },
+        touched: { targetWordCount: true, paragraphCount: false, knowledgePointIds: true, readingExerciseMode: false, readingExercises: false, chapterPractice: false },
+      }],
+      afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: ["grammar-1"], practice: { enabled: false, grammar: { optionCloze: 5, wordForm: 5 } }, touched: { knowledgePointIds: false, practice: false } },
+      confirmedAt: new Date("2026-08-07T00:00:00.000Z"),
+    });
+    db.state.course = { ...db.state.course, currentStage: "content" };
+
+    const state = await getTeachingPlanState(db, "course-1");
+
+    expect(state.plan.status).toBe("draft");
+    expect(state.plan.confirmedAt).toBeNull();
+    expect(state.plan.chapters.map((chapter) => chapter.outlineChapterId)).toEqual(["outline-chapter-1", "outline-chapter-2"]);
+    expect(db.state.course.currentStage).toBe("teaching_plan");
+  });
+
+  test("resets Step 3 to a fresh draft from the current outline recommendations", async () => {
+    const db = createDb();
+    const initial = await getTeachingPlanState(db, "course-1");
+    const edited = completePlan(initial.plan);
+    edited.chapters[0].targetWordCount = 200;
+    edited.chapters[0].knowledgePointIds = ["grammar-3"];
+    await saveTeachingPlan(db, "course-1", edited);
+    db.state.course = { ...db.state.course, currentStage: "content" };
+    db.state.contentExists = true;
+
+    const reset = await resetTeachingPlan(db, "course-1");
+
+    expect(reset.status).toBe("draft");
+    expect(reset.chapters[0]).toMatchObject({ targetWordCount: 180, knowledgePointIds: ["grammar-1"] });
+    expect(reset.confirmedAt).toBeNull();
+    expect(db.state.course.currentStage).toBe("teaching_plan");
+    expect(db.state.contentExists).toBe(true);
+  });
+
   test("does not create a plan before story outline is confirmed", async () => {
     const db = createDb();
     db.state.course = { ...db.state.course, currentStage: "story_outline" };
@@ -132,17 +191,21 @@ describe("teaching plan repository", () => {
     await expect(getTeachingPlanState(db, "course-1")).rejects.toBeInstanceOf(CourseTeachingPlanPrerequisiteError);
   });
 
-  test("saves a draft without advancing course stage", async () => {
+  test("saves a draft and returns the effective course stage to teaching plan", async () => {
     const db = createDb();
     const state = await getTeachingPlanState(db, "course-1");
     const plan = completePlan(state.plan);
     plan.chapters[0].paragraphCount = 6;
+    db.state.course = { ...db.state.course, currentStage: "preview" };
+    db.state.contentExists = true;
 
     const saved = await saveTeachingPlan(db, "course-1", plan);
 
     expect(saved.englishLevel).toBe("B1");
     expect(saved.chapters[0].paragraphCount).not.toBe(6);
     expect(db.state.course.currentStage).toBe("teaching_plan");
+    expect(db.state.contentExists).toBe(true);
+    expect(db.courseLessonContent?.deleteMany).not.toHaveBeenCalled();
   });
 
   test("allows teachers to add an active grammar point outside the Step 1 AI scope", async () => {
@@ -172,9 +235,19 @@ describe("teaching plan repository", () => {
           chapterPractice: { enabled: true, grammar: { wordForm: 3 } },
           touched: { targetWordCount: true, readingExerciseMode: true, readingExercises: true, chapterPractice: true },
         },
+        {
+          outlineChapterId: "outline-chapter-2",
+          targetWordCount: 120,
+          knowledgePointIds: ["grammar-2"],
+          readingExerciseMode: "interactive",
+          readingExercises: { grammar: { optionCloze: 2 }, vocabulary: {} },
+          chapterPractice: { enabled: false, grammar: {} },
+          touched: { targetWordCount: true, readingExerciseMode: true, readingExercises: true, chapterPractice: false },
+        },
       ],
       afterClassPractice: {
         enabled: true,
+        vocabularyReviewEnabled: true,
         knowledgePointIds: ["grammar-1"],
         practice: { enabled: true, grammar: { optionCloze: 3 } },
         touched: { knowledgePointIds: true, practice: true },
@@ -185,6 +258,7 @@ describe("teaching plan repository", () => {
     const state = await getTeachingPlanState(db, "course-1");
 
     expect(state.plan.chapters[0].readingExerciseMode).toBe("interactive");
+    expect(state.plan.chapters[0].targetWordCount).toBe(120);
     expect(state.plan.chapters[0].readingExercises).toEqual({ enabled: true, grammar: { optionCloze: 2, wordForm: 3 }, vocabulary: { chineseHint: 3 } });
     expect(state.plan.chapters[0].chapterPractice).toEqual({ enabled: true, grammar: { optionCloze: 5, wordForm: 3 } });
     expect(state.plan.afterClassPractice.practice).toEqual({ enabled: true, grammar: { optionCloze: 3, wordForm: 5 } });
@@ -195,10 +269,78 @@ describe("teaching plan repository", () => {
     const state = await getTeachingPlanState(db, "course-1");
     await saveTeachingPlan(db, "course-1", completePlan(state.plan));
 
-    const result = await confirmTeachingPlan(db, "course-1", false);
+    const result = await confirmTeachingPlan(db, "course-1", "check");
 
     expect(result.course.currentStage).toBe("content");
     expect(result.plan.status).toBe("confirmed");
     expect(result.plan.confirmedAt).toBeTruthy();
+  });
+
+  test("requires confirmation and clears stale Step 4 content after an edited plan is reconfirmed", async () => {
+    const db = createDb();
+    const state = await getTeachingPlanState(db, "course-1");
+    await saveTeachingPlan(db, "course-1", completePlan(state.plan));
+    db.state.course = { ...db.state.course, currentStage: "content" };
+    db.state.contentExists = true;
+
+    await expect(confirmTeachingPlan(db, "course-1", "check")).rejects.toBeInstanceOf(CourseTeachingPlanConflictError);
+    await confirmTeachingPlan(db, "course-1", "clear");
+
+    expect(db.state.contentExists).toBe(false);
+    expect(db.courseContentChatMessage?.deleteMany).toHaveBeenCalledWith({ where: { courseId: "course-1" } });
+    expect(db.courseContentGeneration?.deleteMany).toHaveBeenCalledWith({ where: { courseId: "course-1" } });
+  });
+
+  test("confirms the new plan while preserving existing downstream content when chosen", async () => {
+    const db = createDb();
+    const state = await getTeachingPlanState(db, "course-1");
+    await saveTeachingPlan(db, "course-1", completePlan(state.plan));
+    db.state.contentExists = true;
+
+    const result = await confirmTeachingPlan(db, "course-1", "preserve");
+
+    expect(result.plan.status).toBe("confirmed");
+    expect(result.course.currentStage).toBe("content");
+    expect(db.state.contentExists).toBe(true);
+    expect(db.courseLessonContent?.deleteMany).not.toHaveBeenCalled();
+  });
+
+  test("reconfirming an unchanged confirmed plan is idempotent and keeps the furthest stage", async () => {
+    const db = createDb();
+    const state = await getTeachingPlanState(db, "course-1");
+    await saveTeachingPlan(db, "course-1", completePlan(state.plan));
+    await confirmTeachingPlan(db, "course-1", "check");
+    db.state.course = { ...db.state.course, currentStage: "preview" };
+    db.state.contentExists = true;
+
+    const result = await confirmTeachingPlan(db, "course-1", "check");
+
+    expect(result.course.currentStage).toBe("preview");
+    expect(db.state.contentExists).toBe(true);
+    expect(db.courseContentChatMessage?.deleteMany).not.toHaveBeenCalled();
+  });
+
+  test("keeps a legacy confirmed plan below the new word floor unchanged", async () => {
+    const db = createDb();
+    const state = await getTeachingPlanState(db, "course-1");
+    const legacyPlan = completePlan(state.plan);
+    legacyPlan.status = "confirmed";
+    legacyPlan.confirmedAt = "2026-08-01T00:00:00.000Z";
+    legacyPlan.chapters = legacyPlan.chapters.map((chapter) => ({ ...chapter, targetWordCount: 90 }));
+    db.state.plan = record({
+      courseId: legacyPlan.courseId,
+      status: legacyPlan.status,
+      englishLevel: legacyPlan.englishLevel,
+      mainIdeaTargetWordCount: legacyPlan.mainIdeaTargetWordCount,
+      chapters: legacyPlan.chapters,
+      afterClassPractice: legacyPlan.afterClassPractice,
+      confirmedAt: new Date(legacyPlan.confirmedAt),
+    });
+    db.state.course = { ...db.state.course, currentStage: "content" };
+
+    const result = await confirmTeachingPlan(db, "course-1", "check");
+
+    expect(result.plan.chapters.every((chapter) => chapter.targetWordCount === 90)).toBe(true);
+    expect(db.courseTeachingPlan.update).not.toHaveBeenCalled();
   });
 });

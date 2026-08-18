@@ -8,6 +8,7 @@ import {
   saveStoryOutline,
 } from "@/lib/server/repositories/story-outline";
 import { storyOutlineSaveSchema } from "@/lib/server/validation/story-outline";
+import { withCourseDownstreamReset, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,7 +26,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   if (!parsed.success) return NextResponse.json({ message: "请完整填写故事标题、概括、角色和章节" }, { status: 400 });
   const { id } = await params;
   try {
-    return NextResponse.json(await saveStoryOutline(getDb(), id, parsed.data.outline, parsed.data.resetDownstream === true));
+    const db = getDb();
+    const state = parsed.data.resetDownstream === true
+      ? await withCourseDownstreamReset(db as unknown as CourseDownstreamDb, id, "story_outline", (tx) => saveStoryOutline(tx as unknown as Parameters<typeof saveStoryOutline>[0], id, parsed.data.outline, true))
+      : await saveStoryOutline(db, id, parsed.data.outline, false);
+    return NextResponse.json(state);
   } catch (error) {
     if (error instanceof CourseStoryOutlineNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });
     if (error instanceof CourseStoryOutlineConflictError) return NextResponse.json({ message: error.message, requiresReset: true }, { status: 409 });

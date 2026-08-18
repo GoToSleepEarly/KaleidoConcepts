@@ -8,7 +8,7 @@ import type {
   CourseVocabularyMatchingItem,
   GrammarExerciseType,
 } from "@/lib/contracts/api";
-import { courseContentQuestionPageSize, courseContentVocabularyPageSize, paginateBalanced } from "@/lib/domain/course-content";
+import { courseContentQuestionPageSize, courseContentVocabularyPageSize, paginateBalanced, vocabularyExerciseHint } from "@/lib/domain/course-content";
 
 type PreviewSlot = {
   id: string;
@@ -69,7 +69,7 @@ function previewParts(parts: CourseContentPart[], labels: Map<string, string>): 
     previousLexical = lexical;
     if (part.type === "text") return { ...part, text: `${missingSpace ? " " : ""}${part.text}` };
     number += 1;
-    if (part.type === "vocabulary") return { type: "exercise", id: part.id, number, exerciseType: "vocabulary", answer: part.answer, knowledgePointId: null, knowledgePointLabel: "词汇", spaceBefore: missingSpace, hint: part.meaningZh };
+    if (part.type === "vocabulary") return { type: "exercise", id: part.id, number, exerciseType: "vocabulary", answer: part.answer, knowledgePointId: null, knowledgePointLabel: "词汇", spaceBefore: missingSpace, hint: vocabularyExerciseHint(part.answer, part.meaningZh), meaningZh: part.meaningZh };
     return {
       type: "exercise",
       id: part.id,

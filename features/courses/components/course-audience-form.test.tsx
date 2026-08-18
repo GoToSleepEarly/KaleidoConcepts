@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { CourseAudienceForm } from "./course-audience-form";
@@ -158,5 +158,32 @@ describe("CourseAudienceForm basic information UI", () => {
 
     expect(await screen.findByText("林老师")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "更换" })).not.toBeInTheDocument();
+  });
+
+  test("uses the app dialog and lets the teacher preserve downstream results", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/presets?kind=grammar") return Response.json({ presets: [{ id: "grammar-1", kind: "grammar", label: "Past Simple", labelZh: "一般过去时", category: "时态", sortOrder: 0, createdAt: "", updatedAt: "" }] });
+      if (url === "/api/courses/course-1/audience" && !init?.method) return Response.json({ audience: { id: "course-1", title: "海底图书馆", durationMinutes: 45, englishLevel: "B1", knowledgePointIds: ["grammar-1"], lifecycleStatus: "draft", currentStage: "preview", people: [
+        { personId: "teacher-1", role: "teacher", chineseName: "林老师", englishName: "Linda", age: 32, gender: "female", visualAssetId: "v1", visualUrl: "/teacher.png", profileChanged: false },
+        { personId: "student-1", role: "student", chineseName: "夏天", englishName: "Summer", age: 9, gender: "female", visualAssetId: "v2", visualUrl: "/student.png", profileChanged: false },
+      ] } });
+      if (url.includes("/api/people?role=teacher")) return Response.json({ people: [{ id: "teacher-1", role: "teacher", chineseName: "林老师", englishName: "Linda", age: 32, gender: "female", activeVisual: { id: "v1", publicUrl: "/teacher.png", sourceMode: "description", createdAt: "" }, visualStatus: "ready", createdAt: "", updatedAt: "" }] });
+      if (url.includes("/api/people?role=student")) return Response.json({ people: [{ id: "student-1", role: "student", chineseName: "夏天", englishName: "Summer", age: 9, gender: "female", activeVisual: { id: "v2", publicUrl: "/student.png", sourceMode: "description", createdAt: "" }, visualStatus: "ready", createdAt: "", updatedAt: "" }] });
+      if (url === "/api/courses/course-1/audience" && init?.method === "PUT") return Response.json({ message: "需要确认", requiresReset: true, affectedResources: ["故事大纲", "教学规划"] }, { status: 409 });
+      return Response.json({});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseAudienceForm courseId="course-1" />);
+
+    await screen.findByText("林老师");
+    fireEvent.click(screen.getByRole("button", { name: "30 分钟" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一步：故事大纲" }));
+
+    const dialogHeading = await screen.findByRole("heading", { name: "本次修改可能影响后续内容" });
+    expect(within(dialogHeading.closest("dialog")!).getByText("故事大纲")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保留后续成果，暂不应用" }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "本次修改可能影响后续内容" })).not.toBeInTheDocument());
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]) === "/api/courses/course-1/audience" && (call[1] as RequestInit | undefined)?.method === "PUT")).toHaveLength(1);
   });
 });

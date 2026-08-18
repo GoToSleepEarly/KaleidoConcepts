@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { confirmVisualResources, getCoursePreview, publishCourse } from "@/lib/server/repositories/course-preview";
+import { confirmVisualResources, getCoursePreview, publishCourse, savePresentation } from "@/lib/server/repositories/course-preview";
 
 describe("course preview state transitions", () => {
   it("uses the bilingual story outline as the title source for preview pages", async () => {
@@ -33,11 +33,54 @@ describe("course preview state transitions", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it("does not let an expired image lease permanently block preview", async () => {
+    const update = vi.fn().mockResolvedValue({});
+    const db = { course: { findUnique: vi.fn().mockResolvedValue({
+      id: "course-1",
+      currentStage: "visual_resources",
+      lessonContent: { id: "content-1" },
+      visualImageSlots: [{ id: "cover", activeImage: null, images: [{ status: "generating", leaseExpiresAt: new Date("2020-01-01T00:00:00.000Z"), updatedAt: new Date("2020-01-01T00:00:00.000Z") }] }],
+    }), update } } as never;
+
+    await expect(confirmVisualResources(db, "course-1")).resolves.toEqual({ redirectUrl: "/courses/course-1/create/preview" });
+    expect(update).toHaveBeenCalledOnce();
+  });
+
   it("advances Step 5 without a resource plan when no image task is running", async () => {
     const update = vi.fn().mockResolvedValue({});
     const db = { course: { findUnique: vi.fn().mockResolvedValue({ id: "course-1", lessonContent: { id: "content-1" }, visualImageSlots: [] }), update } } as never;
     await confirmVisualResources(db, "course-1");
     expect(update).toHaveBeenCalledWith({ where: { id: "course-1" }, data: { currentStage: "preview" } });
+  });
+
+  it("keeps a published course published when the saved presentation has no actual changes", async () => {
+    const update = vi.fn();
+    const upsert = vi.fn();
+    const db = {
+      course: { findUnique: vi.fn().mockResolvedValue({ id: "course-1", lifecycleStatus: "published", presentation: { coverTheme: "light", coverTitleFontSize: 1.1, chapterTheme: "green", slideOverrides: {} } }), update },
+      coursePresentation: { upsert },
+    } as never;
+
+    await expect(savePresentation(db, "course-1", { coverTheme: "light", coverTitleFontSize: 1.1, chapterTheme: "green", slideOverrides: {} })).resolves.toEqual({ coverTheme: "light", coverTitleFontSize: 1.1, chapterTheme: "green", slideOverrides: {} });
+    expect(upsert).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("turns a published course into a draft only after a real presentation change is saved", async () => {
+    const update = vi.fn().mockResolvedValue({});
+    const upsert = vi.fn().mockResolvedValue({});
+    const transaction = vi.fn(async (callback) => callback({ course: { update }, coursePresentation: { upsert } }));
+    const db = {
+      course: { findUnique: vi.fn().mockResolvedValue({ id: "course-1", lifecycleStatus: "published", presentation: { coverTheme: "light", coverTitleFontSize: 1, chapterTheme: "blue", slideOverrides: {} } }), update },
+      coursePresentation: { upsert },
+      $transaction: transaction,
+    } as never;
+
+    await savePresentation(db, "course-1", { coverTheme: "dark", coverTitleFontSize: 1, chapterTheme: "blue", slideOverrides: {} });
+
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(upsert).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith({ where: { id: "course-1" }, data: { lifecycleStatus: "draft" } });
   });
 
   it("publishes idempotently and saves the supplied presentation first", async () => {

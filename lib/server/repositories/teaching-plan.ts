@@ -6,7 +6,7 @@ import type {
   TeachingPlanState,
 } from "@/lib/contracts/api";
 import { buildTeachingPlanDraft, TeachingPlanValidationError, validateTeachingPlanForConfirm } from "@/lib/server/validation/teaching-plan";
-import { defaultPracticeConfig, defaultReadingExerciseConfig, minimumReadingParagraphCount } from "@/lib/domain/teaching-plan-policy";
+import { defaultPracticeConfig, defaultReadingExerciseConfig, MIN_CHAPTER_TARGET_WORD_COUNT, minimumReadingParagraphCount } from "@/lib/domain/teaching-plan-policy";
 
 type DbCourse = {
   id: string;
@@ -62,6 +62,7 @@ type Delegate<T> = {
   findMany?: (query: Record<string, unknown>) => Promise<T[]>;
   upsert?: (query: { where: Record<string, unknown>; create: Record<string, unknown>; update: Record<string, unknown> }) => Promise<T>;
   update?: (query: { where: Record<string, unknown>; data: Record<string, unknown> }) => Promise<T>;
+  deleteMany?: (query: { where: Record<string, unknown> }) => Promise<{ count: number }>;
 };
 
 export type TeachingPlanDb = {
@@ -69,6 +70,9 @@ export type TeachingPlanDb = {
   courseStoryOutline: Required<Pick<Delegate<DbOutline>, "findUnique">>;
   courseTeachingPlan: Required<Pick<Delegate<DbTeachingPlan>, "findUnique" | "upsert" | "update">>;
   presetOption: Required<Pick<Delegate<DbPreset>, "findMany">>;
+  courseLessonContent?: Pick<Delegate<{ courseId: string }>, "findUnique" | "deleteMany">;
+  courseContentGeneration?: Pick<Delegate<{ courseId: string }>, "deleteMany">;
+  courseContentChatMessage?: Pick<Delegate<{ courseId: string }>, "deleteMany">;
   $transaction?: <T>(callback: (tx: TeachingPlanDb) => Promise<T>) => Promise<T>;
 };
 
@@ -87,7 +91,7 @@ export class CourseTeachingPlanPrerequisiteError extends Error {
 }
 
 export class CourseTeachingPlanConflictError extends Error {
-  constructor(message = "确认后会重置已生成的文案、练习和视觉资源") {
+  constructor(message = "当前教学规划已变更，请选择保留或清空后续已有内容") {
     super(message);
     this.name = "CourseTeachingPlanConflictError";
   }
@@ -103,6 +107,7 @@ function toOutlineState(outline: DbOutline) {
   return {
     id: outline.id,
     title: outline.title,
+    summary: outline.summary,
     chapters: chapters.map((chapter) => ({
       id: chapter.id,
       order: chapter.order,
@@ -195,11 +200,14 @@ function normalizeAfterClassPractice(value: unknown): TeachingPlan["afterClassPr
   const record = isRecord(value) ? value : {};
   const touched = isRecord(record.touched) ? record.touched : {};
   const manuallyConfigured = touched.practice === true;
+  const practice = manuallyConfigured ? normalizePracticeConfig(record.practice) : defaultPracticeConfig(false);
+  const vocabularyReviewEnabled = manuallyConfigured && record.enabled === true && (typeof record.vocabularyReviewEnabled === "boolean" ? record.vocabularyReviewEnabled : true);
   return {
     ...record,
-    enabled: manuallyConfigured && record.enabled === true,
+    enabled: vocabularyReviewEnabled || practice.enabled,
+    vocabularyReviewEnabled,
     knowledgePointIds: Array.isArray(record.knowledgePointIds) ? record.knowledgePointIds.filter((id): id is string => typeof id === "string") : [],
-    practice: manuallyConfigured ? normalizePracticeConfig(record.practice) : defaultPracticeConfig(false),
+    practice,
     touched: { knowledgePointIds: touched.knowledgePointIds === true, practice: manuallyConfigured },
   } as TeachingPlan["afterClassPractice"];
 }
@@ -248,18 +256,51 @@ async function listKnowledgePoints(db: TeachingPlanDb) {
   return presets.map(toKnowledgePoint);
 }
 
-async function ensureTeachingPlan(db: TeachingPlanDb, course: DbCourse, outline: DbOutline) {
-  const existing = await db.courseTeachingPlan.findUnique({ where: { courseId: course.id } });
-  if (existing) return toTeachingPlan(existing);
+function buildFreshTeachingPlan(course: DbCourse, outline: DbOutline) {
   if (!course.englishLevel) throw new CourseTeachingPlanPrerequisiteError("请先在第一步选择英语难度和知识点");
   const outlineState = toOutlineState(outline);
-  const draft = buildTeachingPlanDraft({
+  return buildTeachingPlanDraft({
     courseId: course.id,
     englishLevel: course.englishLevel,
     durationMinutes: course.durationMinutes as 30 | 45 | 60,
     chapters: outlineState.chapters.map((chapter) => ({ ...chapter, recommendedKnowledgePointIds: chapter.recommendedKnowledgePointIds ?? [], knowledgePointRecommendationSummary: chapter.knowledgePointRecommendationSummary ?? "" })),
     updatedAt: new Date().toISOString(),
   });
+}
+
+async function ensureTeachingPlan(db: TeachingPlanDb, course: DbCourse, outline: DbOutline) {
+  const existing = await db.courseTeachingPlan.findUnique({ where: { courseId: course.id } });
+  const outlineState = toOutlineState(outline);
+  if (existing) {
+    const savedPlan = toTeachingPlan(existing);
+    const outlineChapterIds = outlineState.chapters.map((chapter) => chapter.id);
+    const savedChapterIds = savedPlan.chapters.map((chapter) => chapter.outlineChapterId);
+    if (outlineChapterIds.join("\n") !== savedChapterIds.join("\n")) {
+      const replacement = buildFreshTeachingPlan(course, outline);
+      const updated = await db.courseTeachingPlan.upsert({
+        where: { courseId: course.id },
+        create: { courseId: course.id, status: "draft", ...planWriteData(replacement) },
+        update: { status: "draft", confirmedAt: null, ...planWriteData(replacement) },
+      });
+      await db.course.update({ where: { id: course.id }, data: { currentStage: "teaching_plan" } });
+      return toTeachingPlan(updated);
+    }
+    if (savedPlan.status !== "draft" || savedPlan.chapters.every((chapter) => chapter.targetWordCount === null || chapter.targetWordCount >= MIN_CHAPTER_TARGET_WORD_COUNT)) return savedPlan;
+    const normalizedPlan = {
+      ...savedPlan,
+      chapters: savedPlan.chapters.map((chapter) => {
+        if (chapter.targetWordCount === null || chapter.targetWordCount >= MIN_CHAPTER_TARGET_WORD_COUNT) return chapter;
+        return {
+          ...chapter,
+          targetWordCount: MIN_CHAPTER_TARGET_WORD_COUNT,
+          paragraphCount: minimumReadingParagraphCount(MIN_CHAPTER_TARGET_WORD_COUNT, chapter.readingExercises),
+        };
+      }),
+    };
+    const updated = await db.courseTeachingPlan.update({ where: { courseId: course.id }, data: planWriteData(normalizedPlan) });
+    return toTeachingPlan(updated);
+  }
+  const draft = buildFreshTeachingPlan(course, outline);
   const created = await db.courseTeachingPlan.upsert({
     where: { courseId: course.id },
     create: {
@@ -270,6 +311,22 @@ async function ensureTeachingPlan(db: TeachingPlanDb, course: DbCourse, outline:
     update: {},
   });
   return toTeachingPlan(created);
+}
+
+export async function resetTeachingPlan(db: TeachingPlanDb, courseId: string) {
+  const reset = async (tx: TeachingPlanDb) => {
+    const course = await getCourse(tx, courseId);
+    const outline = await getConfirmedOutline(tx, course);
+    const draft = buildFreshTeachingPlan(course, outline);
+    const saved = await tx.courseTeachingPlan.upsert({
+      where: { courseId },
+      create: { courseId, status: "draft", ...planWriteData(draft) },
+      update: { status: "draft", confirmedAt: null, ...planWriteData(draft) },
+    });
+    await tx.course.update({ where: { id: courseId }, data: { currentStage: "teaching_plan" } });
+    return toTeachingPlan(saved);
+  };
+  return db.$transaction ? db.$transaction(reset) : reset(db);
 }
 
 export async function getTeachingPlanState(db: TeachingPlanDb, courseId: string): Promise<TeachingPlanState> {
@@ -327,34 +384,51 @@ export async function saveTeachingPlan(db: TeachingPlanDb, courseId: string, pla
   if (parsedPlan.chapters.map((chapter) => chapter.outlineChapterId).join("\n") !== outlineChapterIds.join("\n")) {
     throw new TeachingPlanValidationError("教学规划章节与故事大纲不一致。");
   }
-  const saved = await db.courseTeachingPlan.upsert({
-    where: { courseId },
-    create: {
-      courseId,
-      status: "draft",
-      ...planWriteData(parsedPlan),
-    },
-    update: {
-      status: "draft",
-      confirmedAt: null,
-      ...planWriteData(parsedPlan),
-    },
-  });
-  return toTeachingPlan(saved);
+  const save = async (tx: TeachingPlanDb) => {
+    const saved = await tx.courseTeachingPlan.upsert({
+      where: { courseId },
+      create: {
+        courseId,
+        status: "draft",
+        ...planWriteData(parsedPlan),
+      },
+      update: {
+        status: "draft",
+        confirmedAt: null,
+        ...planWriteData(parsedPlan),
+      },
+    });
+    await tx.course.update({ where: { id: courseId }, data: { currentStage: "teaching_plan" } });
+    return toTeachingPlan(saved);
+  };
+  return db.$transaction ? db.$transaction(save) : save(db);
 }
 
-export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, resetDownstream: boolean) {
+export type TeachingPlanDownstreamAction = "check" | "preserve" | "clear";
+
+export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, downstreamAction: TeachingPlanDownstreamAction) {
   const confirm = async (tx: TeachingPlanDb) => {
     const course = await getCourse(tx, courseId);
     const outline = await getConfirmedOutline(tx, course);
     const existing = await tx.courseTeachingPlan.findUnique({ where: { courseId } });
     if (!existing) throw new TeachingPlanValidationError("教学规划信息不完整");
     const plan = toTeachingPlan(existing);
+    if (plan.status === "confirmed") return { plan, course: { id: course.id, currentStage: course.currentStage } };
     const outlineChapterIds = toOutlineState(outline).chapters.map((chapter) => chapter.id);
     validateTeachingPlanForConfirm(plan, outlineChapterIds);
 
-    const hasDownstream = !["teaching_plan", "content"].includes(course.currentStage);
-    if (hasDownstream && !resetDownstream) throw new CourseTeachingPlanConflictError();
+    const content = tx.courseLessonContent?.findUnique ? await tx.courseLessonContent.findUnique({ where: { courseId } }) : null;
+    const hasDownstream = Boolean(content) || !["teaching_plan", "content"].includes(course.currentStage);
+    if (hasDownstream && downstreamAction === "check") throw new CourseTeachingPlanConflictError();
+
+    if (downstreamAction === "clear" && content) {
+      if (!tx.courseContentChatMessage?.deleteMany || !tx.courseContentGeneration?.deleteMany || !tx.courseLessonContent?.deleteMany) {
+        throw new Error("当前数据库不支持重置文案与练习");
+      }
+      await tx.courseContentChatMessage.deleteMany({ where: { courseId } });
+      await tx.courseContentGeneration.deleteMany({ where: { courseId } });
+      await tx.courseLessonContent.deleteMany({ where: { courseId } });
+    }
 
     const confirmedAt = new Date();
     const [saved, updatedCourse] = await Promise.all([

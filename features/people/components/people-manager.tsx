@@ -142,10 +142,10 @@ export function PeopleManager() {
                     <PersonAvatar gender={person.gender} name={person.chineseName} seed={person.id} size={72} />
                   </div>
                 )}
-                <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 flex-1 flex-col items-center justify-center text-center">
                   <h3 className="truncate text-base font-bold text-[#19324D]">{person.chineseName}</h3>
                   <p className="mt-0.5 truncate text-sm font-medium text-[#69829B]">{person.englishName}</p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
                     <span className="inline-flex rounded-full bg-[#E9EEFF] px-2.5 py-1 text-xs font-semibold text-[#30459E]">{person.age} 岁</span>
                     <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", person.gender === "female" ? "bg-pink-50 text-pink-700" : "bg-sky-50 text-sky-700")}>{person.gender === "female" ? "女" : "男"}</span>
                   </div>

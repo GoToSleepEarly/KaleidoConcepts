@@ -46,6 +46,8 @@ export const storyOutlineMessageSchema = z.object({
       z.literal("confirm_direction"),
       z.literal("revise_outline"),
       z.literal("revise_chapter"),
+      z.literal("confirm_story_change"),
+      z.literal("cancel_story_change"),
       z.literal("retry_operation"),
     ])
     .optional(),
@@ -56,6 +58,7 @@ export const storyOutlineMessageSchema = z.object({
   chapterCount: z.number().int().min(1).max(8).optional(),
   writingProvider: storyWritingProviderSchema.optional(),
   requestId: z.string().uuid().optional(),
+  resetDownstream: z.boolean().optional(),
 });
 
 const sourceReferenceSchema = z.object({
@@ -90,6 +93,7 @@ const characterSchema = z.object({
   id: z.string().optional(),
   courseId: z.string().optional(),
   displayName: z.string().min(1),
+  englishName: z.string().min(1),
   sourceType: z.union([z.literal("person"), z.literal("referenced"), z.literal("original")]),
   sourcePersonId: z.string().nullable().optional(),
   sourceReferenceId: z.string().nullable().optional(),

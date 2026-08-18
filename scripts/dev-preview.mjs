@@ -2,17 +2,26 @@
 
 import { spawn } from "node:child_process";
 import path from "node:path";
-import net from "node:net";
 import { fileURLToPath } from "node:url";
+import pg from "pg";
 
 import { cleanNextCache } from "./next-cache.mjs";
+import { createGracefulChildStopper } from "./child-process-lifecycle.mjs";
+import { findAvailableDatabasePort, waitForDatabaseChildReady } from "./dev-database-lifecycle.mjs";
+
+const { Client } = pg;
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(scriptDir, "..");
-const databasePort = Number(process.env.DEV_DATABASE_PORT || "51215");
+const preferredDatabasePort = Number(process.env.DEV_DATABASE_PORT || "51215");
 const databaseName = process.env.DEV_DATABASE_NAME || "postgres";
-const databaseUrl = process.env.DATABASE_URL || `postgres://postgres:postgres@localhost:${databasePort}/${databaseName}?sslmode=disable`;
-const storageDir = process.env.STORAGE_DIR || path.join(rootDir, ".local", "storage-v2");
+const databaseUser = process.env.DEV_DATABASE_USER || "postgres";
+const databasePassword = process.env.DEV_DATABASE_PASSWORD || "postgres";
+const storageDir = process.env.STORAGE_DIR || path.join(rootDir, ".local", "storage-app");
+
+function databaseUrlForPort(port) {
+  return `postgres://${encodeURIComponent(databaseUser)}:${encodeURIComponent(databasePassword)}@127.0.0.1:${port}/${encodeURIComponent(databaseName)}?sslmode=disable`;
+}
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -22,7 +31,6 @@ function run(command, args, options = {}) {
       ...options,
       env: {
         ...process.env,
-        DATABASE_URL: databaseUrl,
         STORAGE_DIR: storageDir,
         ...options.env,
       },
@@ -39,76 +47,119 @@ function run(command, args, options = {}) {
   });
 }
 
-function waitForPort(port, host, timeoutMs) {
-  const startedAt = Date.now();
-
-  return new Promise((resolve, reject) => {
-    const tryConnect = () => {
-      const socket = net.createConnection({ port, host });
-
-      socket.once("connect", () => {
-        socket.end();
-        resolve();
-      });
-
-      socket.once("error", () => {
-        socket.destroy();
-
-        if (Date.now() - startedAt > timeoutMs) {
-          reject(new Error(`Timed out waiting for ${host}:${port}`));
-          return;
-        }
-
-        setTimeout(tryConnect, 250);
-      });
-    };
-
-    tryConnect();
-  });
+async function canQueryDatabase(databaseUrl, timeoutMs = 1_500) {
+  const client = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: timeoutMs });
+  try {
+    await client.connect();
+    await client.query("SELECT 1");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await client.end().catch(() => undefined);
+  }
 }
 
-async function main() {
-  const dbProcess = spawn(process.execPath, ["scripts/dev-db.mjs"], {
-    stdio: "inherit",
+async function waitForDatabaseQuery(databaseUrl, timeoutMs = 10_000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt <= timeoutMs) {
+    if (await canQueryDatabase(databaseUrl)) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error("本地 PostgreSQL 已启动，但健康检查未通过");
+}
+
+function spawnDatabase(port, databaseUrl) {
+  return spawn(process.execPath, ["scripts/dev-db.mjs"], {
+    stdio: ["inherit", "inherit", "inherit", "ipc"],
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl,
-      DEV_DATABASE_PORT: String(databasePort),
+      DEV_DATABASE_PORT: String(port),
+      DEV_DATABASE_USER: databaseUser,
+      DEV_DATABASE_PASSWORD: databasePassword,
+      DEV_DATABASE_NAME: databaseName,
       STORAGE_DIR: storageDir,
     },
   });
+}
 
-  let dbStopRequested = false;
-  const stopDb = () => {
-    if (!dbStopRequested && !dbProcess.killed) {
-      dbStopRequested = true;
-      dbProcess.kill("SIGTERM");
+async function startLocalDatabase() {
+  const preferredUrl = databaseUrlForPort(preferredDatabasePort);
+  if (await canQueryDatabase(preferredUrl)) {
+    console.log(`[dev-preview] reusing healthy PostgreSQL on 127.0.0.1:${preferredDatabasePort}`);
+    return { child: null, port: preferredDatabasePort, stop: async () => {}, url: preferredUrl };
+  }
+
+  let nextPort = preferredDatabasePort;
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const port = await findAvailableDatabasePort(nextPort);
+    const databaseUrl = databaseUrlForPort(port);
+    if (port !== preferredDatabasePort) {
+      console.warn(`[dev-preview] port ${preferredDatabasePort} is occupied or unhealthy; trying PostgreSQL on ${port}`);
     }
+
+    const child = spawnDatabase(port, databaseUrl);
+    const stop = createGracefulChildStopper(child);
+    try {
+      await waitForDatabaseChildReady(child);
+      await waitForDatabaseQuery(databaseUrl);
+      return { child, port, stop, url: databaseUrl };
+    } catch (error) {
+      lastError = error;
+      console.warn(`[dev-preview] PostgreSQL startup attempt ${attempt} failed: ${error.message}`);
+      await stop().catch(() => undefined);
+      if (error.message.includes("共享内存残留") || error.message.includes("关闭旧的预览终端")) {
+        throw error;
+      }
+      nextPort = port + 1;
+    }
+  }
+
+  throw new Error("本地 PostgreSQL 连续三次启动失败", { cause: lastError });
+}
+
+async function main() {
+  const database = await startLocalDatabase();
+  const stopDb = database.stop;
+  let shutdownStarted = false;
+  const shutdownAndExit = async (exitCode) => {
+    if (shutdownStarted) {
+      return;
+    }
+
+    shutdownStarted = true;
+    try {
+      await stopDb();
+    } catch (error) {
+      console.error(`[dev-preview] ${error.message}`);
+    }
+    process.exit(exitCode);
   };
 
   process.once("SIGINT", () => {
-    stopDb();
-    process.exit(130);
+    void shutdownAndExit(130);
   });
   process.once("SIGTERM", () => {
-    stopDb();
-    process.exit(143);
-  });
-  process.once("exit", stopDb);
-
-  dbProcess.once("exit", (code) => {
-    if (code && code !== 0) {
-      process.exit(code);
-    }
+    void shutdownAndExit(143);
   });
 
-  await waitForPort(databasePort, "127.0.0.1", 30_000);
-  await run("pnpm", ["prisma:generate"]);
-  await run("pnpm", ["prisma:deploy"]);
-  await run("pnpm", ["prisma:seed"]);
+  database.child?.once("exit", (code) => {
+    if (!shutdownStarted) process.exit(code || 1);
+  });
+
+  const runtimeOptions = { env: { DATABASE_URL: database.url } };
+  await run("pnpm", ["prisma:generate"], runtimeOptions);
+  await run("pnpm", ["prisma:deploy"], runtimeOptions);
+  await run("pnpm", ["prisma:seed"], runtimeOptions);
   console.log("[dev-preview] cleaning stale Next.js build cache");
   await cleanNextCache(rootDir);
-  await run("pnpm", ["dev"]);
+  try {
+    await run("pnpm", ["dev"], runtimeOptions);
+  } finally {
+    await stopDb();
+  }
 }
 
 main().catch((error) => {

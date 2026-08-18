@@ -10,10 +10,12 @@ afterEach(() => {
 });
 
 describe("person visual provider", () => {
-  test("uses the dedicated image token and ignores the legacy shared token", async () => {
+  test("uses the dedicated image token", async () => {
     process.env.QUICKROUTER_IMAGE_API_KEY = "image-key";
-    process.env.QUICKROUTER_API_KEY = "legacy-key";
-    const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/person.webp" }] }));
+    const request = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      void args;
+      return Response.json({ data: [{ url: "https://example.com/person.webp" }] });
+    });
     vi.stubGlobal("fetch", request);
 
     await createPersonVisualProvider().generate({ prompt: "full body" });
@@ -22,9 +24,33 @@ describe("person visual provider", () => {
     expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer image-key");
   });
 
-  test("does not fall back to the legacy shared token", () => {
+  test("非固定按张收费模型的人物造型保持 low", async () => {
+    process.env.QUICKROUTER_IMAGE_API_KEY = "image-key";
+    process.env.QUICKROUTER_IMAGE_QUALITY = "high";
+    const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/person.webp" }] }));
+    vi.stubGlobal("fetch", request);
+
+    await createPersonVisualProvider().generate({ prompt: "full body" });
+
+    const init = (request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
+    const body = JSON.parse(String(init?.body));
+    expect(body.quality).toBe("low");
+  });
+
+  test("gpt-image-2-c 生成人物形象时强制最高质量", async () => {
+    const request = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      void args;
+      return Response.json({ data: [{ url: "https://example.com/person.webp" }] });
+    });
+    vi.stubGlobal("fetch", request);
+
+    await createPersonVisualProvider({ apiKey: "test", model: "gpt-image-2-c", timeoutMs: 1_000 }).generate({ prompt: "person" });
+
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({ model: "gpt-image-2-c", quality: "high" });
+  });
+
+  test("requires the dedicated image token", () => {
     delete process.env.QUICKROUTER_IMAGE_API_KEY;
-    process.env.QUICKROUTER_API_KEY = "legacy-key";
 
     expect(() => createPersonVisualProvider()).toThrow(PersonVisualProviderConfigError);
   });
@@ -47,7 +73,6 @@ describe("person visual provider", () => {
     const provider = createPersonVisualProvider({
       apiKey: "test",
       model: "gpt-image-2",
-      quality: "low",
       timeoutMs: 1_000,
     });
     await provider.generate({ prompt: "full body" });
@@ -74,7 +99,6 @@ describe("person visual provider", () => {
     const provider = createPersonVisualProvider({
       apiKey: "test",
       model: "gpt-image-2",
-      quality: "low",
       timeoutMs: 1_000,
     });
     await provider.edit({
@@ -92,5 +116,19 @@ describe("person visual provider", () => {
     expect(body.get("image")).toBeInstanceOf(Blob);
     expect(body.has("format")).toBe(false);
     expect(new Headers(options?.headers).has("Content-Type")).toBe(false);
+  });
+
+  test("人物形象接口返回 429 时也仅用 gpt-image-2-c 兜底一次", async () => {
+    const request = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "rate limited" } }), { status: 429 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ url: "https://example.com/fallback.webp" }] }), { status: 200 }));
+    vi.stubGlobal("fetch", request);
+    const provider = createPersonVisualProvider({ apiKey: "test", model: "gpt-image-2", timeoutMs: 1_000 });
+
+    await expect(provider.edit({ prompt: "change the coat", imageDataUrl: "data:image/png;base64,aGVsbG8=" })).resolves.toEqual({ imageUrl: "https://example.com/fallback.webp", model: "gpt-image-2-c", quality: "high" });
+
+    expect(request).toHaveBeenCalledTimes(2);
+    expect((request.mock.calls[0]?.[1]?.body as FormData).get("model")).toBe("gpt-image-2");
+    expect((request.mock.calls[1]?.[1]?.body as FormData).get("model")).toBe("gpt-image-2-c");
   });
 });

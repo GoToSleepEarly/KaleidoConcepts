@@ -2,13 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import React, { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronLeft, History, ImageIcon, Pencil, RefreshCw, Send, Sparkles, Upload, UserRound } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Clock3, History, ImageIcon, List, LoaderCircle, Pencil, RefreshCw, Send, Settings2, Sparkles, Upload, UserRound } from "lucide-react";
 
+import { PersonAvatar } from "@/components/person-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { CharacterVisualIntent, CourseCharacterVisual, CourseImageQuality, CourseVisualAsset, CourseVisualImageSlot, CourseVisualResourcesState } from "@/lib/contracts/api";
+import { Dialog } from "@/components/ui/dialog";
+import type { CourseCharacterVisual, CourseImageQuality, CourseVisualAsset, CourseVisualImageSlot, CourseVisualResourcesState } from "@/lib/contracts/api";
 import { hasInFlightVisualVersion, needsInitialVisualGeneration } from "@/lib/domain/visual-resource-status";
 import { cn } from "@/lib/utils";
 import { CourseCreateSteps, courseStageStep } from "./course-create-steps";
@@ -18,17 +19,108 @@ const qualityOptions: Array<{ value: CourseImageQuality; label: string }> = [
   { value: "medium", label: "高" },
   { value: "high", label: "极高" },
 ];
+const CHARACTER_PAGE_SIZE = 6;
 
-function requestKey() {
-  return crypto.randomUUID();
+function formatElapsedTime(seconds: number) {
+  const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const remainingSeconds = (seconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${remainingSeconds}`;
+}
+
+function TimedOperationStatus({ description, embedded = false, startedAt, title }: { description: string; embedded?: boolean; startedAt?: string | null; title: string }) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    const parsedStartedAt = startedAt ? Date.parse(startedAt) : Number.NaN;
+    const startTime = Number.isFinite(parsedStartedAt) ? parsedStartedAt : Date.now();
+    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startTime) / 1_000)));
+    const initialTimer = window.setTimeout(update, 0);
+    const timer = window.setInterval(update, 1_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
+  }, [startedAt]);
+
+  return (
+    <div aria-live="polite" className={cn(embedded ? "flex h-full items-center justify-center bg-primary-50/60 px-5 py-4" : "rounded-xl border border-primary/20 bg-primary-50/60 px-4 py-4")} role="status">
+      <div className="flex items-start gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-primary shadow-sm"><LoaderCircle aria-hidden="true" className="size-5 animate-spin" /></span>
+        <div className="min-w-0 space-y-1">
+          <p className="font-semibold text-foreground">{title}</p>
+          <p className="text-pretty text-sm leading-6 text-muted-foreground">{description}</p>
+          <p className="flex items-center gap-1.5 pt-1 text-xs font-medium tabular-nums text-primary-700"><Clock3 aria-hidden="true" className="size-3.5" />已等待 {formatElapsedTime(elapsedSeconds)}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VisualPlanLoading() {
+  return <TimedOperationStatus description="正在整理角色形象、封面构图和章节图片方案。通常需要 1–3 分钟，角色或章节较多时可能更久；系统仍在处理中，无需重复点击。" title="正在生成视觉方案" />;
+}
+
+function VisualPlanSummary({ characterCount, chapterCount, imageCount }: { characterCount: number; chapterCount: number; imageCount: number }) {
+  return (
+    <section aria-label="视觉方案成果" className="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50/55">
+      <div className="flex items-start gap-3 px-4 py-3.5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white"><Check aria-hidden="true" className="size-4" /></span>
+        <div className="min-w-0"><p className="font-semibold text-foreground">视觉方案已生成</p><p className="mt-0.5 text-sm text-muted-foreground">接下来可以检查角色形象并生成视觉封面。</p></div>
+      </div>
+      <div className="grid border-t border-emerald-200/80 bg-white/55 sm:grid-cols-3">
+        <div className="px-4 py-3"><p className="text-xs text-muted-foreground">角色形象</p><p className="mt-0.5 text-sm font-semibold text-foreground">{characterCount} 个角色</p></div>
+        <div className="border-t border-emerald-100 px-4 py-3 sm:border-l sm:border-t-0"><p className="text-xs text-muted-foreground">视觉封面</p><p className="mt-0.5 text-sm font-semibold text-foreground">1 张封面方案</p></div>
+        <div className="border-t border-emerald-100 px-4 py-3 sm:border-l sm:border-t-0"><p className="text-xs text-muted-foreground">章节图片</p><p className="mt-0.5 text-sm font-semibold text-foreground">{imageCount} 张章节图片方案 · {chapterCount} 章</p></div>
+      </div>
+    </section>
+  );
+}
+
+function requestKey() { return crypto.randomUUID(); }
+
+class AmbiguousMutationError extends Error {}
+
+async function mutationRequest(url: string, init: RequestInit, fallbackMessage: string) {
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch {
+    throw new AmbiguousMutationError("网络连接中断，无法确认操作结果");
+  }
+  let data: { message?: string; code?: string; retrySafe?: boolean };
+  try {
+    data = await response.json();
+  } catch {
+    throw new AmbiguousMutationError("服务响应中断，无法确认操作结果");
+  }
+  if (!response.ok) {
+    const message = data.message || fallbackMessage;
+    if (data.code === "invalid_ai_response" && data.retrySafe) throw new Error(message);
+    if (response.status === 408 || response.status === 429 || response.status >= 500) throw new AmbiguousMutationError(message);
+    throw new Error(message);
+  }
+  return data;
 }
 
 export function showsImageGenerationWait(pending: string | null) {
   return Boolean(pending && ["slot:", "generate:", "refine:"].some((prefix) => pending.startsWith(prefix)));
 }
 
+export function shouldPollVisualResources(pending: string | null, hasServerGeneration: boolean) {
+  return hasServerGeneration || showsImageGenerationWait(pending);
+}
+
+function visualStateFingerprint(state: CourseVisualResourcesState) {
+  return JSON.stringify({
+    planRevision: state.planRevision,
+    confirmedCoverAssetId: state.confirmedCoverAssetId,
+    characters: state.characters.map((character) => [character.characterId, character.activeAssetId, character.status, character.versions.map((asset) => [asset.id, asset.status])]),
+    slots: state.slots.map((slot) => [slot.id, slot.activeAssetId, slot.versions.map((asset) => [asset.id, asset.status])]),
+  });
+}
+
 function statusLabel(status: CourseVisualAsset["status"]) {
-  if (status === "pending" || status === "submitting" || status === "generating") return "生成中";
+  if (["pending", "submitting", "generating"].includes(status)) return "生成中";
   if (status === "succeeded") return "已生成";
   return "生成失败";
 }
@@ -37,70 +129,102 @@ function qualityLabel(quality: CourseImageQuality) {
   return qualityOptions.find((option) => option.value === quality)?.label ?? "高";
 }
 
-function hasSuccessfulVersion(slot: CourseVisualImageSlot) {
-  return slot.versions.some((asset) => asset.status === "succeeded");
-}
-
-function slotStatusLabel(slot: CourseVisualImageSlot | null) {
-  if (!slot) return "待资源方案";
-  if (slot.activeAssetId) return "已采用";
-  if (hasSuccessfulVersion(slot)) return "待采用";
-  if (hasInFlightVisualVersion(slot.versions)) return "生成中";
-  if (slot.versions.some((asset) => asset.status === "failed")) return "生成失败";
+function slotStatusLabel(slot: CourseVisualImageSlot | null, revision: number | null) {
+  if (!slot) return "待视觉方案";
+  if (slot.activeAssetId && slot.versions.some((asset) => asset.id === slot.activeAssetId && (!revision || asset.planRevision === revision))) return "已完成";
+  if (hasInFlightVisualVersion(slot.versions, revision)) return "生成中";
+  if (slot.versions.some((asset) => asset.status === "failed" && (!revision || asset.planRevision === revision))) return "生成失败";
   return "待生成";
-}
-
-function characterReady(character: CourseCharacterVisual) {
-  if (character.sourceType === "original") return true;
-  if (character.sourceType === "referenced" && character.intent === "originalize") return true;
-  if (character.sourceType === "person") return Boolean(character.personVisualUrl);
-  return Boolean(character.activeAssetId);
-}
-
-function WorkflowStage({ active, done, label, value }: { active: boolean; done: boolean; label: string; value: string }) {
-  return (
-    <div className={cn("min-w-0 border-l-2 pl-3", active ? "border-primary" : done ? "border-emerald-500" : "border-border")}>
-      <p className={cn("truncate text-xs font-medium", active ? "text-primary" : done ? "text-emerald-700" : "text-muted-foreground")}>{label}</p>
-      <p className="mt-1 truncate text-sm font-semibold">{value}</p>
-    </div>
-  );
 }
 
 function QualitySelector({ disabled, onChange, value }: { disabled: boolean; onChange: (quality: CourseImageQuality) => void; value: CourseImageQuality }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs font-medium text-muted-foreground">画面质量</span>
-      <div aria-label="画面质量" className="inline-flex rounded-lg border bg-muted/60 p-0.5" role="radiogroup">
+      <div aria-label="画面质量" className="inline-flex rounded-lg border bg-muted p-1" role="radiogroup">
         {qualityOptions.map((option) => (
-          <button
-            aria-checked={value === option.value}
-            className={cn("min-h-8 rounded-md px-3 text-xs font-medium transition-colors", value === option.value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
-            disabled={disabled}
-            key={option.value}
-            onClick={() => onChange(option.value)}
-            role="radio"
-            type="button"
-          >
-            {option.label}{option.value === "medium" ? "（默认）" : ""}
-          </button>
+          <button aria-checked={value === option.value} className={cn("min-h-8 rounded-md border px-3 text-xs font-medium", value === option.value ? "border-primary bg-primary-50 text-primary-700" : "border-transparent text-muted-foreground hover:bg-background")} disabled={disabled} key={option.value} onClick={() => onChange(option.value)} role="radio" type="button">{option.label}</button>
         ))}
       </div>
-      <span className="text-xs text-muted-foreground">仅影响之后的生成</span>
     </div>
   );
 }
 
-function PromptDisclosure({ defaultOpen, prompt }: { defaultOpen: boolean; prompt: string }) {
-  const [open, setOpen] = useState(defaultOpen);
-  if (!prompt) return null;
+function PromptDisclosure({ prompt }: { prompt: string }) {
   return (
-    <div className="rounded-lg border bg-muted/30">
-      <button aria-expanded={open} className="flex min-h-10 w-full items-center justify-between gap-3 px-3 text-sm font-medium text-muted-foreground hover:text-foreground" onClick={() => setOpen((value) => !value)} type="button">
-        <span>查看 Prompt</span>
-        <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
-      </button>
-      {open ? <pre className="max-h-56 overflow-auto whitespace-pre-wrap border-t px-3 py-3 font-sans text-xs leading-5 text-muted-foreground">{prompt}</pre> : null}
+    <details className="group rounded-lg border bg-muted/20">
+      <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm text-muted-foreground hover:text-foreground">
+        <span>查看 Prompt</span><ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+      </summary>
+      <pre className="max-h-56 overflow-auto whitespace-pre-wrap border-t px-3 py-3 font-sans text-xs leading-5 text-muted-foreground">{prompt}</pre>
+    </details>
+  );
+}
+
+function CharacterPreview({ character }: { character: CourseCharacterVisual }) {
+  const preview = character.sourceType === "person" ? character.personVisualUrl : character.activeAsset?.publicUrl;
+  return (
+    <div className="flex h-36 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-white">
+      {preview ? <Image alt={`${character.displayName} 的形象`} className="size-full object-contain" height={144} src={preview} width={96} unoptimized /> : <PersonAvatar name={character.chineseName} seed={character.characterId} size={72} />}
     </div>
+  );
+}
+
+function courseCharacterAppearance(character: CourseCharacterVisual) {
+  return character.appearanceDescription
+    ?? "当前视觉方案未包含具体外貌描述，请更新视觉方案";
+}
+
+function VisualSection({ action, children, description, icon, title }: {
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  description?: string;
+  icon: React.ReactNode;
+  title: string;
+}) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-card shadow-sm">
+      <div className="flex min-h-12 items-center justify-between gap-3 border-b border-[#CCD8F8] bg-[#E9EEFF] px-4 py-2.5 sm:px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-white/80 text-[#4659DC] ring-1 ring-[#CCD8F8]">{icon}</span>
+          <div className="min-w-0">
+            <h2 className="text-balance text-sm font-bold text-[#30459E]">{title}</h2>
+            {description ? <p className="mt-0.5 text-pretty text-xs text-[#60729A]">{description}</p> : null}
+          </div>
+        </div>
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
+      <div className="p-4 sm:p-5">{children}</div>
+    </section>
+  );
+}
+
+function CharacterCard({ advanced, character, disabled, onEdit, onUpload }: {
+  advanced: boolean;
+  character: CourseCharacterVisual;
+  disabled: boolean;
+  onEdit: () => void;
+  onUpload: () => void;
+}) {
+  const person = character.sourceType === "person";
+  const hasActions = !person || advanced;
+  return (
+    <article className="flex min-h-44 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white" data-testid={`character-card-${character.characterId}`}>
+      <div className="flex flex-1 items-center gap-3 bg-[#F8FBFE] px-3 py-3">
+        <CharacterPreview character={character} />
+        <div className="flex min-w-0 flex-1 flex-col items-center justify-center text-center" data-testid={`character-card-copy-${character.characterId}`}>
+          <h3 className="max-w-full truncate text-base font-bold text-[#19324D]">{character.chineseName}</h3><p className="mt-0.5 max-w-full truncate text-sm font-medium text-[#69829B]">{character.englishName}</p>
+          {person ? <div className="mt-2 w-full"><p className="text-xs font-semibold text-[#60729A]">本课形象</p><p className={cn("mt-1 line-clamp-3 text-pretty text-sm leading-5", character.storyVisualDesign ? "text-[#38536E]" : "text-amber-700")}>{character.storyVisualDesign || "当前方案未包含本课形象，请更新视觉方案"}</p></div> : <>
+            <div className="mt-2 w-full"><p className="text-xs font-semibold text-[#60729A]">角色形象</p><p className={cn("mt-1 line-clamp-3 text-pretty text-sm leading-5", character.appearanceDescription ? "text-[#38536E]" : "text-amber-700")}>{courseCharacterAppearance(character)}</p></div>
+            {character.storyVisualDesign ? <p className="mt-1.5 line-clamp-2 text-pretty text-xs leading-5 text-[#60729A]">本课造型：{character.storyVisualDesign}</p> : null}
+          </>}
+        </div>
+      </div>
+      {hasActions ? <div className="flex min-h-11 items-center justify-center gap-2 border-t border-[#E5EFF7] bg-white px-3 py-2">
+        {!person ? <Button disabled={disabled} onClick={onUpload} size="sm" variant="outline"><Upload />{character.activeAsset?.publicUrl ? "更换参考图" : "上传参考图"}</Button> : null}
+        {advanced ? <Button aria-label={`编辑${character.displayName}形象描述`} disabled={disabled} onClick={onEdit} size="sm" variant="ghost"><Pencil />编辑</Button> : null}
+      </div> : null}
+    </article>
   );
 }
 
@@ -113,71 +237,66 @@ function EmptyImagePreview({ generating, label }: { generating: boolean; label: 
   );
 }
 
-function AssetWorkspace({
-  courseId,
-  activeAssetId,
-  versions,
-  disabled,
-  onChanged,
-  onRegenerate,
-  regenerateLabel,
-  run,
-}: {
-  courseId: string;
+function ImageLoadingPreview({ startedAt, title }: { startedAt?: string | null; title: string }) {
+  return <div className="aspect-video overflow-hidden rounded-xl border border-primary/20 bg-muted" data-testid="asset-image-frame"><TimedOperationStatus description="图片生成通常需要 1–3 分钟，复杂画面可能更久；系统仍在处理中，无需重复点击。" embedded startedAt={startedAt} title={title} /></div>;
+}
+
+function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, onChanged, onRegenerate, pending, planRevision, regenerateLabel, run, versions }: {
   activeAssetId: string | null;
-  versions: CourseVisualAsset[];
+  courseId: string;
   disabled: boolean;
+  generationPending: boolean;
   onChanged: () => Promise<void>;
   onRegenerate: () => void;
+  pending: string | null;
+  planRevision: number | null;
   regenerateLabel: string;
-  run: (key: string, action: () => Promise<void>) => Promise<void>;
+  run: (key: string, action: (requestId: string) => Promise<void>) => Promise<void>;
+  versions: CourseVisualAsset[];
 }) {
-  const initialSelectedId = activeAssetId ?? versions.findLast((asset) => asset.status === "succeeded")?.id ?? versions.at(-1)?.id ?? null;
-  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
+  const [manualSelection, setManualSelection] = useState<{ id: string; anchor: string } | null>(null);
   const [instruction, setInstruction] = useState("");
   const [editing, setEditing] = useState(false);
-  const selected = versions.find((asset) => asset.id === selectedId) ?? versions.find((asset) => asset.id === activeAssetId) ?? versions.at(-1) ?? null;
-  const succeededVersions = versions.filter((asset) => asset.status === "succeeded" && asset.publicUrl);
-  const generating = hasInFlightVisualVersion(versions);
-
+  const latest = versions.at(-1) ?? null;
+  const selectionAnchor = `${activeAssetId ?? ""}:${latest?.id ?? ""}:${latest?.status ?? ""}`;
+  const automaticSelectedId = latest && latest.status !== "succeeded" ? latest.id : activeAssetId ?? latest?.id ?? null;
+  const selectedId = manualSelection?.anchor === selectionAnchor ? manualSelection.id : automaticSelectedId;
+  const selectVersion = (id: string) => setManualSelection({ id, anchor: selectionAnchor });
+  const selected = versions.find((asset) => asset.id === selectedId) ?? versions.find((asset) => asset.id === activeAssetId) ?? latest;
+  const succeeded = versions.filter((asset) => asset.status === "succeeded" && asset.publicUrl);
   if (!selected) return null;
-  const selectedAsset = selected;
+  const current = selected;
 
   async function selectAsset() {
-    await run(`select:${selectedAsset.id}`, async () => {
-      const response = await fetch(`/api/courses/${courseId}/visual-resources/assets/${selectedAsset.id}/select`, { method: "POST" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "采用图片失败");
+    await run(`select:${current.id}`, async () => {
+      await mutationRequest(`/api/courses/${courseId}/visual-resources/assets/${current.id}/select`, { method: "POST" }, "图片版本采用失败");
       await onChanged();
     });
   }
 
   async function refine() {
-    const value = instruction.trim();
-    if (!value) return;
-    await run(`refine:${selectedAsset.id}`, async () => {
-      const response = await fetch(`/api/courses/${courseId}/visual-resources/assets/${selectedAsset.id}/refine`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": requestKey() },
-        body: JSON.stringify({ instruction: value }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "修改图片失败");
+    await run(`refine:${current.id}`, async (requestId) => {
+      await mutationRequest(`/api/courses/${courseId}/visual-resources/assets/${current.id}/refine`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": requestId }, body: JSON.stringify({ instruction }) }, "图片修改失败");
       setInstruction("");
-      setSelectedId(data.id);
+      setEditing(false);
       await onChanged();
     });
   }
 
+  const inFlight = versions.findLast((asset) => asset.planRevision === planRevision && ["pending", "submitting", "generating"].includes(asset.status)) ?? null;
+  const refiningPending = Boolean(pending?.startsWith("refine:") && versions.some((asset) => pending === `refine:${asset.id}`));
+  const generating = Boolean(inFlight || generationPending || refiningPending);
+  const refining = refiningPending || inFlight?.operation === "revision";
+  const generationTitle = refining ? "正在修改图片" : regenerateLabel.includes("封面") ? "正在重新生成视觉封面" : "正在重新生成插图";
+  const visibleStatus = generating ? "生成中" : statusLabel(selected.status);
   return (
     <div className="space-y-3">
-      <div className="relative aspect-video w-full overflow-hidden rounded-xl border bg-muted">
-        {selected.publicUrl ? <Image alt="当前查看的图片版本" className="object-cover" fill sizes="(max-width: 1024px) 100vw, 760px" src={selected.publicUrl} unoptimized /> : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{statusLabel(selected.status)}</div>}
+      <div className="relative aspect-video w-full overflow-hidden rounded-xl border bg-muted" data-testid="asset-image-frame">
+        {generating ? <TimedOperationStatus description="图片生成通常需要 1–3 分钟，复杂画面可能更久；系统仍在处理中，无需重复点击。" embedded startedAt={inFlight?.startedAt} title={generationTitle} /> : selected.publicUrl ? <Image alt="当前查看的图片版本" className="object-cover" fill sizes="(max-width: 1024px) 100vw, 760px" src={selected.publicUrl} unoptimized /> : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{visibleStatus}</div>}
       </div>
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={selected.status === "succeeded" ? "success" : selected.status === "failed" ? "destructive" : "secondary"}>{statusLabel(selected.status)}</Badge>
+          <Badge variant={generating ? "secondary" : selected.status === "succeeded" ? "success" : selected.status === "failed" ? "destructive" : "secondary"}>{visibleStatus}</Badge>
           <span className="text-xs text-muted-foreground">质量：{qualityLabel(selected.quality)}</span>
           {activeAssetId === selected.id ? <Badge variant="outline"><Check className="mr-1 size-3" />当前采用</Badge> : selected.status === "succeeded" ? <Button disabled={disabled} onClick={selectAsset} size="sm" variant="outline">采用此版本</Button> : null}
         </div>
@@ -186,251 +305,296 @@ function AssetWorkspace({
           <Button disabled={disabled || generating} onClick={onRegenerate} size="sm" variant="outline"><RefreshCw className={cn(generating && "animate-spin")} />{generating ? "生成中" : regenerateLabel}</Button>
         </div>
       </div>
-
-      {selected.failureReason ? <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{selected.failureReason}</p> : null}
-
+      {selected.failureReason && !generating ? <div className="space-y-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert"><p>{selected.failureReason}</p><p className="font-medium">{selected.operation === "revision" ? "编辑图片失败，可以修改要求后重试" : "图片生成失败，可以重新生成"}</p>{selected.operation === "revision" && selected.parentAssetId ? <Button onClick={() => { selectVersion(selected.parentAssetId!); setEditing(true); }} size="sm" variant="outline">修改要求后重试</Button> : null}</div> : null}
       {editing && selected.status === "succeeded" ? (
         <div className="rounded-lg border bg-muted/30 p-3">
-          <label className="text-sm font-medium">修改当前版本
-            <textarea className="mt-2 min-h-20 w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-base font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" disabled={disabled} maxLength={500} onChange={(event) => setInstruction(event.target.value)} placeholder="例如：把背景改成黄昏" value={instruction} />
-          </label>
+          <label className="text-sm font-medium" htmlFor={`image-edit-${current.id}`}>修改当前版本</label><p className="mt-1 text-xs leading-5 text-muted-foreground">请具体描述要修改的对象、位置和目标结果，信息越明确，修改越准确。</p><textarea className="mt-2 min-h-20 w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-base font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" disabled={disabled} id={`image-edit-${current.id}`} maxLength={500} onChange={(event) => setInstruction(event.target.value)} placeholder="例如：消除画面右侧重复的角色，其他人物和构图保持不变" value={instruction} />
           <div className="mt-2 flex justify-end"><Button disabled={disabled || !instruction.trim()} onClick={refine} size="sm"><Send />提交修改</Button></div>
         </div>
       ) : null}
-
-      {succeededVersions.length > 1 ? (
+      {succeeded.length > 1 ? (
         <details className="group rounded-lg border bg-muted/20">
-          <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm text-muted-foreground hover:text-foreground">
-            <span className="flex items-center gap-2"><History className="size-4" />历史版本（{succeededVersions.length}）</span>
-            <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
-          </summary>
-          <div aria-label="成功图片版本" className="flex gap-2 overflow-x-auto border-t p-3">
-            {succeededVersions.map((asset) => (
-              <button aria-label={`查看 ${asset.createdAt} 生成的版本`} className={cn("relative h-16 w-28 shrink-0 overflow-hidden rounded-lg border-2 bg-muted", selected.id === asset.id ? "border-primary" : "border-transparent")} key={asset.id} onClick={() => setSelectedId(asset.id)} type="button">
-                <Image alt="" className="object-cover" fill sizes="112px" src={asset.publicUrl!} unoptimized />
-              </button>
-            ))}
-          </div>
+          <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm text-muted-foreground hover:text-foreground"><span className="flex items-center gap-2"><History className="size-4" />历史版本（{succeeded.length}）</span><ChevronDown className="size-4 transition-transform group-open:rotate-180" /></summary>
+          <div aria-label="成功图片版本" className="flex gap-2 overflow-x-auto border-t p-3">{succeeded.map((item) => <button aria-label={`查看 ${item.createdAt} 生成的版本`} className={cn("relative h-16 w-28 shrink-0 overflow-hidden rounded-lg border-2 bg-muted", selected.id === item.id ? "border-primary" : "border-transparent")} key={item.id} onClick={() => selectVersion(item.id)} type="button"><Image alt="" className="object-cover" fill sizes="112px" src={item.publicUrl!} unoptimized /></button>)}</div>
         </details>
       ) : null}
     </div>
   );
 }
 
+type ChapterGroup = { id: string; order: number; title: string; slots: CourseVisualImageSlot[] };
+
+function initialChapter(state: CourseVisualResourcesState) {
+  const lessonSlots = state.slots.filter((slot) => slot.slotType === "lesson_shot");
+  return lessonSlots.find((slot) => needsInitialVisualGeneration(slot, state.planRevision))?.chapterId ?? lessonSlots[0]?.chapterId ?? "";
+}
+
 export function CourseVisualResourcesWorkspace({ initialState }: { initialState: CourseVisualResourcesState }) {
   const [state, setState] = useState(initialState);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const retryRequestIds = useRef(new Map<string, string>());
+  const [advanced, setAdvanced] = useState(false);
+  const [activeTab, setActiveTab] = useState(() => initialChapter(initialState));
+  const [characterTab, setCharacterTab] = useState<"people" | "main" | "other">("people");
+  const [characterPage, setCharacterPage] = useState(1);
+  const [confirmPlanUpdate, setConfirmPlanUpdate] = useState(false);
+  const [confirmOriginalize, setConfirmOriginalize] = useState(false);
+  const [uploadCharacter, setUploadCharacter] = useState<CourseCharacterVisual | null>(null);
+  const [editingCharacter, setEditingCharacter] = useState<CourseCharacterVisual | null>(null);
+  const [appearanceDraft, setAppearanceDraft] = useState("");
+  const [courseAppearanceDraft, setCourseAppearanceDraft] = useState("");
+  const [dialogError, setDialogError] = useState("");
+  const tabListRef = useRef<HTMLDivElement>(null);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     const response = await fetch(`/api/courses/${state.course.id}/visual-resources`, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || "视觉资源加载失败");
     setState(data);
-  }
+    return data as CourseVisualResourcesState;
+  }, [state.course.id]);
 
-  const hasServerGeneration = state.slots.some((slot) => hasInFlightVisualVersion(slot.versions));
+  const hasServerGeneration = state.slots.some((slot) => hasInFlightVisualVersion(slot.versions, state.planRevision));
+  useEffect(() => {
+    if (!shouldPollVisualResources(pending, hasServerGeneration)) return;
+    const timer = window.setInterval(() => { void refresh().catch((reason) => setError(reason instanceof Error ? reason.message : "图片状态同步失败")); }, 3_000);
+    return () => window.clearInterval(timer);
+  }, [hasServerGeneration, pending, refresh]);
 
   useEffect(() => {
-    if (!hasServerGeneration) return;
-    let active = true;
-    const timer = window.setInterval(() => {
-      void fetch(`/api/courses/${state.course.id}/visual-resources`, { cache: "no-store" })
-        .then(async (response) => {
-          const data = await response.json();
-          if (active && response.ok) setState(data);
-        })
-        .catch(() => undefined);
-    }, 3_000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [hasServerGeneration, state.course.id]);
+    const sync = () => { void refresh().catch(() => undefined); };
+    const syncWhenVisible = () => { if (document.visibilityState === "visible") sync(); };
+    window.addEventListener("online", sync);
+    document.addEventListener("visibilitychange", syncWhenVisible);
+    return () => {
+      window.removeEventListener("online", sync);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+    };
+  }, [refresh]);
 
-  async function run(key: string, action: () => Promise<void>) {
+  async function run(key: string, action: (requestId: string) => Promise<void>) {
     if (pending) return;
-    setPending(key);
-    setError(null);
-    try { await action(); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "操作失败，请重试"); }
+    const before = visualStateFingerprint(state);
+    const requestId = retryRequestIds.current.get(key) ?? requestKey();
+    retryRequestIds.current.set(key, requestId);
+    setPending(key); setError(null);
+    try {
+      await action(requestId);
+      retryRequestIds.current.delete(key);
+    }
+    catch (reason) {
+      if (reason instanceof AmbiguousMutationError) {
+        const reconciled = await refresh().catch(() => null);
+        if (reconciled && visualStateFingerprint(reconciled) !== before) {
+          retryRequestIds.current.delete(key);
+          return;
+        }
+        setError(`${reason.message}；恢复网络后可安全重试`);
+      } else {
+        retryRequestIds.current.delete(key);
+        setError(reason instanceof Error ? reason.message : "操作失败");
+      }
+    }
     finally { setPending(null); }
   }
 
-  async function jsonAction(key: string, url: string, method: "POST" | "PATCH", body?: unknown, paid = false) {
-    await run(key, async () => {
-      const response = await fetch(url, { method, headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...(paid ? { "Idempotency-Key": requestKey() } : {}) }, body: body ? JSON.stringify(body) : undefined });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "操作失败，请重试");
+  async function jsonAction(key: string, url: string, body?: unknown) {
+    await run(key, async (requestId) => {
+      await mutationRequest(url, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": requestId }, body: body === undefined ? undefined : JSON.stringify(body) }, "操作失败");
       await refresh();
     });
   }
 
-  function generateSlot(slotId: string) {
-    void jsonAction(`slot:${slotId}`, `/api/courses/${state.course.id}/visual-resources/images/generate`, "POST", { scope: "slot", slotId }, true);
+  const coverSlot = state.slots.find((slot) => slot.slotType === "visual_cover") ?? null;
+  const lessonSlots = state.slots.filter((slot) => slot.slotType === "lesson_shot");
+  const chapters = useMemo(() => Array.from(lessonSlots.reduce((groups, item) => {
+    const id = item.chapterId ?? "unknown";
+    const group = groups.get(id) ?? { id, order: item.chapterOrder ?? groups.size + 1, title: item.chapterTitle ?? "未命名章节", slots: [] };
+    group.slots.push(item); groups.set(id, group); return groups;
+  }, new Map<string, ChapterGroup>()).values()).sort((a, b) => a.order - b.order), [lessonSlots]);
+  const peopleCharacters = state.characters.filter((character) => character.sourceType === "person");
+  const mainCharacters = state.characters.filter((character) => character.sourceType !== "person" && character.isMain);
+  const otherCharacters = state.characters.filter((character) => character.sourceType !== "person" && !character.isMain);
+  const canOriginalize = state.planReady && state.planMode === "faithful" && state.characters.some((character) => character.sourceType === "referenced");
+  const characterGroup = characterTab === "people" ? peopleCharacters : characterTab === "main" ? mainCharacters : otherCharacters;
+  const characterTotalPages = Math.max(1, Math.ceil(characterGroup.length / CHARACTER_PAGE_SIZE));
+  const safeCharacterPage = Math.min(characterPage, characterTotalPages);
+  const visibleCharacters = characterGroup.slice((safeCharacterPage - 1) * CHARACTER_PAGE_SIZE, safeCharacterPage * CHARACTER_PAGE_SIZE);
+  const missingPeople = peopleCharacters.filter((character) => coverSlot?.characterIds.includes(character.characterId) && !character.personVisualUrl);
+  const coverConfirmed = Boolean(state.confirmedCoverAssetId && coverSlot?.activeAssetId === state.confirmedCoverAssetId);
+  const coverStatus = pending === `slot:${coverSlot?.id}` ? "生成中" : slotStatusLabel(coverSlot, state.planRevision);
+  const completed = lessonSlots.filter((item) => item.activeAssetId && item.versions.some((asset) => asset.id === item.activeAssetId && asset.planRevision === state.planRevision)).length;
+  const generating = lessonSlots.filter((item) => hasInFlightVisualVersion(item.versions, state.planRevision)).length;
+  const failed = lessonSlots.filter((item) => item.versions.some((asset) => asset.status === "failed" && asset.planRevision === state.planRevision)).length;
+  const missing = lessonSlots.length - completed - generating;
+  const currentChapter = chapters.find((chapter) => chapter.id === activeTab) ?? null;
+  const disabled = Boolean(pending || hasServerGeneration);
+  const canEnterPreview = !hasServerGeneration;
+
+  useEffect(() => {
+    const active = tabListRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    active?.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }, [activeTab]);
+
+  function moveTab(direction: 1 | -1) {
+    const tabIds = chapters.map((chapter) => chapter.id);
+    if (!tabIds.length) return;
+    const currentIndex = Math.max(0, tabIds.indexOf(activeTab));
+    const nextIndex = (currentIndex + direction + tabIds.length) % tabIds.length;
+    setActiveTab(tabIds[nextIndex]);
   }
 
-  async function uploadReference(characterId: string, file: File) {
-    await run(`upload:${characterId}`, async () => {
-      const form = new FormData();
-      form.set("image", file);
-      const response = await fetch(`/api/courses/${state.course.id}/visual-resources/characters/${characterId}/reference`, { method: "POST", headers: { "Idempotency-Key": requestKey() }, body: form });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "外形参考保存失败");
+  async function uploadReference(character: CourseCharacterVisual, file: File) {
+    await run(`upload:${character.characterId}`, async (requestId) => {
+      const form = new FormData(); form.set("image", file);
+      await mutationRequest(`/api/courses/${state.course.id}/visual-resources/characters/${character.characterId}/reference`, { method: "POST", headers: { "Idempotency-Key": requestId }, body: form }, "外形参考保存失败");
       await refresh();
+      setUploadCharacter(null);
+    });
+  }
+
+  function openAppearanceEditor(character: CourseCharacterVisual) {
+    setDialogError("");
+    setEditingCharacter(character);
+    setAppearanceDraft(character.appearanceDescription ?? "");
+    setCourseAppearanceDraft(character.storyVisualDesign ?? "");
+  }
+
+  async function saveAppearance() {
+    if (!editingCharacter || pending) return;
+    setDialogError("");
+    setPending(`appearance:${editingCharacter.characterId}`);
+    try {
+      const response = await fetch(`/api/courses/${state.course.id}/visual-resources/characters/${editingCharacter.characterId}/appearance`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingCharacter.sourceType === "person"
+          ? { courseAppearance: courseAppearanceDraft }
+          : { appearanceDescription: appearanceDraft, courseAppearance: courseAppearanceDraft }),
+      });
+      const data = await response.json().catch(() => null) as { message?: string } | null;
+      if (!response.ok) {
+        const message = data?.message || "形象描述保存失败";
+        throw new Error(message);
+      }
+      await refresh();
+      setEditingCharacter(null);
+    } catch (reason) {
+      setDialogError(reason instanceof Error ? reason.message : "形象描述保存失败");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  function generateSlot(slotId: string) { void jsonAction(`slot:${slotId}`, `/api/courses/${state.course.id}/visual-resources/images/generate`, { scope: "slot", slotId }); }
+
+  async function confirmCover() {
+    if (!coverSlot?.activeAssetId) return;
+    await run("confirm-cover", async () => {
+      await mutationRequest(`/api/courses/${state.course.id}/visual-resources/cover/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assetId: coverSlot.activeAssetId }) }, "封面确认失败");
+      const next = await refresh();
+      setActiveTab(initialChapter(next));
     });
   }
 
   async function enterPreview() {
     await run("confirm", async () => {
-      const response = await fetch(`/api/courses/${state.course.id}/visual-resources/confirm`, { method: "POST" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "无法进入预览发布");
-      window.location.assign(data.redirectUrl);
+      await mutationRequest(`/api/courses/${state.course.id}/visual-resources/confirm`, { method: "POST" }, "无法进入预览发布");
+      window.location.assign(`/courses/${state.course.id}/create/preview`);
     });
   }
 
-  const disabled = pending !== null;
-  const coverSlot = state.slots.find((slot) => slot.slotType === "visual_cover") ?? null;
-  const lessonSlots = state.slots.filter((slot) => slot.slotType === "lesson_shot");
-  const missingSlots = state.slots.filter(needsInitialVisualGeneration);
-  const inFlightSlotCount = state.slots.filter((slot) => hasInFlightVisualVersion(slot.versions)).length;
-  const incompleteSlotCount = state.slots.filter((slot) => !slot.activeAssetId).length;
-  const canEnterPreview = inFlightSlotCount === 0;
-  const previewStatusMessage = inFlightSlotCount > 0
-      ? `还有 ${inFlightSlotCount} 张图片正在生成，全部完成后才能预览发布`
-      : !state.planReady || !state.slots.length
-        ? "尚未生成课程图片，将使用占位图继续预览发布"
-        : incompleteSlotCount > 0
-          ? `还有 ${incompleteSlotCount} 张图片未完成，将使用占位图继续预览发布`
-          : "课程图片已就绪，可以进入预览发布";
-  const chapterGroups = useMemo(() => Array.from(lessonSlots.reduce((groups, slot) => {
-    const key = slot.chapterId ?? "unknown";
-    const group = groups.get(key) ?? { id: key, order: slot.chapterOrder ?? groups.size + 1, title: slot.chapterTitle ?? "未命名章节", slots: [] as CourseVisualImageSlot[] };
-    group.slots.push(slot);
-    groups.set(key, group);
-    return groups;
-  }, new Map<string, { id: string; order: number; title: string; slots: CourseVisualImageSlot[] }>()).values()).sort((a, b) => a.order - b.order), [lessonSlots]);
-
-  const rolesReady = state.characters.every(characterReady);
-  const readyRoleCount = state.characters.filter(characterReady).length;
-  const adoptedLessonCount = lessonSlots.filter((slot) => slot.activeAssetId).length;
-  const coverDone = Boolean(coverSlot?.activeAssetId);
-  const chaptersDone = lessonSlots.length > 0 && adoptedLessonCount === lessonSlots.length;
-  const activeWorkflowStage = !rolesReady ? 1 : !state.planReady ? 2 : !coverDone ? 3 : 4;
-
   return (
-    <main className="mx-auto w-full max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
+    <main className="mx-auto w-full max-w-5xl space-y-4">
       <CourseCreateSteps courseId={state.course.id} currentStep={5} furthestStep={courseStageStep(state.course.currentStage)} onNavigate={(href) => window.location.assign(href)} />
-
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div><p className="text-sm font-medium text-primary">阶段五</p><h1 className="text-2xl font-semibold tracking-tight">视觉资源</h1><p className="mt-1 text-sm text-muted-foreground">确认角色外形，再按旧版流程完成资源方案、封面和章节插图。</p></div>
-        <div className="flex flex-wrap gap-2"><Button asChild variant="outline"><Link href={`/courses/${state.course.id}/create/content`}><ChevronLeft />返回文案与练习</Link></Button><Button disabled={disabled || !canEnterPreview} loading={pending === "confirm"} onClick={enterPreview}><Send />进入预览发布</Button></div>
+        <div><p className="text-sm font-medium text-primary">阶段五</p><h1 className="text-balance text-2xl font-semibold">视觉资源</h1></div>
+        <div className="flex flex-wrap gap-2"><Button asChild variant="outline"><Link href={`/courses/${state.course.id}/create/content`}><ChevronLeft />返回文案与练习</Link></Button><Button aria-expanded={advanced} onClick={() => setAdvanced((value) => !value)} variant="ghost"><Settings2 />高级模式</Button><Button disabled={disabled || !canEnterPreview} loading={pending === "confirm"} onClick={enterPreview}><Send />进入预览发布</Button></div>
       </header>
 
-      {error ? <div className="flex items-start justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert"><span className="min-w-0 break-words">{error}</span><button aria-label="关闭错误提示" className="shrink-0 underline" onClick={() => setError(null)} type="button">关闭</button></div> : null}
-      {showsImageGenerationWait(pending) ? <div aria-live="polite" className="rounded-xl border border-primary/20 bg-primary-50 px-4 py-3 text-sm text-primary-700">生成请求已提交，图片通常需要 1–3 分钟，请保持页面打开。</div> : null}
+      {error ? <div className="flex items-start justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert"><span>{error}</span><button className="underline" onClick={() => setError(null)} type="button">关闭</button></div> : null}
+      {state.policyBlocked ? <div className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2"><CircleAlert className="size-4" />部分图片受到生成限制。原创形象可能与学生熟悉的 IP 角色不完全一致。</span><Button disabled={disabled} onClick={() => setConfirmOriginalize(true)} size="sm" variant="outline">改用原创视觉设定</Button></div> : null}
+      <VisualSection icon={<Sparkles className="size-4" />} title="图片生成流程">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div className={cn("rounded-lg border px-3 py-2.5", state.planReady ? "border-emerald-200 bg-emerald-50/70" : "border-primary-200 bg-primary-50/60")}><p className="text-xs font-semibold text-foreground">1 · 视觉方案</p><p className="mt-1 text-xs text-muted-foreground">{state.planReady ? "已生成" : "待生成"}</p></div>
+          <div className={cn("rounded-lg border px-3 py-2.5", state.planReady ? "border-emerald-200 bg-emerald-50/70" : "border-border bg-muted/25")}><p className="text-xs font-semibold text-foreground">2 · 主要角色</p><p className="mt-1 text-xs text-muted-foreground">{state.planReady ? `${state.characters.length} 个角色` : "待视觉方案"}</p></div>
+          <div className={cn("rounded-lg border px-3 py-2.5", coverConfirmed ? "border-emerald-200 bg-emerald-50/70" : "border-border bg-muted/25")}><p className="text-xs font-semibold text-foreground">3 · 视觉封面</p><p className="mt-1 text-xs text-muted-foreground">{state.planReady ? coverConfirmed ? "已确认" : coverStatus : "待视觉方案"}</p></div>
+          <div className={cn("rounded-lg border px-3 py-2.5", lessonSlots.length > 0 && completed === lessonSlots.length ? "border-emerald-200 bg-emerald-50/70" : "border-border bg-muted/25")}><p className="text-xs font-semibold text-foreground">4 · 章节图片</p><p className="mt-1 text-xs text-muted-foreground">{state.planReady ? `${completed}/${lessonSlots.length} 已完成` : "待视觉方案"}</p></div>
+        </div>
+      </VisualSection>
 
-      <Card>
-        <CardContent className="space-y-5 py-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div><p className="text-sm font-semibold">图片生成流程</p><p className="mt-1 text-xs text-muted-foreground">主路径按顺序推进，完成项仍可返回调整。</p></div>
-            <QualitySelector disabled={disabled} onChange={(quality) => void jsonAction(`quality:${quality}`, `/api/courses/${state.course.id}/visual-resources/settings`, "PATCH", { quality })} value={state.quality} />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <WorkflowStage active={activeWorkflowStage === 1} done={rolesReady} label="1 · 角色确认" value={`${readyRoleCount}/${state.characters.length} 已确认`} />
-            <WorkflowStage active={activeWorkflowStage === 2} done={state.planReady} label="2 · 资源方案" value={state.planReady ? "已生成" : "待生成"} />
-            <WorkflowStage active={activeWorkflowStage === 3} done={state.planReady && coverDone} label="3 · 视觉封面" value={state.planReady ? slotStatusLabel(coverSlot) : "待资源方案"} />
-            <WorkflowStage active={activeWorkflowStage === 4} done={state.planReady && chaptersDone} label="4 · 章节插图" value={state.planReady ? lessonSlots.length ? `${adoptedLessonCount}/${lessonSlots.length} 张已采用` : "待生成" : "待资源方案"} />
-          </div>
-        </CardContent>
-      </Card>
+      {advanced ? <VisualSection icon={<Settings2 className="size-4" />} title="高级设置"><div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">调整后续图片的生成质量。</p><QualitySelector disabled={disabled} onChange={(quality) => void run(`quality:${quality}`, async () => { const response = await fetch(`/api/courses/${state.course.id}/visual-resources/settings`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quality }) }); const data = await response.json(); if (!response.ok) throw new Error(data.message); await refresh(); })} value={state.quality} /></div>{canOriginalize && !state.policyBlocked ? <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><p className="max-w-2xl text-xs leading-5 text-muted-foreground">如果原作角色受到图片生成限制，可改为不含原作名称和专属标志的原创形象。</p><Button disabled={disabled} onClick={() => setConfirmOriginalize(true)} size="sm" variant="outline">改用原创视觉设定</Button></div> : null}</div></VisualSection> : null}
 
-      <Card>
-        <CardHeader className="pb-3"><div className="flex flex-wrap items-start justify-between gap-3"><div><CardTitle>第一步：确认角色外形</CardTitle><CardDescription>参考图只固定脸型、发型和体态；服装、动作与画风由本课造型统一控制。</CardDescription></div><Badge variant={rolesReady ? "success" : "secondary"}>{readyRoleCount}/{state.characters.length} 已确认</Badge></div></CardHeader>
-        <CardContent className="divide-y rounded-xl border px-4">
-          {state.characters.map((character) => {
-            const ready = characterReady(character);
-            const usesTextDesign = character.sourceType === "original" || (character.sourceType === "referenced" && character.intent === "originalize");
-            const status = usesTextDesign ? "使用文字设定" : ready ? "外形参考已就绪" : "需要上传参考图";
-            const previewUrl = character.sourceType === "person" ? character.personVisualUrl : character.activeAsset?.publicUrl ?? character.versions.findLast((asset) => asset.status === "succeeded")?.publicUrl;
-            return (
-              <div className="py-4" key={character.characterId}>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <div className="relative flex h-16 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted text-muted-foreground">
-                    {previewUrl ? <Image alt={`${character.displayName} 的外形参考`} className="object-cover" fill sizes="56px" src={previewUrl} unoptimized /> : <UserRound className="size-6" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2"><p className="font-medium">{character.displayName}</p><Badge variant={ready ? "success" : "secondary"}>{status}</Badge></div>
-                    <p className="mt-1 text-xs text-muted-foreground">{character.sourceType === "person" ? "人物档案角色" : character.sourceType === "referenced" ? "外部引用角色" : "原创角色"}</p>
-                    {character.storyVisualDesign ? <p className="mt-2 line-clamp-2 text-sm leading-5 text-muted-foreground"><span className="font-medium text-foreground">本课造型：</span>{character.storyVisualDesign}</p> : <p className="mt-2 text-xs text-muted-foreground">生成资源方案后补充本课服装与造型设定。</p>}
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2 sm:max-w-sm sm:justify-end">
-                    {character.sourceType === "referenced" ? (["preserve_identity", "originalize"] as CharacterVisualIntent[]).map((intent) => <button className={cn("min-h-9 rounded-lg border px-3 text-xs font-medium", character.intent === intent ? "border-primary bg-primary-50 text-primary-700" : "bg-card hover:bg-muted")} disabled={disabled} key={intent} onClick={() => void jsonAction(`intent:${character.characterId}`, `/api/courses/${state.course.id}/visual-resources/characters/${character.characterId}/intent`, "PATCH", { intent })} type="button">{intent === "preserve_identity" ? "保持原形象" : "课堂原创化"}</button>) : null}
-                    {character.sourceType === "person" ? <Button disabled={disabled} onClick={() => void jsonAction(`latest:${character.characterId}`, `/api/courses/${state.course.id}/visual-resources/characters/${character.characterId}/use-latest-person-visual`, "POST")} size="sm" variant="outline"><RefreshCw />使用最新形象</Button> : null}
-                    {character.sourceType !== "person" && character.intent === "preserve_identity" ? <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-dashed px-3 text-xs font-medium hover:border-primary hover:bg-primary-50"><Upload className="size-4" />{ready ? "更换参考图" : "选择参考图"}<input accept="image/jpeg,image/png,image/webp" aria-label="选择参考图" className="sr-only" disabled={disabled} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadReference(character.characterId, file); event.currentTarget.value = ""; }} type="file" /></label> : null}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
+      <VisualSection
+        action={state.planReady ? <Button disabled={disabled} loading={pending === "plan"} onClick={() => setConfirmPlanUpdate(true)} size="sm" variant="outline"><RefreshCw />更新视觉方案</Button> : undefined}
+        description="生成全课角色形象、封面和章节图片方案；不会生成图片。"
+        icon={<Sparkles className="size-4" />}
+        title="视觉方案"
+      >
+        {pending === "plan"
+          ? <VisualPlanLoading />
+          : state.planReady
+            ? <VisualPlanSummary chapterCount={chapters.length} characterCount={state.characters.length} imageCount={lessonSlots.length} />
+            : <div className="flex flex-col items-center py-4 text-center"><Button disabled={disabled} onClick={() => void jsonAction("plan", `/api/courses/${state.course.id}/visual-resources/plan/generate`)}><Sparkles />生成视觉方案</Button></div>}
+      </VisualSection>
 
-      {!state.planReady ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center py-10 text-center">
-            <div className="mb-3 flex size-12 items-center justify-center rounded-xl bg-primary-50 text-primary"><Sparkles className="size-6" /></div>
-            <h2 className="text-lg font-semibold">第二步：生成资源方案</h2>
-            <p className="mt-2 max-w-lg text-sm text-muted-foreground">生成全课统一角色造型、封面和段落图片 Prompt；这一步不产生图片费用。</p>
-            {!rolesReady ? <p className="mt-3 text-sm font-medium text-amber-700">请先补齐需要保持身份的角色外形参考。</p> : null}
-            <Button className="mt-5" disabled={disabled || !rolesReady} loading={pending === "plan"} onClick={() => void jsonAction("plan", `/api/courses/${state.course.id}/visual-resources/plan/generate`, "POST")}><Sparkles />生成资源方案</Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div><p className="text-sm font-semibold">第二步：资源方案已生成</p><p className="mt-1 text-sm text-muted-foreground">1 张封面 · {chapterGroups.length} 章 · {lessonSlots.length} 张段落插图</p></div>
-            <Button disabled={disabled || !rolesReady} loading={pending === "plan"} onClick={() => void jsonAction("plan", `/api/courses/${state.course.id}/visual-resources/plan/generate`, "POST")} size="sm" variant="outline"><RefreshCw />更新资源方案</Button>
-          </CardContent>
-        </Card>
-      )}
+      <VisualSection description="系统将根据故事生成角色形象；若封面生成的人物形象不够精确，可上传参考图后重试。" icon={<UserRound className="size-4" />} title="主要角色">
+          {!state.planReady ? <p className="py-4 text-center text-sm text-muted-foreground">生成视觉方案后显示本课角色形象。</p> : <div className="space-y-3">
+            <div className="flex overflow-x-auto rounded-lg bg-slate-100 p-1" role="tablist" aria-label="角色分类">
+              {([{ id: "people", label: "老师学生", count: peopleCharacters.length }, { id: "main", label: "主要角色", count: mainCharacters.length }, { id: "other", label: "其他角色", count: otherCharacters.length }] as const).map((tab) => <button aria-selected={characterTab === tab.id} className={cn("min-h-9 shrink-0 rounded-md px-4 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-primary/30", characterTab === tab.id ? "bg-white text-[#30459E] shadow-sm" : "text-slate-600 hover:bg-white/70 hover:text-[#30459E]")} key={tab.id} onClick={() => { setCharacterTab(tab.id); setCharacterPage(1); }} role="tab" type="button">{tab.label}（{tab.count}）</button>)}
+            </div>
+            {visibleCharacters.length ? <div className="grid gap-3 lg:grid-cols-2" data-testid="character-list">{visibleCharacters.map((character) => <CharacterCard advanced={advanced} character={character} disabled={disabled} key={character.characterId} onEdit={() => openAppearanceEditor(character)} onUpload={() => setUploadCharacter(character)} />)}</div> : <p className="py-6 text-center text-sm text-muted-foreground">暂无角色</p>}
+            {characterGroup.length > CHARACTER_PAGE_SIZE ? <div className="flex items-center justify-between border-t pt-3"><span className="text-xs text-muted-foreground">共 {characterGroup.length} 个角色</span><div className="flex items-center gap-2"><Button aria-label="上一页角色" disabled={safeCharacterPage <= 1} onClick={() => setCharacterPage((page) => page - 1)} size="icon-sm" variant="outline"><ChevronLeft /></Button><span className="min-w-14 text-center text-xs tabular-nums text-muted-foreground">{safeCharacterPage}/{characterTotalPages}</span><Button aria-label="下一页角色" disabled={safeCharacterPage >= characterTotalPages} onClick={() => setCharacterPage((page) => page + 1)} size="icon-sm" variant="outline"><ChevronRight /></Button></div></div> : null}
+          </div>}
+      </VisualSection>
 
-      {state.planReady && coverSlot ? (
-        <Card>
-          <CardHeader className="pb-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><CardTitle>第三步：视觉封面</CardTitle><CardDescription className="mt-2 line-clamp-2">{coverSlot.sourceText}</CardDescription></div><Badge variant={coverDone ? "success" : hasSuccessfulVersion(coverSlot) ? "warning" : "secondary"}>{slotStatusLabel(coverSlot)}</Badge></div></CardHeader>
-          <CardContent className="space-y-3">
-            {coverSlot.versions.length ? <AssetWorkspace activeAssetId={coverSlot.activeAssetId} courseId={state.course.id} disabled={disabled} onChanged={refresh} onRegenerate={() => generateSlot(coverSlot.id)} regenerateLabel="重新生成封面" run={run} versions={coverSlot.versions} /> : <><EmptyImagePreview generating={pending === `slot:${coverSlot.id}`} label="尚未生成视觉封面" /><Button disabled={disabled} loading={pending === `slot:${coverSlot.id}`} onClick={() => generateSlot(coverSlot.id)} size="sm"><ImageIcon />生成封面</Button></>}
-            <PromptDisclosure defaultOpen={!hasSuccessfulVersion(coverSlot)} prompt={coverSlot.prompt} />
-          </CardContent>
-        </Card>
-      ) : null}
+      {state.planReady && coverSlot ? <VisualSection action={<Badge variant={coverConfirmed ? "success" : "secondary"}>{coverConfirmed ? "已确认" : coverStatus}</Badge>} icon={<ImageIcon className="size-4" />} title="视觉封面">
+        <div className="space-y-3">
+          <PromptDisclosure prompt={coverSlot.prompt} />
+          {coverSlot.hasUnsyncedChanges ? <p className="rounded-lg bg-muted/45 px-3 py-2 text-sm text-muted-foreground">角色设定已更新，现有图片不会自动变化；如有需要，请重新生成。</p> : null}
+          {coverSlot.versions.length ? <AssetWorkspace activeAssetId={coverSlot.activeAssetId} courseId={state.course.id} disabled={disabled} generationPending={pending === `slot:${coverSlot.id}`} onChanged={async () => { await refresh(); }} onRegenerate={() => generateSlot(coverSlot.id)} pending={pending} planRevision={state.planRevision} regenerateLabel="重新生成封面" run={run} versions={coverSlot.versions} /> : <>{pending === `slot:${coverSlot.id}` ? <ImageLoadingPreview title="正在生成视觉封面" /> : <EmptyImagePreview generating={false} label="尚未生成视觉封面" />}{missingPeople.length ? <p className="text-sm text-destructive">人物档案缺少可用形象：{missingPeople.map((item) => item.chineseName ?? item.displayName).join("、")}</p> : null}<Button disabled={disabled || Boolean(missingPeople.length)} loading={pending === `slot:${coverSlot.id}`} onClick={() => generateSlot(coverSlot.id)}><ImageIcon />生成视觉封面</Button></>}
+          {coverSlot.activeAssetId && !coverConfirmed ? <div className="flex justify-end border-t pt-4"><Button disabled={disabled} loading={pending === "confirm-cover"} onClick={() => void confirmCover()}><Check />确认视觉封面</Button></div> : null}
+        </div>
+      </VisualSection> : null}
 
-      {state.planReady && lessonSlots.length ? (
-        <Card>
-          <CardHeader className="pb-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><CardTitle>第四步：章节插图</CardTitle><CardDescription>按章节核对正文和 Prompt，可生成单张、本章或全部缺失图片。</CardDescription></div>{missingSlots.some((slot) => slot.slotType === "lesson_shot") ? <Button disabled={disabled} loading={pending === "generate:all"} onClick={() => void jsonAction("generate:all", `/api/courses/${state.course.id}/visual-resources/images/generate`, "POST", { scope: "all" }, true)} size="sm"><Sparkles />生成全部缺失图片</Button> : null}</div></CardHeader>
-          <CardContent className="space-y-7">
-            {chapterGroups.map((chapter) => {
-              const chapterMissing = chapter.slots.filter(needsInitialVisualGeneration);
-              const adopted = chapter.slots.filter((slot) => slot.activeAssetId).length;
-              return (
-                <section className="space-y-4" key={chapter.id}>
-                  <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-semibold">第 {chapter.order} 章 · {chapter.title}</h3><p className="mt-1 flex gap-1 text-xs text-muted-foreground"><span>{adopted}/{chapter.slots.length} 张已采用</span><span>·</span><span>{chapter.slots.length} 张段落插图</span></p></div>{chapterMissing.length ? <Button disabled={disabled} loading={pending === `generate:${chapter.id}`} onClick={() => void jsonAction(`generate:${chapter.id}`, `/api/courses/${state.course.id}/visual-resources/images/generate`, "POST", { scope: "chapter", chapterId: chapter.id }, true)} size="sm" variant="outline"><Sparkles />生成本章</Button> : null}</div>
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    {chapter.slots.map((slot, index) => (
-                      <article className="min-w-0 overflow-hidden rounded-xl border bg-card" key={slot.id}>
-                        <div className="space-y-3 p-4">
-                          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm font-semibold">第 {index + 1} 段插图</p><p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">{slot.sourceText}</p></div><Badge className="shrink-0" variant={slot.activeAssetId ? "success" : hasSuccessfulVersion(slot) ? "warning" : "secondary"}>{slotStatusLabel(slot)}</Badge></div>
-                          {slot.versions.length ? <AssetWorkspace activeAssetId={slot.activeAssetId} courseId={state.course.id} disabled={disabled} onChanged={refresh} onRegenerate={() => generateSlot(slot.id)} regenerateLabel="重新生成" run={run} versions={slot.versions} /> : <><EmptyImagePreview generating={pending === `slot:${slot.id}` || pending === `generate:${chapter.id}` || pending === "generate:all"} label="尚未生成本段插图" /><Button disabled={disabled} loading={pending === `slot:${slot.id}`} onClick={() => generateSlot(slot.id)} size="sm"><ImageIcon />生成本张</Button></>}
-                          <PromptDisclosure defaultOpen={!hasSuccessfulVersion(slot)} prompt={slot.prompt} />
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                </section>
-              );
-            })}
-          </CardContent>
-        </Card>
-      ) : null}
-      <div className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-lg border border-border bg-card/95 px-4 py-3 shadow-md backdrop-blur sm:flex-row sm:items-center sm:justify-between"><p aria-live="polite" className={cn("text-sm", canEnterPreview ? "text-muted-foreground" : "text-amber-700")}>{pending ? "正在保存当前操作…" : previewStatusMessage}</p><div className="flex gap-2"><Button disabled={disabled} onClick={() => window.location.assign(`/courses/${state.course.id}/create/content`)} variant="outline"><ChevronLeft />上一步</Button><Button disabled={disabled || !canEnterPreview} loading={pending === "confirm"} onClick={enterPreview}><Send />下一步：预览发布</Button></div></div>
+      {state.planReady ? <VisualSection action={<Button disabled={disabled || !coverConfirmed || missing <= 0} loading={pending === "generate:all"} onClick={() => void jsonAction("generate:all", `/api/courses/${state.course.id}/visual-resources/images/generate`, { scope: "all" })} size="sm"><Sparkles />生成全部未生成图片</Button>} description={`${completed}/${lessonSlots.length} 已完成${generating ? ` · ${generating} 张生成中` : ""}${failed ? ` · ${failed} 张失败` : ""}`} icon={<ImageIcon className="size-4" />} title="章节图片">
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 border-b"><div aria-label="章节图片导航" className="flex min-w-0 flex-1 gap-1 overflow-x-auto" onKeyDown={(event) => { if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); moveTab(event.key === "ArrowRight" ? 1 : -1); } }} ref={tabListRef} role="tablist">{chapters.map((chapter) => { const done = chapter.slots.filter((item) => item.activeAssetId).length; const hasFailure = chapter.slots.some((item) => item.versions.some((asset) => asset.status === "failed")); const status = hasFailure ? "失败" : done === chapter.slots.length ? "已完成" : done ? `${done}/${chapter.slots.length}` : "待生成"; return <button aria-selected={activeTab === chapter.id} className={cn("min-h-11 shrink-0 border-b-2 px-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2", activeTab === chapter.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")} key={chapter.id} onClick={() => setActiveTab(chapter.id)} role="tab" type="button">第 {chapter.order} 章 · {status}</button>; })}</div><details className="group relative shrink-0"><summary aria-label="跳转章节" className="list-none" role="button"><Button asChild size="sm" variant="outline"><span><List />跳转章节</span></Button></summary><div className="absolute right-0 top-11 z-30 w-64 rounded-xl border bg-card p-2 shadow-md">{chapters.map((chapter) => <button className="flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-left text-sm hover:bg-muted" key={chapter.id} onClick={() => setActiveTab(chapter.id)} type="button"><span className="truncate">第 {chapter.order} 章 · {chapter.title}</span><ChevronRight className="size-4" /></button>)}</div></details></div>
+          {!coverConfirmed ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">请先确认视觉封面，再生成章节图片</p> : null}
+          {currentChapter ? <section className="space-y-4" role="tabpanel"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-balance text-base font-semibold">第 {currentChapter.order} 章 · {currentChapter.title}</h2><Button disabled={disabled || !coverConfirmed || !currentChapter.slots.some((item) => needsInitialVisualGeneration(item, state.planRevision))} loading={pending === `generate:${currentChapter.id}`} onClick={() => void jsonAction(`generate:${currentChapter.id}`, `/api/courses/${state.course.id}/visual-resources/images/generate`, { scope: "chapter", chapterId: currentChapter.id })}><Sparkles />生成本章未生成图片</Button></div><div className="grid gap-5 lg:grid-cols-2">{currentChapter.slots.map((item, index) => {
+            const serverGenerating = hasInFlightVisualVersion(item.versions, state.planRevision);
+            const directPending = pending === `slot:${item.id}`;
+            const batchPending = pending === `generate:${currentChapter.id}` || pending === "generate:all";
+            const itemGenerating = directPending || serverGenerating;
+            const itemQueued = batchPending && needsInitialVisualGeneration(item, state.planRevision) && !itemGenerating;
+            const itemStatus = itemQueued ? "等待生成" : slotStatusLabel(item, state.planRevision);
+            return <article className="min-w-0 space-y-3 rounded-xl border p-4" key={item.id}><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold">第 {index + 1} 段插图</p><p className="mt-2 line-clamp-4 text-pretty text-sm leading-6 text-muted-foreground">{item.sourceText}</p></div><Badge variant={item.activeAssetId ? "success" : "secondary"}>{itemStatus}</Badge></div><PromptDisclosure prompt={item.prompt} />{item.hasUnsyncedChanges ? <p className="rounded-lg bg-muted/45 px-3 py-2 text-sm text-muted-foreground">角色设定已更新，现有图片不会自动变化；如有需要，请重新生成。</p> : null}{item.versions.length ? <AssetWorkspace activeAssetId={item.activeAssetId} courseId={state.course.id} disabled={disabled} generationPending={itemGenerating} onChanged={async () => { await refresh(); }} onRegenerate={() => generateSlot(item.id)} pending={pending} planRevision={state.planRevision} regenerateLabel="重新生成" run={run} versions={item.versions} /> : <>{itemGenerating ? <ImageLoadingPreview title="正在生成本段插图" /> : <EmptyImagePreview generating={false} label={itemQueued ? "等待生成" : "图片待生成"} />}<Button disabled={disabled || !coverConfirmed} loading={directPending} onClick={() => generateSlot(item.id)} size="sm"><ImageIcon />生成本张</Button></>}</article>;
+          })}</div></section> : null}
+        </div>
+      </VisualSection> : null}
+
+      <Dialog icon={<RefreshCw className="size-5" />} onClose={() => { if (!pending) setConfirmPlanUpdate(false); }} open={confirmPlanUpdate} size="compact" title="更新视觉方案？">
+        <div className="space-y-4 p-5">
+          <p className="text-pretty text-sm leading-6 text-muted-foreground">更新会替换当前角色设定、封面方案和章节图片方案，并重新调用 AI。当前采用的封面与章节图片将变为待重新生成。</p>
+          <p className="rounded-lg bg-primary-50 px-3 py-2 text-sm text-primary-800">已上传的角色参考图和历史图片版本会保留。</p>
+          <div className="flex justify-end gap-2"><Button disabled={Boolean(pending)} onClick={() => setConfirmPlanUpdate(false)} variant="outline">取消</Button><Button disabled={Boolean(pending)} loading={pending === "plan"} onClick={() => { setConfirmPlanUpdate(false); void jsonAction("plan", `/api/courses/${state.course.id}/visual-resources/plan/generate`); }} variant="destructive">确认更新视觉方案</Button></div>
+        </div>
+      </Dialog>
+
+      <Dialog icon={<CircleAlert className="size-5" />} onClose={() => { if (!pending) setConfirmOriginalize(false); }} open={confirmOriginalize} size="compact" title="改用原创视觉设定？">
+        <div className="space-y-4 p-5">
+          <p className="text-pretty text-sm leading-6 text-muted-foreground">系统只替换引用的原作角色，并移除原作名称、旧参考图和专属视觉标志；故事正文不会改变。</p>
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">画风、故事世界、老师学生和已有原创角色保持不变。封面与章节图片需要重新生成，历史版本仍会保留。</p>
+          <div className="flex justify-end gap-2"><Button disabled={Boolean(pending)} onClick={() => setConfirmOriginalize(false)} variant="outline">取消</Button><Button disabled={Boolean(pending)} loading={pending === "originalize"} onClick={() => { setConfirmOriginalize(false); void jsonAction("originalize", `/api/courses/${state.course.id}/visual-resources/plan/originalize`); }}>确认并原创化</Button></div>
+        </div>
+      </Dialog>
+
+      <Dialog icon={<Upload className="size-5" />} onClose={() => setUploadCharacter(null)} open={Boolean(uploadCharacter)} size="compact" title={`上传${uploadCharacter?.displayName ?? "角色"}参考图`}><div className="p-6"><div autoFocus className="flex min-h-52 flex-col items-center justify-center rounded-xl border border-dashed bg-muted/30 p-6 text-center outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/15" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const file = event.dataTransfer.files[0]; if (file && uploadCharacter) void uploadReference(uploadCharacter, file); }} onPaste={(event) => { const file = Array.from(event.clipboardData.items).find((item) => item.type.startsWith("image/"))?.getAsFile(); if (!file || !uploadCharacter) return; event.preventDefault(); void uploadReference(uploadCharacter, file); }} tabIndex={0}><Upload className="size-8 text-muted-foreground" /><p className="mt-3 text-sm font-medium">拖入图片或按 Ctrl + V 粘贴</p><label className="mt-4 inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-md border bg-background px-3 text-sm font-medium hover:bg-muted"><Upload className="size-4" />选择图片<input accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={disabled} onChange={(event) => { const file = event.target.files?.[0]; if (file && uploadCharacter) void uploadReference(uploadCharacter, file); event.currentTarget.value = ""; }} type="file" /></label></div></div></Dialog>
+
+      <Dialog icon={<UserRound className="size-5" />} onClose={() => { if (!pending) setEditingCharacter(null); }} open={Boolean(editingCharacter)} size="compact" title={`编辑${editingCharacter?.displayName ?? "角色"}形象`}><div className="space-y-4 p-5">{editingCharacter?.sourceType !== "person" ? <label className="block text-sm font-medium">角色形象<textarea className="mt-2 min-h-24 w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-base font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" maxLength={400} onChange={(event) => setAppearanceDraft(event.target.value)} value={appearanceDraft} /></label> : null}<label className="block text-sm font-medium">本课造型<textarea className="mt-2 min-h-24 w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-base font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" maxLength={400} onChange={(event) => setCourseAppearanceDraft(event.target.value)} value={courseAppearanceDraft} /></label>{dialogError ? <p className="text-sm text-destructive" role="alert">{dialogError}</p> : null}<div className="flex justify-end gap-2"><Button disabled={Boolean(pending)} onClick={() => setEditingCharacter(null)} variant="outline">取消</Button><Button disabled={Boolean(pending)} loading={pending?.startsWith("appearance:")} onClick={() => void saveAppearance()}>保存</Button></div></div></Dialog>
+
+      <div className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-lg border bg-card/95 px-4 py-3 shadow-md backdrop-blur sm:flex-row sm:items-center sm:justify-between"><p aria-live="polite" className="text-sm text-muted-foreground">{hasServerGeneration ? "图片正在生成，完成后才能进入预览发布" : "可以随时使用占位图继续预览发布"}</p><div className="flex gap-2"><Button disabled={disabled} onClick={() => window.location.assign(`/courses/${state.course.id}/create/content`)} variant="outline"><ChevronLeft />上一步</Button><Button disabled={disabled || !canEnterPreview} loading={pending === "confirm"} onClick={enterPreview}><Send />下一步：预览发布</Button></div></div>
     </main>
   );
 }

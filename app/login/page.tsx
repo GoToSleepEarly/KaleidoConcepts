@@ -11,7 +11,7 @@ export default function LoginPage() {
     >
       <div
         aria-hidden="true"
-        className="login-background pointer-events-none absolute inset-y-0 left-1/2 z-0 w-[min(100vw,177.78dvh)] -translate-x-1/2 bg-[url('/mock-assets/login-learning-lab-v2.png')] bg-cover bg-[42%_center] bg-no-repeat min-[1200px]:bg-center"
+        className="login-background pointer-events-none absolute inset-y-0 left-1/2 z-0 w-[min(100vw,177.78dvh)] -translate-x-1/2 bg-[url('/mock-assets/login-learning-lab.png')] bg-cover bg-[42%_center] bg-no-repeat min-[1200px]:bg-center"
         data-testid="login-background"
       />
       <div

@@ -17,7 +17,7 @@ describe("LoginPage", () => {
     const illustration = screen.getByTestId("login-illustration");
     const workspace = screen.getByTestId("login-workspace");
 
-    expect(background).toHaveClass("bg-[url('/mock-assets/login-learning-lab-v2.png')]");
+    expect(background).toHaveClass("bg-[url('/mock-assets/login-learning-lab.png')]");
     expect(screen.getByTestId("login-transition")).toBeInTheDocument();
     expect(illustration).not.toHaveTextContent("万象为镜");
     expect(illustration).not.toHaveTextContent("Kaleido Concepts");

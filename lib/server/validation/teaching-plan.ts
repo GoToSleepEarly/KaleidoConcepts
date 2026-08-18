@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { TeachingPlan } from "@/lib/contracts/api";
-import { defaultPracticeConfig, defaultReadingExerciseConfig, grammarExerciseTotal, minimumReadingParagraphCount, recommendedChapterWordCount } from "@/lib/domain/teaching-plan-policy";
+import { defaultPracticeConfig, defaultReadingExerciseConfig, grammarExerciseTotal, MAX_CHAPTER_TARGET_WORD_COUNT, MIN_CHAPTER_TARGET_WORD_COUNT, minimumReadingParagraphCount, recommendedChapterWordCount } from "@/lib/domain/teaching-plan-policy";
 
 export const englishLevelSchema = z.union([
   z.literal("Starter"),
@@ -53,6 +53,7 @@ export const teachingPlanSchema = z.object({
   })),
   afterClassPractice: z.object({
     enabled: z.boolean(),
+    vocabularyReviewEnabled: z.boolean(),
     knowledgePointIds: z.array(z.string().min(1)),
     practice: practiceConfigSchema,
     touched: z.object({
@@ -107,6 +108,7 @@ export function buildTeachingPlanDraft(input: {
     }),
     afterClassPractice: {
       enabled: false,
+      vocabularyReviewEnabled: false,
       knowledgePointIds: recommendedKnowledgePointIds,
       practice: defaultPracticeConfig(false),
       touched: { knowledgePointIds: false, practice: false },
@@ -138,8 +140,8 @@ export function validateTeachingPlanForConfirm(plan: TeachingPlan, outlineChapte
 
   for (const [index, chapter] of plan.chapters.entries()) {
     const label = `第 ${index + 1} 章`;
-    if (chapter.targetWordCount === null || chapter.targetWordCount < 50 || chapter.targetWordCount > 200) {
-      throw new TeachingPlanValidationError(`${label}目标词数需在 50-200 之间。`);
+    if (chapter.targetWordCount === null || chapter.targetWordCount < MIN_CHAPTER_TARGET_WORD_COUNT || chapter.targetWordCount > MAX_CHAPTER_TARGET_WORD_COUNT) {
+      throw new TeachingPlanValidationError(`${label}目标词数需在 ${MIN_CHAPTER_TARGET_WORD_COUNT}-${MAX_CHAPTER_TARGET_WORD_COUNT} 之间。`);
     }
     if (!chapter.knowledgePointIds.length) throw new TeachingPlanValidationError(`${label}还没有选择知识点。`);
     if (!chapter.readingExercises.enabled || grammarExerciseTotal(chapter.readingExercises.grammar) < 1) {
@@ -155,13 +157,16 @@ export function validateTeachingPlanForConfirm(plan: TeachingPlan, outlineChapte
   }
 
   if (plan.afterClassPractice.enabled) {
+    if (!plan.afterClassPractice.vocabularyReviewEnabled && !plan.afterClassPractice.practice.enabled) {
+      throw new TeachingPlanValidationError("课后练习至少开启词汇复习或语法习题中的一项。");
+    }
+    if (!plan.afterClassPractice.practice.enabled) return;
     const chapterKnowledgePoints = new Set(plan.chapters.flatMap((chapter) => chapter.knowledgePointIds));
     if (!plan.afterClassPractice.knowledgePointIds.length) throw new TeachingPlanValidationError("课后练习还没有选择知识点。");
     if (plan.afterClassPractice.knowledgePointIds.some((id) => !chapterKnowledgePoints.has(id))) {
       throw new TeachingPlanValidationError("课后练习知识点只能从章节知识点中选择。");
     }
     requireGrammarPractice(plan.afterClassPractice.practice.enabled, plan.afterClassPractice.practice.grammar, "课后练习", 40);
-    if (!plan.afterClassPractice.practice.enabled) throw new TeachingPlanValidationError("课后练习配置不完整。");
     if (grammarExerciseTotal(plan.afterClassPractice.practice.grammar) < plan.afterClassPractice.knowledgePointIds.length) {
       throw new TeachingPlanValidationError("课后语法题数量不能少于所选知识点数量。");
     }
