@@ -2,7 +2,7 @@ export type Gender = "male" | "female";
 export type PersonRole = "teacher" | "student";
 export type PersonVisualStatus = "pending" | "submitting" | "succeeded" | "failed";
 export type PersonVisualSourceMode = "photo" | "description" | "revision";
-export type PersonVisualProvider = "quickrouter_gpt_image_2" | "crazyrouter_gpt_image_2" | "haoai_gpt_image_2" | "easy88ai_gpt_image_2";
+export type PersonVisualProvider = "quickrouter_gpt_image_2" | "crazyrouter_gpt_image_2";
 export type PersonProfileVisualStatus = "missing" | "generating" | "ready" | "failed";
 
 export type PersonVisualSummary = {

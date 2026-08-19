@@ -76,7 +76,7 @@ export type PersonVisualsDb = {
 };
 
 export type PersonVisualGenerationDeps = {
-  provider?: "quickrouter_gpt_image_2" | "crazyrouter_gpt_image_2" | "haoai_gpt_image_2" | "easy88ai_gpt_image_2";
+  provider?: "quickrouter_gpt_image_2" | "crazyrouter_gpt_image_2";
   generate: (input: { prompt: string }) => Promise<{ imageUrl: string }>;
   edit: (input: {
     prompt: string;

@@ -7,6 +7,7 @@ describe("部署预置数据", () => {
     expect(Object.keys(presetData).sort()).toEqual(["presetOptions", "users"]);
     expect(presetData.users).toHaveLength(1);
     expect(presetData.users.every((user) => !("password" in user))).toBe(true);
-    expect(presetData.presetOptions).toHaveLength(123);
+    expect(presetData.presetOptions).toHaveLength(114);
+    expect(presetData.presetOptions.every((option) => option.archivedAt === null)).toBe(true);
   });
 });

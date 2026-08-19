@@ -6,7 +6,7 @@
       "displayName": "教师账号",
       "aiGateway": "crazyrouter",
       "createdAt": "2026-08-05T12:20:56.874Z",
-      "updatedAt": "2026-08-19T15:49:55.853Z"
+      "updatedAt": "2026-08-19T16:38:58.227Z"
     }
   ],
   "presetOptions": [
@@ -22,17 +22,6 @@
       "updatedAt": "2026-08-19T15:49:55.965Z"
     },
     {
-      "id": "cmsg22n8m0005r0vo0u8xka65",
-      "kind": "theme",
-      "label": "宇宙冒险",
-      "labelZh": null,
-      "category": null,
-      "sortOrder": 1,
-      "archivedAt": "2026-08-19T15:49:56.171Z",
-      "createdAt": "2026-08-05T12:20:56.999Z",
-      "updatedAt": "2026-08-19T15:49:56.172Z"
-    },
-    {
       "id": "cmspypvf900029svoyywit9kg",
       "kind": "theme",
       "label": "同伴关系",
@@ -44,17 +33,6 @@
       "updatedAt": "2026-08-19T15:49:55.967Z"
     },
     {
-      "id": "cmsg22n8p0006r0vobzabwzkd",
-      "kind": "theme",
-      "label": "海底世界",
-      "labelZh": null,
-      "category": null,
-      "sortOrder": 2,
-      "archivedAt": "2026-08-19T15:49:56.171Z",
-      "createdAt": "2026-08-05T12:20:57.001Z",
-      "updatedAt": "2026-08-19T15:49:56.172Z"
-    },
-    {
       "id": "cmspypvfd00039svoyubi3p9a",
       "kind": "theme",
       "label": "校园活动",
@@ -64,17 +42,6 @@
       "archivedAt": null,
       "createdAt": "2026-08-12T10:44:43.993Z",
       "updatedAt": "2026-08-19T15:49:55.969Z"
-    },
-    {
-      "id": "cmsg22n8q0007r0volmfyve2t",
-      "kind": "theme",
-      "label": "森林探险",
-      "labelZh": null,
-      "category": null,
-      "sortOrder": 3,
-      "archivedAt": "2026-08-19T15:49:56.171Z",
-      "createdAt": "2026-08-05T12:20:57.002Z",
-      "updatedAt": "2026-08-19T15:49:56.172Z"
     },
     {
       "id": "cmspypvfi00049svo75uzgjxe",
@@ -97,17 +64,6 @@
       "archivedAt": null,
       "createdAt": "2026-08-12T10:44:44.001Z",
       "updatedAt": "2026-08-19T15:49:55.973Z"
-    },
-    {
-      "id": "cmsg22n8t0009r0vos785qvxd",
-      "kind": "theme",
-      "label": "校园生活",
-      "labelZh": null,
-      "category": null,
-      "sortOrder": 5,
-      "archivedAt": "2026-08-19T15:49:56.171Z",
-      "createdAt": "2026-08-05T12:20:57.005Z",
-      "updatedAt": "2026-08-19T15:49:56.172Z"
     },
     {
       "id": "cmspypvfs00069svol28g7mzg",
@@ -506,17 +462,6 @@
       "updatedAt": "2026-08-19T15:49:56.074Z"
     },
     {
-      "id": "cmsqdk54p0000a0vohx731qs6",
-      "kind": "grammar",
-      "label": "1",
-      "labelZh": "1",
-      "category": "时态",
-      "sortOrder": 0,
-      "archivedAt": "2026-08-12T17:44:09.666Z",
-      "createdAt": "2026-08-12T17:40:10.873Z",
-      "updatedAt": "2026-08-12T17:44:09.668Z"
-    },
-    {
       "id": "cmsg22n8x000br0vo6c5a1nfy",
       "kind": "grammar",
       "label": "Present Continuous",
@@ -537,17 +482,6 @@
       "archivedAt": null,
       "createdAt": "2026-08-05T12:20:57.011Z",
       "updatedAt": "2026-08-19T15:49:56.077Z"
-    },
-    {
-      "id": "cmsg22n90000dr0vo8nro4k6n",
-      "kind": "grammar",
-      "label": "Future (will / be going to)",
-      "labelZh": null,
-      "category": "时态",
-      "sortOrder": 3,
-      "archivedAt": "2026-08-19T15:49:56.157Z",
-      "createdAt": "2026-08-05T12:20:57.012Z",
-      "updatedAt": "2026-08-19T15:49:56.166Z"
     },
     {
       "id": "cmspypvk700189svoqwl2gtlw",
@@ -605,17 +539,6 @@
       "updatedAt": "2026-08-19T15:49:56.085Z"
     },
     {
-      "id": "cmsg22n98000ir0vocmgxaxiu",
-      "kind": "grammar",
-      "label": "Can / Could",
-      "labelZh": null,
-      "category": "情态动词",
-      "sortOrder": 8,
-      "archivedAt": "2026-08-19T15:49:56.157Z",
-      "createdAt": "2026-08-05T12:20:57.020Z",
-      "updatedAt": "2026-08-19T15:49:56.166Z"
-    },
-    {
       "id": "cmspypvkr001d9svonkk6x288",
       "kind": "grammar",
       "label": "Present Perfect Continuous",
@@ -625,17 +548,6 @@
       "archivedAt": null,
       "createdAt": "2026-08-12T10:44:44.187Z",
       "updatedAt": "2026-08-19T15:49:56.087Z"
-    },
-    {
-      "id": "cmsg22n99000jr0voe1qbd1ql",
-      "kind": "grammar",
-      "label": "Must / Have to",
-      "labelZh": null,
-      "category": "情态动词",
-      "sortOrder": 9,
-      "archivedAt": "2026-08-19T15:49:56.157Z",
-      "createdAt": "2026-08-05T12:20:57.021Z",
-      "updatedAt": "2026-08-19T15:49:56.166Z"
     },
     {
       "id": "cmspypvku001e9svo74nw2x65",
@@ -669,17 +581,6 @@
       "archivedAt": null,
       "createdAt": "2026-08-05T12:20:57.014Z",
       "updatedAt": "2026-08-19T15:49:56.091Z"
-    },
-    {
-      "id": "cmspypvl4001g9svouvfv8dil",
-      "kind": "grammar",
-      "label": "There Be",
-      "labelZh": "There be 句型",
-      "category": "基本句型与疑问句",
-      "sortOrder": 11,
-      "archivedAt": "2026-08-19T15:49:56.157Z",
-      "createdAt": "2026-08-12T10:44:44.200Z",
-      "updatedAt": "2026-08-19T15:49:56.166Z"
     },
     {
       "id": "cmsg22n96000hr0vo6rbnxigw",

@@ -31,7 +31,7 @@ export type VisualResourcesDb = Pick<PrismaClient,
 >;
 
 export type CourseImageGenerationDeps = {
-  provider?: "quickrouter_gpt_image_2" | "crazyrouter_gpt_image_2" | "haoai_gpt_image_2" | "easy88ai_gpt_image_2";
+  provider?: "quickrouter_gpt_image_2" | "crazyrouter_gpt_image_2";
   generate: (input: { prompt: string; quality: CourseImageQuality; portrait?: boolean }) => Promise<{ imageUrl: string; model?: string; quality?: CourseImageQuality }>;
   edit: (input: { prompt: string; quality: CourseImageQuality; imageDataUrl: string; portrait?: boolean }) => Promise<{ imageUrl: string; model?: string; quality?: CourseImageQuality }>;
   persist: (input: { sourceUrl: string; courseId: string; assetId: string; portrait?: boolean }) => Promise<{ storagePath: string; publicUrl: string }>;

@@ -116,7 +116,7 @@ ENV_FILE=/etc/pbl-studio-v2.env pnpm deploy:prod
 pm2 save
 ```
 
-脚本按以下顺序执行：拉取 `master`、备份新实例数据库和图片目录、安装锁定依赖、生成 Prisma Client、执行全部 production migrations、幂等导入账号和预设数据、构建、启动或重启 `pbl-studio-v2`。
+脚本按以下顺序执行：拉取 `master`、备份新实例数据库和图片目录、安装锁定依赖、生成 Prisma Client、执行当前 baseline migration、幂等导入账号和有效预设、构建、启动或重启 `pbl-studio-v2`。
 
 首次导入后的预期数据：
 
@@ -124,7 +124,7 @@ pm2 save
 - `User` 为 `1`。
 - `Person` 为 `0`，人物档案由新环境自行创建。
 - `PersonVisualAsset` 为 `0`，不携带开发环境人物图片。
-- `PresetOption` 为 `123`，其中活动预设 114 条、归档兼容预设 9 条。
+- `PresetOption` 为 `114`，只包含当前有效预设。
 
 验证：
 

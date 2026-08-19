@@ -19,7 +19,10 @@ async function main() {
       orderBy: { createdAt: "asc" },
       select: { id: true, username: true, displayName: true, aiGateway: true, createdAt: true, updatedAt: true },
     }),
-    prisma.presetOption.findMany({ orderBy: [{ kind: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }] }),
+    prisma.presetOption.findMany({
+      where: { archivedAt: null },
+      orderBy: [{ kind: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
+    }),
   ]);
   await writeFile(dataFile, `${JSON.stringify({ users, presetOptions }, null, 2)}\n`, "utf8");
   console.log(`Exported ${users.length} users and ${presetOptions.length} presets.`);
