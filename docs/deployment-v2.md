@@ -116,14 +116,14 @@ ENV_FILE=/etc/pbl-studio-v2.env pnpm deploy:prod
 pm2 save
 ```
 
-脚本按以下顺序执行：拉取 `master`、备份新实例数据库和图片目录、安装锁定依赖、生成 Prisma Client、执行全部 production migrations、幂等导入预置数据和人物图片、构建、启动或重启 `pbl-studio-v2`。
+脚本按以下顺序执行：拉取 `master`、备份新实例数据库和图片目录、安装锁定依赖、生成 Prisma Client、执行全部 production migrations、幂等导入账号和预设数据、构建、启动或重启 `pbl-studio-v2`。
 
 首次导入后的预期数据：
 
 - `Course` 为 `0`，不会携带本地测试课程。
 - `User` 为 `1`。
-- `Person` 为 `6`，包含归档记录。
-- `PersonVisualAsset` 为 `6`，对应文件写入独立图片目录。
+- `Person` 为 `0`，人物档案由新环境自行创建。
+- `PersonVisualAsset` 为 `0`，不携带开发环境人物图片。
 - `PresetOption` 为 `123`，其中活动预设 114 条、归档兼容预设 9 条。
 
 验证：
@@ -139,7 +139,6 @@ psql "$DATABASE_URL_FOR_PG_DUMP" -c 'SELECT COUNT(*) AS courses FROM "Course";'
 psql "$DATABASE_URL_FOR_PG_DUMP" -c 'SELECT COUNT(*) AS people FROM "Person";'
 psql "$DATABASE_URL_FOR_PG_DUMP" -c 'SELECT COUNT(*) AS visuals FROM "PersonVisualAsset";'
 psql "$DATABASE_URL_FOR_PG_DUMP" -c 'SELECT COUNT(*) AS presets FROM "PresetOption";'
-find /data/pbl-studio-v2/images/person-visuals -type f | wc -l
 ```
 
 ## 六、配置独立域名
