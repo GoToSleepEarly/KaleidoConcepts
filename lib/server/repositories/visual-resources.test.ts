@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { CourseVisualPlanResponseError } from "@/lib/server/ai/course-visual-plan-deps";
-import { adoptLatestPersonVisual, buildCourseImageEditPrompt, generateCourseVisualPlan, generateVisualSlot, hasUnsyncedCharacterAppearance, recoverStaleCourseImages, refineCourseVisualAsset, saveUploadedCharacterReference, selectCourseVisualAsset, updateCourseVisualQuality, updateCharacterVisualIntent, updateVisualCharacterAppearance } from "./visual-resources";
+import { adoptLatestPersonVisual, buildCourseImageEditPrompt, generateCourseVisualPlan, generateVisualSlot, getCourseVisualResources, hasUnsyncedCharacterAppearance, recoverStaleCourseImages, refineCourseVisualAsset, saveUploadedCharacterReference, selectCourseVisualAsset, updateCourseVisualQuality, updateCharacterVisualIntent, updateVisualCharacterAppearance } from "./visual-resources";
 
 describe("视觉资源仓储", () => {
   const currentPlan = {
@@ -101,6 +101,27 @@ describe("视觉资源仓储", () => {
 
     await expect(generateCourseVisualPlan(db as never, "course-1", "missing-reference", { generate } as never)).rejects.toThrow("引用角色缺少参考资料关联：Jett");
     expect(generate).not.toHaveBeenCalled();
+  });
+  test("已有原创视觉方案可以再次调整，不要求先恢复忠实模式", async () => {
+    const update = vi.fn(async () => ({}));
+    const generate = vi.fn(async () => { throw new Error("stop-after-guard"); });
+    const db = {
+      aiGenerationLog: {
+        findUnique: vi.fn(async () => null),
+        create: vi.fn(async ({ data }) => ({ id: "operation-1", ...data, outputSnapshot: null, errorMessage: null })),
+        update,
+      },
+      course: { findUnique: vi.fn(async () => ({ id: "course-1" })) },
+      courseLessonContent: { findUnique: vi.fn(async () => ({ status: "confirmed", chapters: [], writingProvider: "quickrouter_gpt", sourceRevision: 2, contentVersion: 3 })) },
+      courseStoryOutline: { findUnique: vi.fn(async () => ({ title: "Story", summary: "Summary" })) },
+      courseCharacter: { findMany: vi.fn(async () => [{ id: "character-1", displayName: "捷特", englishName: "Jett", sourceType: "referenced", shouldAppearInImages: true, roleInStory: "hero", sourceReference: { name: "VALORANT", type: "game_character", summary: "Referenced agent." } }]) },
+      courseVisualResourcePlan: { findUnique: vi.fn(async () => ({ ...currentPlan, mode: "originalized" })) },
+    };
+
+    await expect(generateCourseVisualPlan(db as never, "course-1", "adjust-originalized", { generate } as never, "originalized")).rejects.toThrow("stop-after-guard");
+
+    expect(generate).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) }));
   });
   test("过期的图片生成租约会恢复为可重试失败而不是永久生成中", async () => {
     const updateMany = vi.fn(async () => ({ count: 2 }));
@@ -293,6 +314,113 @@ describe("视觉资源仓储", () => {
     expect(slotUpdate).toHaveBeenCalledWith({ where: { id: "slot-1" }, data: { activeImageId: "asset-1" } });
   });
 
+  test("远端图片已生成但保存失败时，重新生成只恢复旧 URL 而不再次调用 AI", async () => {
+    const recoveredAsset = {
+      id: "asset-recoverable",
+      courseId: "course-1",
+      slotId: "slot-1",
+      characterVisualId: null,
+      prompt: "",
+      quality: "medium",
+      referenceAssetIds: [],
+      planRevision: 1,
+      status: "failed",
+      failureCode: "storage_recoverable",
+      providerImageUrl: "https://media.example.com/generated.png",
+      temporarySourcePath: null,
+    };
+    const findFirst = vi.fn()
+      .mockResolvedValueOnce(null)
+      .mockImplementationOnce(async ({ where }) => ({ ...recoveredAsset, sourceHash: where.sourceHash }));
+    const findUnique = vi.fn(async () => ({ ...recoveredAsset, status: "succeeded", storagePath: "course-images/course-1/asset-recoverable.webp", publicUrl: "/api/course-images/course-1/asset-recoverable.webp" }));
+    const generate = vi.fn();
+    const edit = vi.fn();
+    const persist = vi.fn(async ({ sourceUrl }) => {
+      expect(sourceUrl).toBe(recoveredAsset.providerImageUrl);
+      return { storagePath: "course-images/course-1/asset-recoverable.webp", publicUrl: "/api/course-images/course-1/asset-recoverable.webp" };
+    });
+    const db = {
+      course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
+      courseVisualImageSlot: { findFirst: vi.fn(async () => ({ id: "slot-1", courseId: "course-1", slotType: "visual_cover", paragraphId: null, characterIds: [] })), update: vi.fn(async () => ({})) },
+      courseVisualResourcePlan: { findUnique: vi.fn(async () => currentPlan), update: vi.fn() },
+      courseImage: { findFirst, findUnique, updateMany: vi.fn(async () => ({ count: 1 })), upsert: vi.fn() },
+    };
+
+    const result = await generateVisualSlot(db as never, "course-1", "slot-1", "new-retry-key", {
+      generate,
+      edit,
+      persist,
+      composeReferences: vi.fn(),
+      removeTemporarySource: vi.fn(),
+    });
+
+    expect(result?.id).toBe(recoveredAsset.id);
+    expect(persist).toHaveBeenCalledOnce();
+    expect(generate).not.toHaveBeenCalled();
+    expect(edit).not.toHaveBeenCalled();
+    expect(db.courseImage.upsert).not.toHaveBeenCalled();
+  });
+
+  test("历史可恢复失败之后已有更新版本时，重新生成不会恢复旧图片", async () => {
+    const latestSucceeded = { id: "asset-latest", status: "succeeded", failureCode: null, providerImageUrl: "https://media.example.com/latest.png" };
+    const pending = { id: "asset-new", courseId: "course-1", slotId: "slot-1", characterVisualId: null, prompt: "", quality: "medium", referenceAssetIds: [], planRevision: 1, status: "pending", providerImageUrl: null, temporarySourcePath: null };
+    const generate = vi.fn(async () => ({ imageUrl: "data:image/png;base64,aGVsbG8=", quality: "medium" as const }));
+    const db = {
+      course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
+      courseVisualImageSlot: { findFirst: vi.fn(async () => ({ id: "slot-1", courseId: "course-1", slotType: "visual_cover", paragraphId: null, characterIds: [] })), update: vi.fn(async () => ({})) },
+      courseVisualResourcePlan: { findUnique: vi.fn(async () => currentPlan), update: vi.fn() },
+      courseImage: {
+        findFirst: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(latestSucceeded),
+        findUnique: vi.fn(async () => ({ ...pending, status: "succeeded" })),
+        upsert: vi.fn(async ({ create }) => ({ ...pending, ...create })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+    };
+
+    await generateVisualSlot(db as never, "course-1", "slot-1", "new-generation-key", {
+      generate,
+      edit: vi.fn(),
+      persist: vi.fn(async () => ({ storagePath: "new.webp", publicUrl: "/new.webp" })),
+      composeReferences: vi.fn(),
+      removeTemporarySource: vi.fn(),
+    });
+
+    expect(generate).toHaveBeenCalledOnce();
+    expect(db.courseImage.upsert).toHaveBeenCalledOnce();
+  });
+
+  test("AI 已返回远端 URL 但下载超时时，向前端说明图片已生成且可以恢复保存", async () => {
+    const pending = { id: "asset-remote", courseId: "course-1", slotId: "slot-1", characterVisualId: null, prompt: "", quality: "medium", referenceAssetIds: [], planRevision: 1, status: "pending", providerImageUrl: null, temporarySourcePath: null };
+    const failedUpdate = vi.fn(async () => ({ count: 1 }));
+    const db = {
+      course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
+      courseVisualImageSlot: { findFirst: vi.fn(async () => ({ id: "slot-1", courseId: "course-1", slotType: "visual_cover", paragraphId: null, characterIds: [] })), update: vi.fn() },
+      courseVisualResourcePlan: { findUnique: vi.fn(async () => currentPlan), update: vi.fn() },
+      courseImage: {
+        findFirst: vi.fn(async () => null),
+        findUnique: vi.fn(async () => null),
+        upsert: vi.fn(async ({ create }) => ({ ...pending, ...create })),
+        updateMany: failedUpdate,
+      },
+    };
+
+    await expect(generateVisualSlot(db as never, "course-1", "slot-1", "remote-timeout", {
+      generate: vi.fn(async () => ({ imageUrl: "https://media.example.com/generated.png", quality: "medium" as const })),
+      edit: vi.fn(),
+      persist: vi.fn(async () => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); }),
+      composeReferences: vi.fn(),
+      removeTemporarySource: vi.fn(),
+    })).rejects.toThrow("图片已生成，但下载或保存失败：下载远端图片超时");
+
+    expect(failedUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        providerImageUrl: "https://media.example.com/generated.png",
+        failureCode: "storage_recoverable",
+        failureReason: "图片已生成，但下载或保存失败：下载远端图片超时",
+      }),
+    }));
+  });
+
   test("原创化引用角色不再向图片模型传入旧 IP 参考图或原作名称", async () => {
     const originalPlan = {
       ...currentPlan,
@@ -338,6 +466,35 @@ describe("视觉资源仓储", () => {
     expect(generate.mock.calls[0]?.[0].prompt).toContain("C01 — Sky Runner");
     expect(generate.mock.calls[0]?.[0].prompt).not.toContain("Jett");
     expect(generate.mock.calls[0]?.[0].prompt).not.toContain("捷特");
+  });
+
+  test("原创化方案页面预览与实际生图都使用新视觉名称", async () => {
+    const originalPlan = {
+      ...currentPlan,
+      mode: "originalized",
+      coverBrief: {
+        ...currentPlan.coverBrief,
+        mainCharacterIds: ["character-1"],
+        characterDesigns: [{ characterId: "character-1", visualAnchor: { mode: "description" as const, label: "Sky Runner", context: null }, appearanceDescription: "银白短发，佩戴青色护目镜。", courseAppearance: "青色夹克、深灰长裤和白色短靴。" }],
+        cover: { focus: "Open the path", characterIds: ["character-1"], sceneDescription: "Sky Runner opens an air path." },
+      },
+    };
+    const db = {
+      course: { findUnique: vi.fn(async () => ({ id: "course-1", title: "Story", currentStage: "visual_resources", visualQuality: "medium" })) },
+      courseImage: { updateMany: vi.fn(async () => ({ count: 0 })) },
+      courseCharacter: { findMany: vi.fn(async () => [{ id: "character-1", displayName: "捷特", englishName: "Jett", sourceType: "referenced", sourcePersonId: null, shouldAppearInImages: true, roleInStory: "hero", sourceReference: { name: "VALORANT", type: "game_character" } }]) },
+      courseCharacterVisual: { findMany: vi.fn(async () => [{ characterId: "character-1", activeImageId: null, activeImage: null, images: [], intent: "originalize", source: null, status: "ready" }]) },
+      courseVisualResourcePlan: { findUnique: vi.fn(async () => originalPlan) },
+      courseVisualImageSlot: { findMany: vi.fn(async () => [{ id: "cover-slot", stableKey: "visual-cover", slotType: "visual_cover", chapterId: null, paragraphId: null, sourceText: "Story", characterIds: ["character-1"], focus: "Open the path", sceneDescription: "Sky Runner opens an air path.", prompt: "stored", activeImageId: null, activeImage: null, images: [] }]) },
+      coursePerson: { findMany: vi.fn(async () => []) },
+      courseLessonContent: { findUnique: vi.fn(async () => ({ chapters: [] })) },
+    };
+
+    const state = await getCourseVisualResources(db as never, "course-1");
+
+    expect(state.slots[0]?.prompt).toContain("C01 — Sky Runner");
+    expect(state.slots[0]?.prompt).not.toContain("Jett");
+    expect(state.slots[0]?.prompt).not.toContain("捷特");
   });
 
   test("封面未确认时服务端阻断章节图片生成", async () => {

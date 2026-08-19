@@ -1,11 +1,12 @@
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import path from "node:path";
 import { tmpdir } from "node:os";
 
 import sharp from "sharp";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { composeCourseImageReferences, persistCourseImage, removeCourseImageFiles } from "./course-images";
+import { composeCourseImageReferences, downloadCourseImageSource, persistCourseImage, removeCourseImageFiles } from "./course-images";
 
 sharp.cache(false);
 
@@ -25,6 +26,30 @@ async function temporaryImage(width: number, height: number, color: string) {
 }
 
 describe("课程图片存储", () => {
+  test("远端图片下载固定使用 IPv4，并在临时服务错误后有限重试", async () => {
+    const source = await sharp({ create: { width: 32, height: 32, channels: 3, background: "#2563eb" } }).png().toBuffer();
+    let requests = 0;
+    const server = createServer((_request, response) => {
+      requests += 1;
+      if (requests === 1) {
+        response.writeHead(503).end("not ready");
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "image/png", "Content-Length": source.length }).end(source);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("测试服务器地址无效");
+
+    try {
+      const downloaded = await downloadCourseImageSource(`http://localhost:${address.port}/image.png`, { retryDelaysMs: [0, 0] });
+      expect(downloaded).toEqual(source);
+      expect(requests).toBe(2);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
   test("单张竖版人物参考也会先组成 16:9 横版参考板", async () => {
     const { root, imagePath } = await temporaryImage(600, 900, "#bfdbfe");
     process.env.STORAGE_DIR = root;

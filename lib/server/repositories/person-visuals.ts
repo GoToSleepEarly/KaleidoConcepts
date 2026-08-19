@@ -76,6 +76,7 @@ export type PersonVisualsDb = {
 };
 
 export type PersonVisualGenerationDeps = {
+  provider?: "quickrouter_gpt_image_2" | "crazyrouter_gpt_image_2" | "haoai_gpt_image_2" | "easy88ai_gpt_image_2";
   generate: (input: { prompt: string }) => Promise<{ imageUrl: string }>;
   edit: (input: {
     prompt: string;
@@ -279,7 +280,7 @@ export async function createDescriptionVisual(
       ]),
       idempotencyKey,
       status: "pending",
-      provider: "quickrouter_gpt_image_2",
+      provider: deps.provider ?? "quickrouter_gpt_image_2",
     },
   });
   return finishGeneration(db, asset, deps);
@@ -315,7 +316,7 @@ export async function createPhotoVisual(
       ]),
       idempotencyKey,
       status: "pending",
-      provider: "quickrouter_gpt_image_2",
+      provider: deps.provider ?? "quickrouter_gpt_image_2",
       temporarySourcePath: input.temporarySourcePath,
     },
   });
@@ -358,7 +359,7 @@ export async function refinePersonVisual(
       sourceHash: sourceHash([parent.sourceHash, text(instruction)]),
       idempotencyKey,
       status: "pending",
-      provider: "quickrouter_gpt_image_2",
+      provider: deps.provider ?? "quickrouter_gpt_image_2",
     },
   });
   return finishGeneration(db, { ...asset, parentAsset: parent }, deps);

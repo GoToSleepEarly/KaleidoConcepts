@@ -8,11 +8,13 @@ type DbUser = {
   username: string;
   password: string;
   displayName: string;
+  aiGateway: "quickrouter" | "crazyrouter";
 };
 
 export type AuthDb = {
   user: {
-    findUnique: (query: { where: { username: string } }) => Promise<DbUser | null>;
+    findUnique: (query: { where: { username: string } | { id: string } }) => Promise<DbUser | null>;
+    update: (query: { where: { id: string }; data: { aiGateway: "quickrouter" | "crazyrouter" } }) => Promise<DbUser>;
   };
 };
 
@@ -23,5 +25,5 @@ export async function verifyTeacherLogin(db: AuthDb, input: LoginInput) {
     return null;
   }
 
-  return { displayName: user.displayName };
+  return { id: user.id, displayName: user.displayName, aiGateway: user.aiGateway };
 }

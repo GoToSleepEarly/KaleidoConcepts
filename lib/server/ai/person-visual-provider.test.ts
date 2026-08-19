@@ -131,4 +131,18 @@ describe("person visual provider", () => {
     expect((request.mock.calls[0]?.[1]?.body as FormData).get("model")).toBe("gpt-image-2");
     expect((request.mock.calls[1]?.[1]?.body as FormData).get("model")).toBe("gpt-image-2-c");
   });
+
+  test("Crazyrouter 人物形象使用标准模型且不启用 -c 兜底", async () => {
+    process.env.CRAZYROUTER_API_KEY = "crazy-key";
+    const request = vi.fn(async () => new Response(JSON.stringify({ error: { message: "rate limited" } }), { status: 429 }));
+    vi.stubGlobal("fetch", request);
+
+    await expect(createPersonVisualProvider(undefined, "crazyrouter").generate({ prompt: "person" })).rejects.toThrow("rate limited");
+
+    expect(request).toHaveBeenCalledTimes(1);
+    const init = (request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
+    expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.crazyrouter.com/v1/images/generations");
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer crazy-key");
+    expect(JSON.parse(String(init?.body))).toMatchObject({ model: "gpt-image-2", quality: "low", output_format: "webp" });
+  });
 });

@@ -1,4 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import http from "node:http";
+import https from "node:https";
 import path from "node:path";
 
 import sharp from "sharp";
@@ -7,6 +9,10 @@ import { createStorageKey, resolveStorageDirectory, resolveStorageKey } from "./
 
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maxUploadBytes = 10 * 1024 * 1024;
+const maxGeneratedImageBytes = 25 * 1024 * 1024;
+const downloadTimeoutMs = 60_000;
+const downloadRetryDelaysMs = [0, 1_000, 3_000];
+const maxRedirects = 5;
 
 function decodeDataUrl(value: string) {
   const marker = ";base64,";
@@ -14,12 +20,84 @@ function decodeDataUrl(value: string) {
   return value.startsWith("data:image/") && index >= 0 ? Buffer.from(value.slice(index + marker.length), "base64") : null;
 }
 
+function wait(delayMs: number) {
+  return delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve();
+}
+
+class CourseImageDownloadError extends Error {
+  constructor(message: string, readonly retryable: boolean) {
+    super(message);
+    this.name = "CourseImageDownloadError";
+  }
+}
+
+function downloadOnce(sourceUrl: string, timeoutMs: number, redirectsLeft = maxRedirects): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const url = new URL(sourceUrl);
+    const transport = url.protocol === "https:" ? https : url.protocol === "http:" ? http : null;
+    if (!transport) {
+      reject(new CourseImageDownloadError("课程图片下载地址无效", false));
+      return;
+    }
+    const request = transport.get(url, {
+      family: 4,
+      headers: { Accept: "image/*", "User-Agent": "PBLStudio/1.0" },
+    }, (response) => {
+      const status = response.statusCode ?? 0;
+      const location = response.headers.location;
+      if (status >= 300 && status < 400 && location) {
+        response.resume();
+        if (redirectsLeft <= 0) {
+          reject(new CourseImageDownloadError("课程图片下载重定向次数过多", false));
+          return;
+        }
+        downloadOnce(new URL(location, url).toString(), timeoutMs, redirectsLeft - 1).then(resolve, reject);
+        return;
+      }
+      if (status < 200 || status >= 300) {
+        response.resume();
+        reject(new CourseImageDownloadError(`课程图片下载失败：${status}`, status === 408 || status === 429 || status >= 500));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let totalBytes = 0;
+      response.on("data", (chunk: Buffer) => {
+        totalBytes += chunk.length;
+        if (totalBytes > maxGeneratedImageBytes) {
+          request.destroy(new CourseImageDownloadError("课程图片超过 25 MB，无法保存", false));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on("end", () => resolve(Buffer.concat(chunks)));
+      response.on("error", reject);
+    });
+    request.setTimeout(timeoutMs, () => request.destroy(new CourseImageDownloadError("下载远端图片超时", true)));
+    request.on("error", (error) => reject(error instanceof CourseImageDownloadError
+      ? error
+      : new CourseImageDownloadError(error.message, true)));
+  });
+}
+
+export async function downloadCourseImageSource(sourceUrl: string, options: { retryDelaysMs?: number[]; timeoutMs?: number } = {}) {
+  const delays = options.retryDelaysMs ?? downloadRetryDelaysMs;
+  let lastError: unknown;
+  for (const delay of delays) {
+    await wait(delay);
+    try {
+      return await downloadOnce(sourceUrl, options.timeoutMs ?? downloadTimeoutMs);
+    } catch (error) {
+      lastError = error;
+      if (error instanceof CourseImageDownloadError && !error.retryable) throw error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("课程图片下载失败");
+}
+
 async function sourceBuffer(sourceUrl: string) {
   const data = decodeDataUrl(sourceUrl);
   if (data) return data;
-  const response = await fetch(sourceUrl, { signal: AbortSignal.timeout(60_000) });
-  if (!response.ok) throw new Error(`课程图片下载失败：${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+  return downloadCourseImageSource(sourceUrl);
 }
 
 export async function prepareCourseCharacterReference(courseId: string, assetId: string, file: File) {

@@ -70,6 +70,27 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(generateOutlineMock.mock.calls.at(-1)?.[0].prompt).toContain("引用对应 KP 短键");
   });
 
+  test("uses a soft two-per-chapter baseline instead of defaulting to one knowledge point per chapter", async () => {
+    await createStoryOutlineGenerationDeps().generateOutline({
+      task: "生成三章故事大纲。",
+      references: [],
+      chapterCount: 3,
+      writingProvider: "quickrouter_gpt",
+      coursePeople: [],
+      conversationHistory: [],
+      selectedDirection: null,
+      currentOutline: null,
+      englishLevel: "B2",
+      durationMinutes: 30,
+      selectedKnowledgePoints: Array.from({ length: 11 }, (_, index) => ({ id: `knowledge-${index + 1}`, label: `Grammar ${index + 1}`, category: "时态" })),
+    });
+
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain("通常每章推荐 2 个知识点，每章最多 3 个");
+    expect(prompt).toContain("知识点覆盖软基准：全课优先覆盖 6 个不同知识点");
+    expect(prompt).toContain("不是必须凑满的硬校验");
+  });
+
   test("aligns only the broad creative intent without researching or demanding a complete plot", async () => {
     generateOutlineMock.mockResolvedValueOnce({
       text: JSON.stringify({
@@ -77,6 +98,7 @@ describe("createStoryOutlineGenerationDeps", () => {
         planningMode: "explore_options",
         storyMode: "new_story",
         classroomPresence: "participant",
+        requiredNamedCharacters: ["暮光闪闪", "云宝黛西"],
         assistantMessage: "我已经理解你的大体需求，请确认。",
         resolvedUnderstanding: ["使用《小马宝莉：友谊就是魔法》的原作人物创作新故事"],
         unresolvedIssues: [],
@@ -97,7 +119,11 @@ describe("createStoryOutlineGenerationDeps", () => {
     });
 
     expect(result.status).toBe("ready_for_confirmation");
-    expect(result).toMatchObject({ storyMode: "new_story", classroomPresence: "participant" });
+    expect(result).toMatchObject({
+      storyMode: "new_story",
+      classroomPresence: "participant",
+      requiredNamedCharacters: ["暮光闪闪", "云宝黛西"],
+    });
     const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
     expect(prompt).toContain("资深儿童故事策划编辑");
     expect(prompt).toContain("不是帮助老师补完整个故事");
@@ -110,6 +136,9 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("recommendedOptionId");
     expect(prompt).not.toContain("researchPlan");
     expect(prompt).toContain("暮光闪闪和云宝黛西");
+    expect(prompt).toContain("requiredNamedCharacters");
+    expect(prompt).toContain("逐个保留老师明确点名且要求出场的角色原名");
+    expect(prompt).toContain("不得归纳成“核心角色”“主要角色”");
     expect(prompt).toContain('"personId":"student-1"');
   });
 
@@ -616,14 +645,14 @@ describe("createStoryOutlineGenerationDeps", () => {
     const prompt = input!.prompt;
     expect(prompt).toContain("AI 自行新增的原创角色最多 1 个");
     expect(prompt).toContain("每个角色都必须服务核心叙事");
-    expect(prompt).toContain("summary 使用 3–4 个简短句子");
-    expect(prompt).toContain("先在内部建立连续状态");
-    expect(prompt).toContain("每章结束时只产生一个主要的新状态");
-    expect(prompt).toContain("失踪角色在被找到前不能参与团队行动");
-    expect(prompt).toContain("关键物品在被找到或取得前不能被保护、使用或交付");
-    expect(prompt).toContain("最终结果必须完成开头建立的同一项核心任务");
+    expect(prompt).toContain("summary 使用 3–4 个自然短句");
+    expect(prompt).toContain("内部检查连续状态");
+    expect(prompt).toContain("本章结果必须改变下一章成立时的局面");
+    expect(prompt).toContain("失踪角色在被找到前不能行动");
+    expect(prompt).toContain("未取得的物品不能使用或交付");
+    expect(prompt).toContain("最终结果必须回应开头建立的核心矛盾");
     expect(prompt).toContain("角色行动分散到完整大纲");
-    expect(prompt).toContain("最后一章使用前文已经建立");
+    expect(prompt).toContain("结局只能来自前文已经建立");
     expect(prompt).toContain("不能使用“理解友谊、勇气或合作”代替实际剧情");
     expect(prompt).not.toContain("约 50 字");
     expect(prompt).toContain("故事 title 和章节 title 返回中英文双语");
@@ -631,7 +660,8 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("只保留已选故事方向实际使用的引用角色");
     expect(prompt).toContain("参考资料中的其他候选角色不得自动进入 characters");
     expect(prompt).toContain("这是新故事。课堂人物作为参与者进入故事");
-    expect(prompt).toContain("在完整故事范围内，每个人至少有一次改变局面的有效行动");
+    expect(prompt).toContain("可以由两三人共同完成一次关键行动");
+    expect(prompt).toContain("不要求每个人单独制造一次状态变化");
     expect(prompt).toContain("characters 是后续视觉资产名单");
     expect(prompt).toContain("displayName, englishName");
     expect(prompt).toContain("sourcePersonId、displayName 和 englishName 必须逐字复制对应人物快照");
@@ -692,7 +722,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).not.toContain("ref-1");
   });
 
-  test("passes people, chapter count and conversation history into random direction generation", async () => {
+  test("keeps direction generation focused on the latest story requirement without teaching or outline context", async () => {
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify([
       { title: "情绪天气城", hook: "暮光闪闪和云宝黛西误入一座会把情绪变成天气的城市，必须在风暴吞没城市前帮助居民说出真实感受。", storyHighlight: "情绪会直接改变天气和道路。", growthCore: "暮光闪闪从试图控制情绪转向理解和表达情绪。", mainCharacters: ["暮光闪闪", "云宝黛西"], whyFits: "适合十岁学生理解情绪表达。" },
       { title: "倒着走的时间", hook: "暮光闪闪和云宝黛西发现小马谷的时间每天倒退一小时，必须找出是谁不愿面对明天。", storyHighlight: "时间会被逃避未来的愿望反向推动。", growthCore: "角色从回避不确定性转向主动选择未来。", mainCharacters: ["暮光闪闪", "云宝黛西"], whyFits: "兼顾想象力和选择意识。" },
@@ -703,35 +733,73 @@ describe("createStoryOutlineGenerationDeps", () => {
       task: "请生成 3 个故事方向。",
       chapterCount: 4,
       coursePeople: [{ personId: "teacher-1", role: "teacher", chineseName: "林老师", englishName: "Ms. Lin", age: 32, gender: "female" }],
-      conversationHistory: [{ role: "teacher", content: "主题：太空学校" }],
-      references: [],
+      conversationHistory: [
+        { role: "teacher", content: "已经被替代的旧要求：海底调查" },
+        { role: "assistant", content: "旧回复 1" },
+        { role: "teacher", content: "旧回复 2" },
+        { role: "assistant", content: "旧回复 3" },
+        { role: "teacher", content: "旧回复 4" },
+        { role: "assistant", content: "旧回复 5" },
+        { role: "teacher", content: "主题：太空学校" },
+      ],
+      references: [{ id: "ref-1", name: "太空学校设定", summary: "学校位于空间站。", usableFacts: ["学生乘坐穿梭舱上课"], avoidTopics: ["无关资料"], adaptationBoundary: "保持适龄" }],
       selectedDirection: null,
-      currentOutline: null,
+      currentDirections: [{ title: "已经被替代的旧方向" }],
+      currentOutline: { title: "已经被替代的旧大纲" },
+      englishLevel: "A2",
+      durationMinutes: 45,
+      selectedKnowledgePoints: [{ id: "grammar-1", label: "Daily routines", category: "Grammar" }],
+      confirmedRequirement: "创作发生在太空学校的新冒险。",
+      requiredNamedCharacters: ["安娜", "艾莎"],
     });
 
     const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(prompt).toContain("指定章节数：4");
+    expect(prompt).toContain("故事容量：4 章 / 45 分钟");
     expect(prompt).toContain('"personId":"teacher-1"');
     expect(prompt).toContain("林老师");
     expect(prompt).toContain("主题：太空学校");
+    expect(prompt).toContain("创作发生在太空学校的新冒险");
+    expect(prompt).toContain('必须出场的点名角色：["安娜","艾莎"]');
+    expect(prompt).toContain("学校位于空间站");
+    expect(prompt).not.toContain("已经被替代的旧要求");
+    expect(prompt).not.toContain("旧回复 4");
+    expect(prompt).not.toContain("已经被替代的旧方向");
+    expect(prompt).not.toContain("已经被替代的旧大纲");
+    expect(prompt).not.toContain("英语难度");
+    expect(prompt).toContain("故事容量：4 章 / 45 分钟");
+    expect(prompt).not.toContain("Daily routines");
+    expect(prompt).not.toContain("grammar-1");
+    expect(prompt).not.toContain("无关资料");
     expect(prompt).toContain("所有内容使用中文");
     expect(prompt).toContain("富有想象力的儿童故事创意总监");
-    expect(prompt).toContain("方向卡用于帮助老师快速判断故事主线，不是压缩版完整大纲");
-    expect(prompt).toContain("每句话只承担一个信息任务");
-    expect(prompt).toContain("不要逐个罗列同时发生的角色动作");
-    expect(prompt).toContain("详细分工留给章节大纲");
-    expect(prompt).toContain("它是什么、原本有什么作用、为什么会影响当前任务");
-    expect(prompt).toContain("一条清楚的因果主线");
-    expect(prompt).toContain("不能使用“角色理解了友谊、勇气或合作的意义，因此问题自动解决”");
+    expect(prompt).toContain("方向卡用于快速选择主线，不是压缩版大纲");
+    expect(prompt).toContain("最高验收标准");
+    expect(prompt).toContain("读一遍后就能用一句话讲清整个故事设计");
+    expect(prompt).toContain("使用 2–4 个简短自然句，通常约 3 句");
+    expect(prompt).toContain("按最自然的顺序组织");
+    expect(prompt).toContain("每个 hook 只呈现一个决定性故事引擎");
+    expect(prompt).toContain("辅助规则、逐人分工、阶段任务和具体解法由大纲展开");
+    expect(prompt).toContain("mainCharacters 完整记录具体角色");
+    expect(prompt).toContain("hook 使用自然的团队称呼表达课堂人物共同参与");
+    expect(prompt).toContain("每个方向都应有一句只能描述自身的核心概括");
+    expect(prompt).toContain("比较核心问题、主要行动和角色关系");
+    expect(prompt).toContain("选择差异最大的 3 个");
+    expect(prompt).not.toContain("最大的阻碍");
+    expect(prompt).not.toContain("他们准备");
+    expect(prompt).not.toContain("不要求每个人单独制造一次状态变化");
     expect(prompt).toContain("storyHighlight");
     expect(prompt).toContain("growthCore");
     expect(prompt).not.toContain("seedPrompt");
-    expect(prompt).toContain("mainCharacters 只列具体且需要保持视觉一致性的角色");
-    expect(prompt).toContain("默认最多选择 2 个原作角色");
+    expect(prompt).toContain("mainCharacters 完整记录具体角色和需要保持视觉一致性的具名群体");
+    expect(prompt).toContain("默认最多 2 个");
     expect(prompt).toContain("老师明确点名的原作角色全部保留");
-    expect(prompt).toContain("老师和学生不计入这个原作角色上限");
-    expect(prompt).toContain("机构、团队和背景群体只能写进 hook");
-    expect(prompt).toContain("Step 1 中的老师和所有学生默认全部参与故事");
+    expect(prompt).toContain("逐字复制到每个方向的 hook 和 mainCharacters");
+    expect(prompt).toContain("2 个原作角色的默认上限只约束 AI 自选角色");
+    expect(prompt).toContain("老师和学生不计入该上限");
+    expect(prompt).toContain("具名团队、不可分割的群像");
+    expect(prompt).toContain("完整群体按整体保留");
+    expect(prompt).toContain("hook 使用自然的团队称呼表达课堂人物共同参与");
+    expect(prompt).toContain("mainCharacters 完整保留 Step 1 人物");
     expect(directions[0]).toMatchObject({ storyHighlight: expect.any(String), growthCore: expect.any(String), seedPrompt: directions[0].hook });
   });
 
@@ -758,9 +826,15 @@ describe("createStoryOutlineGenerationDeps", () => {
     });
 
     const directionPrompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(directionPrompt).toContain("方向卡用于快速判断主线，不是压缩版完整大纲");
-    expect(directionPrompt).toContain("每句话只承担一个信息任务");
-    expect(directionPrompt).toContain("详细分工留给章节大纲");
+    expect(directionPrompt).toContain("方向卡用于快速选择主线，不是压缩版大纲");
+    expect(directionPrompt).toContain("最高验收标准");
+    expect(directionPrompt).toContain("读一遍后就能用一句话讲清整个故事设计");
+    expect(directionPrompt).toContain("使用 2–4 个简短自然句，通常约 3 句");
+    expect(directionPrompt).toContain("按最自然的顺序组织");
+    expect(directionPrompt).toContain("每个 hook 只呈现一个决定性故事引擎");
+    expect(directionPrompt).toContain("辅助规则、逐人分工、阶段任务和具体解法由大纲展开");
+    expect(directionPrompt).not.toContain("最大的阻碍");
+    expect(directionPrompt).not.toContain("他们准备");
     expect(directionPrompt).not.toContain("seedPrompt");
     expect(revised.seedPrompt).toBe(revised.hook);
 
@@ -789,10 +863,47 @@ describe("createStoryOutlineGenerationDeps", () => {
     });
 
     const chapterPrompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(chapterPrompt).toContain("使用 2–3 个简短句子");
-    expect(chapterPrompt).toContain("只产生一个主要的新状态");
+    expect(chapterPrompt).toContain("使用 2–4 个自然短句");
+    expect(chapterPrompt).toContain("语义完整优先于凑固定句数");
+    expect(chapterPrompt).toContain("首次出现时说明它与当前任务的关系");
+    expect(chapterPrompt).toContain("本章结果必须改变下一章成立时的局面");
     expect(chapterPrompt).toContain("人物位置、关键物品归属和已知线索");
     expect(chapterPrompt).toContain("最后一章不需要引出下一章");
+  });
+
+  test("keeps the outline readable while preserving ensemble and knowledge-point boundaries", async () => {
+    await createStoryOutlineGenerationDeps().generateOutline({
+      task: "根据已确认方向生成大纲。",
+      chapterCount: 4,
+      writingProvider: "quickrouter_gpt",
+      coursePeople: [],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: { title: "群像冒险", hook: "七兄弟和学生团队护送山心石。", storyHighlight: "能力各异的团队共同闯关。", growthCore: "从各自行动转向共同判断。" },
+      currentDirections: [],
+      currentOutline: null,
+      englishLevel: "A2",
+      durationMinutes: 45,
+      selectedKnowledgePoints: [{ id: "grammar-1", label: "Daily routines", category: "Grammar" }],
+    });
+
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain("允许删除、合并或简化方向中不必要的道具、规则和解释");
+    expect(prompt).toContain("自行选择最适合当前故事的叙事结构");
+    expect(prompt).toContain("不要套用固定的“受挫—调整—成功”框架");
+    expect(prompt).toContain("不预设行动路径数量、转折次数或计划改变次数");
+    expect(prompt).toContain("保留会改变人物决定、升级冲突或影响结果的事件");
+    expect(prompt).toContain("summary 使用 3–4 个自然短句");
+    expect(prompt).toContain("首次出现时立刻说明它与当前任务的关系");
+    expect(prompt).toContain("语义完整优先于凑固定句数");
+    expect(prompt).toContain("同一种“发现信息—重新选择路线—继续前进”");
+    expect(prompt).toContain("每句话只表达一个主要事件");
+    expect(prompt).toContain("不预设魔法机制、地点、物品或新信息的数量");
+    expect(prompt).toContain("具名团队或不可分割的群像");
+    expect(prompt).toContain("不要求每名成员拥有独立支线");
+    expect(prompt).toContain("先在不考虑知识点的情况下完成故事概括和全部章节剧情");
+    expect(prompt).toContain("不得为使用某个知识点新增道具、规则、人物行为或支线");
+    expect(prompt).toContain("summary 和 whatHappens 不得出现语法、知识点或教学安排说明");
   });
 
   test("parses a fenced reference response and fills safe array defaults", async () => {

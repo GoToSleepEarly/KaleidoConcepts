@@ -12,13 +12,15 @@ describe("verifyTeacherLogin", () => {
             username: "teacher",
             password: "123456",
             displayName: "教师账号",
+            aiGateway: "crazyrouter" as const,
           }),
+          update: async () => { throw new Error("unused"); },
         },
       },
       { username: "teacher", password: "123456" },
     );
 
-    expect(user).toEqual({ displayName: "教师账号" });
+    expect(user).toEqual({ id: "user-1", displayName: "教师账号", aiGateway: "crazyrouter" });
   });
 
   test("returns null when the database user is missing or password differs", async () => {
@@ -26,6 +28,7 @@ describe("verifyTeacherLogin", () => {
       {
         user: {
           findUnique: async () => null,
+          update: async () => { throw new Error("unused"); },
         },
       },
       { username: "teacher", password: "wrong" },
@@ -39,7 +42,9 @@ describe("verifyTeacherLogin", () => {
             username: "teacher",
             password: "123456",
             displayName: "教师账号",
+            aiGateway: "quickrouter" as const,
           }),
+          update: async () => { throw new Error("unused"); },
         },
       },
       { username: "teacher", password: "wrong" },

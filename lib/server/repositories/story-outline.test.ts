@@ -198,6 +198,7 @@ const deps: StoryOutlineGenerationDeps = {
     planningMode: "explore_options" as const,
     storyMode: "new_story" as const,
     classroomPresence: "participant" as const,
+    requiredNamedCharacters: ["暮光闪闪", "云宝黛西"],
     assistantMessage: "请确认创作理解。",
     resolvedUnderstanding: ["海底冒险"],
     unresolvedIssues: [],
@@ -315,6 +316,9 @@ describe("story outline repository", () => {
       coursePeople: expect.arrayContaining([expect.objectContaining({ personId: "student-1", age: 10 })]),
     }));
     expect(generateDirections).toHaveBeenCalledTimes(1);
+    expect(generateDirections).toHaveBeenCalledWith(expect.objectContaining({
+      requiredNamedCharacters: ["暮光闪闪", "云宝黛西"],
+    }));
     expect(state.alignment?.status).toBe("confirmed");
     expect(state.directions).toHaveLength(1);
     expect(state.outline).toBeNull();

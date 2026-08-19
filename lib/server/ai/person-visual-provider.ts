@@ -1,4 +1,5 @@
 import type { CourseImageQuality } from "@/lib/contracts/api";
+import type { AiGateway } from "@/lib/ai-gateway";
 import { devAiLog } from "./dev-ai-log";
 import { imageQualityForModel } from "./image-model-capabilities";
 
@@ -6,6 +7,8 @@ type ProviderConfig = {
   apiKey: string;
   model: string;
   timeoutMs: number;
+  gateway?: AiGateway;
+  baseUrl?: string;
 };
 
 const PERSON_VISUAL_QUALITY = "low" as const;
@@ -24,13 +27,16 @@ export class PersonVisualProviderConfigError extends Error {
   }
 }
 
-function configFromEnvironment(): ProviderConfig {
-  const apiKey = process.env.QUICKROUTER_IMAGE_API_KEY;
+function configFromEnvironment(gateway: AiGateway): ProviderConfig {
+  const isCrazyrouter = gateway === "crazyrouter";
+  const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_API_KEY : process.env.QUICKROUTER_IMAGE_API_KEY;
   if (!apiKey) throw new PersonVisualProviderConfigError();
   const timeout = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS);
   return {
     apiKey,
-    model: process.env.QUICKROUTER_IMAGE_MODEL || "gpt-image-2",
+    gateway,
+    baseUrl: isCrazyrouter ? "https://api.crazyrouter.com" : "https://api.quickrouter.ai",
+    model: isCrazyrouter ? process.env.CRAZYROUTER_IMAGE_MODEL || "gpt-image-2" : process.env.QUICKROUTER_IMAGE_MODEL || "gpt-image-2",
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };
 }
@@ -48,7 +54,8 @@ function imageBlob(dataUrl: string) {
   return new Blob([Buffer.from(match[2], "base64")], { type: match[1] });
 }
 
-export function createPersonVisualProvider(config = configFromEnvironment()) {
+export function createPersonVisualProvider(config?: ProviderConfig, selectedGateway: AiGateway = "quickrouter") {
+  const resolved = { gateway: "quickrouter" as AiGateway, baseUrl: "https://api.quickrouter.ai", ...(config ?? configFromEnvironment(selectedGateway)) };
   async function readResponse(response: Response, operation: string, startedAt: number) {
     let data: ProviderResponse;
     try {
@@ -69,22 +76,23 @@ export function createPersonVisualProvider(config = configFromEnvironment()) {
   }
 
   async function request(operation: string, path: string, buildBody: (requestModel: string, quality: CourseImageQuality) => BodyInit, headers: HeadersInit, logPayload: Record<string, unknown>) {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const requestModel = attempt === 0 ? config.model : FALLBACK_MODEL;
+    const maxAttempts = resolved.gateway === "quickrouter" ? 2 : 1;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const requestModel = attempt === 0 ? resolved.model : FALLBACK_MODEL;
       const quality = imageQualityForModel(requestModel, PERSON_VISUAL_QUALITY);
       devAiLog({ operation, phase: "request", payload: { ...logPayload, model: requestModel, quality, ...(attempt ? { fallbackForStatus: 429 } : {}) } });
       const startedAt = Date.now();
       let response: Response;
       try {
-        response = await fetch(`https://api.quickrouter.ai${path}`, {
+        response = await fetch(`${resolved.baseUrl}${path}`, {
           method: "POST",
           headers: {
             Accept: "application/json",
-            Authorization: `Bearer ${config.apiKey}`,
+            Authorization: `Bearer ${resolved.apiKey}`,
             ...headers,
           },
           body: buildBody(requestModel, quality),
-          signal: AbortSignal.timeout(config.timeoutMs),
+          signal: AbortSignal.timeout(resolved.timeoutMs),
         });
       } catch (error) {
         devAiLog({ operation, phase: "error", latencyMs: Date.now() - startedAt, error });
@@ -97,7 +105,7 @@ export function createPersonVisualProvider(config = configFromEnvironment()) {
         throw new Error("人物形象服务连接失败，请稍后重试", { cause: error });
       }
       const data = await readResponse(response, operation, startedAt);
-      if (response.status === 429 && attempt === 0 && config.model !== FALLBACK_MODEL) {
+      if (resolved.gateway === "quickrouter" && response.status === 429 && attempt === 0 && resolved.model !== FALLBACK_MODEL) {
         continue;
       }
       if (!response.ok) {
@@ -127,7 +135,7 @@ export function createPersonVisualProvider(config = configFromEnvironment()) {
           n: 1,
           size: "1024x1536",
           quality,
-          format: "webp",
+          ...(resolved.gateway === "crazyrouter" ? { output_format: "webp" } : { format: "webp" }),
         }),
         { "Content-Type": "application/json" },
         { prompt, size: "1024x1536", format: "webp" },
@@ -150,6 +158,7 @@ export function createPersonVisualProvider(config = configFromEnvironment()) {
           body.set("n", "1");
           body.set("size", "1024x1536");
           body.set("quality", quality);
+          if (resolved.gateway === "crazyrouter") body.set("output_format", "webp");
           return body;
         },
         {},

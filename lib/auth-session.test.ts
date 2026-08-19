@@ -23,4 +23,13 @@ describe("auth session storage", () => {
     expect(listener).toHaveBeenCalledTimes(2);
     expect(getStoredSession()).toBeNull();
   });
+
+  test("normalizes a removed gateway in an existing browser session", () => {
+    sessionStorage.setItem("kaleido.mock.session", JSON.stringify({
+      user: { displayName: "教师账号", aiGateway: "easy88ai" },
+      createdAt: "2026-08-19T00:00:00.000Z",
+    }));
+
+    expect(getStoredSession()?.user.aiGateway).toBe("quickrouter");
+  });
 });

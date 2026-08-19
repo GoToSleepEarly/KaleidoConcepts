@@ -196,6 +196,7 @@ type StoryOutlineAiContext = {
   confirmedRequirement?: string;
   storyMode?: "faithful" | "new_story";
   classroomPresence?: "observer" | "participant" | "absent";
+  requiredNamedCharacters?: string[];
 };
 
 export type StoryOutlineGenerationDeps = {
@@ -209,6 +210,7 @@ export type StoryOutlineGenerationDeps = {
     planningMode: "explore_options" | "follow_defined_plot";
     storyMode: "faithful" | "new_story";
     classroomPresence: "observer" | "participant" | "absent";
+    requiredNamedCharacters?: string[];
     assistantMessage: string;
     resolvedUnderstanding: string[];
     unresolvedIssues: string[];
@@ -512,6 +514,7 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
       questions: Array.isArray(alignmentDetails.questions) ? alignmentDetails.questions : [],
       ...(alignmentDetails.storyMode === "faithful" || alignmentDetails.storyMode === "new_story" ? { storyMode: alignmentDetails.storyMode } : {}),
       ...(alignmentDetails.classroomPresence === "observer" || alignmentDetails.classroomPresence === "participant" || alignmentDetails.classroomPresence === "absent" ? { classroomPresence: alignmentDetails.classroomPresence } : {}),
+      ...(Array.isArray(alignmentDetails.requiredNamedCharacters) ? { requiredNamedCharacters: alignmentDetails.requiredNamedCharacters.filter((value): value is string => typeof value === "string") } : {}),
       ...(typeof alignmentDetails.needsBackgroundRefresh === "boolean" ? { needsBackgroundRefresh: alignmentDetails.needsBackgroundRefresh } : {}),
       ...(typeof alignmentDetails.artifactsOutdated === "boolean" ? { artifactsOutdated: alignmentDetails.artifactsOutdated } : {}),
       ...(alignmentDetails.pendingChange && typeof alignmentDetails.pendingChange === "object" ? { pendingChange: alignmentDetails.pendingChange } : {}),
@@ -692,6 +695,9 @@ async function storyAiContext(
     confirmedRequirement: storySetting?.alignmentSummary ?? undefined,
     storyMode: alignmentDetails.storyMode,
     classroomPresence: alignmentDetails.classroomPresence,
+    requiredNamedCharacters: Array.isArray(alignmentDetails.requiredNamedCharacters)
+      ? alignmentDetails.requiredNamedCharacters.filter((value): value is string => typeof value === "string")
+      : [],
   };
 }
 
@@ -799,6 +805,7 @@ async function saveAlignment(
     planningMode: "explore_options" | "follow_defined_plot";
     storyMode?: "faithful" | "new_story";
     classroomPresence?: "observer" | "participant" | "absent";
+    requiredNamedCharacters?: string[];
     resolvedUnderstanding: string[];
     unresolvedIssues: string[];
     questions: StoryAlignmentQuestion[];
@@ -817,6 +824,11 @@ async function saveAlignment(
     questions: alignment.questions,
     ...(alignment.storyMode ? { storyMode: alignment.storyMode } : typeof previousDetails.storyMode === "string" ? { storyMode: previousDetails.storyMode } : {}),
     ...(alignment.classroomPresence ? { classroomPresence: alignment.classroomPresence } : typeof previousDetails.classroomPresence === "string" ? { classroomPresence: previousDetails.classroomPresence } : {}),
+    ...(Array.isArray(alignment.requiredNamedCharacters)
+      ? { requiredNamedCharacters: alignment.requiredNamedCharacters }
+      : Array.isArray(previousDetails.requiredNamedCharacters)
+        ? { requiredNamedCharacters: previousDetails.requiredNamedCharacters }
+        : {}),
     ...(typeof alignment.needsBackgroundRefresh === "boolean"
       ? { needsBackgroundRefresh: alignment.needsBackgroundRefresh }
       : typeof previousDetails.needsBackgroundRefresh === "boolean"
@@ -1024,6 +1036,7 @@ async function executeStoryOutlineMessage(
         planningMode: stored.planningMode ?? "explore_options",
         storyMode: details.storyMode,
         classroomPresence: details.classroomPresence,
+        requiredNamedCharacters: details.requiredNamedCharacters,
         resolvedUnderstanding: details.resolvedUnderstanding ?? [],
         unresolvedIssues: [],
         questions: [],

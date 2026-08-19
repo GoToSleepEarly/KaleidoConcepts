@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createStoryOutlineGenerationDeps, StoryAlignmentResponseError } from "@/lib/server/ai/story-outline-deps";
+import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
 import { getDb } from "@/lib/server/db";
 import {
   CourseStoryOutlineNotFoundError,
@@ -25,6 +26,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const parsed = storyOutlineMessageSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ message: "请输入故事想法或选择一个操作" }, { status: 400 });
   const { id } = await params;
+  const aiGateway = aiGatewayFromRequest(request);
   try {
     const db = getDb();
     if (parsed.data.action && outlineMutationActions.has(parsed.data.action)) {
@@ -34,11 +36,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         return NextResponse.json({ message: "修改故事大纲会删除已有的教学规划、文案与练习、视觉资源、图片和预览发布设置", requiresReset: true }, { status: 409 });
       }
       if (hasDownstream) {
-        await runBeforeCourseDownstreamReset(downstreamDb, id, "story_outline", () => handleStoryOutlineMessage(db, id, parsed.data, createStoryOutlineGenerationDeps()));
+        await runBeforeCourseDownstreamReset(downstreamDb, id, "story_outline", () => handleStoryOutlineMessage(db, id, parsed.data, createStoryOutlineGenerationDeps(aiGateway)));
         return NextResponse.json(await getStoryOutlineState(db, id));
       }
     }
-    return NextResponse.json(await handleStoryOutlineMessage(db, id, parsed.data, createStoryOutlineGenerationDeps()));
+    return NextResponse.json(await handleStoryOutlineMessage(db, id, parsed.data, createStoryOutlineGenerationDeps(aiGateway)));
   } catch (error) {
     if (error instanceof CourseStoryOutlineNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });
     if (error instanceof CourseStoryOutlineOperationConflictError) return NextResponse.json({ message: error.message }, { status: 409 });

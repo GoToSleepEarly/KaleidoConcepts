@@ -56,8 +56,8 @@ function TimedOperationStatus({ description, embedded = false, startedAt, title 
   );
 }
 
-function VisualPlanLoading() {
-  return <TimedOperationStatus description="正在整理角色形象、封面构图和章节图片方案。通常需要 1–3 分钟，角色或章节较多时可能更久；系统仍在处理中，无需重复点击。" title="正在生成视觉方案" />;
+function VisualPlanLoading({ originalizing = false }: { originalizing?: boolean }) {
+  return <TimedOperationStatus description={originalizing ? "正在替换原作角色的视觉设定，并同步更新封面和章节图片方案；故事正文和历史图片会保留。" : "正在整理角色形象、封面构图和章节图片方案。通常需要 1–3 分钟，角色或章节较多时可能更久；系统仍在处理中，无需重复点击。"} title={originalizing ? "正在生成原创视觉设定" : "正在生成视觉方案"} />;
 }
 
 function VisualPlanSummary({ characterCount, chapterCount, imageCount }: { characterCount: number; chapterCount: number; imageCount: number }) {
@@ -129,11 +129,19 @@ function qualityLabel(quality: CourseImageQuality) {
   return qualityOptions.find((option) => option.value === quality)?.label ?? "高";
 }
 
+function latestVersionForRevision(versions: CourseVisualAsset[], revision: number | null) {
+  return versions.findLast((asset) => revision === null || asset.planRevision === revision) ?? null;
+}
+
+function hasCurrentFailure(slot: CourseVisualImageSlot, revision: number | null) {
+  return latestVersionForRevision(slot.versions, revision)?.status === "failed";
+}
+
 function slotStatusLabel(slot: CourseVisualImageSlot | null, revision: number | null) {
   if (!slot) return "待视觉方案";
-  if (slot.activeAssetId && slot.versions.some((asset) => asset.id === slot.activeAssetId && (!revision || asset.planRevision === revision))) return "已完成";
   if (hasInFlightVisualVersion(slot.versions, revision)) return "生成中";
-  if (slot.versions.some((asset) => asset.status === "failed" && (!revision || asset.planRevision === revision))) return "生成失败";
+  if (hasCurrentFailure(slot, revision)) return "生成失败";
+  if (slot.activeAssetId && slot.versions.some((asset) => asset.id === slot.activeAssetId && (revision === null || asset.planRevision === revision))) return "已完成";
   return "待生成";
 }
 
@@ -258,14 +266,17 @@ function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, 
   const [instruction, setInstruction] = useState("");
   const [editing, setEditing] = useState(false);
   const latest = versions.at(-1) ?? null;
+  const latestCurrent = latestVersionForRevision(versions, planRevision);
   const selectionAnchor = `${activeAssetId ?? ""}:${latest?.id ?? ""}:${latest?.status ?? ""}`;
-  const automaticSelectedId = latest && latest.status !== "succeeded" ? latest.id : activeAssetId ?? latest?.id ?? null;
+  const automaticSelectedId = latestCurrent && latestCurrent.status !== "succeeded" ? latestCurrent.id : activeAssetId ?? latestCurrent?.id ?? latest?.id ?? null;
   const selectedId = manualSelection?.anchor === selectionAnchor ? manualSelection.id : automaticSelectedId;
   const selectVersion = (id: string) => setManualSelection({ id, anchor: selectionAnchor });
   const selected = versions.find((asset) => asset.id === selectedId) ?? versions.find((asset) => asset.id === activeAssetId) ?? latest;
   const succeeded = versions.filter((asset) => asset.status === "succeeded" && asset.publicUrl);
   if (!selected) return null;
   const current = selected;
+  const selectedMatchesPlan = planRevision === null || selected.planRevision === planRevision;
+  const restoringStoredImage = selectedMatchesPlan && selected.status === "failed" && selected.failureCode === "storage_recoverable";
 
   async function selectAsset() {
     await run(`select:${current.id}`, async () => {
@@ -287,8 +298,9 @@ function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, 
   const refiningPending = Boolean(pending?.startsWith("refine:") && versions.some((asset) => pending === `refine:${asset.id}`));
   const generating = Boolean(inFlight || generationPending || refiningPending);
   const refining = refiningPending || inFlight?.operation === "revision";
-  const generationTitle = refining ? "正在修改图片" : regenerateLabel.includes("封面") ? "正在重新生成视觉封面" : "正在重新生成插图";
-  const visibleStatus = generating ? "生成中" : statusLabel(selected.status);
+  const replacingPlan = pending === "originalize" || pending === "plan";
+  const generationTitle = restoringStoredImage ? "正在重新保存图片" : refining ? "正在修改图片" : regenerateLabel.includes("封面") ? "正在重新生成视觉封面" : "正在重新生成插图";
+  const visibleStatus = generating ? "生成中" : replacingPlan ? "待生成" : selectedMatchesPlan || activeAssetId === selected.id ? statusLabel(selected.status) : "待生成";
   return (
     <div className="space-y-3">
       <div className="relative aspect-video w-full overflow-hidden rounded-xl border bg-muted" data-testid="asset-image-frame">
@@ -296,16 +308,16 @@ function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, 
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={generating ? "secondary" : selected.status === "succeeded" ? "success" : selected.status === "failed" ? "destructive" : "secondary"}>{visibleStatus}</Badge>
+          <Badge variant={generating ? "secondary" : visibleStatus === "已生成" ? "success" : visibleStatus === "生成失败" ? "destructive" : "secondary"}>{visibleStatus}</Badge>
           <span className="text-xs text-muted-foreground">质量：{qualityLabel(selected.quality)}</span>
           {activeAssetId === selected.id ? <Badge variant="outline"><Check className="mr-1 size-3" />当前采用</Badge> : selected.status === "succeeded" ? <Button disabled={disabled} onClick={selectAsset} size="sm" variant="outline">采用此版本</Button> : null}
         </div>
         <div className="flex flex-wrap gap-2">
           {selected.status === "succeeded" ? <Button disabled={disabled} onClick={() => setEditing((value) => !value)} size="sm" variant="ghost"><Pencil />编辑图片</Button> : null}
-          <Button disabled={disabled || generating} onClick={onRegenerate} size="sm" variant="outline"><RefreshCw className={cn(generating && "animate-spin")} />{generating ? "生成中" : regenerateLabel}</Button>
+          <Button disabled={disabled || generating} onClick={onRegenerate} size="sm" variant="outline"><RefreshCw className={cn(generating && "animate-spin")} />{generating ? "生成中" : restoringStoredImage ? "重新保存图片" : regenerateLabel}</Button>
         </div>
       </div>
-      {selected.failureReason && !generating ? <div className="space-y-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert"><p>{selected.failureReason}</p><p className="font-medium">{selected.operation === "revision" ? "编辑图片失败，可以修改要求后重试" : "图片生成失败，可以重新生成"}</p>{selected.operation === "revision" && selected.parentAssetId ? <Button onClick={() => { selectVersion(selected.parentAssetId!); setEditing(true); }} size="sm" variant="outline">修改要求后重试</Button> : null}</div> : null}
+      {selected.failureReason && selectedMatchesPlan && !generating && !replacingPlan ? <div className="space-y-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert"><p>{selected.failureReason}</p><p className="font-medium">{restoringStoredImage ? "图片内容已经生成，可以重新保存，不会再次调用 AI" : selected.operation === "revision" ? "编辑图片失败，可以修改要求后重试" : "图片生成失败，可以重新生成"}</p>{selected.operation === "revision" && selected.parentAssetId && !restoringStoredImage ? <Button onClick={() => { selectVersion(selected.parentAssetId!); setEditing(true); }} size="sm" variant="outline">修改要求后重试</Button> : null}</div> : null}
       {editing && selected.status === "succeeded" ? (
         <div className="rounded-lg border bg-muted/30 p-3">
           <label className="text-sm font-medium" htmlFor={`image-edit-${current.id}`}>修改当前版本</label><p className="mt-1 text-xs leading-5 text-muted-foreground">请具体描述要修改的对象、位置和目标结果，信息越明确，修改越准确。</p><textarea className="mt-2 min-h-20 w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-base font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" disabled={disabled} id={`image-edit-${current.id}`} maxLength={500} onChange={(event) => setInstruction(event.target.value)} placeholder="例如：消除画面右侧重复的角色，其他人物和构图保持不变" value={instruction} />
@@ -416,17 +428,22 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
   const peopleCharacters = state.characters.filter((character) => character.sourceType === "person");
   const mainCharacters = state.characters.filter((character) => character.sourceType !== "person" && character.isMain);
   const otherCharacters = state.characters.filter((character) => character.sourceType !== "person" && !character.isMain);
-  const canOriginalize = state.planReady && state.planMode === "faithful" && state.characters.some((character) => character.sourceType === "referenced");
+  const canOriginalize = state.planReady && state.characters.some((character) => character.sourceType === "referenced");
+  const originalizeLabel = state.planMode === "originalized" ? "重新调整原创视觉设定" : "改用原创视觉设定";
+  const policyRecoveryText = state.planMode === "originalized"
+    ? "部分图片受到生成限制。可以直接重试当前图片，也可以重新调整原创视觉设定。"
+    : "部分图片受到生成限制。可以直接重试当前图片，也可以改用原创视觉设定。";
   const characterGroup = characterTab === "people" ? peopleCharacters : characterTab === "main" ? mainCharacters : otherCharacters;
   const characterTotalPages = Math.max(1, Math.ceil(characterGroup.length / CHARACTER_PAGE_SIZE));
   const safeCharacterPage = Math.min(characterPage, characterTotalPages);
   const visibleCharacters = characterGroup.slice((safeCharacterPage - 1) * CHARACTER_PAGE_SIZE, safeCharacterPage * CHARACTER_PAGE_SIZE);
   const missingPeople = peopleCharacters.filter((character) => coverSlot?.characterIds.includes(character.characterId) && !character.personVisualUrl);
   const coverConfirmed = Boolean(state.confirmedCoverAssetId && coverSlot?.activeAssetId === state.confirmedCoverAssetId);
-  const coverStatus = pending === `slot:${coverSlot?.id}` ? "生成中" : slotStatusLabel(coverSlot, state.planRevision);
+  const replacingPlan = pending === "originalize" || pending === "plan";
+  const coverStatus = pending === `slot:${coverSlot?.id}` ? "生成中" : replacingPlan ? "处理中" : slotStatusLabel(coverSlot, state.planRevision);
   const completed = lessonSlots.filter((item) => item.activeAssetId && item.versions.some((asset) => asset.id === item.activeAssetId && asset.planRevision === state.planRevision)).length;
   const generating = lessonSlots.filter((item) => hasInFlightVisualVersion(item.versions, state.planRevision)).length;
-  const failed = lessonSlots.filter((item) => item.versions.some((asset) => asset.status === "failed" && asset.planRevision === state.planRevision)).length;
+  const failed = replacingPlan ? 0 : lessonSlots.filter((item) => hasCurrentFailure(item, state.planRevision)).length;
   const missing = lessonSlots.length - completed - generating;
   const currentChapter = chapters.find((chapter) => chapter.id === activeTab) ?? null;
   const disabled = Boolean(pending || hasServerGeneration);
@@ -514,7 +531,7 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
       </header>
 
       {error ? <div className="flex items-start justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert"><span>{error}</span><button className="underline" onClick={() => setError(null)} type="button">关闭</button></div> : null}
-      {state.policyBlocked ? <div className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2"><CircleAlert className="size-4" />部分图片受到生成限制。原创形象可能与学生熟悉的 IP 角色不完全一致。</span><Button disabled={disabled} onClick={() => setConfirmOriginalize(true)} size="sm" variant="outline">改用原创视觉设定</Button></div> : null}
+      {state.policyBlocked && !replacingPlan ? <div className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2"><CircleAlert className="size-4" />{policyRecoveryText}</span>{canOriginalize ? <Button disabled={disabled} onClick={() => setConfirmOriginalize(true)} size="sm" variant="outline">{originalizeLabel}</Button> : null}</div> : null}
       <VisualSection icon={<Sparkles className="size-4" />} title="图片生成流程">
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <div className={cn("rounded-lg border px-3 py-2.5", state.planReady ? "border-emerald-200 bg-emerald-50/70" : "border-primary-200 bg-primary-50/60")}><p className="text-xs font-semibold text-foreground">1 · 视觉方案</p><p className="mt-1 text-xs text-muted-foreground">{state.planReady ? "已生成" : "待生成"}</p></div>
@@ -524,7 +541,7 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
         </div>
       </VisualSection>
 
-      {advanced ? <VisualSection icon={<Settings2 className="size-4" />} title="高级设置"><div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">调整后续图片的生成质量。</p><QualitySelector disabled={disabled} onChange={(quality) => void run(`quality:${quality}`, async () => { const response = await fetch(`/api/courses/${state.course.id}/visual-resources/settings`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quality }) }); const data = await response.json(); if (!response.ok) throw new Error(data.message); await refresh(); })} value={state.quality} /></div>{canOriginalize && !state.policyBlocked ? <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><p className="max-w-2xl text-xs leading-5 text-muted-foreground">如果原作角色受到图片生成限制，可改为不含原作名称和专属标志的原创形象。</p><Button disabled={disabled} onClick={() => setConfirmOriginalize(true)} size="sm" variant="outline">改用原创视觉设定</Button></div> : null}</div></VisualSection> : null}
+      {advanced ? <VisualSection icon={<Settings2 className="size-4" />} title="高级设置"><div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">调整后续图片的生成质量。</p><QualitySelector disabled={disabled} onChange={(quality) => void run(`quality:${quality}`, async () => { const response = await fetch(`/api/courses/${state.course.id}/visual-resources/settings`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quality }) }); const data = await response.json(); if (!response.ok) throw new Error(data.message); await refresh(); })} value={state.quality} /></div>{canOriginalize && !state.policyBlocked ? <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><p className="max-w-2xl text-xs leading-5 text-muted-foreground">保留故事和整体视觉气质，将原作身份、专有地名与标志性元素转换为描述性视觉设定。</p><Button disabled={disabled} onClick={() => setConfirmOriginalize(true)} size="sm" variant="outline">{originalizeLabel}</Button></div> : null}</div></VisualSection> : null}
 
       <VisualSection
         action={state.planReady ? <Button disabled={disabled} loading={pending === "plan"} onClick={() => setConfirmPlanUpdate(true)} size="sm" variant="outline"><RefreshCw />更新视觉方案</Button> : undefined}
@@ -532,8 +549,8 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
         icon={<Sparkles className="size-4" />}
         title="视觉方案"
       >
-        {pending === "plan"
-          ? <VisualPlanLoading />
+        {replacingPlan
+          ? <VisualPlanLoading originalizing={pending === "originalize"} />
           : state.planReady
             ? <VisualPlanSummary chapterCount={chapters.length} characterCount={state.characters.length} imageCount={lessonSlots.length} />
             : <div className="flex flex-col items-center py-4 text-center"><Button disabled={disabled} onClick={() => void jsonAction("plan", `/api/courses/${state.course.id}/visual-resources/plan/generate`)}><Sparkles />生成视觉方案</Button></div>}
@@ -560,7 +577,7 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
 
       {state.planReady ? <VisualSection action={<Button disabled={disabled || !coverConfirmed || missing <= 0} loading={pending === "generate:all"} onClick={() => void jsonAction("generate:all", `/api/courses/${state.course.id}/visual-resources/images/generate`, { scope: "all" })} size="sm"><Sparkles />生成全部未生成图片</Button>} description={`${completed}/${lessonSlots.length} 已完成${generating ? ` · ${generating} 张生成中` : ""}${failed ? ` · ${failed} 张失败` : ""}`} icon={<ImageIcon className="size-4" />} title="章节图片">
         <div className="space-y-4">
-          <div className="flex items-center gap-2 border-b"><div aria-label="章节图片导航" className="flex min-w-0 flex-1 gap-1 overflow-x-auto" onKeyDown={(event) => { if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); moveTab(event.key === "ArrowRight" ? 1 : -1); } }} ref={tabListRef} role="tablist">{chapters.map((chapter) => { const done = chapter.slots.filter((item) => item.activeAssetId).length; const hasFailure = chapter.slots.some((item) => item.versions.some((asset) => asset.status === "failed")); const status = hasFailure ? "失败" : done === chapter.slots.length ? "已完成" : done ? `${done}/${chapter.slots.length}` : "待生成"; return <button aria-selected={activeTab === chapter.id} className={cn("min-h-11 shrink-0 border-b-2 px-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2", activeTab === chapter.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")} key={chapter.id} onClick={() => setActiveTab(chapter.id)} role="tab" type="button">第 {chapter.order} 章 · {status}</button>; })}</div><details className="group relative shrink-0"><summary aria-label="跳转章节" className="list-none" role="button"><Button asChild size="sm" variant="outline"><span><List />跳转章节</span></Button></summary><div className="absolute right-0 top-11 z-30 w-64 rounded-xl border bg-card p-2 shadow-md">{chapters.map((chapter) => <button className="flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-left text-sm hover:bg-muted" key={chapter.id} onClick={() => setActiveTab(chapter.id)} type="button"><span className="truncate">第 {chapter.order} 章 · {chapter.title}</span><ChevronRight className="size-4" /></button>)}</div></details></div>
+          <div className="flex items-center gap-2 border-b"><div aria-label="章节图片导航" className="flex min-w-0 flex-1 gap-1 overflow-x-auto" onKeyDown={(event) => { if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); moveTab(event.key === "ArrowRight" ? 1 : -1); } }} ref={tabListRef} role="tablist">{chapters.map((chapter) => { const done = chapter.slots.filter((item) => item.activeAssetId).length; const hasFailure = !replacingPlan && chapter.slots.some((item) => hasCurrentFailure(item, state.planRevision)); const status = hasFailure ? "失败" : done === chapter.slots.length ? "已完成" : done ? `${done}/${chapter.slots.length}` : "待生成"; return <button aria-selected={activeTab === chapter.id} className={cn("min-h-11 shrink-0 border-b-2 px-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2", activeTab === chapter.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")} key={chapter.id} onClick={() => setActiveTab(chapter.id)} role="tab" type="button">第 {chapter.order} 章 · {status}</button>; })}</div><details className="group relative shrink-0"><summary aria-label="跳转章节" className="list-none" role="button"><Button asChild size="sm" variant="outline"><span><List />跳转章节</span></Button></summary><div className="absolute right-0 top-11 z-30 w-64 rounded-xl border bg-card p-2 shadow-md">{chapters.map((chapter) => <button className="flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-left text-sm hover:bg-muted" key={chapter.id} onClick={() => setActiveTab(chapter.id)} type="button"><span className="truncate">第 {chapter.order} 章 · {chapter.title}</span><ChevronRight className="size-4" /></button>)}</div></details></div>
           {!coverConfirmed ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">请先确认视觉封面，再生成章节图片</p> : null}
           {currentChapter ? <section className="space-y-4" role="tabpanel"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-balance text-base font-semibold">第 {currentChapter.order} 章 · {currentChapter.title}</h2><Button disabled={disabled || !coverConfirmed || !currentChapter.slots.some((item) => needsInitialVisualGeneration(item, state.planRevision))} loading={pending === `generate:${currentChapter.id}`} onClick={() => void jsonAction(`generate:${currentChapter.id}`, `/api/courses/${state.course.id}/visual-resources/images/generate`, { scope: "chapter", chapterId: currentChapter.id })}><Sparkles />生成本章未生成图片</Button></div><div className="grid gap-5 lg:grid-cols-2">{currentChapter.slots.map((item, index) => {
             const serverGenerating = hasInFlightVisualVersion(item.versions, state.planRevision);
@@ -582,11 +599,11 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
         </div>
       </Dialog>
 
-      <Dialog icon={<CircleAlert className="size-5" />} onClose={() => { if (!pending) setConfirmOriginalize(false); }} open={confirmOriginalize} size="compact" title="改用原创视觉设定？">
+      <Dialog icon={<CircleAlert className="size-5" />} onClose={() => { if (!pending) setConfirmOriginalize(false); }} open={confirmOriginalize} size="compact" title={state.planMode === "originalized" ? "重新调整原创视觉设定？" : "改用原创视觉设定？"}>
         <div className="space-y-4 p-5">
-          <p className="text-pretty text-sm leading-6 text-muted-foreground">系统只替换引用的原作角色，并移除原作名称、旧参考图和专属视觉标志；故事正文不会改变。</p>
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">画风、故事世界、老师学生和已有原创角色保持不变。封面与章节图片需要重新生成，历史版本仍会保留。</p>
-          <div className="flex justify-end gap-2"><Button disabled={Boolean(pending)} onClick={() => setConfirmOriginalize(false)} variant="outline">取消</Button><Button disabled={Boolean(pending)} loading={pending === "originalize"} onClick={() => { setConfirmOriginalize(false); void jsonAction("originalize", `/api/courses/${state.course.id}/visual-resources/plan/originalize`); }}>确认并原创化</Button></div>
+          <p className="text-pretty text-sm leading-6 text-muted-foreground">系统会保留故事内容和整体视觉气质，将引用角色转换为不依赖原作名称识别的文字视觉形象。</p>
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">专有地名和背景元素会改为描述性设定；构图、氛围、老师学生和已有原创角色尽量保持。封面与章节图片需要重新生成，历史版本仍会保留。</p>
+          <div className="flex justify-end gap-2"><Button disabled={Boolean(pending)} onClick={() => setConfirmOriginalize(false)} variant="outline">取消</Button><Button disabled={Boolean(pending)} loading={pending === "originalize"} onClick={() => { setConfirmOriginalize(false); void jsonAction("originalize", `/api/courses/${state.course.id}/visual-resources/plan/originalize`); }}>{state.planMode === "originalized" ? "确认重新调整" : "确认并原创化"}</Button></div>
         </div>
       </Dialog>
 

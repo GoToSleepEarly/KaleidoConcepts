@@ -285,6 +285,55 @@ describe("Step 5 视觉资源工作区", () => {
     expect(screen.queryByText("上次生成失败")).not.toBeInTheDocument();
   });
 
+  test("重新生成成功后历史失败不再影响章节状态和失败统计", () => {
+    const cover = asset({ id: "cover-success" });
+    const failed = asset({ id: "shot-failed", status: "failed", publicUrl: null, failureReason: "旧图片失败" });
+    const succeeded = asset({ id: "shot-success", publicUrl: "/shot-success.webp", createdAt: "2026-08-15T12:05:00.000Z" });
+    render(<CourseVisualResourcesWorkspace initialState={{
+      ...plannedState,
+      confirmedCoverAssetId: cover.id,
+      slots: plannedState.slots.map((item) => {
+        if (item.slotType === "visual_cover") return { ...item, activeAssetId: cover.id, activeAsset: cover, versions: [cover] };
+        if (item.id === "shot-1") return { ...item, activeAssetId: succeeded.id, activeAsset: succeeded, versions: [failed, succeeded] };
+        return item;
+      }),
+    }} />);
+
+    expect(screen.getByRole("tab", { name: "第 1 章 · 已完成" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "章节图片" }).closest("section")).toHaveTextContent("1/2 已完成");
+    expect(screen.getByRole("heading", { name: "章节图片" }).closest("section")).not.toHaveTextContent("张失败");
+    expect(screen.queryByText("旧图片失败")).not.toBeInTheDocument();
+  });
+
+  test("原创化成功进入新方案后不再展示旧方案的失败", async () => {
+    const failed = asset({ id: "failed-cover", status: "failed", publicUrl: null, failureReason: "原作图片生成失败" });
+    const initial = {
+      ...plannedState,
+      policyBlocked: true,
+      slots: plannedState.slots.map((item) => item.slotType === "visual_cover" ? { ...item, versions: [failed] } : item),
+    };
+    const originalized = {
+      ...initial,
+      planRevision: 2,
+      planMode: "originalized" as const,
+      policyBlocked: false,
+    };
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(Response.json({ planRevision: 2 }))
+      .mockResolvedValueOnce(Response.json(originalized)));
+    render(<CourseVisualResourcesWorkspace initialState={initial} />);
+
+    expect(screen.getByText("原作图片生成失败")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "改用原创视觉设定" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认并原创化" }));
+
+    expect(screen.queryByText("原作图片生成失败")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("正在生成原创视觉设定");
+    await waitFor(() => expect(screen.queryByText("原作图片生成失败")).not.toBeInTheDocument());
+    expect(screen.queryByText("图片生成失败，可以重新生成")).not.toBeInTheDocument();
+    expect(screen.queryByText(/张失败/)).not.toBeInTheDocument();
+  });
+
   test("编辑图片失败后在当前图片卡显示后台错误", async () => {
     const current = asset({ id: "current-cover" });
     const failedRevision = asset({ id: "failed-revision", parentAssetId: current.id, operation: "revision", status: "failed", publicUrl: null, failureReason: "图片生成服务繁忙，请稍后重试" });
@@ -303,14 +352,63 @@ describe("Step 5 视觉资源工作区", () => {
     expect(screen.getByText("编辑图片失败，可以修改要求后重试")).toBeInTheDocument();
   });
 
+  test("远端图片已生成但保存失败时，只提供不调用 AI 的重新保存操作", () => {
+    const failed = asset({
+      id: "recoverable-cover",
+      operation: "revision",
+      parentAssetId: "current-cover",
+      status: "failed",
+      publicUrl: null,
+      failureCode: "storage_recoverable",
+      failureReason: "图片已生成，但下载或保存失败：下载远端图片超时",
+    });
+    render(<CourseVisualResourcesWorkspace initialState={{
+      ...plannedState,
+      slots: plannedState.slots.map((item) => item.slotType === "visual_cover" ? { ...item, versions: [failed] } : item),
+    }} />);
+
+    expect(screen.getByRole("button", { name: "重新保存图片" })).toBeEnabled();
+    expect(screen.getByText("图片内容已经生成，可以重新保存，不会再次调用 AI")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "修改要求后重试" })).not.toBeInTheDocument();
+  });
+
   test("高级模式始终提供 IP 角色原创化入口并在执行前确认影响", () => {
     render(<CourseVisualResourcesWorkspace initialState={plannedState} />);
 
     fireEvent.click(screen.getByRole("button", { name: "高级模式" }));
     fireEvent.click(screen.getByRole("button", { name: "改用原创视觉设定" }));
     expect(screen.getByRole("heading", { name: "改用原创视觉设定？" })).toBeInTheDocument();
-    expect(screen.getByText(/只替换引用的原作角色/)).toBeInTheDocument();
-    expect(screen.getByText(/画风、故事世界、老师学生和已有原创角色保持不变/)).toBeInTheDocument();
+    expect(screen.getByText(/保留故事内容和整体视觉气质/)).toBeInTheDocument();
+    expect(screen.getByText(/专有地名和背景元素会改为描述性设定/)).toBeInTheDocument();
+  });
+
+  test("策略拦截后同时保留图片重试和原创视觉设定入口", () => {
+    const failed = asset({ id: "blocked-cover", status: "failed", publicUrl: null, failureCode: "policy_blocked", failureReason: "内容安全策略拦截" });
+    render(<CourseVisualResourcesWorkspace initialState={{
+      ...plannedState,
+      policyBlocked: true,
+      slots: plannedState.slots.map((item) => item.slotType === "visual_cover" ? { ...item, versions: [failed] } : item),
+    }} />);
+
+    expect(screen.getByText(/可以直接重试当前图片，也可以改用原创视觉设定/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新生成封面" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "改用原创视觉设定" })).toBeEnabled();
+  });
+
+  test("原创视觉方案再次被拦截时可以重试图片或重新调整方案", () => {
+    const failed = asset({ id: "blocked-original-cover", status: "failed", publicUrl: null, failureCode: "policy_blocked", failureReason: "内容安全策略拦截" });
+    render(<CourseVisualResourcesWorkspace initialState={{
+      ...plannedState,
+      planMode: "originalized",
+      policyBlocked: true,
+      slots: plannedState.slots.map((item) => item.slotType === "visual_cover" ? { ...item, versions: [failed] } : item),
+    }} />);
+
+    expect(screen.getByText(/可以直接重试当前图片，也可以重新调整原创视觉设定/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新生成封面" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "重新调整原创视觉设定" }));
+    expect(screen.getByRole("heading", { name: "重新调整原创视觉设定？" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认重新调整" })).toBeEnabled();
   });
 
   test("修改图片时提示老师描述对象、位置和目标结果", () => {

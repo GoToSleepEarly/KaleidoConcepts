@@ -66,6 +66,42 @@ describe("course image provider", () => {
     expect(((request.mock.calls[1]?.[1]?.body as FormData).get("quality"))).toBe("high");
   });
 
+  test("Crazyrouter 使用标准图片协议且不会回退到 QuickRouter 专属模型", async () => {
+    process.env.CRAZYROUTER_API_KEY = "crazy-key";
+    const request = vi.fn(async () => new Response(JSON.stringify({ error: { message: "rate limited" } }), { status: 429 }));
+    vi.stubGlobal("fetch", request);
+    const provider = createCourseImageProvider(undefined, "crazyrouter");
+
+    await expect(provider.generate({ prompt: "scene", quality: "medium" })).rejects.toThrow("rate limited");
+
+    expect(request).toHaveBeenCalledTimes(1);
+    const init = (request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
+    expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.crazyrouter.com/v1/images/generations");
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer crazy-key");
+    expect(JSON.parse(String(init?.body))).toMatchObject({ model: "gpt-image-2", quality: "medium", output_format: "webp" });
+  });
+
+  test("Crazyrouter 图片编辑发送标准 multipart 参数", async () => {
+    process.env.CRAZYROUTER_API_KEY = "crazy-key";
+    const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/edited.webp" }] }));
+    vi.stubGlobal("fetch", request);
+
+    await createCourseImageProvider(undefined, "crazyrouter").edit({
+      prompt: "change the object to green",
+      imageDataUrl: "data:image/png;base64,aGVsbG8=",
+      quality: "low",
+    });
+
+    const init = (request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
+    const body = init?.body as FormData;
+    expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.crazyrouter.com/v1/images/edits");
+    expect(body.get("model")).toBe("gpt-image-2");
+    expect(body.get("size")).toBe("1536x1024");
+    expect(body.get("quality")).toBe("low");
+    expect(body.get("output_format")).toBe("webp");
+    expect(body.get("image")).toBeInstanceOf(Blob);
+  });
+
   test("参数错误不重试", async () => {
     const request = vi.fn(async () => new Response(JSON.stringify({ error: { message: "Unknown parameter: 'format'." } }), { status: 400 }));
     vi.stubGlobal("fetch", request);

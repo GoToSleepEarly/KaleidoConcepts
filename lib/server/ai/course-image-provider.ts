@@ -1,4 +1,5 @@
 import type { CourseImageQuality } from "@/lib/contracts/api";
+import type { AiGateway } from "@/lib/ai-gateway";
 import { devAiLog } from "./dev-ai-log";
 import { imageQualityForModel } from "./image-model-capabilities";
 
@@ -8,17 +9,20 @@ type ProviderResponse = {
   message?: string;
 };
 
-type ProviderConfig = { apiKey: string; model: string; timeoutMs: number; retryDelaysMs?: readonly number[] };
+type ProviderConfig = { apiKey: string; model: string; timeoutMs: number; retryDelaysMs?: readonly number[]; gateway?: AiGateway; baseUrl?: string };
 
 const FALLBACK_MODEL = "gpt-image-2-c";
 
-function configFromEnvironment(): ProviderConfig {
-  const apiKey = process.env.QUICKROUTER_IMAGE_API_KEY;
+function configFromEnvironment(gateway: AiGateway): ProviderConfig {
+  const isCrazyrouter = gateway === "crazyrouter";
+  const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_API_KEY : process.env.QUICKROUTER_IMAGE_API_KEY;
   if (!apiKey) throw new Error("图片生成服务尚未配置");
   const timeoutValue = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS);
   return {
     apiKey,
-    model: process.env.QUICKROUTER_IMAGE_MODEL || "gpt-image-2",
+    gateway,
+    baseUrl: isCrazyrouter ? "https://api.crazyrouter.com" : "https://api.quickrouter.ai",
+    model: isCrazyrouter ? process.env.CRAZYROUTER_IMAGE_MODEL || "gpt-image-2" : process.env.QUICKROUTER_IMAGE_MODEL || "gpt-image-2",
     timeoutMs: Number.isFinite(timeoutValue) && timeoutValue > 0 ? timeoutValue : 600_000,
   };
 }
@@ -36,8 +40,9 @@ function resultImage(data: ProviderResponse) {
   return null;
 }
 
-export function createCourseImageProvider(config = configFromEnvironment()) {
-  const { apiKey, model, timeoutMs } = config;
+export function createCourseImageProvider(config?: ProviderConfig, selectedGateway: AiGateway = "quickrouter") {
+  const resolved = { gateway: "quickrouter" as AiGateway, baseUrl: "https://api.quickrouter.ai", ...(config ?? configFromEnvironment(selectedGateway)) };
+  const { apiKey, model, timeoutMs, gateway, baseUrl } = resolved;
 
   function isUpstreamSaturated(response: Response, data: ProviderResponse) {
     const message = data.error?.message || data.message || "";
@@ -53,14 +58,15 @@ export function createCourseImageProvider(config = configFromEnvironment()) {
   }
 
   async function request(operation: string, path: string, requestedQuality: CourseImageQuality, buildBody: (requestModel: string, quality: CourseImageQuality) => BodyInit, headers: HeadersInit, logPayload: Record<string, unknown>) {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    const maxAttempts = gateway === "quickrouter" ? 2 : 1;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const requestModel = attempt === 0 ? model : FALLBACK_MODEL;
       const quality = imageQualityForModel(requestModel, requestedQuality);
       devAiLog({ operation, phase: "request", payload: { ...logPayload, model: requestModel, quality, ...(attempt ? { fallbackForStatus: 429 } : {}) } });
       const startedAt = Date.now();
       let response: Response;
       try {
-        response = await fetch(`https://api.quickrouter.ai${path}`, {
+        response = await fetch(`${baseUrl}${path}`, {
           method: "POST",
           headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}`, ...headers },
           body: buildBody(requestModel, quality),
@@ -77,7 +83,7 @@ export function createCourseImageProvider(config = configFromEnvironment()) {
       catch (error) { throw new Error("图片生成服务返回异常", { cause: error }); }
       devAiLog({ operation, phase: response.ok ? "response" : "error", status: response.status, latencyMs: Date.now() - startedAt, payload: data });
       if (!response.ok) {
-        if (response.status === 429 && attempt === 0 && model !== FALLBACK_MODEL) {
+        if (gateway === "quickrouter" && response.status === 429 && attempt === 0 && model !== FALLBACK_MODEL) {
           continue;
         }
         if (isUpstreamSaturated(response, data)) throw new Error(saturatedMessage(data));
@@ -93,7 +99,7 @@ export function createCourseImageProvider(config = configFromEnvironment()) {
   return {
     generate(input: { prompt: string; quality: CourseImageQuality; portrait?: boolean }) {
       const size = input.portrait ? "1024x1536" : "1536x864";
-      return request("course_image_generate", "/v1/images/generations", input.quality, (requestModel, quality) => JSON.stringify({ model: requestModel, prompt: input.prompt, n: 1, size, quality, format: "webp" }), { "Content-Type": "application/json" }, { prompt: input.prompt, size });
+      return request("course_image_generate", "/v1/images/generations", input.quality, (requestModel, quality) => JSON.stringify({ model: requestModel, prompt: input.prompt, n: 1, size, quality, ...(gateway === "crazyrouter" ? { output_format: "webp" } : { format: "webp" }) }), { "Content-Type": "application/json" }, { prompt: input.prompt, size });
     },
     edit(input: { prompt: string; quality: CourseImageQuality; imageDataUrl: string; portrait?: boolean }) {
       const size = input.portrait ? "1024x1536" : "1536x1024";
@@ -105,6 +111,7 @@ export function createCourseImageProvider(config = configFromEnvironment()) {
         body.set("n", "1");
         body.set("size", size);
         body.set("quality", quality);
+        if (gateway === "crazyrouter") body.set("output_format", "webp");
         return body;
       }, {}, { prompt: input.prompt, size, requestEncoding: "multipart/form-data" });
     },

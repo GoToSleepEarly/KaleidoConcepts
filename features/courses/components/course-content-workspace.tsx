@@ -76,7 +76,7 @@ function modificationTargets(state: CourseContentState, pages: TextPreviewPage[]
 export function CourseContentWorkspace({ initialState }: { initialState: CourseContentState }) {
   const router = useRouter();
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   const requestEpoch = useRef(0);
   const [state, setState] = useState(initialState);
   const [selectedSection, setSelectedSection] = useState(initialState.chapters[0] ? `reading:${initialState.chapters[0].id}` : "main-idea");
@@ -190,8 +190,9 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
   }, [hasPersistedOperation, state.course.id]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [isWorking, optimisticTeacherMessage, state.messages.length, state.phase]);
+    const timeline = chatScrollRef.current;
+    if (timeline) timeline.scrollTop = timeline.scrollHeight;
+  }, [isWorking, optimisticTeacherMessage, state.messages.length, state.phase, state.updatedAt]);
 
   async function updateProvider(writingProvider: StoryWritingProvider) {
     setState((current) => ({ ...current, writingProvider }));
@@ -328,9 +329,9 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       >
         <aside className={cn("min-w-0", sections.length && "md:h-full md:min-h-0 md:overflow-hidden")}>
           <section className={cn("flex min-w-0 flex-col overflow-hidden rounded-lg bg-card shadow-sm", sections.length ? "min-h-[680px] md:h-full md:min-h-0 md:overflow-hidden" : "min-h-[clamp(560px,calc(100dvh-18rem),720px)]")} data-testid="content-chat-pane">
-            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3"><div className="flex items-center gap-2 text-sm font-semibold"><MessageSquareText className="size-4 text-primary" />创作对话</div><select aria-label="文本生成模型" className="h-9 rounded-md border border-input bg-muted/60 px-2 text-xs font-medium text-foreground" disabled={isWorking} onChange={(event) => updateProvider(event.target.value as StoryWritingProvider)} value={state.writingProvider}><option value="quickrouter_gpt">GPT（默认）</option><option value="quickrouter_deepseek">DeepSeek</option></select></div>
+            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3"><div className="flex items-center gap-2 text-sm font-semibold"><MessageSquareText className="size-4 text-primary" />创作对话</div><select aria-label="文本生成模型" className="h-9 rounded-md border border-input bg-muted/60 px-2 text-xs font-medium text-foreground" disabled={isWorking} onChange={(event) => updateProvider(event.target.value as StoryWritingProvider)} value={state.writingProvider}><option value="quickrouter_gpt">GPT</option><option value="quickrouter_deepseek">DeepSeek</option></select></div>
 
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain scroll-pb-24 p-4" data-testid="content-chat-scroll">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain scroll-pb-24 p-4" data-testid="content-chat-scroll" ref={chatScrollRef}>
               <AssistantBubble>将先生成全部章节正文、正文内练习和课后阅读。确认内容后，再生成章节与课后练习。</AssistantBubble>
               {state.messages.map((message, index) => isRepairMessage(message.content)
                 ? <AssistantMessage key={message.id}><RepairMessage failed={state.status === "failed" && index === latestRepairMessageIndex} message={message.content} working={repairInProgress && index === latestRepairMessageIndex} /></AssistantMessage>
@@ -342,7 +343,6 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
               {!isWorking && state.status === "reading_ready" ? <ChatAction title="正文与课后阅读已生成"><div className="space-y-2"><Button className="w-full" onClick={() => generate("exercises")}>确认正文与课后阅读，生成练习<ChevronRight className="size-4" /></Button><Button className="w-full" onClick={() => generate("reading", true)} variant="outline"><RotateCcw className="size-4" />重新生成正文与课后阅读</Button></div></ChatAction> : null}
               {!isWorking && state.exercisesStale ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">正文已修改，现有练习仍保留但已过期。<Button className="mt-2 w-full" onClick={() => generate("exercises")} size="sm" variant="outline">重新生成练习</Button></div> : null}
               {(error || state.errorMessage) ? <AssistantMessage><div className="flex w-fit max-w-xl gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><AlertCircle className="mt-0.5 size-4 shrink-0" />{error || state.errorMessage}</div></AssistantMessage> : null}
-              <div aria-hidden="true" ref={chatEndRef} />
             </div>
 
             <div className="space-y-2 border-t border-border p-4">

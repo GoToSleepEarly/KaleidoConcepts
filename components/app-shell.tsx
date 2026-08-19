@@ -3,10 +3,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, ChevronDown, ListChecks, LogOut, Sparkles, Tags, UsersRound } from "lucide-react";
+import { BookOpen, ChevronDown, ListChecks, LogOut, Settings2, Sparkles, Tags, UsersRound } from "lucide-react";
 
 import { PersonAvatar } from "@/components/person-avatar";
-import { clearAuthSession, getStoredSession } from "@/lib/auth-session";
+import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { AI_GATEWAYS, aiGatewayDescriptions, aiGatewayLabels, type AiGateway } from "@/lib/ai-gateway";
+import { clearAuthSession, getStoredSession, updateStoredAiGateway } from "@/lib/auth-session";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -81,11 +84,15 @@ function getRouteMeta(pathname: string) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const session = useMemo(() => getStoredSession(), []);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [aiGateway, setAiGateway] = useState<AiGateway>(session?.user.aiGateway ?? "quickrouter");
+  const [isSavingGateway, setIsSavingGateway] = useState(false);
+  const [gatewayError, setGatewayError] = useState("");
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const routeMeta = getRouteMeta(pathname);
   const isCourseCreateRoute = pathname === "/courses/new" || (pathname.includes("/create/") && pathname.startsWith("/courses/"));
-  const session = useMemo(() => getStoredSession(), []);
   const displayName = session?.user.displayName ?? "教师账号";
 
   useEffect(() => {
@@ -110,6 +117,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   function handleLogout() {
     clearAuthSession();
     router.replace("/login");
+  }
+
+  async function saveAiGateway() {
+    setGatewayError("");
+    setIsSavingGateway(true);
+    try {
+      const response = await fetch("/api/account/ai-gateway", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aiGateway }),
+      });
+      const result = await response.json() as { aiGateway?: AiGateway; message?: string };
+      if (!response.ok || !result.aiGateway) throw new Error(result.message || "中转站设置保存失败");
+      setAiGateway(result.aiGateway);
+      updateStoredAiGateway(result.aiGateway);
+      setIsAdvancedOpen(false);
+    } catch (error) {
+      setGatewayError(error instanceof Error ? error.message : "中转站设置保存失败");
+    } finally {
+      setIsSavingGateway(false);
+    }
   }
 
   return (
@@ -178,7 +206,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {isMenuOpen ? (
               <div className="absolute right-0 top-full z-dropdown mt-2 w-full overflow-hidden rounded-xl bg-white shadow-[0_6px_14px_rgba(46,78,108,0.14)] animate-fade-in" data-testid="account-menu">
                 <button
-                  className="flex h-10 w-full items-center gap-2 px-3 text-left text-sm text-red-600 transition-colors duration-200 hover:bg-red-50"
+                  className="flex h-10 w-full items-center gap-2 px-3 text-left text-sm text-[#38536E] transition-colors duration-200 hover:bg-[#F3F8FC]"
+                  onClick={() => { setIsMenuOpen(false); setGatewayError(""); setIsAdvancedOpen(true); }}
+                  type="button"
+                >
+                  <Settings2 className="size-4" />
+                  高级设置
+                </button>
+                <button
+                  className="flex h-10 w-full items-center gap-2 border-t border-[#E7EFF6] px-3 text-left text-sm text-red-600 transition-colors duration-200 hover:bg-red-50"
                   onClick={handleLogout}
                   type="button"
                 >
@@ -189,6 +225,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
           </div>
         </header>
+
+        <Dialog
+          description="仅选择国外 GPT 文本、联网研究、图片生成和编辑使用的中转站；DeepSeek 仍走原有直连。"
+          icon={<Settings2 className="size-5" />}
+          onClose={() => setIsAdvancedOpen(false)}
+          open={isAdvancedOpen}
+          size="compact"
+          title="高级设置"
+        >
+          <div className="space-y-5 p-5 sm:p-6">
+            <fieldset>
+              <legend className="text-sm font-semibold text-foreground">GPT 中转站</legend>
+              <div className="mt-3 grid gap-3">
+                {AI_GATEWAYS.map((gateway) => (
+                  <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", aiGateway === gateway ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={gateway}>
+                    <span className="flex items-center gap-2">
+                      <input checked={aiGateway === gateway} className="size-4" name="ai-gateway" onChange={() => setAiGateway(gateway)} type="radio" value={gateway} />
+                      <span className="text-sm font-semibold text-foreground">{aiGatewayLabels[gateway]}</span>
+                    </span>
+                    <span className="mt-2 block text-xs leading-5 text-muted-foreground">
+                      {aiGatewayDescriptions[gateway]}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            {gatewayError ? <p className="text-sm text-destructive" role="alert">{gatewayError}</p> : null}
+            <div className="flex justify-end gap-3 border-t border-border pt-4">
+              <Button disabled={isSavingGateway} onClick={() => setIsAdvancedOpen(false)} type="button" variant="outline">取消</Button>
+              <Button loading={isSavingGateway} onClick={() => void saveAiGateway()} type="button">保存设置</Button>
+            </div>
+          </div>
+        </Dialog>
 
         <main className="flex-1 px-4 py-5 pb-24 sm:px-6 lg:p-8">{children}</main>
 

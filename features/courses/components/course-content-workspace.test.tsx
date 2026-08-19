@@ -45,6 +45,8 @@ describe("CourseContentWorkspace", () => {
   });
   test("defaults to the first chapter and exposes highlighted top-level and chapter tabs", () => {
     render(<CourseContentWorkspace initialState={initialState} />);
+    expect(screen.getByRole("option", { name: "GPT" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "GPT（默认）" })).not.toBeInTheDocument();
     expect(screen.getByText("B1 · 1/1 章正文已完成 · 课后阅读已生成 · 无额外语法练习")).toBeInTheDocument();
     expect(screen.queryByText("B1 · 正文、课后阅读、章节练习与课后练习")).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Chapter 1" })).toHaveAttribute("aria-selected", "true");
@@ -175,6 +177,18 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByTestId("content-chat-scroll")).toHaveClass("overflow-y-auto", "overscroll-contain");
     expect(screen.getByTestId("content-preview-pane")).toHaveClass("md:h-full", "md:overflow-hidden");
     expect(screen.getByTestId("content-preview-scroll")).toHaveClass("overflow-y-auto", "overscroll-contain");
+  });
+
+  test("keeps the chat timeline at the bottom when an operation result is shown", () => {
+    const scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(520);
+    render(<CourseContentWorkspace initialState={{
+      ...initialState,
+      messages: [{ id: "assistant-result", role: "assistant", content: "正文与课后阅读已生成。", createdAt: "2026-08-18T12:00:00.000Z" }],
+      updatedAt: "2026-08-18T12:00:00.000Z",
+    }} />);
+
+    expect(screen.getByTestId("content-chat-scroll").scrollTop).toBe(520);
+    scrollHeight.mockRestore();
   });
 
   test("uses the same role avatars and constrained bubble width as story chat", () => {

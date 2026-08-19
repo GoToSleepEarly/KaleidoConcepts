@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createCourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
+import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
 import { hasCourseDownstream, runBeforeCourseDownstreamReset, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 import { getDb } from "@/lib/server/db";
 import { CourseContentConflictError, CourseContentSupersededError, generateCourseReading, getCourseContentState } from "@/lib/server/repositories/course-content";
@@ -10,6 +11,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   const regenerate = new URL(request.url).searchParams.get("regenerate") === "true";
   const resetDownstream = new URL(request.url).searchParams.get("resetDownstream") === "true";
+  const aiGateway = aiGatewayFromRequest(request);
   try {
     const db = getDb();
     if (regenerate) {
@@ -17,11 +19,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const hasDownstream = await hasCourseDownstream(downstreamDb, id, "content");
       if (hasDownstream && !resetDownstream) return NextResponse.json({ message: "重新生成会删除已有的视觉资源、图片和预览发布设置", requiresReset: true }, { status: 409 });
       if (hasDownstream) {
-        await runBeforeCourseDownstreamReset(downstreamDb, id, "content", () => generateCourseReading(db, id, key, createCourseContentGenerationDeps(), { regenerate }));
+        await runBeforeCourseDownstreamReset(downstreamDb, id, "content", () => generateCourseReading(db, id, key, createCourseContentGenerationDeps(aiGateway), { regenerate }));
         return NextResponse.json(await getCourseContentState(db, id));
       }
     }
-    return NextResponse.json(await generateCourseReading(db, id, key, createCourseContentGenerationDeps(), { regenerate }));
+    return NextResponse.json(await generateCourseReading(db, id, key, createCourseContentGenerationDeps(aiGateway), { regenerate }));
   }
   catch (error) {
     if (error instanceof CourseContentConflictError || error instanceof CourseContentSupersededError) return NextResponse.json({ message: error.message }, { status: 409 });

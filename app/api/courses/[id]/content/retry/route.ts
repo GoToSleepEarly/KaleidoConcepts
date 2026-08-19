@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createCourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
+import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
 import { getDb } from "@/lib/server/db";
 import { CourseContentConflictError, CourseContentSupersededError, generateCourseExercises, generateCourseReading } from "@/lib/server/repositories/course-content";
 
@@ -12,7 +13,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!key || !parsed.success) return NextResponse.json({ message: "请选择要重试的失败阶段" }, { status: 400 });
   const { id } = await params;
   try {
-    const deps = createCourseContentGenerationDeps();
+    const deps = createCourseContentGenerationDeps(aiGatewayFromRequest(request));
     return NextResponse.json(parsed.data.operation === "reading" ? await generateCourseReading(getDb(), id, key, deps) : await generateCourseExercises(getDb(), id, key, deps));
   } catch (error) {
     const status = error instanceof CourseContentConflictError || error instanceof CourseContentSupersededError ? 409 : 500;

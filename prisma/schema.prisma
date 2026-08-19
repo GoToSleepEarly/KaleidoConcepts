@@ -11,6 +11,7 @@ model User {
   username    String   @unique
   password    String
   displayName String
+  aiGateway   AiGateway @default(quickrouter)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -463,6 +464,11 @@ model AiGenerationLog {
   @@index([stage, operation, createdAt])
 }
 
+enum AiGateway {
+  quickrouter
+  crazyrouter
+}
+
 enum PersonRole {
   student
   teacher
@@ -488,6 +494,9 @@ enum PersonVisualStatus {
 
 enum PersonVisualProvider {
   quickrouter_gpt_image_2
+  crazyrouter_gpt_image_2
+  haoai_gpt_image_2
+  easy88ai_gpt_image_2
 }
 
 enum CourseLifecycle {
@@ -621,6 +630,9 @@ enum CourseImageStatus {
 
 enum CourseImageProvider {
   quickrouter_gpt_image_2
+  crazyrouter_gpt_image_2
+  haoai_gpt_image_2
+  easy88ai_gpt_image_2
 }
 
 enum AiGenerationStatus {

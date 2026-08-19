@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createPersonVisualGenerationDeps } from "@/lib/server/ai/person-visual-deps";
+import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
 import { getDb } from "@/lib/server/db";
 import { createDescriptionVisual, PersonVisualNotFoundError } from "@/lib/server/repositories/person-visuals";
 
@@ -27,7 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!payload.success) return NextResponse.json({ message: "形象描述无效" }, { status: 400 });
   const { id } = await params;
   try {
-    const visual = await createDescriptionVisual(getDb(), id, payload.data, idempotencyKey, createPersonVisualGenerationDeps());
+    const visual = await createDescriptionVisual(getDb(), id, payload.data, idempotencyKey, createPersonVisualGenerationDeps(aiGatewayFromRequest(request)));
     return NextResponse.json({ visual }, { status: visual.status === "succeeded" ? 201 : 502 });
   } catch (error) {
     if (error instanceof PersonVisualNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });

@@ -58,6 +58,20 @@ describe("createStoryOutlineProvider", () => {
     expect(timeoutSpy).toHaveBeenCalledWith(600_000);
   });
 
+  test("defaults GPT writing and research to GPT-5.6 Sol", async () => {
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
+    delete process.env.QUICKROUTER_GPT_TEXT_MODEL;
+    delete process.env.QUICKROUTER_RESEARCH_MODEL;
+    const fetchMock = mockTextResponse();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createStoryOutlineProvider().generateOutline({ writingProvider: "quickrouter_gpt", prompt: "生成大纲" });
+    await createStoryOutlineProvider().searchReference({ prompt: "整理资料" });
+
+    expect(fetchBody(fetchMock, 0).model).toBe("gpt-5.6-sol");
+    expect(fetchBody(fetchMock, 1).model).toBe("gpt-5.6-sol");
+  });
+
   test("allows a large generation request to override the default timeout", async () => {
     process.env.QUICKROUTER_TEXT_API_KEY = "key";
     const fetchMock = mockTextResponse();
@@ -105,18 +119,32 @@ describe("createStoryOutlineProvider", () => {
   });
 
   test("uses the configured DeepSeek model for DeepSeek writing", async () => {
-    process.env.QUICKROUTER_TEXT_API_KEY = "key";
-    process.env.QUICKROUTER_DEEPSEEK_TEXT_MODEL = "deepseek-model";
-    const fetchMock = mockTextResponse();
+    process.env.DEEPSEEK_API_KEY = "deepseek-key";
+    process.env.DEEPSEEK_MODEL = "deepseek-model";
+    process.env.DEEPSEEK_BASE_URL = "https://deepseek.example/v1/";
+    const fetchMock = vi.fn(async () => Response.json({
+      choices: [{ message: { content: "{\"ok\":true}" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+    }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await createStoryOutlineProvider().generateOutline({
+    const result = await createStoryOutlineProvider().generateOutline({
       writingProvider: "quickrouter_deepseek",
       prompt: "生成大纲",
+      maxOutputTokens: 2_000,
     });
 
     const body = fetchBody(fetchMock);
+    expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://deepseek.example/v1/chat/completions");
+    expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer deepseek-key");
     expect(body.model).toBe("deepseek-model");
+    expect(body.messages).toEqual([{ role: "user", content: "生成大纲" }]);
+    expect(body.max_tokens).toBe(2_000);
+    expect(body.input).toBeUndefined();
+    expect(result).toEqual({
+      text: "{\"ok\":true}",
+      usage: { inputTokens: 12, outputTokens: 8, visibleOutputTokens: 8, reasoningTokens: 0, totalTokens: 20 },
+    });
   });
 
   test("uses the configured research model for reference search", async () => {
@@ -132,11 +160,34 @@ describe("createStoryOutlineProvider", () => {
     expect(body.tools).toEqual([{ type: "web_search" }]);
   });
 
-  test("throws a business configuration error when QuickRouter key is missing", () => {
+  test("throws a business configuration error when QuickRouter key is missing", async () => {
     delete process.env.QUICKROUTER_TEXT_API_KEY;
 
-    expect(() => createStoryOutlineProvider()).toThrow(StoryOutlineProviderConfigError);
-    expect(() => createStoryOutlineProvider()).toThrow("故事大纲服务尚未配置");
+    expect(() => createStoryOutlineProvider().generateOutline({ writingProvider: "quickrouter_gpt", prompt: "生成大纲" })).toThrow(StoryOutlineProviderConfigError);
+    expect(() => createStoryOutlineProvider().generateOutline({ writingProvider: "quickrouter_gpt", prompt: "生成大纲" })).toThrow("故事大纲服务尚未配置");
+  });
+
+  test("routes only GPT writing and research through Crazyrouter while DeepSeek keeps its direct API", async () => {
+    process.env.CRAZYROUTER_API_KEY = "crazy-key";
+    process.env.DEEPSEEK_API_KEY = "deepseek-key";
+    process.env.DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+    const fetchMock = vi.fn(async (url: string) => url.includes("deepseek")
+      ? Response.json({ choices: [{ message: { content: "{\"ok\":true}" }, finish_reason: "stop" }] })
+      : Response.json({ output_text: "{\"ok\":true}" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createStoryOutlineProvider(undefined, "crazyrouter");
+
+    await provider.generateOutline({ writingProvider: "quickrouter_gpt", prompt: "生成大纲" });
+    await provider.searchReference({ prompt: "整理资料" });
+    await provider.generateOutline({ writingProvider: "quickrouter_deepseek", prompt: "生成大纲" });
+
+    expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.crazyrouter.com/v1/responses");
+    expect(fetchBody(fetchMock, 0).model).toBe("gpt-5.6-sol");
+    expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer crazy-key");
+    expect((fetchMock.mock.calls[1] as unknown[] | undefined)?.[0]).toBe("https://api.crazyrouter.com/v1/responses");
+    expect(fetchBody(fetchMock, 1)).toMatchObject({ model: "gpt-5.6-sol", tools: [{ type: "web_search" }] });
+    expect((fetchMock.mock.calls[2] as unknown[] | undefined)?.[0]).toBe("https://api.deepseek.com/chat/completions");
+    expect(new Headers(((fetchMock.mock.calls[2] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer deepseek-key");
   });
 
   test("supports a bounded low-reasoning request for structured visual plans", async () => {
@@ -185,6 +236,28 @@ describe("createStoryOutlineProvider", () => {
       writingProvider: "quickrouter_gpt",
       prompt: "生成大纲",
     })).rejects.toThrow("故事大纲服务连接失败，请稍后重试");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("reports an interrupted response body without automatically paying for a second request", async () => {
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
+    const socketError = Object.assign(new Error("other side closed"), {
+      name: "SocketError",
+      code: "UND_ERR_SOCKET",
+    });
+    const response = {
+      ok: true,
+      status: 200,
+      text: vi.fn().mockRejectedValue(socketError),
+    } as unknown as Response;
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createStoryOutlineProvider().generateOutline({
+      writingProvider: "quickrouter_gpt",
+      prompt: "生成大纲",
+    })).rejects.toThrow("故事大纲服务响应中断，未收到完整结果，请重试本步");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

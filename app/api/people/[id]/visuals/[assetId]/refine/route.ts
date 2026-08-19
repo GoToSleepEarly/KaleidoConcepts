@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createPersonVisualGenerationDeps } from "@/lib/server/ai/person-visual-deps";
+import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
 import { getDb } from "@/lib/server/db";
 import { PersonVisualInvalidStateError, refinePersonVisual } from "@/lib/server/repositories/person-visuals";
 
@@ -12,7 +13,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!payload.success) return NextResponse.json({ message: "请输入要修改的内容" }, { status: 400 });
   const { id, assetId } = await params;
   try {
-    const visual = await refinePersonVisual(getDb(), id, assetId, payload.data.instruction, idempotencyKey, createPersonVisualGenerationDeps());
+    const visual = await refinePersonVisual(getDb(), id, assetId, payload.data.instruction, idempotencyKey, createPersonVisualGenerationDeps(aiGatewayFromRequest(request)));
     return NextResponse.json({ visual }, { status: visual.status === "succeeded" ? 201 : 502 });
   } catch (error) {
     if (error instanceof PersonVisualInvalidStateError) return NextResponse.json({ message: error.message }, { status: 409 });

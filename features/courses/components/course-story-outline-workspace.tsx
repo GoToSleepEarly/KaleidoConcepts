@@ -87,6 +87,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const [composerIntent, setComposerIntent] = useState<ComposerIntent | null>(null);
   const [pendingNavigationHref, setPendingNavigationHref] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const requestInFlight = useRef(false);
   const stateRef = useRef(initialState);
   const hasStepContent = Boolean(state.chatMessages.length || state.directions.length || state.referenceMaterials.length || state.outline);
@@ -128,6 +129,11 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     }, 1000);
     return () => window.clearInterval(timer);
   }, [pending]);
+
+  useEffect(() => {
+    const timeline = chatScrollRef.current;
+    if (timeline) timeline.scrollTop = timeline.scrollHeight;
+  }, [optimisticTeacherMessage, pending, pendingLabel, state.chatMessages.length, state.operation?.status, state.operation?.updatedAt, state.outline?.updatedAt]);
 
   useEffect(() => {
     if (!pending) return;
@@ -456,14 +462,14 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
               <label className="block">
                 <span className="text-xs text-muted-foreground">写作模型</span>
                 <select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" onChange={(event) => setWritingProvider(event.target.value as StoryWritingProvider)} value={writingProvider}>
-                  <option value="quickrouter_gpt">GPT（大纲更稳）</option>
+                  <option value="quickrouter_gpt">GPT</option>
                   <option value="quickrouter_deepseek">DeepSeek（成本更低）</option>
                 </select>
               </label>
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain scroll-pb-24 p-4" data-testid="story-chat-scroll">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain scroll-pb-24 p-4" data-testid="story-chat-scroll" ref={chatScrollRef}>
             {!conversationStarted && mode === "random" ? (
               <form className="w-full space-y-4 rounded-lg border border-border bg-muted/30 p-4" onSubmit={submit}>
                 <h3 className="font-medium text-foreground">生成故事方向</h3>

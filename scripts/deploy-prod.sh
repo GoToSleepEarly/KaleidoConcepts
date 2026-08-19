@@ -22,7 +22,7 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
-for cmd in git pnpm tar pg_dump pm2; do
+for cmd in curl git pnpm tar pg_dump pm2; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "Missing required command: $cmd"
     exit 1
@@ -33,6 +33,24 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   echo "DATABASE_URL is required."
   echo "Expected to load it from: $ENV_FILE"
   echo "If this is the first run, create $ROOT_DIR/.env from .env.example and fill in production values."
+  exit 1
+fi
+
+for required_var in SEED_ADMIN_PASSWORD QUICKROUTER_TEXT_API_KEY QUICKROUTER_IMAGE_API_KEY DEEPSEEK_API_KEY CRAZYROUTER_API_KEY; do
+  value="${!required_var:-}"
+  if [[ -z "$value" || "$value" == replace-with-* ]]; then
+    echo "$required_var must be configured in $ENV_FILE."
+    exit 1
+  fi
+done
+
+if [[ "$STORAGE_DIR" != /* || "$BACKUP_DIR" != /* ]]; then
+  echo "STORAGE_DIR and BACKUP_DIR must be absolute paths outside the code directory."
+  exit 1
+fi
+
+if [[ ! "${PORT:-3000}" =~ ^[0-9]+$ ]]; then
+  echo "PORT must be numeric."
   exit 1
 fi
 
@@ -88,11 +106,27 @@ pnpm build
 
 if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
   echo "==> Restarting pm2 process: $APP_NAME"
-  pm2 restart "$APP_NAME"
+  pm2 restart "$APP_NAME" --update-env
 else
   echo "==> Starting pm2 process: $APP_NAME"
   pm2 start pnpm --name "$APP_NAME" -- start
 fi
+
+pm2 save
+
+echo "==> Waiting for local health check"
+HEALTHCHECK_HOST="${HOSTNAME:-127.0.0.1}"
+HEALTHCHECK_URL="http://${HEALTHCHECK_HOST}:${PORT:-3000}/login"
+for attempt in $(seq 1 30); do
+  if curl --fail --silent --show-error --output /dev/null "$HEALTHCHECK_URL"; then
+    break
+  fi
+  if [[ "$attempt" == "30" ]]; then
+    echo "Health check failed: $HEALTHCHECK_URL"
+    exit 1
+  fi
+  sleep 1
+done
 
 echo "Deployment finished."
 echo "Database backup: $DB_BACKUP"

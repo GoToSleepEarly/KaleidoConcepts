@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { hasInFlightVisualVersion, shouldGenerateVisualSlot } from "@/lib/domain/visual-resource-status";
 import { createCourseImageGenerationDeps } from "@/lib/server/ai/course-image-deps";
+import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
 import { getDb } from "@/lib/server/db";
 import { idempotencyKey, visualResourcesError } from "@/lib/server/http/visual-resources";
 import { generateVisualSlot, getCourseVisualResources, VisualImageGenerationError } from "@/lib/server/repositories/visual-resources";
@@ -18,7 +19,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       if (requestedSlots.some((slot) => hasInFlightVisualVersion(slot.versions, state.planRevision))) return NextResponse.json({ message: "图片正在生成，请勿重复提交" }, { status: 409 });
       return NextResponse.json({ message: "没有需要生成的图片" }, { status: 400 });
     }
-    const deps = createCourseImageGenerationDeps();
+    const deps = createCourseImageGenerationDeps(aiGatewayFromRequest(request));
     const results: Array<{ slotId: string; assetId?: string; error?: string }> = [];
     for (const slot of targets) {
       try {

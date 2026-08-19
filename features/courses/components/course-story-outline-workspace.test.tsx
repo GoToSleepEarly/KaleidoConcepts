@@ -173,6 +173,17 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByRole("button", { name: "故事大纲" })).toHaveClass("min-h-11");
   });
 
+  test("keeps the chat timeline at the bottom when a result is shown", () => {
+    const scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(480);
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      chatMessages: [{ id: "assistant-result", courseId: "course-1", role: "assistant", content: "故事方向已经生成。", actions: [], createdAt: "2026-08-18T12:00:00.000Z" }],
+    }} />);
+
+    expect(screen.getByTestId("story-chat-scroll").scrollTop).toBe(480);
+    scrollHeight.mockRestore();
+  });
+
   test("does not silently discard an unsent chat draft when navigating steps", () => {
     render(<CourseStoryOutlineWorkspace initialState={emptyState} storyTonePresets={storyTonePresets} storyTypePresets={storyTypePresets} themePresets={themePresets} />);
     fireEvent.change(screen.getByRole("textbox", { name: "故事想法" }), { target: { value: "先不要丢掉这段想法" } });
@@ -438,7 +449,7 @@ describe("CourseStoryOutlineWorkspace", () => {
       }],
     }} />);
 
-    expect(screen.getByRole("option", { name: "GPT（大纲更稳）" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "GPT" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("故事想法"), { target: { value: "我确认需求" } });
     fireEvent.click(screen.getByRole("button", { name: "确认需求" }));
     expect(screen.getByText("我确认这份创作理解。")).toBeInTheDocument();

@@ -1,6 +1,10 @@
+import { parseAiGateway } from "@/lib/ai-gateway";
+
 export type MockSession = {
   user: {
+    id?: string;
     displayName: string;
+    aiGateway?: "quickrouter" | "crazyrouter";
   };
   createdAt: string;
 };
@@ -16,6 +20,17 @@ function notifyAuthSessionChanged() {
   }
 
   window.dispatchEvent(new Event(sessionChangeEvent));
+}
+
+export function updateStoredAiGateway(aiGateway: "quickrouter" | "crazyrouter") {
+  const session = getStoredSession();
+  if (!session) return;
+  const updated = JSON.stringify({ ...session, user: { ...session.user, aiGateway } });
+  sessionStorage.setItem(sessionKey, updated);
+  if (localStorage.getItem(sessionKey)) localStorage.setItem(sessionKey, updated);
+  cachedStoredSession = updated;
+  cachedSession = JSON.parse(updated) as MockSession;
+  notifyAuthSessionChanged();
 }
 
 export function getAuthSessionChangeEventName() {
@@ -56,7 +71,11 @@ export function getStoredSession(): MockSession | null {
 
   try {
     cachedStoredSession = stored;
-    cachedSession = JSON.parse(stored) as MockSession;
+    const parsed = JSON.parse(stored) as MockSession;
+    cachedSession = {
+      ...parsed,
+      user: { ...parsed.user, aiGateway: parseAiGateway(parsed.user.aiGateway) },
+    };
     return cachedSession;
   } catch {
     clearAuthSession();

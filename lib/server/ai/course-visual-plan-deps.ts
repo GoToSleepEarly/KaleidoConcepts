@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { CourseSourceReferenceType, StoryWritingProvider } from "@/lib/contracts/api";
 import { devAiLog } from "@/lib/server/ai/dev-ai-log";
 import { createStoryOutlineProvider, StoryOutlineIncompleteResponseError } from "@/lib/server/ai/story-outline-provider";
+import type { AiGateway } from "@/lib/ai-gateway";
 import { parseAiJson } from "@/lib/server/validation/course-content";
 
 const nonEmpty = z.string().trim().min(1);
@@ -385,10 +386,12 @@ export function buildCourseVisualPlanPrompt(input: CourseVisualPlanPromptInput) 
       ]
     : [
         "For sourceType=person: visualLabel and characterAppearance must both be null because identity comes only from the selected reference image.",
-        "visualLabel is required only for sourceType=referenced characters; create an original visual identity that does not copy protected characters, logos, signature outfits, or exclusive symbols.",
+        "visualLabel is required only for sourceType=referenced characters; create a self-contained visual identity that can preserve the broad archetype and emotional impression without depending on recognition of the referenced work.",
         "For every sourceType=person or sourceType=original character, copy visualLabel, characterAppearance, and courseAppearance from baselineVisualPlan exactly. Do not redesign or restyle them.",
-        "Copy visualStyle and storyWorld from baselineVisualPlan exactly. Copy every cover and shot characterKeys list exactly. Rewrite focus and sceneDescription only as much as needed to replace protected references while preserving the same action, setting, composition, mood, and teaching meaning.",
-        "In every focus and sceneDescription, refer to originalized sourceType=referenced characters only by their new visual labels or generic story roles. Do not repeat protected names, logos, signature abilities, or franchise terms from cleanReading.",
+        "Preserve the baseline visual language, composition, atmosphere, color direction, materials, character relationships, and scene actions as closely as possible.",
+        "Translate reference-dependent identities, named world elements, and signature visual combinations into self-contained descriptive designs. Keep generic scenery, period, climate, lighting, architecture functions, and color mood whenever they work without the referenced name. Broad archetypal resemblance and a similar emotional impression are acceptable; the resulting characters and world must stand on their own without relying on recognition of the referenced work.",
+        "Copy every cover and shot characterKeys list exactly. Keep the same story action, composition, mood, and teaching meaning while expressing the setting through the rewritten storyWorld.",
+        "Use the new visual labels consistently for originalized sourceType=referenced characters in every focus and sceneDescription. Express named locations, kingdoms, buildings, symbols, and background lore through their visible generic qualities and story function.",
       ];
   const context = aliasContext(input);
   return [
@@ -442,8 +445,8 @@ export function mergeOriginalizedVisualPlan(
   const generatedDesignById = new Map(generated.characterDesigns.map((design) => [design.characterId, design]));
   const generatedShotByParagraph = new Map(generated.shots.map((shot) => [shot.paragraphId, shot]));
   return {
-    visualStyle: baseline.visualStyle,
-    storyWorld: baseline.storyWorld,
+    visualStyle: generated.visualStyle,
+    storyWorld: generated.storyWorld,
     characterDesigns: baseline.characterDesigns.map((design) => sourceTypeById.get(design.characterId) === "referenced"
       ? generatedDesignById.get(design.characterId) ?? design
       : design),
@@ -486,8 +489,8 @@ export function compileCourseImagePrompt(
   ].filter((line): line is string => Boolean(line)).join("\n");
 }
 
-export function createCourseVisualPlanDeps() {
-  const provider = createStoryOutlineProvider();
+export function createCourseVisualPlanDeps(aiGateway: AiGateway = "quickrouter") {
+  const provider = createStoryOutlineProvider(undefined, aiGateway);
   return {
     async generate(
       input: CourseVisualPlanPromptInput,

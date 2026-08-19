@@ -14,7 +14,6 @@ import { buildCleanParagraphText } from "@/lib/domain/course-content";
 import { defaultCharacterVisualIntent, matchCoursePersonForCharacter } from "@/lib/domain/visual-resources";
 import { visualGenerationFingerprint } from "@/lib/domain/visual-resources";
 import { compileCourseImagePrompt, CourseVisualPlanResponseError, createCourseVisualPlanDeps, mergeOriginalizedVisualPlan, parseCourseVisualPlan, type CourseImagePromptCharacter, type CourseVisualPlan, type CourseVisualPlanDeps, type CourseVisualPlanDiagnostics, type CourseVisualPlanScene } from "@/lib/server/ai/course-visual-plan-deps";
-import { configuredCourseImageQuality } from "@/lib/server/ai/image-model-capabilities";
 
 export type VisualResourcesDb = Pick<PrismaClient,
   | "course"
@@ -32,11 +31,13 @@ export type VisualResourcesDb = Pick<PrismaClient,
 >;
 
 export type CourseImageGenerationDeps = {
+  provider?: "quickrouter_gpt_image_2" | "crazyrouter_gpt_image_2" | "haoai_gpt_image_2" | "easy88ai_gpt_image_2";
   generate: (input: { prompt: string; quality: CourseImageQuality; portrait?: boolean }) => Promise<{ imageUrl: string; model?: string; quality?: CourseImageQuality }>;
   edit: (input: { prompt: string; quality: CourseImageQuality; imageDataUrl: string; portrait?: boolean }) => Promise<{ imageUrl: string; model?: string; quality?: CourseImageQuality }>;
   persist: (input: { sourceUrl: string; courseId: string; assetId: string; portrait?: boolean }) => Promise<{ storagePath: string; publicUrl: string }>;
   composeReferences: (storagePaths: string[]) => Promise<string>;
   removeTemporarySource: (storagePath: string) => Promise<void>;
+  normalizeQuality?: (quality: CourseImageQuality) => CourseImageQuality;
 };
 
 export class VisualResourcesNotFoundError extends Error {
@@ -259,6 +260,7 @@ export async function getCourseVisualResources(db: VisualResourcesDb, courseId: 
         chineseName: character?.chineseName ?? characterId,
         englishName: character?.englishName ?? characterId,
         referenceIndex: hasReference ? referenceIndex : undefined,
+        useVisualLabel: character?.sourceType === "referenced" && designByCharacter.get(characterId)?.visualAnchor.mode === "description",
       };
     }));
   };
@@ -267,12 +269,15 @@ export async function getCourseVisualResources(db: VisualResourcesDb, courseId: 
     .map((slot) => slot.id));
   return {
     course: { id: course.id, title: course.title, currentStage: course.currentStage },
-    quality: configuredCourseImageQuality(course.visualQuality),
+    quality: course.visualQuality,
     planReady: Boolean(visualPlan),
     planRevision: visualPlan ? plan?.revision ?? null : null,
     planMode: visualPlan ? plan?.mode ?? null : null,
     confirmedCoverAssetId: visualPlan ? plan?.confirmedCoverAssetId ?? null : null,
-    policyBlocked: Boolean(visualPlan && plan && slots.some((slot) => slot.images.some((asset) => asset.failureCode === "policy_blocked" && asset.planRevision === plan.revision))),
+    policyBlocked: Boolean(visualPlan && plan && slots.some((slot) => {
+      const latestAttempt = slot.images.findLast((asset) => asset.planRevision === plan.revision);
+      return latestAttempt?.status === "failed" && latestAttempt.failureCode === "policy_blocked";
+    })),
     characters: characterStates,
     slots: slots.map((slot) => {
       const chapter = slot.chapterId ? chapterMeta.get(slot.chapterId) : null;
@@ -301,9 +306,8 @@ export async function getCourseVisualResources(db: VisualResourcesDb, courseId: 
 export async function updateCourseVisualQuality(db: VisualResourcesDb, courseId: string, quality: CourseImageQuality) {
   const course = await db.course.findUnique({ where: { id: courseId }, select: { id: true } });
   if (!course) throw new VisualResourcesNotFoundError("课程不存在");
-  const effectiveQuality = configuredCourseImageQuality(quality);
-  await db.course.update({ where: { id: courseId }, data: { visualQuality: effectiveQuality } });
-  return { quality: effectiveQuality };
+  await db.course.update({ where: { id: courseId }, data: { visualQuality: quality } });
+  return { quality };
 }
 
 export async function updateVisualCharacterAppearance(
@@ -458,8 +462,8 @@ export async function generateCourseVisualPlan(
   if (!course || !content || !outline) throw new VisualResourcesInvalidStateError("请先确认文案与练习");
   if (content.status !== "confirmed") throw new VisualResourcesInvalidStateError("请先确认文案与练习");
   const baselinePlan = storedVisualPlan(existingPlan?.coverBrief);
-  if (mode === "originalized" && (!existingPlan || !baselinePlan || (existingPlan.mode !== "faithful" && !replayPlan))) {
-    throw new VisualResourcesInvalidStateError("只有当前忠实视觉方案可以改用原创视觉设定");
+  if (mode === "originalized" && (!existingPlan || !baselinePlan)) {
+    throw new VisualResourcesInvalidStateError("请先生成视觉方案，再调整为原创视觉设定");
   }
   const unlinkedReferencedCharacters = characters.filter((character) => character.sourceType === "referenced" && !character.sourceReference);
   if (unlinkedReferencedCharacters.length) {
@@ -610,12 +614,21 @@ function recoverableUrl(url: string | null) {
 }
 
 function imageFailureCode(error: unknown, hasRemoteResult: boolean): CourseImageFailureCode {
+  if (error instanceof VisualImageGenerationError) return error.failureCode;
   if (hasRemoteResult) return "storage_recoverable";
   const message = error instanceof Error ? error.message : String(error);
   if (/safety|policy|copyright|content moderation|content policy|blocked by|违规|安全策略|版权/i.test(message)) return "policy_blocked";
   if (/invalid|unsupported|parameter|尺寸|格式|参数/i.test(message)) return "invalid_request";
   if (/timeout|network|fetch|saturated|busy|429|繁忙|超时|连接/i.test(message)) return "retryable";
   return "unknown";
+}
+
+function storageFailureMessage(error: unknown) {
+  const raw = error && typeof error === "object" && "message" in error && typeof error.message === "string"
+    ? error.message
+    : error instanceof Error ? error.message : "未知保存错误";
+  const detail = /timeout|timed out|aborted|超时/i.test(raw) ? "下载远端图片超时" : raw;
+  return `图片已生成，但下载或保存失败：${detail}`;
 }
 
 async function adoptSucceededCourseImage(
@@ -686,6 +699,17 @@ async function finishCourseImage(
         actualQuality = edited.quality ?? asset.quality;
       }
       remoteUrl = recoverableUrl(sourceUrl);
+      if (remoteUrl) {
+        const recorded = await db.courseImage.updateMany({
+          where: { id: asset.id, leaseToken, status: "generating" },
+          data: {
+            providerImageUrl: remoteUrl,
+            quality: actualQuality,
+            sourceHash: visualGenerationFingerprint({ prompt: asset.prompt, quality: actualQuality, referenceAssetIds: asStrings(asset.referenceAssetIds) }),
+          },
+        });
+        if (recorded.count === 0) throw new VisualImageGenerationError("图片任务已被新的重试接管，请刷新查看", "retryable");
+      }
     }
     if (!sourceUrl) throw new Error("图片生成服务未返回图片");
     const stored = await deps.persist({ sourceUrl, courseId: asset.courseId, assetId: asset.id, portrait: input.portrait });
@@ -715,8 +739,10 @@ async function finishCourseImage(
     if (succeeded) await adoptSucceededCourseImage(db, succeeded);
     return succeeded;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "图片生成失败";
     const failureCode = imageFailureCode(error, Boolean(remoteUrl));
+    const message = failureCode === "storage_recoverable"
+      ? storageFailureMessage(error)
+      : error instanceof Error ? error.message : "图片生成失败";
     await db.courseImage.updateMany({
       where: { id: asset.id, leaseToken, status: "generating" },
       data: {
@@ -843,19 +869,30 @@ export async function generateVisualSlot(db: VisualResourcesDb, courseId: string
   if (!course || !slot || !plan || !planRecord) throw new VisualResourcesNotFoundError("图片槽或视觉方案不存在");
   if (slot.slotType === "lesson_shot" && !planRecord.confirmedCoverAssetId) throw new VisualResourcesInvalidStateError("请先确认视觉封面");
   await recoverStaleCourseImages(db, courseId);
-  const references = await slotReferenceAssets(db, courseId, asStrings(slot.characterIds), plan);
   const runningAsset = await db.courseImage.findFirst({
     where: { courseId, slotId, planRevision: planRecord.revision, status: { in: ["pending", "submitting", "generating"] } },
     orderBy: { createdAt: "desc" },
   });
   if (runningAsset) return runningAsset;
+  const latestAsset = await db.courseImage.findFirst({
+    where: {
+      courseId,
+      slotId,
+      planRevision: planRecord.revision,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (latestAsset?.status === "failed" && latestAsset.failureCode === "storage_recoverable" && recoverableUrl(latestAsset.providerImageUrl)) {
+    return finishCourseImage(db, latestAsset, deps, { portrait: Boolean(latestAsset.characterVisualId) });
+  }
+  const references = await slotReferenceAssets(db, courseId, asStrings(slot.characterIds), plan);
   const scene = slot.slotType === "visual_cover" ? plan.cover : plan.shots.find((shot) => shot.paragraphId === slot.paragraphId);
   if (!scene) throw new VisualResourcesInvalidStateError("图片槽缺少当前视觉场景");
   const prompt = compileCourseImagePrompt(plan, scene, slot.slotType === "visual_cover" ? "cover" : "illustration", references.characters);
-  const quality = configuredCourseImageQuality(course.visualQuality);
+  const quality = deps.normalizeQuality?.(course.visualQuality) ?? course.visualQuality;
   const sourceHash = visualGenerationFingerprint({ prompt, quality, referenceAssetIds: references.ids });
   const now = new Date();
-  const asset = await db.courseImage.upsert({ where: { courseId_idempotencyKey: { courseId, idempotencyKey } }, create: { courseId, slotId, operation: "initial", prompt, quality, referenceAssetIds: references.ids, sourceHash, planRevision: planRecord.revision, idempotencyKey, startedAt: now, leaseExpiresAt: new Date(now.getTime() + COURSE_IMAGE_LEASE_MS) }, update: {} }).catch(async (error: unknown) => {
+  const asset = await db.courseImage.upsert({ where: { courseId_idempotencyKey: { courseId, idempotencyKey } }, create: { courseId, slotId, operation: "initial", prompt, quality, provider: deps.provider ?? "quickrouter_gpt_image_2", referenceAssetIds: references.ids, sourceHash, planRevision: planRecord.revision, idempotencyKey, startedAt: now, leaseExpiresAt: new Date(now.getTime() + COURSE_IMAGE_LEASE_MS) }, update: {} }).catch(async (error: unknown) => {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
     const concurrent = await db.courseImage.findFirst({
       where: { courseId, slotId, planRevision: planRecord.revision, status: { in: ["pending", "submitting", "generating"] } },
@@ -882,10 +919,11 @@ export async function refineCourseVisualAsset(db: VisualResourcesDb, courseId: s
   const referencePaths = [parent.storagePath];
   const referenceAssetIds = [parent.id];
   const prompt = buildCourseImageEditPrompt(instruction);
-  const quality = configuredCourseImageQuality(parent.characterVisualId ? "low" : course.visualQuality);
+  const requestedQuality = parent.characterVisualId ? "low" : course.visualQuality;
+  const quality = deps.normalizeQuality?.(requestedQuality) ?? requestedQuality;
   const sourceHash = visualGenerationFingerprint({ prompt, quality, referenceAssetIds });
   const now = new Date();
-  const asset = await db.courseImage.upsert({ where: { courseId_idempotencyKey: { courseId, idempotencyKey } }, create: { courseId, slotId: parent.slotId, characterVisualId: parent.characterVisualId, parentAssetId: parent.id, operation: "revision", userInstruction: instruction.trim(), prompt, quality, referenceAssetIds, sourceHash, planRevision: planRecord?.revision ?? parent.planRevision, idempotencyKey, startedAt: now, leaseExpiresAt: new Date(now.getTime() + COURSE_IMAGE_LEASE_MS) }, update: {} });
+  const asset = await db.courseImage.upsert({ where: { courseId_idempotencyKey: { courseId, idempotencyKey } }, create: { courseId, slotId: parent.slotId, characterVisualId: parent.characterVisualId, parentAssetId: parent.id, operation: "revision", userInstruction: instruction.trim(), prompt, quality, provider: deps.provider ?? "quickrouter_gpt_image_2", referenceAssetIds, sourceHash, planRevision: planRecord?.revision ?? parent.planRevision, idempotencyKey, startedAt: now, leaseExpiresAt: new Date(now.getTime() + COURSE_IMAGE_LEASE_MS) }, update: {} });
   if (asset.status === "succeeded") {
     await adoptSucceededCourseImage(db, asset);
     return asset;

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { getDb } from "@/lib/server/db";
 import { verifyTeacherLogin } from "@/lib/server/repositories/auth";
+import { AI_GATEWAY_COOKIE, AUTH_USER_COOKIE } from "@/lib/ai-gateway";
 
 const loginSchema = z.object({
   username: z.string(),
@@ -23,10 +24,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "账号或密码错误" }, { status: 401 });
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       user,
       createdAt: new Date().toISOString(),
     });
+    response.cookies.set(AUTH_USER_COOKIE, user.id, { httpOnly: true, sameSite: "lax", path: "/" });
+    response.cookies.set(AI_GATEWAY_COOKIE, user.aiGateway, { httpOnly: true, sameSite: "lax", path: "/" });
+    return response;
   } catch {
     return NextResponse.json({ message: "登录服务暂不可用" }, { status: 500 });
   }

@@ -161,19 +161,21 @@ describe("Step 5 视觉资源方案", () => {
     expect(prompt).not.toContain("canonical character design");
   });
 
-  test("原创化只重写引用角色和含原作信息的场景文本", () => {
+  test("原创化尽量保留视觉语言，同时描述性转换引用身份和专有世界元素", () => {
     const prompt = buildCourseVisualPlanPrompt({ ...input, mode: "originalized", baselinePlan: rawPlan });
     expect(prompt).toContain("visualLabel is required only for sourceType=referenced characters");
-    expect(prompt).toContain("Copy visualStyle and storyWorld from baselineVisualPlan exactly");
+    expect(prompt).toContain("Preserve the baseline visual language, composition, atmosphere, color direction, materials, character relationships, and scene actions as closely as possible");
+    expect(prompt).toContain("Translate reference-dependent identities, named world elements, and signature visual combinations into self-contained descriptive designs");
+    expect(prompt).toContain("Broad archetypal resemblance and a similar emotional impression are acceptable");
     expect(prompt).toContain("sourceType=person or sourceType=original");
     expect(prompt).toContain('"baselineVisualPlan"');
-    expect(prompt).toContain("Do not repeat protected names");
+    expect(prompt).toContain("Use the new visual labels consistently");
   });
 
-  test("服务端合并原创化结果，保留画风、世界、非引用角色和出场关系", () => {
+  test("服务端合并原创化结果，采用描述性画风和世界，同时保留非引用角色和出场关系", () => {
     const generated = parseCourseVisualPlan({
-      visualStyle: "Changed style that must be discarded.",
-      storyWorld: "Changed world that must be discarded.",
+      visualStyle: "The same bright cinematic picture-book language with clean shapes and soft winter light.",
+      storyWorld: "An unnamed northern mountain kingdom with an enchanted snow bridge and a distant warning tower.",
       characterDesigns: [
         { ...rawPlan.characterDesigns[0], courseAppearance: "被误改的人物造型。" },
         { characterId: "jett", visualAnchor: { mode: "description", label: "Sky Runner", context: null }, appearanceDescription: "银白短发，青色护目镜。", courseAppearance: "青色夹克、深灰长裤和白色短靴。" },
@@ -186,8 +188,8 @@ describe("Step 5 视觉资源方案", () => {
 
     const merged = mergeOriginalizedVisualPlan(rawPlan, generated, input.characters);
 
-    expect(merged.visualStyle).toBe(rawPlan.visualStyle);
-    expect(merged.storyWorld).toBe(rawPlan.storyWorld);
+    expect(merged.visualStyle).toBe(generated.visualStyle);
+    expect(merged.storyWorld).toBe(generated.storyWorld);
     expect(merged.characterDesigns[0]).toEqual(rawPlan.characterDesigns[0]);
     expect(merged.characterDesigns[1]?.visualAnchor.label).toBe("Sky Runner");
     expect(merged.characterDesigns[3]).toEqual(rawPlan.characterDesigns[3]);

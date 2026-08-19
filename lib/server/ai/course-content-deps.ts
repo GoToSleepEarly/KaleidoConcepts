@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { CourseContentChapter, CourseContentPart, CourseGrammarQuestion, EnglishLevel, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
 import { buildCleanParagraphText } from "@/lib/domain/course-content";
 import { createStoryOutlineProvider } from "@/lib/server/ai/story-outline-provider";
+import type { AiGateway } from "@/lib/ai-gateway";
 import { devAiLog } from "@/lib/server/ai/dev-ai-log";
 import {
   generatedExercisesSchema,
@@ -278,8 +279,8 @@ export function contentReadingTimeoutMs(value = process.env.COURSE_CONTENT_GENER
 
 export const courseContentFormatRepairAttempts = 1;
 
-export function createCourseContentGenerationDeps() {
-  const provider = createStoryOutlineProvider();
+export function createCourseContentGenerationDeps(aiGateway: AiGateway = "quickrouter") {
+  const provider = createStoryOutlineProvider(undefined, aiGateway);
   const call = async (writingProvider: StoryWritingProvider, operation: string, prompt: string, timeoutMs?: number) => {
     try {
       const result = await provider.generateOutline({ writingProvider, operation, prompt, timeoutMs });

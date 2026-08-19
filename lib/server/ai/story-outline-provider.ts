@@ -1,12 +1,21 @@
 import type { StoryWritingProvider } from "@/lib/contracts/api";
+import type { AiGateway } from "@/lib/ai-gateway";
 
 import { devAiLog } from "./dev-ai-log";
 
 type ProviderConfig = {
   apiKey: string;
+  baseUrl?: string;
+  gateway?: AiGateway;
   gptModel: string;
-  deepseekModel: string;
   researchModel: string;
+  timeoutMs: number;
+};
+
+type DeepSeekConfig = {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
   timeoutMs: number;
 };
 
@@ -27,6 +36,21 @@ type ResponsesData = {
   };
 };
 
+type ChatCompletionsData = {
+  choices?: Array<{
+    finish_reason?: string;
+    message?: { content?: string };
+  }>;
+  error?: { message?: string };
+  message?: string;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    completion_tokens_details?: { reasoning_tokens?: number };
+  };
+};
+
 export type StoryOutlineUsage = {
   inputTokens: number;
   outputTokens: number;
@@ -42,15 +66,21 @@ export class StoryOutlineProviderConfigError extends Error {
   }
 }
 
-function configFromEnvironment(): ProviderConfig {
-  const apiKey = process.env.QUICKROUTER_TEXT_API_KEY;
+function configFromEnvironment(gateway: AiGateway): ProviderConfig {
+  const isCrazyrouter = gateway === "crazyrouter";
+  const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_API_KEY : process.env.QUICKROUTER_TEXT_API_KEY;
   if (!apiKey) throw new StoryOutlineProviderConfigError();
   const timeout = Number(process.env.TEXT_GENERATION_TIMEOUT_MS);
   return {
     apiKey,
-    gptModel: process.env.QUICKROUTER_GPT_TEXT_MODEL || "gpt-5.5",
-    deepseekModel: process.env.QUICKROUTER_DEEPSEEK_TEXT_MODEL || "deepseek-v4-flash",
-    researchModel: process.env.QUICKROUTER_RESEARCH_MODEL || process.env.QUICKROUTER_GPT_TEXT_MODEL || "gpt-5.5",
+    gateway,
+    baseUrl: isCrazyrouter ? "https://api.crazyrouter.com" : "https://api.quickrouter.ai",
+    gptModel: isCrazyrouter
+      ? process.env.CRAZYROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol"
+      : process.env.QUICKROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol",
+    researchModel: isCrazyrouter
+      ? process.env.CRAZYROUTER_RESEARCH_MODEL || process.env.CRAZYROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol"
+      : process.env.QUICKROUTER_RESEARCH_MODEL || process.env.QUICKROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol",
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };
 }
@@ -84,6 +114,31 @@ function responseUsage(data: ResponsesData): StoryOutlineUsage | undefined {
   };
 }
 
+function chatCompletionUsage(data: ChatCompletionsData): StoryOutlineUsage | undefined {
+  if (!data.usage) return undefined;
+  const outputTokens = data.usage.completion_tokens ?? 0;
+  const reasoningTokens = data.usage.completion_tokens_details?.reasoning_tokens ?? 0;
+  return {
+    inputTokens: data.usage.prompt_tokens ?? 0,
+    outputTokens,
+    visibleOutputTokens: Math.max(0, outputTokens - reasoningTokens),
+    reasoningTokens,
+    totalTokens: data.usage.total_tokens ?? 0,
+  };
+}
+
+function deepSeekConfigFromEnvironment(): DeepSeekConfig {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new StoryOutlineProviderConfigError("DeepSeek 服务尚未配置");
+  const timeout = Number(process.env.TEXT_GENERATION_TIMEOUT_MS);
+  return {
+    apiKey,
+    baseUrl: (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, ""),
+    model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
+  };
+}
+
 const RETRYABLE_CONNECT_CODES = new Set([
   "UND_ERR_CONNECT_TIMEOUT",
   "ENOTFOUND",
@@ -91,10 +146,20 @@ const RETRYABLE_CONNECT_CODES = new Set([
   "ECONNREFUSED",
 ]);
 
+const INTERRUPTED_RESPONSE_CODES = new Set([
+  "UND_ERR_SOCKET",
+  "ECONNRESET",
+  "EPIPE",
+]);
+
 function transportErrorCode(error: unknown) {
-  if (!(error instanceof Error) || typeof error.cause !== "object" || error.cause === null) return null;
-  const code = Reflect.get(error.cause, "code");
-  return typeof code === "string" ? code : null;
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && typeof current === "object" && current !== null; depth += 1) {
+    const code = Reflect.get(current, "code");
+    if (typeof code === "string") return code;
+    current = Reflect.get(current, "cause");
+  }
+  return null;
 }
 
 function canRetryBeforeConnection(error: unknown) {
@@ -102,18 +167,23 @@ function canRetryBeforeConnection(error: unknown) {
   return code !== null && RETRYABLE_CONNECT_CODES.has(code);
 }
 
-export function createStoryOutlineProvider(config = configFromEnvironment()) {
-  async function request(operation: string, body: Record<string, unknown>, timeoutMs = config.timeoutMs) {
+export function createStoryOutlineProvider(config?: ProviderConfig, selectedGateway: AiGateway = "quickrouter") {
+  function resolvedConfig() {
+    if (config) return { baseUrl: "https://api.quickrouter.ai", gateway: "quickrouter" as const, ...config };
+    return configFromEnvironment(selectedGateway);
+  }
+
+  async function request(operation: string, body: Record<string, unknown>, activeConfig: ProviderConfig, timeoutMs = activeConfig.timeoutMs) {
     const startedAt = Date.now();
     devAiLog({ operation, phase: "request", payload: body });
     let response: Response | null = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        response = await fetch("https://api.quickrouter.ai/v1/responses", {
+        response = await fetch(`${activeConfig.baseUrl ?? "https://api.quickrouter.ai"}/v1/responses`, {
           method: "POST",
           headers: {
             Accept: "application/json",
-            Authorization: `Bearer ${config.apiKey}`,
+            Authorization: `Bearer ${activeConfig.apiKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify(body),
@@ -156,6 +226,10 @@ export function createStoryOutlineProvider(config = configFromEnvironment()) {
       data = JSON.parse(rawResponse) as ResponsesData;
     } catch (error) {
       devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+      const code = transportErrorCode(error);
+      if (code && INTERRUPTED_RESPONSE_CODES.has(code)) {
+        throw new Error("故事大纲服务响应中断，未收到完整结果，请重试本步", { cause: error });
+      }
       throw new Error("故事大纲服务返回异常", { cause: error });
     }
     if (!response.ok) {
@@ -187,6 +261,64 @@ export function createStoryOutlineProvider(config = configFromEnvironment()) {
     };
   }
 
+  async function requestDeepSeek(operation: string, prompt: string, maxOutputTokens?: number, timeoutOverride?: number) {
+    const activeConfig = deepSeekConfigFromEnvironment();
+    const body = {
+      model: activeConfig.model,
+      messages: [{ role: "user", content: prompt }],
+      ...(maxOutputTokens ? { max_tokens: maxOutputTokens } : {}),
+    };
+    const startedAt = Date.now();
+    devAiLog({ operation, phase: "request", payload: body });
+    let response: Response | null = null;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        response = await fetch(`${activeConfig.baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${activeConfig.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(timeoutOverride ?? activeConfig.timeoutMs),
+        });
+        break;
+      } catch (error) {
+        const retrying = attempt === 1 && canRetryBeforeConnection(error);
+        devAiLog({ operation, phase: "error", latencyMs: Date.now() - startedAt, payload: { attempt, retrying }, error });
+        if (retrying) continue;
+        if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+          throw new Error("故事大纲生成超时，请稍后重试", { cause: error });
+        }
+        throw new Error("故事大纲服务连接失败，请稍后重试", { cause: error });
+      }
+    }
+    if (!response) throw new Error("故事大纲服务连接失败，请稍后重试");
+
+    let data: ChatCompletionsData;
+    try {
+      const rawResponse = await response.text();
+      devAiLog({ operation, phase: "response", status: response.status, latencyMs: Date.now() - startedAt, payload: rawResponse });
+      data = JSON.parse(rawResponse) as ChatCompletionsData;
+    } catch (error) {
+      devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+      const code = transportErrorCode(error);
+      if (code && INTERRUPTED_RESPONSE_CODES.has(code)) {
+        throw new Error("故事大纲服务响应中断，未收到完整结果，请重试本步", { cause: error });
+      }
+      throw new Error("故事大纲服务返回异常", { cause: error });
+    }
+    if (!response.ok) throw new Error(data.error?.message || data.message || "故事大纲生成失败");
+    const usage = chatCompletionUsage(data);
+    if (data.choices?.[0]?.finish_reason === "length") {
+      throw new StoryOutlineIncompleteResponseError("max_output_tokens", usage);
+    }
+    const text = data.choices?.[0]?.message?.content?.trim();
+    if (!text) throw new Error("故事大纲服务未返回内容");
+    return { text, usage };
+  }
+
   return {
     generateOutline: ({
       writingProvider,
@@ -202,21 +334,26 @@ export function createStoryOutlineProvider(config = configFromEnvironment()) {
       timeoutMs?: number;
       reasoningEffort?: "low" | "medium" | "high";
       maxOutputTokens?: number;
-    }) =>
-      request(operation || "story_outline", {
-        model:
-          writingProvider === "quickrouter_deepseek"
-            ? config.deepseekModel
-            : config.gptModel,
+    }) => {
+      // `quickrouter_deepseek` 是历史持久化标识；DeepSeek 实际始终使用官方直连配置。
+      if (writingProvider === "quickrouter_deepseek") {
+        return requestDeepSeek(operation || "story_outline", prompt, maxOutputTokens, timeoutMs);
+      }
+      const activeConfig = resolvedConfig();
+      return request(operation || "story_outline", {
+        model: activeConfig.gptModel,
         input: prompt,
-        ...(writingProvider === "quickrouter_gpt" && reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
+        ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
         ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
-      }, timeoutMs),
-    searchReference: ({ prompt, operation = "search_reference" }: { prompt: string; operation?: string }) =>
-      request(operation, {
-        model: config.researchModel,
+      }, activeConfig, timeoutMs);
+    },
+    searchReference: ({ prompt, operation = "search_reference" }: { prompt: string; operation?: string }) => {
+      const activeConfig = resolvedConfig();
+      return request(operation, {
+        model: activeConfig.researchModel,
         input: prompt,
         tools: [{ type: "web_search" }],
-      }),
+      }, activeConfig);
+    },
   };
 }
