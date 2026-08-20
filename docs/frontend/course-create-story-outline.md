@@ -303,6 +303,7 @@ type StoryAlignmentState = {
 `storyMode` 与 `classroomPresence` 是两个独立维度：
 
 - `faithful + observer`：忠实保留原作或史实的关键事件、因果与结局；除非老师明确排除，课堂人物进入场景旁观、记录、交流或见证，但不得向原作人物提供关键物品、信息、建议或其他会改变事件的帮助。
+- 适龄删减、弱化成熟或亲密关系内容、调整课堂表达尺度，不视为新剧情。只要原作关键事件、人物关系发展、因果与结局不变，继续保持 `faithful + observer + follow_defined_plot`；回答内容边界问题不得单独触发 3 个故事方向。
 - `new_story + participant`：使用原创设定，或使用作品、人物、世界观和历史背景创作新事件；课堂人物默认参与并通过具体行动推动剧情。
 - `faithful + absent` 或 `new_story + absent`：只有老师明确要求课堂人物不进入时使用。
 - 禁止 `faithful + participant`。人物传记和真实历史沿用同一规则：事实讲述为 `faithful`，让课堂人物参与并影响新事件为 `new_story`。
@@ -1005,6 +1006,7 @@ Prompt 复核还需统一以下输出原则：
 
 ## 实现状态
 
+- 2026-08-20：需求对齐 Prompt 明确区分“适龄调整呈现尺度”和“改变原作剧情”；前者必须继承忠实讲述与原作既定主线，不因老师回答成人或亲密内容边界而切换为三方向流程。未增加服务端关键词或语义矫正规则。验证通过全量 66 个文件 / 514 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm build`、乱码扫描和 `git diff --check`。
 - 2026-08-20：修复生产 AI 日志默认全空的问题。环境感知日志在开发环境保留脱敏后的完整请求/响应/错误，在生产环境只记录可关联、可诊断的脱敏错误；故事大纲路由记录账户实际网关、`courseId` 与 `requestId`，provider 记录 HTTP 状态、耗时及底层网络 cause/code，不输出提示词、响应正文或密钥。验证通过全量 66 个文件 / 510 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm build`、乱码扫描和 `git diff --check`。
 - 2026-08-19：GPT 文本写作与联网研究接入账户级中转站选择。内部历史值 `quickrouter_gpt` 继续表示界面上的 GPT 模型系列，实际端点由账户的 `aiGateway` 决定：QuickRouter 使用原有 `/v1/responses`，Crazyrouter 使用 `https://api.crazyrouter.com/v1/responses`、`CRAZYROUTER_API_KEY` 和默认模型 `gpt-5.6-sol`。DeepSeek 保持 `DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL`、`DEEPSEEK_BASE_URL` 官方直连和 `/chat/completions` 协议，完全不读取账户中转站选择。Crazyrouter 已用真实请求验证 `gpt-5.6-sol` Responses 返回有效文本；切换不修改课程、大纲或内容数据。
 - 2026-08-19：按当前网络策略恢复服务端直连。`pnpm dev` 与 `pnpm start` 重新直接启动 Next.js，不再通过 `--use-env-proxy` 读取本机 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`；QuickRouter 文本和图片请求因此不再经过 `127.0.0.1:7897`。响应中断识别与失败恢复保持不变。网络环境或 DNS 不可直达 QuickRouter 时会明确返回连接失败，不再自动切换本机代理。当前开发机的无计费直连探测仍因域名解析地址不可达而触发 `UND_ERR_CONNECT_TIMEOUT`，需要网络侧恢复可用 DNS 或路由后才能真实调用；代码验证通过全量测试 57 个文件 / 468 项、`pnpm exec tsc --noEmit`、`pnpm build`、乱码扫描和 `git diff --check`。

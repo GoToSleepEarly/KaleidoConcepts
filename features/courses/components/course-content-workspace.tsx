@@ -94,6 +94,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
   const [optimisticTeacherMessage, setOptimisticTeacherMessage] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [navigating, setNavigating] = useState(false);
   const [destructiveRegeneration, setDestructiveRegeneration] = useState<"reading" | "exercises" | null>(null);
 
   const isGenerating = state.operation?.type === "reading" || state.operation?.type === "exercises" || state.status === "generating_reading" || state.status === "generating_exercises";
@@ -160,7 +161,9 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       setPendingNavigationHref(href);
       return;
     }
+    setNavigating(true);
     router.push(href);
+    if (href.endsWith("/teaching-plan")) router.refresh();
   }
 
   function beginRequest() {
@@ -388,7 +391,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
           </section>
         </main> : null}
       </div>
-      <div className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-lg border border-border bg-card/95 px-4 py-3 shadow-md backdrop-blur sm:flex-row sm:items-center sm:justify-between"><p aria-live="polite" className="text-sm text-muted-foreground">{hasUnsentInput ? "修改要求尚未发送" : state.status === "confirmed" ? "本步骤已完成" : state.status === "ready" && !state.exercisesStale ? "内容已就绪，可以进入视觉资源" : state.exercisesStale ? "还需：重新生成已过期练习" : "还需：完成正文与练习"}</p><div className="flex gap-2"><Button disabled={isWorking} onClick={() => navigate(`/courses/${state.course.id}/create/teaching-plan`)} type="button" variant="outline"><ChevronLeft className="size-4" />上一步</Button><Button disabled={isWorking || !["ready", "confirmed"].includes(state.status) || state.exercisesStale} onClick={() => state.status === "confirmed" ? navigate(`/courses/${state.course.id}/create/visual-resources`) : void confirm()} type="button">下一步：视觉资源<ChevronRight className="size-4" /></Button></div></div>
+      <div className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-lg border border-border bg-card/95 px-4 py-3 shadow-md backdrop-blur sm:flex-row sm:items-center sm:justify-between"><p aria-live="polite" className="text-sm text-muted-foreground">{navigating ? "正在加载目标步骤..." : hasUnsentInput ? "修改要求尚未发送" : state.status === "confirmed" ? "本步骤已完成" : state.status === "ready" && !state.exercisesStale ? "内容已就绪，可以进入视觉资源" : state.exercisesStale ? "还需：重新生成已过期练习" : "还需：完成正文与练习"}</p><div className="flex gap-2"><Button disabled={isWorking} loading={navigating} onClick={() => navigate(`/courses/${state.course.id}/create/teaching-plan`)} type="button" variant="outline"><ChevronLeft className="size-4" />上一步</Button><Button disabled={navigating || isWorking || !["ready", "confirmed"].includes(state.status) || state.exercisesStale} onClick={() => state.status === "confirmed" ? navigate(`/courses/${state.course.id}/create/visual-resources`) : void confirm()} type="button">下一步：视觉资源<ChevronRight className="size-4" /></Button></div></div>
       {resetOpen ? <Dialog onClose={() => setResetOpen(false)} open title="重新开始">
         <div className="space-y-5 p-5 sm:p-6">
           <p className="text-pretty text-sm leading-6 text-muted-foreground">确认后将立即删除文案与练习、视觉资源、图片和预览发布设置，并从文案创作重新开始。即使后续生成失败，已删除内容也不会恢复。</p>
@@ -413,7 +416,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       {pendingNavigationHref ? <Dialog onClose={() => setPendingNavigationHref(null)} open size="compact" title="放弃未发送的修改？">
         <div className="space-y-5 p-5 sm:p-6">
           <p className="text-pretty text-sm leading-6 text-muted-foreground">修改要求尚未发送。离开后输入内容和当前修改目标不会保存。</p>
-          <div className="flex justify-end gap-2"><Button onClick={() => setPendingNavigationHref(null)} type="button" variant="outline">留在当前页</Button><Button onClick={() => { const href = pendingNavigationHref; setPendingNavigationHref(null); router.push(href); }} type="button" variant="destructive">放弃并离开</Button></div>
+          <div className="flex justify-end gap-2"><Button onClick={() => setPendingNavigationHref(null)} type="button" variant="outline">留在当前页</Button><Button onClick={() => { const href = pendingNavigationHref; setPendingNavigationHref(null); setNavigating(true); router.push(href); if (href.endsWith("/teaching-plan")) router.refresh(); }} type="button" variant="destructive">放弃并离开</Button></div>
         </div>
       </Dialog> : null}
     </div>

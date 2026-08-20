@@ -6,10 +6,12 @@ import type { CourseContentState } from "@/lib/contracts/api";
 import { CourseContentWorkspace } from "@/features/courses/components/course-content-workspace";
 
 const pushMock = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
+const refreshMock = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock, refresh: refreshMock }) }));
 
 beforeEach(() => {
   pushMock.mockReset();
+  refreshMock.mockReset();
   HTMLDialogElement.prototype.showModal = function showModal() { this.setAttribute("open", ""); };
   HTMLDialogElement.prototype.close = function close() { this.removeAttribute("open"); };
 });
@@ -31,6 +33,17 @@ const initialState: CourseContentState = {
 };
 
 describe("CourseContentWorkspace", () => {
+  test("refreshes persisted teaching-plan data when returning to the previous step", () => {
+    render(<CourseContentWorkspace initialState={initialState} />);
+
+    const backButton = screen.getByRole("button", { name: "上一步" });
+    fireEvent.click(backButton);
+
+    expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/teaching-plan");
+    expect(refreshMock).toHaveBeenCalledOnce();
+    expect(backButton).toBeDisabled();
+  });
+
   test("uses the app dialog before discarding an unsent modification", () => {
     render(<CourseContentWorkspace initialState={initialState} />);
     fireEvent.click(screen.getByRole("button", { name: "选择要修改的页面" }));

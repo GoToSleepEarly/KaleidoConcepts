@@ -142,6 +142,43 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain('"personId":"student-1"');
   });
 
+  test("treats age-appropriate intimacy boundaries as presentation changes instead of a new plot", async () => {
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        status: "ready_for_confirmation",
+        planningMode: "follow_defined_plot",
+        storyMode: "faithful",
+        classroomPresence: "observer",
+        requiredNamedCharacters: [],
+        assistantMessage: "请确认适龄讲述范围。",
+        resolvedUnderstanding: ["忠实讲述原作主线并避开成人亲密内容"],
+        unresolvedIssues: [],
+        questions: [],
+        summary: "保留原作情感发展，以适合课堂的方式表达。",
+      }),
+    });
+
+    const result = await createStoryOutlineGenerationDeps().alignRequirements({
+      task: "保留欣赏、心动、试探与离别，避开成人及亲密身体关系内容。",
+      chapterCount: 4,
+      coursePeople: [],
+      conversationHistory: [
+        { role: "teacher", content: "学生和老师进入电影《Call Me By Your Name》，见证主角之间的假期和情愫。" },
+        { role: "assistant", content: "请选择情感内容的呈现边界。" },
+        { role: "teacher", content: "保留欣赏、心动、试探与离别，避开成人及亲密身体关系内容。" },
+      ],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+    });
+
+    expect(result).toMatchObject({ planningMode: "follow_defined_plot", storyMode: "faithful", classroomPresence: "observer" });
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain("适龄删减或弱化成熟、成人、亲密关系内容，只改变呈现尺度");
+    expect(prompt).toContain("不得仅因老师回答了内容边界问题就改成 explore_options");
+  });
+
   test("用参考资料短键确定性关联点名 IP 角色，不让 AI 复制数据库 ID", async () => {
     generateOutlineMock.mockResolvedValueOnce({
       text: JSON.stringify({

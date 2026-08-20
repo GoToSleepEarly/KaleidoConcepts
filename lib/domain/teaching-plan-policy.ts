@@ -17,7 +17,10 @@ export function courseWordBudget(level: EnglishLevel, duration: 30 | 45 | 60) {
 
 export function recommendedChapterWordCount(level: EnglishLevel, duration: 30 | 45 | 60, chapterCount: number) {
   const budgetShare = Math.round(courseWordBudget(level, duration) / Math.max(1, chapterCount) / 10) * 10;
-  return Math.max(MIN_CHAPTER_TARGET_WORD_COUNT, Math.min(MAX_CHAPTER_TARGET_WORD_COUNT, budgetShare));
+  const recommendedMinimum = level === "Starter" || level === "A1" || level === "A2"
+    ? MIN_CHAPTER_TARGET_WORD_COUNT
+    : 150;
+  return Math.max(recommendedMinimum, Math.min(MAX_CHAPTER_TARGET_WORD_COUNT, budgetShare));
 }
 
 export function defaultPracticeConfig(enabled = true): GrammarPracticeConfig {

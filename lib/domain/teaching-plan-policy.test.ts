@@ -18,10 +18,10 @@ describe("teaching plan policy", () => {
     expect(courseWordBudget("C2", 60)).toBe(560);
   });
 
-  it("splits the course budget while keeping chapter targets between 120 and 200", () => {
+  it("splits the course budget while keeping B1 and higher recommendations at 150 words or more", () => {
     expect(recommendedChapterWordCount("A2", 30, 3)).toBe(120);
-    expect(recommendedChapterWordCount("B1", 45, 4)).toBe(120);
-    expect(recommendedChapterWordCount("C1", 60, 5)).toBe(120);
+    expect(recommendedChapterWordCount("B1", 45, 4)).toBe(150);
+    expect(recommendedChapterWordCount("C1", 60, 5)).toBe(150);
     expect(recommendedChapterWordCount("C2", 60, 1)).toBe(200);
   });
 

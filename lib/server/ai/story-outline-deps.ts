@@ -538,6 +538,8 @@ export function createStoryOutlineGenerationDeps(aiGateway: AiGateway = "quickro
           ...classroomParticipationRules,
           "把“故事是否忠实”和“课堂人物是否进入”分开判断。storyMode 只能是 faithful 或 new_story；classroomPresence 只能是 observer、participant 或 absent。",
           "忠实讲述原作、真实人物传记或历史事实时使用 faithful + observer：课堂人物默认进入场景旁观，但不能影响原作或史实的关键事件、因果、转折和结局。只有老师明确要求课堂人物不进入时才使用 absent。",
+          "适龄删减或弱化成熟、成人、亲密关系内容，只改变呈现尺度，不等于改变原作剧情。只要关键事件、人物关系发展、因果和结局保持不变，继续使用 faithful + observer；按原作剧情讲述时，原作主线视为已经明确，planningMode 使用 follow_defined_plot。",
+          "重新判断时必须结合完整对话继承已经确认的故事使用方式。不得仅因老师回答了内容边界问题就改成 explore_options；只有老师明确新增剧情、改变关键事件或结局，或让课堂人物影响原作人物和事件时，才按新要求重新判断 storyMode 和 planningMode。",
           "原创故事、改编原作、让课堂人物影响事件，或要求改变原作/史实关键因果与结局时使用 new_story + participant。即使保留原作角色、世界观或部分经典情节，只要产生新的行动和因果，也属于新故事。禁止 faithful + participant。",
           "人物传记与真实历史使用同一规则：事实讲述属于 faithful；让课堂人物参与并推动新事件属于 new_story。不要根据课堂人物是否进入来判断故事模式。",
           "后续在 new_story 中根据实际人数自动设计单人、双人或团队行动；在 faithful 中只设计不改变因果的观察、记录、见证和彼此交流。人物身份、相遇方式、任务、冲突、奇幻机制和结局由后续方向与大纲决定，不要向老师追问。",

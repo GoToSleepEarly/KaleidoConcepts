@@ -315,6 +315,7 @@ describe("CourseTeachingPlanWorkspace", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: /课后/ }));
     fireEvent.click(screen.getByRole("button", { name: "生成课后练习" }));
+    fireEvent.click(screen.getByRole("button", { name: "语法习题已关闭" }));
 
     expect(screen.getByText("已默认选中各章节使用的知识点；取消勾选即可排除不需要考查的内容。")).toBeInTheDocument();
     expect(screen.getByLabelText("一般过去时 · Past Simple")).toBeChecked();
@@ -329,16 +330,33 @@ describe("CourseTeachingPlanWorkspace", () => {
     fireEvent.click(screen.getByRole("tab", { name: /课后/ }));
     fireEvent.click(screen.getByRole("button", { name: "生成课后练习" }));
     expect(screen.getByRole("button", { name: "词汇复习已开启" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "语法习题已开启" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "语法习题已关闭" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText(/从各章节正文的词汇习题自动汇总并去重/)).toBeInTheDocument();
     expect(screen.getByText(/仅本模块与下方语法知识点联动/)).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "语法习题已关闭" }));
+    expect(screen.getByRole("button", { name: "语法习题已开启" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "语法习题已开启" }));
     expect(screen.getByRole("button", { name: "词汇复习已开启" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "生成课后练习" })).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(screen.getByRole("button", { name: "词汇复习已开启" }));
     expect(screen.getByRole("button", { name: "不生成课后练习" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("falls back to grammar homework when no chapter can provide vocabulary review", () => {
+    const withoutVocabulary = state();
+    withoutVocabulary.plan.chapters = withoutVocabulary.plan.chapters.map((chapter) => ({
+      ...chapter,
+      readingExercises: { ...chapter.readingExercises, vocabulary: { chineseHint: 0 } },
+    }));
+    render(<CourseTeachingPlanWorkspace initialState={withoutVocabulary} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: /课后/ }));
+    fireEvent.click(screen.getByRole("button", { name: "生成课后练习" }));
+
+    expect(screen.getByRole("button", { name: "词汇复习已关闭" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "语法习题已开启" })).toHaveAttribute("aria-pressed", "true");
   });
 
   test("locks forward step navigation after an upstream style edit until the plan is reconfirmed", () => {

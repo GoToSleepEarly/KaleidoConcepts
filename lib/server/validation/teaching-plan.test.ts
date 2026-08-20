@@ -74,6 +74,31 @@ describe("teaching plan validation", () => {
     });
   });
 
+  test("keeps B1 and higher chapter recommendations at 150 words or more", () => {
+    const fourChapters = [
+      ...outlineChapters,
+      { ...outlineChapters[0], id: "chapter-3" },
+      { ...outlineChapters[1], id: "chapter-4" },
+    ];
+    const b1Draft = buildTeachingPlanDraft({
+      courseId: "course-b1",
+      englishLevel: "B1",
+      durationMinutes: 45,
+      chapters: fourChapters,
+      updatedAt: "2026-08-20T00:00:00.000Z",
+    });
+    const a2Draft = buildTeachingPlanDraft({
+      courseId: "course-a2",
+      englishLevel: "A2",
+      durationMinutes: 45,
+      chapters: fourChapters,
+      updatedAt: "2026-08-20T00:00:00.000Z",
+    });
+
+    expect(b1Draft.chapters.every((chapter) => chapter.targetWordCount === 150)).toBe(true);
+    expect(a2Draft.chapters.every((chapter) => chapter.targetWordCount === 120)).toBe(true);
+  });
+
   test("accepts a complete teaching plan", () => {
     expect(() => validateTeachingPlanForConfirm(completePlan(), outlineChapters.map((chapter) => chapter.id))).not.toThrow();
   });
