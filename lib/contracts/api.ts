@@ -639,6 +639,7 @@ export type CourseVisualImageSlot = {
 export type CourseVisualResourcesState = {
   course: { id: string; title: string; currentStage: CourseStage };
   quality: CourseImageQuality;
+  imageGenerationConcurrency: number;
   planReady: boolean;
   planRevision: number | null;
   planMode: VisualPlanMode | null;

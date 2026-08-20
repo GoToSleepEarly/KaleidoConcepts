@@ -159,6 +159,23 @@ function QualitySelector({ disabled, onChange, value }: { disabled: boolean; onC
   );
 }
 
+function ImageGenerationConcurrencySelector({ disabled, onChange, value }: { disabled: boolean; onChange: (concurrency: number) => void; value: number }) {
+  return (
+    <label className="flex flex-wrap items-center gap-2" htmlFor="image-generation-concurrency">
+      <span className="text-xs font-medium text-muted-foreground">同时生成图片数</span>
+      <select
+        className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+        disabled={disabled}
+        id="image-generation-concurrency"
+        onChange={(event) => onChange(Number(event.target.value))}
+        value={value}
+      >
+        {[1, 2, 3, 4, 5].map((concurrency) => <option key={concurrency} value={concurrency}>{concurrency} 张</option>)}
+      </select>
+    </label>
+  );
+}
+
 function PromptDisclosure({ prompt }: { prompt: string }) {
   return (
     <details className="group rounded-lg border bg-muted/20">
@@ -507,6 +524,19 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
 
   function generateSlot(slotId: string) { void jsonAction(`slot:${slotId}`, `/api/courses/${state.course.id}/visual-resources/images/generate`, { scope: "slot", slotId }); }
 
+  function updateVisualSettings(key: string, body: { quality?: CourseImageQuality; imageGenerationConcurrency?: number }) {
+    void run(key, async () => {
+      const response = await fetch(`/api/courses/${state.course.id}/visual-resources/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message);
+      await refresh();
+    });
+  }
+
   async function confirmCover() {
     if (!coverSlot?.activeAssetId) return;
     await run("confirm-cover", async () => {
@@ -542,7 +572,7 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
         </div>
       </VisualSection>
 
-      {advanced ? <VisualSection icon={<Settings2 className="size-4" />} title="高级设置"><div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">调整后续图片的生成质量。</p><QualitySelector disabled={disabled} onChange={(quality) => void run(`quality:${quality}`, async () => { const response = await fetch(`/api/courses/${state.course.id}/visual-resources/settings`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quality }) }); const data = await response.json(); if (!response.ok) throw new Error(data.message); await refresh(); })} value={state.quality} /></div>{canOriginalize && !state.policyBlocked ? <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><p className="max-w-2xl text-xs leading-5 text-muted-foreground">保留故事和整体视觉气质，将原作身份、专有地名与标志性元素转换为描述性视觉设定。</p><Button disabled={disabled} onClick={() => setConfirmOriginalize(true)} size="sm" variant="outline">{originalizeLabel}</Button></div> : null}</div></VisualSection> : null}
+      {advanced ? <VisualSection icon={<Settings2 className="size-4" />} title="高级设置"><div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">调整后续图片的生成质量。</p><QualitySelector disabled={disabled} onChange={(quality) => updateVisualSettings(`quality:${quality}`, { quality })} value={state.quality} /></div><div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><p className="max-w-2xl text-xs leading-5 text-muted-foreground">批量生成时最多同时处理这些图片。数值越高生成越快，也更容易触发图片服务限流。</p><ImageGenerationConcurrencySelector disabled={disabled} onChange={(imageGenerationConcurrency) => updateVisualSettings(`concurrency:${imageGenerationConcurrency}`, { imageGenerationConcurrency })} value={state.imageGenerationConcurrency} /></div>{canOriginalize && !state.policyBlocked ? <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><p className="max-w-2xl text-xs leading-5 text-muted-foreground">保留故事和整体视觉气质，将原作身份、专有地名与标志性元素转换为描述性视觉设定。</p><Button disabled={disabled} onClick={() => setConfirmOriginalize(true)} size="sm" variant="outline">{originalizeLabel}</Button></div> : null}</div></VisualSection> : null}
 
       <VisualSection
         action={state.planReady ? <Button disabled={disabled} loading={pending === "plan"} onClick={() => setConfirmPlanUpdate(true)} size="sm" variant="outline"><RefreshCw />更新视觉方案</Button> : undefined}

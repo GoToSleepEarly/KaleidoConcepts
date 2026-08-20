@@ -184,7 +184,7 @@ function toAsset(asset: {
 }
 
 export async function getCourseVisualResources(db: VisualResourcesDb, courseId: string): Promise<CourseVisualResourcesState> {
-  const course = await db.course.findUnique({ where: { id: courseId }, select: { id: true, title: true, currentStage: true, visualQuality: true } });
+  const course = await db.course.findUnique({ where: { id: courseId }, select: { id: true, title: true, currentStage: true, visualQuality: true, imageGenerationConcurrency: true } });
   if (!course) throw new VisualResourcesNotFoundError("课程不存在");
   await recoverStaleCourseImages(db, courseId);
   const [characters, visuals, plan, slots, people, content] = await Promise.all([
@@ -270,6 +270,7 @@ export async function getCourseVisualResources(db: VisualResourcesDb, courseId: 
   return {
     course: { id: course.id, title: course.title, currentStage: course.currentStage },
     quality: course.visualQuality,
+    imageGenerationConcurrency: course.imageGenerationConcurrency,
     planReady: Boolean(visualPlan),
     planRevision: visualPlan ? plan?.revision ?? null : null,
     planMode: visualPlan ? plan?.mode ?? null : null,
@@ -303,11 +304,23 @@ export async function getCourseVisualResources(db: VisualResourcesDb, courseId: 
   };
 }
 
-export async function updateCourseVisualQuality(db: VisualResourcesDb, courseId: string, quality: CourseImageQuality) {
+export async function updateCourseVisualSettings(
+  db: VisualResourcesDb,
+  courseId: string,
+  input: { quality?: CourseImageQuality; imageGenerationConcurrency?: number },
+) {
   const course = await db.course.findUnique({ where: { id: courseId }, select: { id: true } });
   if (!course) throw new VisualResourcesNotFoundError("课程不存在");
-  await db.course.update({ where: { id: courseId }, data: { visualQuality: quality } });
-  return { quality };
+  const data = {
+    ...(input.quality === undefined ? {} : { visualQuality: input.quality }),
+    ...(input.imageGenerationConcurrency === undefined ? {} : { imageGenerationConcurrency: input.imageGenerationConcurrency }),
+  };
+  const updated = await db.course.update({
+    where: { id: courseId },
+    data,
+    select: { visualQuality: true, imageGenerationConcurrency: true },
+  });
+  return { quality: updated.visualQuality, imageGenerationConcurrency: updated.imageGenerationConcurrency };
 }
 
 export async function updateVisualCharacterAppearance(

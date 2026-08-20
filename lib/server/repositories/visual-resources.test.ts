@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { CourseVisualPlanResponseError } from "@/lib/server/ai/course-visual-plan-deps";
-import { adoptLatestPersonVisual, buildCourseImageEditPrompt, generateCourseVisualPlan, generateVisualSlot, getCourseVisualResources, hasUnsyncedCharacterAppearance, recoverStaleCourseImages, refineCourseVisualAsset, saveUploadedCharacterReference, selectCourseVisualAsset, updateCourseVisualQuality, updateCharacterVisualIntent, updateVisualCharacterAppearance } from "./visual-resources";
+import { adoptLatestPersonVisual, buildCourseImageEditPrompt, generateCourseVisualPlan, generateVisualSlot, getCourseVisualResources, hasUnsyncedCharacterAppearance, recoverStaleCourseImages, refineCourseVisualAsset, saveUploadedCharacterReference, selectCourseVisualAsset, updateCourseVisualSettings, updateCharacterVisualIntent, updateVisualCharacterAppearance } from "./visual-resources";
 
 describe("视觉资源仓储", () => {
   const currentPlan = {
@@ -148,11 +148,11 @@ describe("视觉资源仓储", () => {
       },
     });
   });
-  test("课程画面质量只影响后续请求", async () => {
-    const update = vi.fn(async () => ({ visualQuality: "high" }));
+  test("课程视觉设置只影响后续请求", async () => {
+    const update = vi.fn(async () => ({ visualQuality: "high", imageGenerationConcurrency: 4 }));
     const db = { course: { findUnique: vi.fn(async () => ({ id: "course-1" })), update } };
-    await updateCourseVisualQuality(db as never, "course-1", "high");
-    expect(update).toHaveBeenCalledWith({ where: { id: "course-1" }, data: { visualQuality: "high" } });
+    await updateCourseVisualSettings(db as never, "course-1", { quality: "high", imageGenerationConcurrency: 4 });
+    expect(update).toHaveBeenCalledWith({ where: { id: "course-1" }, data: { visualQuality: "high", imageGenerationConcurrency: 4 }, select: { visualQuality: true, imageGenerationConcurrency: true } });
   });
 
   test("高级编辑更新中文角色形象和本课造型，但保留当前图片和封面确认", async () => {
@@ -480,7 +480,7 @@ describe("视觉资源仓储", () => {
       },
     };
     const db = {
-      course: { findUnique: vi.fn(async () => ({ id: "course-1", title: "Story", currentStage: "visual_resources", visualQuality: "medium" })) },
+      course: { findUnique: vi.fn(async () => ({ id: "course-1", title: "Story", currentStage: "visual_resources", visualQuality: "medium", imageGenerationConcurrency: 3 })) },
       courseImage: { updateMany: vi.fn(async () => ({ count: 0 })) },
       courseCharacter: { findMany: vi.fn(async () => [{ id: "character-1", displayName: "捷特", englishName: "Jett", sourceType: "referenced", sourcePersonId: null, shouldAppearInImages: true, roleInStory: "hero", sourceReference: { name: "VALORANT", type: "game_character" } }]) },
       courseCharacterVisual: { findMany: vi.fn(async () => [{ characterId: "character-1", activeImageId: null, activeImage: null, images: [], intent: "originalize", source: null, status: "ready" }]) },
@@ -492,6 +492,7 @@ describe("视觉资源仓储", () => {
 
     const state = await getCourseVisualResources(db as never, "course-1");
 
+    expect(state.imageGenerationConcurrency).toBe(3);
     expect(state.slots[0]?.prompt).toContain("C01 — Sky Runner");
     expect(state.slots[0]?.prompt).not.toContain("Jett");
     expect(state.slots[0]?.prompt).not.toContain("捷特");

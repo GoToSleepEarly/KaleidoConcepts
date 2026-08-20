@@ -77,6 +77,7 @@ model Course {
   lifecycleStatus CourseLifecycle @default(draft)
   currentStage    CourseStage     @default(audience)
   visualQuality   CourseImageQuality @default(medium)
+  imageGenerationConcurrency Int     @default(3)
   idempotencyKey  String          @unique
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt

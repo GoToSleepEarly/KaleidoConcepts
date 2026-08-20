@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { hasInFlightVisualVersion, shouldGenerateVisualSlot } from "@/lib/domain/visual-resource-status";
 import { createCourseImageGenerationDeps } from "@/lib/server/ai/course-image-deps";
 import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
+import { runBoundedBatches } from "@/lib/server/bounded-batches";
 import { getDb } from "@/lib/server/db";
 import { idempotencyKey, visualResourcesError } from "@/lib/server/http/visual-resources";
 import { generateVisualSlot, getCourseVisualResources, VisualImageGenerationError } from "@/lib/server/repositories/visual-resources";
@@ -20,16 +21,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ message: "没有需要生成的图片" }, { status: 400 });
     }
     const deps = createCourseImageGenerationDeps(await aiGatewayFromRequest(request));
-    const results: Array<{ slotId: string; assetId?: string; error?: string }> = [];
-    for (const slot of targets) {
+    const results = await runBoundedBatches(targets, state.imageGenerationConcurrency, async (slot) => {
       try {
         const asset = await generateVisualSlot(getDb(), id, slot.id, `${key}:${slot.id}`, deps);
-        results.push({ slotId: slot.id, assetId: asset?.id });
+        return { slotId: slot.id, assetId: asset?.id, policyBlocked: false };
       } catch (error) {
-        results.push({ slotId: slot.id, error: error instanceof Error ? error.message : "图片生成失败" });
-        if (error instanceof VisualImageGenerationError && error.failureCode === "policy_blocked") break;
+        return {
+          slotId: slot.id,
+          error: error instanceof Error ? error.message : "图片生成失败",
+          policyBlocked: error instanceof VisualImageGenerationError && error.failureCode === "policy_blocked",
+        };
       }
-    }
-    return NextResponse.json({ results }, { status: results.some((result) => result.error) ? 207 : 200 });
+    }, (result) => result.policyBlocked);
+    const responseResults = results.map((result) => result.error
+      ? { slotId: result.slotId, error: result.error }
+      : { slotId: result.slotId, assetId: result.assetId });
+    return NextResponse.json({ results: responseResults }, { status: responseResults.some((result) => result.error) ? 207 : 200 });
   } catch (error) { return visualResourcesError(error); }
 }

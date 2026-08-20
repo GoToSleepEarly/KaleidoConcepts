@@ -19,6 +19,7 @@ const slot = (overrides: Partial<CourseVisualImageSlot>): CourseVisualImageSlot 
 const state: CourseVisualResourcesState = {
   course: { id: "course-1", title: "测试课程", currentStage: "visual_resources" },
   quality: "medium",
+  imageGenerationConcurrency: 3,
   planReady: false,
   planRevision: null,
   planMode: null,
@@ -203,7 +204,7 @@ describe("Step 5 视觉资源工作区", () => {
     expect(screen.getByRole("button", { name: "生成全部未生成图片" })).toBeEnabled();
   });
 
-  test("Prompt 默认折叠展示，高级模式只开放画质和角色描述编辑", () => {
+  test("Prompt 默认折叠展示，高级模式开放画质、批量并发数和角色描述编辑", () => {
     const cover = asset();
     render(<CourseVisualResourcesWorkspace initialState={{
       ...plannedState, confirmedCoverAssetId: cover.id,
@@ -215,7 +216,26 @@ describe("Step 5 视觉资源工作区", () => {
     expect(screen.getAllByText("查看 Prompt").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "高级模式" }));
     expect(screen.getByRole("radio", { name: "高" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "同时生成图片数" })).toHaveValue("3");
+    expect(screen.getByText(/数值越高生成越快/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "编辑林老师形象描述" })).toBeInTheDocument();
+  });
+
+  test("高级设置修改批量并发数后立即刷新课程状态", async () => {
+    const nextState = { ...plannedState, imageGenerationConcurrency: 4 };
+    const request = vi.fn()
+      .mockResolvedValueOnce(Response.json({ imageGenerationConcurrency: 4 }))
+      .mockResolvedValueOnce(Response.json(nextState));
+    vi.stubGlobal("fetch", request);
+    render(<CourseVisualResourcesWorkspace initialState={plannedState} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "高级模式" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "同时生成图片数" }), { target: { value: "4" } });
+
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    expect(request.mock.calls[0]?.[0]).toBe("/api/courses/course-1/visual-resources/settings");
+    expect(JSON.parse(String((request.mock.calls[0]?.[1] as RequestInit).body))).toEqual({ imageGenerationConcurrency: 4 });
+    expect(screen.getByRole("combobox", { name: "同时生成图片数" })).toHaveValue("4");
   });
 
   test("课程角色可以同时编辑中文角色形象和本课造型，保存后已有图片保持可见", async () => {

@@ -2,14 +2,21 @@ import { describe, expect, test } from "vitest";
 import {
   visualGenerateSchema,
   visualIntentSchema,
-  visualQualitySchema,
+  visualSettingsSchema,
   visualRefineSchema,
 } from "./visual-resources";
 
 describe("视觉资源输入校验", () => {
   test("只接受三种底层画面质量", () => {
-    expect(visualQualitySchema.parse({ quality: "medium" })).toEqual({ quality: "medium" });
-    expect(() => visualQualitySchema.parse({ quality: "ultra" })).toThrow();
+    expect(visualSettingsSchema.parse({ quality: "medium" })).toEqual({ quality: "medium" });
+    expect(() => visualSettingsSchema.parse({ quality: "ultra" })).toThrow();
+  });
+
+  test("图片批量并发数限制为一到五张", () => {
+    expect(visualSettingsSchema.parse({ imageGenerationConcurrency: 3 })).toEqual({ imageGenerationConcurrency: 3 });
+    expect(() => visualSettingsSchema.parse({ imageGenerationConcurrency: 0 })).toThrow();
+    expect(() => visualSettingsSchema.parse({ imageGenerationConcurrency: 6 })).toThrow();
+    expect(() => visualSettingsSchema.parse({})).toThrow();
   });
 
   test("外部角色只允许保持原形象或课堂原创化", () => {
