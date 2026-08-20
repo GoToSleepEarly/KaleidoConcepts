@@ -139,7 +139,7 @@ cd /data/pbl-studio-v2/current
 ./deploy.sh
 ```
 
-`deploy.sh` 会自动申请 sudo，并调用内部更新器检查 Swap 以及两个旧 PM2 应用的实际 PID、同步最新版 systemd service、阻塞等待资源受限的发布任务完成，并在失败时打印最近 200 行日志。`pm2-ubuntu.service` 未启用时只警告，不会把“systemd 未托管”误判成“旧应用已离线”。成功后会显示当前 release 和新版 PM2 状态，不需要记忆或执行内部脚本、`systemctl`、`journalctl`、migration 或 PM2 命令。
+`deploy.sh` 会自动申请 sudo，并调用内部更新器检查 Swap 以及两个旧 PM2 应用的实际 PID、同步最新版 systemd service、实时显示资源受限发布任务的日志，并在失败时打印最近 200 行日志。`pm2-ubuntu.service` 未启用时只警告，不会把“systemd 未托管”误判成“旧应用已离线”。日志出现 `Deployment completed.`，随后显示 `Production update completed successfully.` 并回到命令提示符，才算部署完成。成功后会显示当前 release 和新版 PM2 状态，不需要记忆或执行内部脚本、`systemctl`、`journalctl`、migration 或 PM2 命令。
 
 需要单独复核时再执行：
 

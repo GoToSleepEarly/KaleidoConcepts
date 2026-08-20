@@ -57,10 +57,28 @@ systemd-analyze verify "$SERVICE_FILE"
 systemctl reset-failed "$SERVICE_NAME" 2>/dev/null || true
 
 echo "Starting the resource-limited production update. This can take several minutes."
-if ! systemctl start "$SERVICE_NAME"; then
+UPDATE_STARTED_AT="$(date --iso-8601=seconds)"
+systemctl start "$SERVICE_NAME" &
+SYSTEMCTL_PID=$!
+
+journalctl -fu "$SERVICE_NAME" --since "$UPDATE_STARTED_AT" -o cat &
+JOURNAL_PID=$!
+
+stop_log_follower() {
+  kill "$JOURNAL_PID" >/dev/null 2>&1 || true
+  wait "$JOURNAL_PID" 2>/dev/null || true
+}
+trap stop_log_follower EXIT
+
+if ! wait "$SYSTEMCTL_PID"; then
+  stop_log_follower
+  trap - EXIT
   journalctl -u "$SERVICE_NAME" -n 200 --no-pager >&2
   fail "deployment service failed"
 fi
+
+stop_log_follower
+trap - EXIT
 
 systemctl is-failed --quiet "$SERVICE_NAME" && {
   journalctl -u "$SERVICE_NAME" -n 200 --no-pager >&2
