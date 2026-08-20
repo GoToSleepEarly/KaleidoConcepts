@@ -29,7 +29,6 @@ describe("共享主机安全发布", () => {
     const script = await fs.readFile(scriptPath, "utf8");
 
     expect(script).toContain('EXPECTED_APP_NAME="pbl-studio-v2"');
-    expect(script).toContain('DEPLOYMENT_TARGET:-}" == "shared-host"');
     expect(script).toContain('EXPECTED_DATABASE_NAME="pbl_studio_v2"');
     expect(script).toContain('EXPECTED_STORAGE_DIR="$APP_ROOT/images"');
     expect(script).toContain('flock -n 9');

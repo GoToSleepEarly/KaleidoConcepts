@@ -55,7 +55,6 @@ HOSTNAME="127.0.0.1"
 PORT="3100"
 APP_NAME="pbl-studio-v2"
 BRANCH="master"
-DEPLOYMENT_TARGET="shared-host"
 
 DATABASE_URL="postgresql://pbl_v2_app:数据库密码@127.0.0.1:5432/pbl_studio_v2?schema=public"
 DATABASE_URL_FOR_PG_DUMP="postgresql://pbl_v2_app:数据库密码@127.0.0.1:5432/pbl_studio_v2"
@@ -65,7 +64,7 @@ BACKUP_DIR="/data/backups/pbl-studio-v2"
 
 数据库密码包含 URL 保留字符时必须编码。DeepSeek 使用官方直连；QuickRouter 与 Crazyrouter 使用各自配置的 key。生产环境不得配置 `HTTP_PROXY` 或 `HTTPS_PROXY`。
 
-`DEPLOYMENT_TARGET="shared-host"` 会让旧的原地部署脚本主动拒绝执行，防止误用 `pnpm deploy:prod` 覆盖正在运行的 `.next`。专用独立主机只有显式配置 `dedicated-host` 才能使用旧脚本。
+旧的原地部署脚本默认拒绝执行，防止误用 `pnpm deploy:prod` 覆盖正在运行的 `.next`。只有专用独立主机显式配置 `DEPLOYMENT_TARGET="dedicated-host"` 才能使用旧脚本；共享主机不需要额外配置该变量。
 
 ## 首次部署验证
 

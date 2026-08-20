@@ -36,7 +36,6 @@ for command_name in curl flock git pg_dump pm2 pnpm psql tar; do
 done
 
 [[ "${APP_NAME:-}" == "$EXPECTED_APP_NAME" ]] || fail "APP_NAME must be $EXPECTED_APP_NAME"
-[[ "${DEPLOYMENT_TARGET:-}" == "shared-host" ]] || fail "DEPLOYMENT_TARGET must be shared-host"
 [[ "${HOSTNAME:-}" == "127.0.0.1" ]] || fail "HOSTNAME must be 127.0.0.1"
 [[ "${PORT:-}" == "3100" ]] || fail "PORT must be 3100"
 [[ "${STORAGE_DIR:-}" == "$EXPECTED_STORAGE_DIR" ]] || fail "STORAGE_DIR must be $EXPECTED_STORAGE_DIR"
