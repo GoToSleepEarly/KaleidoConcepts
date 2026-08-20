@@ -8,13 +8,40 @@ describe("devAiLog", () => {
     vi.restoreAllMocks();
   });
 
-  test("does not write AI logs in production", () => {
+  test("does not write successful request or response bodies in production", () => {
     vi.stubEnv("NODE_ENV", "production");
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
     devAiLog({ operation: "story_outline", phase: "request", payload: { prompt: "hello" } });
 
     expect(info).not.toHaveBeenCalled();
+  });
+
+  test("writes redacted production errors with correlation fields and the transport cause", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const error = new TypeError("fetch failed", {
+      cause: Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:443"), { code: "ECONNREFUSED" }),
+    });
+
+    devAiLog({
+      operation: "story_outline",
+      phase: "error",
+      context: { gateway: "crazyrouter", courseId: "course-1", requestId: "request-1" },
+      payload: { prompt: "PROMPT_MUST_NOT_LEAK", authorization: "SECRET_MUST_NOT_LEAK" },
+      error,
+    });
+
+    expect(errorLog).toHaveBeenCalledWith(
+      "[AI][story_outline][error]",
+      expect.stringContaining("ECONNREFUSED"),
+    );
+    const serialized = String(errorLog.mock.calls[0]?.[1]);
+    expect(serialized).toContain("crazyrouter");
+    expect(serialized).toContain("course-1");
+    expect(serialized).toContain("request-1");
+    expect(serialized).not.toContain("PROMPT_MUST_NOT_LEAK");
+    expect(serialized).not.toContain("SECRET_MUST_NOT_LEAK");
   });
 
   test("logs development calls while redacting image data", () => {

@@ -11,9 +11,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   const regenerate = new URL(request.url).searchParams.get("regenerate") === "true";
   const resetDownstream = new URL(request.url).searchParams.get("resetDownstream") === "true";
-  const aiGateway = aiGatewayFromRequest(request);
   try {
     const db = getDb();
+    const aiGateway = await aiGatewayFromRequest(request, db);
     if (regenerate) {
       const downstreamDb = db as unknown as CourseDownstreamDb;
       const hasDownstream = await hasCourseDownstream(downstreamDb, id, "content");

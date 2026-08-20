@@ -3,6 +3,13 @@ type AiLogPhase = "request" | "response" | "error";
 type AiLogEntry = {
   operation: string;
   phase: AiLogPhase;
+  context?: {
+    gateway?: string;
+    courseId?: string;
+    requestId?: string;
+    personId?: string;
+    assetId?: string;
+  };
   payload?: unknown;
   status?: number;
   latencyMs?: number;
@@ -37,11 +44,16 @@ function safeValue(value: unknown, key = ""): unknown {
 }
 
 export function devAiLog(entry: AiLogEntry) {
-  if (process.env.NODE_ENV !== "development") return;
+  const environment = process.env.NODE_ENV;
+  if (environment === "test") return;
+  if (environment === "production" && entry.phase !== "error") return;
+  if (environment !== "development" && environment !== "production") return;
   const details = safeValue({
+    timestamp: new Date().toISOString(),
+    context: entry.context,
     status: entry.status,
     latencyMs: entry.latencyMs,
-    payload: entry.payload,
+    ...(environment === "development" ? { payload: entry.payload } : {}),
     error: entry.error,
   });
   const label = `[AI][${entry.operation}][${entry.phase}]`;

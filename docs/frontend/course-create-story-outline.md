@@ -881,7 +881,9 @@ type CourseStorySettingOperationFields = {
 - 故事需求判断、故事方向、参考资料搜索和故事大纲使用独立操作名，方便定位具体调用。
 - 人物生图与人物图片编辑也走同一日志格式。
 - 不记录 API Key；图片 base64 / data URL 必须省略；超长文本截断。
-- `NODE_ENV=production` 时完全关闭，测试环境也不输出。
+- 生产环境默认只记录 AI 错误，不记录成功请求、提示词或响应正文。错误日志使用 `[AI][操作名][error]`，包含时间、网关、HTTP 状态、耗时、底层错误与 cause/code；故事大纲入口额外包含 `courseId` 和 `requestId`，用于把页面报错与服务日志对应起来。
+- API Key、Authorization、Cookie、提示词、人物资料、模型请求体和响应正文不得进入生产日志。测试环境不输出日志。
+- 生产排查使用 `sudo -u pblv2 env HOME=/home/pblv2 pm2 logs pbl-studio-v2 --lines 300 --nostream`，按页面返回的 `requestId` 或 `[AI]` 检索对应错误。
 
 ## 验收标准
 
@@ -1003,6 +1005,7 @@ Prompt 复核还需统一以下输出原则：
 
 ## 实现状态
 
+- 2026-08-20：修复生产 AI 日志默认全空的问题。环境感知日志在开发环境保留脱敏后的完整请求/响应/错误，在生产环境只记录可关联、可诊断的脱敏错误；故事大纲路由记录账户实际网关、`courseId` 与 `requestId`，provider 记录 HTTP 状态、耗时及底层网络 cause/code，不输出提示词、响应正文或密钥。验证通过全量 66 个文件 / 510 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm build`、乱码扫描和 `git diff --check`。
 - 2026-08-19：GPT 文本写作与联网研究接入账户级中转站选择。内部历史值 `quickrouter_gpt` 继续表示界面上的 GPT 模型系列，实际端点由账户的 `aiGateway` 决定：QuickRouter 使用原有 `/v1/responses`，Crazyrouter 使用 `https://api.crazyrouter.com/v1/responses`、`CRAZYROUTER_API_KEY` 和默认模型 `gpt-5.6-sol`。DeepSeek 保持 `DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL`、`DEEPSEEK_BASE_URL` 官方直连和 `/chat/completions` 协议，完全不读取账户中转站选择。Crazyrouter 已用真实请求验证 `gpt-5.6-sol` Responses 返回有效文本；切换不修改课程、大纲或内容数据。
 - 2026-08-19：按当前网络策略恢复服务端直连。`pnpm dev` 与 `pnpm start` 重新直接启动 Next.js，不再通过 `--use-env-proxy` 读取本机 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`；QuickRouter 文本和图片请求因此不再经过 `127.0.0.1:7897`。响应中断识别与失败恢复保持不变。网络环境或 DNS 不可直达 QuickRouter 时会明确返回连接失败，不再自动切换本机代理。当前开发机的无计费直连探测仍因域名解析地址不可达而触发 `UND_ERR_CONNECT_TIMEOUT`，需要网络侧恢复可用 DNS 或路由后才能真实调用；代码验证通过全量测试 57 个文件 / 468 项、`pnpm exec tsc --noEmit`、`pnpm build`、乱码扫描和 `git diff --check`。
 - 2026-08-19：补齐 QuickRouter 已返回响应头、但响应正文传输中断的失败恢复。`UND_ERR_SOCKET`、`ECONNRESET` 和 `EPIPE` 统一返回“故事大纲服务响应中断，未收到完整结果，请重试本步”；该阶段请求可能已经到达模型，因此不自动重试，避免产生第二次 AI 费用，老师可通过现有入口手动重试。全量测试 58 个文件 / 470 项、目标 ESLint、`pnpm exec tsc --noEmit`、`pnpm build`、乱码扫描和 `git diff --check` 通过。

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { createStoryOutlineGenerationDeps, StoryAlignmentResponseError } from "@/lib/server/ai/story-outline-deps";
+import { devAiLog } from "@/lib/server/ai/dev-ai-log";
 import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
+import type { AiGateway } from "@/lib/ai-gateway";
 import { getDb } from "@/lib/server/db";
 import {
   CourseStoryOutlineNotFoundError,
@@ -26,9 +28,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const parsed = storyOutlineMessageSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ message: "请输入故事想法或选择一个操作" }, { status: 400 });
   const { id } = await params;
-  const aiGateway = aiGatewayFromRequest(request);
+  let aiGateway: AiGateway | undefined;
   try {
     const db = getDb();
+    aiGateway = await aiGatewayFromRequest(request, db);
     if (parsed.data.action && outlineMutationActions.has(parsed.data.action)) {
       const downstreamDb = db as unknown as CourseDownstreamDb;
       const hasDownstream = await hasCourseDownstream(downstreamDb, id, "story_outline");
@@ -44,6 +47,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } catch (error) {
     if (error instanceof CourseStoryOutlineNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });
     if (error instanceof CourseStoryOutlineOperationConflictError) return NextResponse.json({ message: error.message }, { status: 409 });
+    devAiLog({
+      operation: "story_outline_request",
+      phase: "error",
+      context: {
+        courseId: id,
+        ...(parsed.data.requestId ? { requestId: parsed.data.requestId } : {}),
+        ...(aiGateway ? { gateway: aiGateway } : {}),
+      },
+      error,
+    });
     if (error instanceof StoryAlignmentResponseError) {
       return NextResponse.json({ message: error.message, errorCode: error.code, requestId: parsed.data.requestId }, { status: error.status });
     }

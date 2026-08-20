@@ -22,7 +22,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       id,
       { ...prepared, customPrompt: String(formData.get("customPrompt") || "") },
       idempotencyKey,
-      createPersonVisualGenerationDeps(aiGatewayFromRequest(request)),
+      createPersonVisualGenerationDeps(await aiGatewayFromRequest(request)),
     );
     return NextResponse.json({ visual }, { status: visual.status === "succeeded" ? 201 : 502 });
   } catch (error) {

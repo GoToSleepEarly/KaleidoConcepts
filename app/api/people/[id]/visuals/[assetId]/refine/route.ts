@@ -13,7 +13,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!payload.success) return NextResponse.json({ message: "请输入要修改的内容" }, { status: 400 });
   const { id, assetId } = await params;
   try {
-    const visual = await refinePersonVisual(getDb(), id, assetId, payload.data.instruction, idempotencyKey, createPersonVisualGenerationDeps(aiGatewayFromRequest(request)));
+    const visual = await refinePersonVisual(getDb(), id, assetId, payload.data.instruction, idempotencyKey, createPersonVisualGenerationDeps(await aiGatewayFromRequest(request)));
     return NextResponse.json({ visual }, { status: visual.status === "succeeded" ? 201 : 502 });
   } catch (error) {
     if (error instanceof PersonVisualInvalidStateError) return NextResponse.json({ message: error.message }, { status: 409 });

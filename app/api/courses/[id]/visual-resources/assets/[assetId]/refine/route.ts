@@ -10,6 +10,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id, assetId } = await params;
   try {
     const input = visualRefineSchema.parse(await request.json());
-    return NextResponse.json(await refineCourseVisualAsset(getDb(), id, assetId, input.instruction, idempotencyKey(request), createCourseImageGenerationDeps(aiGatewayFromRequest(request))));
+    return NextResponse.json(await refineCourseVisualAsset(getDb(), id, assetId, input.instruction, idempotencyKey(request), createCourseImageGenerationDeps(await aiGatewayFromRequest(request))));
   } catch (error) { return visualResourcesError(error); }
 }

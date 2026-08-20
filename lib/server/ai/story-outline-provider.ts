@@ -195,6 +195,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedGate
         devAiLog({
           operation,
           phase: "error",
+          context: { gateway: activeConfig.gateway },
           latencyMs: Date.now() - startedAt,
           payload: { attempt, retrying },
           error,
@@ -225,7 +226,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedGate
       });
       data = JSON.parse(rawResponse) as ResponsesData;
     } catch (error) {
-      devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+      devAiLog({ operation, phase: "error", context: { gateway: activeConfig.gateway }, status: response.status, latencyMs: Date.now() - startedAt, error });
       const code = transportErrorCode(error);
       if (code && INTERRUPTED_RESPONSE_CODES.has(code)) {
         throw new Error("故事大纲服务响应中断，未收到完整结果，请重试本步", { cause: error });
@@ -234,7 +235,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedGate
     }
     if (!response.ok) {
       const error = new Error(data.error?.message || data.message || "故事大纲生成失败");
-      devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+      devAiLog({ operation, phase: "error", context: { gateway: activeConfig.gateway }, status: response.status, latencyMs: Date.now() - startedAt, error });
       throw error;
     }
     if (data.status === "incomplete") {
@@ -242,6 +243,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedGate
       devAiLog({
         operation,
         phase: "error",
+        context: { gateway: activeConfig.gateway },
         status: response.status,
         latencyMs: Date.now() - startedAt,
         payload: { incompleteReason: data.incomplete_details?.reason },
@@ -252,7 +254,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedGate
     const text = outputText(data);
     if (!text) {
       const error = new Error("故事大纲服务未返回内容");
-      devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+      devAiLog({ operation, phase: "error", context: { gateway: activeConfig.gateway }, status: response.status, latencyMs: Date.now() - startedAt, error });
       throw error;
     }
     return {
@@ -286,7 +288,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedGate
         break;
       } catch (error) {
         const retrying = attempt === 1 && canRetryBeforeConnection(error);
-        devAiLog({ operation, phase: "error", latencyMs: Date.now() - startedAt, payload: { attempt, retrying }, error });
+        devAiLog({ operation, phase: "error", context: { gateway: "deepseek" }, latencyMs: Date.now() - startedAt, payload: { attempt, retrying }, error });
         if (retrying) continue;
         if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
           throw new Error("故事大纲生成超时，请稍后重试", { cause: error });
@@ -302,20 +304,30 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedGate
       devAiLog({ operation, phase: "response", status: response.status, latencyMs: Date.now() - startedAt, payload: rawResponse });
       data = JSON.parse(rawResponse) as ChatCompletionsData;
     } catch (error) {
-      devAiLog({ operation, phase: "error", status: response.status, latencyMs: Date.now() - startedAt, error });
+      devAiLog({ operation, phase: "error", context: { gateway: "deepseek" }, status: response.status, latencyMs: Date.now() - startedAt, error });
       const code = transportErrorCode(error);
       if (code && INTERRUPTED_RESPONSE_CODES.has(code)) {
         throw new Error("故事大纲服务响应中断，未收到完整结果，请重试本步", { cause: error });
       }
       throw new Error("故事大纲服务返回异常", { cause: error });
     }
-    if (!response.ok) throw new Error(data.error?.message || data.message || "故事大纲生成失败");
+    if (!response.ok) {
+      const error = new Error(data.error?.message || data.message || "故事大纲生成失败");
+      devAiLog({ operation, phase: "error", context: { gateway: "deepseek" }, status: response.status, latencyMs: Date.now() - startedAt, error });
+      throw error;
+    }
     const usage = chatCompletionUsage(data);
     if (data.choices?.[0]?.finish_reason === "length") {
-      throw new StoryOutlineIncompleteResponseError("max_output_tokens", usage);
+      const error = new StoryOutlineIncompleteResponseError("max_output_tokens", usage);
+      devAiLog({ operation, phase: "error", context: { gateway: "deepseek" }, status: response.status, latencyMs: Date.now() - startedAt, error });
+      throw error;
     }
     const text = data.choices?.[0]?.message?.content?.trim();
-    if (!text) throw new Error("故事大纲服务未返回内容");
+    if (!text) {
+      const error = new Error("故事大纲服务未返回内容");
+      devAiLog({ operation, phase: "error", context: { gateway: "deepseek" }, status: response.status, latencyMs: Date.now() - startedAt, error });
+      throw error;
+    }
     return { text, usage };
   }
 

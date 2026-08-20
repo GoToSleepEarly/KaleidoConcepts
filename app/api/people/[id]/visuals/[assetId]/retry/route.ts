@@ -8,7 +8,7 @@ import { PersonVisualInvalidStateError, PersonVisualNotFoundError, retryPersonVi
 export async function POST(request: Request, { params }: { params: Promise<{ id: string; assetId: string }> }) {
   const { id, assetId } = await params;
   try {
-    const visual = await retryPersonVisual(getDb(), id, assetId, createPersonVisualGenerationDeps(aiGatewayFromRequest(request)));
+    const visual = await retryPersonVisual(getDb(), id, assetId, createPersonVisualGenerationDeps(await aiGatewayFromRequest(request)));
     return NextResponse.json({ visual }, { status: visual.status === "succeeded" ? 200 : 502 });
   } catch (error) {
     if (error instanceof PersonVisualNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });

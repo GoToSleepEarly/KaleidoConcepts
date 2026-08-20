@@ -13,7 +13,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!key || !parsed.success) return NextResponse.json({ message: "请选择要重试的失败阶段" }, { status: 400 });
   const { id } = await params;
   try {
-    const deps = createCourseContentGenerationDeps(aiGatewayFromRequest(request));
+    const deps = createCourseContentGenerationDeps(await aiGatewayFromRequest(request));
     return NextResponse.json(parsed.data.operation === "reading" ? await generateCourseReading(getDb(), id, key, deps) : await generateCourseExercises(getDb(), id, key, deps));
   } catch (error) {
     const status = error instanceof CourseContentConflictError || error instanceof CourseContentSupersededError ? 409 : 500;

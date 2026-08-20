@@ -266,7 +266,7 @@ There is no second account area in the sidebar.
 
 账户菜单提供“高级设置”，当前只配置国外 GPT 系列调用使用的中转站：`QuickRouter` 或 `Crazyrouter`。选择同时作用于 GPT 文本生成、联网研究、人物形象、课程图片生成和图片编辑；DeepSeek 继续使用原有 `DEEPSEEK_BASE_URL` 官方直连路径，不经过任何中转站，也不受该设置影响。
 
-设置保存在 `User.aiGateway`，登录时同步到 HTTP-only Cookie；所有 AI 写请求从 Cookie 读取当前账户选择。`GET /api/account/ai-gateway` 返回当前设置，`PATCH /api/account/ai-gateway` 接收 `{ aiGateway: "quickrouter" | "crazyrouter" }` 并同时更新数据库和 Cookie。密钥只从服务端环境变量读取，浏览器、接口响应和数据库都不保存 API Key。
+设置保存在 `User.aiGateway`，它是 AI 中转站选择的唯一真实来源。所有 AI 写请求都用登录用户 ID 从数据库重新读取当前选择，因此 `PATCH /api/account/ai-gateway` 成功后，下一次新请求立即使用新中转站，不要求退出或重新登录。HTTP-only 中转站 Cookie 只做登录同步和未认证兼容，不得覆盖已登录账户的数据库设置；数据库读取失败时请求明确失败，不回退到可能过期的 Cookie。`GET /api/account/ai-gateway` 返回当前设置，`PATCH /api/account/ai-gateway` 接收 `{ aiGateway: "quickrouter" | "crazyrouter" }` 并同时更新数据库和 Cookie。密钥只从服务端环境变量读取，浏览器、接口响应和数据库都不保存 API Key。
 
 QuickRouter 图片继续支持其专属 `gpt-image-2-c` 备用模型。Crazyrouter 使用 `https://api.crazyrouter.com/v1/responses`、`/v1/images/generations` 和 `/v1/images/edits`，文本、联网研究与图片共用 `CRAZYROUTER_API_KEY`；默认模型为 `gpt-5.6-sol` 和 `gpt-image-2`，图片使用标准 `output_format` 参数，不继承 QuickRouter 的 `-c` 回退。修改中转站只影响后续新请求，不重写已生成成果。
 
@@ -277,6 +277,8 @@ QuickRouter 图片继续支持其专属 `gpt-image-2-c` 备用模型。Crazyrout
 实现状态：已实现账户菜单设置、登录同步、数据库字段、服务端路由选择和 GPT 文本/研究/图片 provider 分流；生产部署前执行 `pnpm prisma:deploy`。
 
 2026-08-19：账户中转站收敛为 QuickRouter 与 Crazyrouter，移除 HaoAI/Easy88AI 的 UI、API、运行时分支和环境变量；旧浏览器 Cookie/Session 自动回退 QuickRouter，数据库旧账户值迁移到 Crazyrouter，失败图片任务的历史来源标记继续只读保留。Crazyrouter 文本、生图和基于生成结果的编辑已做真实串联验证；实现验证通过全量 58 个文件 / 476 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm exec prisma validate`、`pnpm build` 与 migration deploy。
+
+2026-08-20：修复账户已切换 Crazyrouter、旧 Cookie 仍令 AI 请求发往 QuickRouter 的问题。AI 路由改为每次按登录用户读取 `User.aiGateway`，配置保存后下一次请求立即生效，无需重新登录；中转站 Cookie 降级为未认证兼容值。验证通过全量 66 个文件 / 510 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm build`、乱码扫描和 `git diff --check`。
 
 ## Verification
 

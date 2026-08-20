@@ -28,7 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!payload.success) return NextResponse.json({ message: "形象描述无效" }, { status: 400 });
   const { id } = await params;
   try {
-    const visual = await createDescriptionVisual(getDb(), id, payload.data, idempotencyKey, createPersonVisualGenerationDeps(aiGatewayFromRequest(request)));
+    const visual = await createDescriptionVisual(getDb(), id, payload.data, idempotencyKey, createPersonVisualGenerationDeps(await aiGatewayFromRequest(request)));
     return NextResponse.json({ visual }, { status: visual.status === "succeeded" ? 201 : 502 });
   } catch (error) {
     if (error instanceof PersonVisualNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });

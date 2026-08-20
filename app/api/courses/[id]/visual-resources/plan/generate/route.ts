@@ -9,7 +9,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   try {
     const requestId = idempotencyKey(request);
-    return NextResponse.json(await generateCourseVisualPlan(getDb(), id, requestId, createCourseVisualPlanDeps(aiGatewayFromRequest(request))));
+    return NextResponse.json(await generateCourseVisualPlan(getDb(), id, requestId, createCourseVisualPlanDeps(await aiGatewayFromRequest(request))));
   }
   catch (error) { return visualResourcesError(error); }
 }

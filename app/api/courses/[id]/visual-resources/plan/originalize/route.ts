@@ -9,7 +9,7 @@ import { generateCourseVisualPlan } from "@/lib/server/repositories/visual-resou
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const requestId = idempotencyKey(request);
-    return NextResponse.json(await generateCourseVisualPlan(getDb(), (await params).id, requestId, createCourseVisualPlanDeps(aiGatewayFromRequest(request)), "originalized"));
+    return NextResponse.json(await generateCourseVisualPlan(getDb(), (await params).id, requestId, createCourseVisualPlanDeps(await aiGatewayFromRequest(request)), "originalized"));
   }
   catch (error) { return visualResourcesError(error); }
 }

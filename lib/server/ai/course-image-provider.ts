@@ -73,24 +73,33 @@ export function createCourseImageProvider(config?: ProviderConfig, selectedGatew
           signal: AbortSignal.timeout(timeoutMs),
         });
       } catch (error) {
-        devAiLog({ operation, phase: "error", latencyMs: Date.now() - startedAt, error });
+        devAiLog({ operation, phase: "error", context: { gateway }, latencyMs: Date.now() - startedAt, error });
         if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) throw new Error("图片生成超时，请确认状态后重试", { cause: error });
         throw new Error("图片生成服务连接失败，请稍后重试", { cause: error });
       }
       const raw = await response.text();
       let data: ProviderResponse;
       try { data = JSON.parse(raw) as ProviderResponse; }
-      catch (error) { throw new Error("图片生成服务返回异常", { cause: error }); }
-      devAiLog({ operation, phase: response.ok ? "response" : "error", status: response.status, latencyMs: Date.now() - startedAt, payload: data });
+      catch (error) {
+        devAiLog({ operation, phase: "error", context: { gateway }, status: response.status, latencyMs: Date.now() - startedAt, error });
+        throw new Error("图片生成服务返回异常", { cause: error });
+      }
       if (!response.ok) {
+        const error = new Error(data.error?.message || data.message || "图片生成失败");
+        devAiLog({ operation, phase: "error", context: { gateway }, status: response.status, latencyMs: Date.now() - startedAt, error });
         if (gateway === "quickrouter" && response.status === 429 && attempt === 0 && model !== FALLBACK_MODEL) {
           continue;
         }
         if (isUpstreamSaturated(response, data)) throw new Error(saturatedMessage(data));
-        throw new Error(data.error?.message || data.message || "图片生成失败");
+        throw error;
       }
+      devAiLog({ operation, phase: "response", context: { gateway }, status: response.status, latencyMs: Date.now() - startedAt, payload: data });
       const imageUrl = resultImage(data);
-      if (!imageUrl) throw new Error("图片生成服务未返回图片");
+      if (!imageUrl) {
+        const error = new Error("图片生成服务未返回图片");
+        devAiLog({ operation, phase: "error", context: { gateway }, status: response.status, latencyMs: Date.now() - startedAt, error });
+        throw error;
+      }
       return { imageUrl, model: requestModel, quality };
     }
     throw new Error("图片生成失败");
