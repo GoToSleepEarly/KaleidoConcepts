@@ -133,13 +133,14 @@ sudo systemctl is-enabled pm2-pblv2
 
 ## 后续更新
 
-每次发布只执行一条命令：
+进入当前重构版目录后，每次发布只执行一个根目录脚本：
 
 ```bash
-sudo /data/pbl-studio-v2/current/scripts/update-production.sh
+cd /data/pbl-studio-v2/current
+./deploy.sh
 ```
 
-该入口会自动检查 Swap 和旧 PM2、同步最新版 systemd service、阻塞等待资源受限的发布任务完成，并在失败时打印最近 200 行日志。成功后会显示当前 release 和新版 PM2 状态，不需要再手工执行 `reset-failed`、`start` 或 `journalctl`。
+`deploy.sh` 会自动申请 sudo，并调用内部更新器检查 Swap 和旧 PM2、同步最新版 systemd service、阻塞等待资源受限的发布任务完成，并在失败时打印最近 200 行日志。成功后会显示当前 release 和新版 PM2 状态，不需要记忆或执行内部脚本、`systemctl`、`journalctl`、migration 或 PM2 命令。
 
 需要单独复核时再执行：
 

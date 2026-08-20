@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 
 const scriptPath = path.resolve(process.cwd(), "scripts/deploy-shared-host.sh");
 const updateScriptPath = path.resolve(process.cwd(), "scripts/update-production.sh");
+const rootDeployScriptPath = path.resolve(process.cwd(), "deploy.sh");
 const servicePath = path.resolve(process.cwd(), "deploy/pbl-v2-deploy.service");
 
 describe("共享主机安全发布", () => {
@@ -61,5 +62,12 @@ describe("共享主机安全发布", () => {
     expect(oldServiceCheck).toBeLessThan(installService);
     expect(installService).toBeLessThan(startService);
     expect(startService).toBeLessThan(healthCheck);
+  });
+
+  test("项目根目录 deploy.sh 自动提权并转交一键更新器", async () => {
+    const rootDeployScript = await fs.readFile(rootDeployScriptPath, "utf8");
+
+    expect(rootDeployScript).toContain('UPDATER="$ROOT_DIR/scripts/update-production.sh"');
+    expect(rootDeployScript).toContain('exec sudo "$UPDATER" "$@"');
   });
 });
