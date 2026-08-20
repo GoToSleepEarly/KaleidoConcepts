@@ -11,6 +11,7 @@ import { PreviewSlide } from "@/features/courses/components/course-slide-deck";
 import type { CourseContentState, CoursePreviewPage, StoryWritingProvider } from "@/lib/contracts/api";
 import { compilePreviewPages, DEFAULT_COURSE_PRESENTATION, previewPageAnswerText } from "@/lib/domain/course-preview";
 import { cn } from "@/lib/utils";
+import { createRequestId } from "@/lib/utils/request-id";
 
 type TextPreviewPage = Extract<CoursePreviewPage, { type: "shot_text" | "grammar_practice" | "main_idea" | "vocabulary_matching" }>;
 type ContentSection = { id: string; label: string; kind: "reading" | "practice" | "main" | "homework"; chapterId?: string; pages: TextPreviewPage[]; pageCount: number };
@@ -212,7 +213,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
     }));
     try {
       const query = regenerate ? `?regenerate=true${resetDownstream ? "&resetDownstream=true" : ""}` : "";
-      const response = await fetch(`/api/courses/${state.course.id}/content/${kind}/generate${query}`, { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } });
+      const response = await fetch(`/api/courses/${state.course.id}/content/${kind}/generate${query}`, { method: "POST", headers: { "Idempotency-Key": createRequestId() } });
       const body = await response.json() as CourseContentState & { message?: string; requiresReset?: boolean };
       if (requestEpoch.current !== requestToken) return;
       if (response.status === 409 && body.requiresReset) {
@@ -260,7 +261,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
     setInstruction("");
     const requestToken = beginRequest(); setStartedAt(Date.now()); setElapsed(0); setError(null);
     try {
-      const response = await fetch(`/api/courses/${state.course.id}/content/modify`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ targetType, targetId, instruction: draft }) });
+      const response = await fetch(`/api/courses/${state.course.id}/content/modify`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createRequestId() }, body: JSON.stringify({ targetType, targetId, instruction: draft }) });
       const body = await response.json();
       if (requestEpoch.current !== requestToken) return;
       if (!response.ok) throw new Error(body.message || "修改失败；原内容已保留");

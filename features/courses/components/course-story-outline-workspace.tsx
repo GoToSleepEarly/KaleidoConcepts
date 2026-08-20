@@ -18,6 +18,7 @@ import type {
   StoryWritingProvider,
 } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
+import { createRequestId } from "@/lib/utils/request-id";
 
 type ComposerIntent =
   | { action: "revise_direction"; label: string; targetId: string }
@@ -182,7 +183,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
       return false;
     }
     const optimisticMessage = options.optimisticMessage ?? input.message.trim();
-    const requestId = input.requestId ?? crypto.randomUUID();
+    const requestId = input.requestId ?? createRequestId();
     let operationStillRunning = false;
     let reconciledPendingLabel = "";
     let reconciledAcceptedRequest = false;

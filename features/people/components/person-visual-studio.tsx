@@ -47,6 +47,7 @@ import {
   type VisualWorkspaceMode,
 } from "@/lib/people/visual-workspace";
 import { cn } from "@/lib/utils";
+import { createRequestId } from "@/lib/utils/request-id";
 
 type OptionSet = {
   key: keyof AppearanceConfig;
@@ -398,7 +399,7 @@ export function PersonVisualStudio({
   async function generate(event: FormEvent) {
     event.preventDefault();
     if (!person) return;
-    const key = crypto.randomUUID();
+    const key = createRequestId();
     if (mode === "photo") {
       if (!photo) {
         setError("请先选择一张照片");
@@ -445,7 +446,7 @@ export function PersonVisualStudio({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Idempotency-Key": crypto.randomUUID(),
+            "Idempotency-Key": createRequestId(),
           },
           body: JSON.stringify({ instruction: instruction.trim() }),
         }),

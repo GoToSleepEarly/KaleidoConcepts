@@ -12,6 +12,7 @@ import { Dialog } from "@/components/ui/dialog";
 import type { CourseCharacterVisual, CourseImageQuality, CourseVisualAsset, CourseVisualImageSlot, CourseVisualResourcesState } from "@/lib/contracts/api";
 import { hasInFlightVisualVersion, needsInitialVisualGeneration } from "@/lib/domain/visual-resource-status";
 import { cn } from "@/lib/utils";
+import { createRequestId } from "@/lib/utils/request-id";
 import { CourseCreateSteps, courseStageStep } from "./course-create-steps";
 
 const qualityOptions: Array<{ value: CourseImageQuality; label: string }> = [
@@ -76,7 +77,7 @@ function VisualPlanSummary({ characterCount, chapterCount, imageCount }: { chara
   );
 }
 
-function requestKey() { return crypto.randomUUID(); }
+function requestKey() { return createRequestId(); }
 
 class AmbiguousMutationError extends Error {}
 

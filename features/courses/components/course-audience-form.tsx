@@ -12,6 +12,7 @@ import { KnowledgePointPickerDialog } from "@/features/courses/components/knowle
 import { PersonEditorDialog } from "@/features/people/components/person-form-drawer";
 import type { CourseAudienceDetail, EnglishLevel, PeopleListResponse, PersonProfile, PersonRole, PresetOption } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
+import { createRequestId } from "@/lib/utils/request-id";
 import { readJsonResponse } from "@/lib/utils/response-json";
 
 type AudiencePerson = PersonProfile & { profileChanged?: boolean };
@@ -22,7 +23,7 @@ function audienceSnapshot(values: { title: string; duration: 30 | 45 | 60 | null
 
 export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   const router = useRouter();
-  const createKey = useRef(crypto.randomUUID());
+  const createKey = useRef(createRequestId());
   const [title, setTitle] = useState("");
   const [duration, setDuration] = useState<30 | 45 | 60 | null>(60);
   const [englishLevel, setEnglishLevel] = useState<EnglishLevel | null>(null);
