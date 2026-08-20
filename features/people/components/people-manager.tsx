@@ -27,6 +27,7 @@ export function PeopleManager() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [previewPerson, setPreviewPerson] = useState<PersonProfile | null>(null);
+  const [notice, setNotice] = useState("");
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -125,6 +126,7 @@ export function PeopleManager() {
           </div>
         </div>
 
+        {notice ? <div aria-live="polite" className="mt-4 rounded-md bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700" role="status">{notice}</div> : null}
         {error ? <div className="mt-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div> : null}
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -186,7 +188,7 @@ export function PeopleManager() {
         defaultRole={role}
         key={formOpen ? editing?.id ?? `new-${role}` : "closed-person-form"}
         onClose={() => setFormOpen(false)}
-        onSaved={() => void load()}
+        onSaved={(saved) => { setNotice(`${saved.chineseName}的人物资料已更新`); void load(); }}
         open={formOpen}
         person={editing}
       />

@@ -9,7 +9,7 @@ export type VisualWorkspaceMode = "create" | "refine";
 export function resolveVisualWorkspaceMode(
   visuals: VisualNode[],
 ): VisualWorkspaceMode {
-  return visuals.some((visual) => visual.status !== "failed")
+  return visuals.some((visual) => visual.status === "succeeded")
     ? "refine"
     : "create";
 }

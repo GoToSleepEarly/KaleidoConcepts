@@ -1,6 +1,7 @@
 "use client";
 
 import React, { FormEvent, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BookOpen, Check, Clock3, GraduationCap, Loader2, Pencil, Plus, Search, Target, Trash2, UserRound, UsersRound, X } from "lucide-react";
 
@@ -41,6 +42,8 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   const [furthestStep, setFurthestStep] = useState(1);
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(courseId ? null : "");
   const [downstreamChoice, setDownstreamChoice] = useState<{ targetPath?: string; affectedResources: string[] } | null>(null);
+  const [missingPeopleRoles, setMissingPeopleRoles] = useState<PersonRole[]>([]);
+  const [personNotice, setPersonNotice] = useState("");
 
   const currentSnapshot = audienceSnapshot({ title, duration, englishLevel, teacherId: teacher?.id ?? null, studentIds: students.map((student) => student.id), knowledgePointIds: selectedKnowledgePointIds });
   const hasUnsavedChanges = Boolean(courseId && savedSnapshot !== null && currentSnapshot !== savedSnapshot);
@@ -54,6 +57,27 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   useEffect(() => {
     void fetch("/api/presets?kind=grammar").then((response) => response.json()).then((data: { presets?: PresetOption[] }) => setKnowledgePoints(data.presets ?? [])).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (courseId) return;
+    let active = true;
+    async function checkPeople() {
+      try {
+        const roles = await Promise.all((["teacher", "student"] as const).map(async (role) => {
+          const response = await fetch(`/api/people?role=${role}&status=active&pageSize=1`);
+          const data = (await response.json()) as Partial<PeopleListResponse>;
+          if (!response.ok) return null;
+          const count = typeof data.total === "number" ? data.total : data.people?.length;
+          return count === 0 ? role : null;
+        }));
+        if (active) setMissingPeopleRoles(roles.filter((role): role is PersonRole => Boolean(role)));
+      } catch {
+        // 人物查询失败不伪装成空数据；选择器仍会展示自己的可恢复加载结果。
+      }
+    }
+    void checkPeople();
+    return () => { active = false; };
+  }, [courseId]);
 
   useEffect(() => {
     if (!courseId) return;
@@ -108,6 +132,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   function replacePerson(saved: PersonProfile) {
     if (saved.role === "teacher" && teacher?.id === saved.id) setTeacher(saved);
     if (saved.role === "student") setStudents((current) => current.map((person) => person.id === saved.id ? saved : person));
+    setPersonNotice(`${saved.chineseName}的人物资料已更新`);
   }
 
   async function submitRequest(resetDownstream = false) {
@@ -163,6 +188,22 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
           <h2 className="text-2xl font-semibold text-foreground">基础信息</h2>
         </div>
       </div>
+
+      {missingPeopleRoles.length ? (
+        <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between" role="status">
+          <div>
+            <p className="font-semibold text-amber-950">
+              {missingPeopleRoles.length === 2
+                ? "创建课程前，请先创建老师和学生人物，并完成人物形象"
+                : `创建课程前，请先创建${missingPeopleRoles[0] === "teacher" ? "老师" : "学生"}人物，并完成人物形象`}
+            </p>
+            <p className="mt-1 text-sm text-amber-800">人物形象设为当前形象后，才能加入课程。</p>
+          </div>
+          <Button asChild className="shrink-0"><Link href="/people">前往人物档案</Link></Button>
+        </div>
+      ) : null}
+
+      {personNotice ? <div aria-live="polite" className="rounded-md bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700" role="status">{personNotice}</div> : null}
 
       <form className="space-y-4" onSubmit={submit}>
         <AudienceSection icon={<BookOpen className="size-4" />} title="课程名称">
@@ -262,6 +303,7 @@ function AudienceSection({ action, children, icon, title }: { action?: React.Rea
         </div>
         {action}
       </div>
+
       <div className="p-4 sm:p-5">{children}</div>
     </section>
   );
@@ -326,7 +368,7 @@ function PeoplePicker({ role, selectedPeople, onClose, onConfirm, onCompleteVisu
         <div className="border-b border-border p-4"><label className="relative block"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><span className="sr-only">搜索人物</span><input autoFocus className="min-h-11 w-full rounded-md border border-input bg-muted/40 pl-9 pr-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" onChange={(event) => setQuery(event.target.value)} placeholder="搜索中文名或英文名" value={query} /></label></div>
         <div className="min-h-0 overflow-y-auto p-4">
           {loading ? <p className="p-6 text-center text-sm text-muted-foreground">正在查找人物…</p> : <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="person-picker-grid">{people.map((person) => { const active = selected.has(person.id); return person.activeVisual ? <button aria-label={`${active ? "取消选择" : "选择"}${person.chineseName}`} aria-pressed={active} className={cn("relative flex h-36 min-w-0 w-full self-start gap-3 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2", active ? "border-primary bg-primary-50/60" : "border-slate-200 bg-card hover:border-primary-300 hover:bg-primary-50/25")} data-testid={`person-picker-card-${person.id}`} key={person.id} onClick={() => toggle(person)} type="button"><PersonPickerCardContent active={active} person={person} /></button> : <article className="relative flex h-36 min-w-0 w-full self-start gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3" data-testid={`person-picker-card-${person.id}`} key={person.id}><PersonPickerCardContent onCompleteVisual={() => onCompleteVisual(person)} person={person} /></article>; })}</div>}
-          {!loading && !people.length ? <p className="p-8 text-center text-sm text-muted-foreground">没有找到可选人物，请先到人物档案新增。</p> : null}
+          {!loading && !people.length ? <div className="flex flex-col items-center gap-3 p-8 text-center"><p className="text-sm text-muted-foreground">没有找到可选{role === "teacher" ? "老师" : "学生"}。</p><Button asChild size="sm"><Link href="/people">前往人物档案创建{role === "teacher" ? "老师" : "学生"}</Link></Button></div> : null}
         </div>
         {role === "student" ? <div className="flex items-center justify-between border-t border-border p-4"><span className="text-sm text-muted-foreground">已选择 {selected.size} 位学生</span><div className="flex gap-2"><Button onClick={onClose} type="button" variant="outline">取消</Button><Button disabled={!selected.size} onClick={() => onConfirm(Array.from(selected.values()))} type="button">确认选择</Button></div></div> : null}
       </div>

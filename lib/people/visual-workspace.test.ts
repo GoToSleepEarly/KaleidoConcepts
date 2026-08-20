@@ -23,6 +23,10 @@ describe("人物形象工作台", () => {
     );
   });
 
+  it("只有未完成的首次生成记录时仍保持创建等待态", () => {
+    expect(resolveVisualWorkspaceMode([{ id: "pending", parentAssetId: null, status: "submitting" }])).toBe("create");
+  });
+
   it("只展示当前选中版本所在的修改链", () => {
     const chain = buildVisualRevisionChain(
       [

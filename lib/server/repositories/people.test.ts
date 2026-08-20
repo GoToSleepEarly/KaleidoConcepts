@@ -127,10 +127,28 @@ describe("people repository", () => {
   });
 
   test("updates profile fields without accepting a role change", async () => {
-    await updatePerson(
+    let findCount = 0;
+    const updated = await updatePerson(
       {
         person: {
-          findUnique: async () => dbPerson({ role: "teacher" }),
+          findUnique: async () => {
+            findCount += 1;
+            return findCount === 1
+              ? dbPerson({ role: "teacher" })
+              : dbPerson({
+                  role: "teacher",
+                  englishName: "Ms. Lynn",
+                  activeVisualAssetId: "visual-1",
+                  activeVisualAsset: {
+                    id: "visual-1",
+                    publicUrl: "/teacher.webp",
+                    sourceMode: "description",
+                    status: "succeeded",
+                    createdAt,
+                    updatedAt,
+                  },
+                });
+          },
           update: async ({ data }: { data: Record<string, unknown> }) => {
             expect(data).toEqual({
               chineseName: "林老师",
@@ -153,6 +171,9 @@ describe("people repository", () => {
         notes: "",
       },
     );
+
+    expect(updated.activeVisual).toMatchObject({ id: "visual-1", publicUrl: "/teacher.webp" });
+    expect(updated.visualStatus).toBe("ready");
   });
 
   test("archives and restores a person without deleting assets", async () => {

@@ -23,6 +23,19 @@ afterEach(() => {
 });
 
 describe("CourseAudienceForm basic information UI", () => {
+  test("warns before course creation when teacher and student profiles do not exist", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/people")) return Response.json({ people: [], page: 1, pageSize: 1, total: 0, totalPages: 1 });
+      return Response.json({ presets: [] });
+    }));
+
+    render(<CourseAudienceForm />);
+
+    expect(await screen.findByText("创建课程前，请先创建老师和学生人物，并完成人物形象")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "前往人物档案" })).toHaveAttribute("href", "/people");
+  });
+
   test("organizes Step1 knowledge points by grammar category", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ presets: [
       { id: "grammar-1", kind: "grammar", label: "Past Simple", labelZh: "一般过去时", category: "时态", sortOrder: 0, createdAt: "", updatedAt: "" },

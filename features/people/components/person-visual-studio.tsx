@@ -1,6 +1,6 @@
 "use client";
 
-import {
+import React, {
   FormEvent,
   useCallback,
   useEffect,
@@ -215,12 +215,14 @@ export function PersonVisualStudio({
   onClose,
   onChanged,
   embedded = false,
+  profileJustCreated = false,
 }: {
   open: boolean;
   person: PersonProfile | null;
   onClose: () => void;
   onChanged: () => void;
   embedded?: boolean;
+  profileJustCreated?: boolean;
 }) {
   const [visuals, setVisuals] = useState<PersonVisualAsset[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -249,9 +251,16 @@ export function PersonVisualStudio({
   const [deletingVisualId, setDeletingVisualId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [justGeneratedId, setJustGeneratedId] = useState<string | null>(null);
+  const [attentionVisualId, setAttentionVisualId] = useState<string | null>(null);
+  const [selectionNotice, setSelectionNotice] = useState("");
   const [returnToVisualId, setReturnToVisualId] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const generationStartedAtRef = useRef(0);
   const photoInputId = person ? `person-photo-${person.id}` : "person-photo";
+  const pendingVisual = useMemo(
+    () => visuals.find((visual) => visual.status === "pending" || visual.status === "submitting") ?? null,
+    [visuals],
+  );
 
   const selected = useMemo(
     () => visuals.find((visual) => visual.id === selectedId) ?? null,
@@ -275,12 +284,18 @@ export function PersonVisualStudio({
 
   useEffect(() => {
     if (!generationKind) return;
-    const startedAt = Date.now();
+    const startedAt = generationStartedAtRef.current || Date.now();
     const timer = window.setInterval(() => {
       setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
     }, 1_000);
     return () => window.clearInterval(timer);
   }, [generationKind]);
+
+  useEffect(() => {
+    if (!attentionVisualId) return;
+    const timer = window.setTimeout(() => setAttentionVisualId(null), 4_500);
+    return () => window.clearTimeout(timer);
+  }, [attentionVisualId]);
 
   const acceptPhoto = useCallback((file: File | null) => {
     if (!file) return;
@@ -296,9 +311,9 @@ export function PersonVisualStudio({
     setError("");
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     if (!person) return;
-    const response = await fetch(`/api/people/${person.id}/visuals`);
+    const response = await fetch(`/api/people/${person.id}/visuals`, { cache: "no-store", signal });
     const data = (await response.json()) as {
       visuals?: PersonVisualAsset[];
       message?: string;
@@ -315,12 +330,13 @@ export function PersonVisualStudio({
           next[0]?.id ??
           null),
     );
+    return next;
   }, [person]);
 
   useEffect(() => {
     if (!open || !person) return;
     const controller = new AbortController();
-    fetch(`/api/people/${person.id}/visuals`, { signal: controller.signal })
+    fetch(`/api/people/${person.id}/visuals`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         const data = (await response.json()) as {
           visuals?: PersonVisualAsset[];
@@ -330,9 +346,15 @@ export function PersonVisualStudio({
         return data.visuals ?? [];
       })
       .then((next) => {
+        const pending = next.find((visual) => visual.status === "pending" || visual.status === "submitting");
         setVisuals(next);
         setActiveId(person.activeVisual?.id ?? null);
-        setWorkspaceMode(resolveVisualWorkspaceMode(next));
+        setWorkspaceMode(pending?.sourceMode === "revision" ? "refine" : pending ? "create" : resolveVisualWorkspaceMode(next));
+        if (pending) {
+          generationStartedAtRef.current = new Date(pending.createdAt).getTime();
+          setGenerationKind(pending.sourceMode === "revision" ? "refine" : "create");
+          setElapsedSeconds(Math.max(0, Math.floor((Date.now() - new Date(pending.createdAt).getTime()) / 1_000)));
+        }
         setSelectedId(
           person.activeVisual?.id ??
             next.find((visual) => visual.status === "succeeded")?.id ??
@@ -348,6 +370,46 @@ export function PersonVisualStudio({
       });
     return () => controller.abort();
   }, [open, person]);
+
+  useEffect(() => {
+    if (!open || !person || !pendingVisual) return;
+    let active = true;
+    let polling = false;
+    const pendingId = pendingVisual.id;
+
+    async function poll() {
+      if (polling) return;
+      polling = true;
+      try {
+        const next = await load();
+        if (!active || !next) return;
+        const current = next.find((visual) => visual.id === pendingId);
+        if (current?.status === "succeeded") {
+          setSelectedId(current.id);
+          setJustGeneratedId(current.id);
+          setAttentionVisualId(current.id);
+          setWorkspaceMode("refine");
+          setGenerationKind(null);
+          setError("");
+          onChanged();
+        } else if (!current) {
+          setGenerationKind(null);
+          setWorkspaceMode(resolveVisualWorkspaceMode(next));
+          setError("本次人物形象生成未完成，请重新提交");
+        }
+      } catch {
+        if (active) setError("人物形象状态刷新失败，正在自动重试");
+      } finally {
+        polling = false;
+      }
+    }
+
+    const timer = window.setInterval(() => void poll(), 2_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [load, onChanged, open, pendingVisual, person]);
 
   useEffect(() => {
     if (!open || mode !== "photo") return;
@@ -368,6 +430,7 @@ export function PersonVisualStudio({
   ) {
     setLoading(true);
     if (waitKind) {
+      generationStartedAtRef.current = Date.now();
       setElapsedSeconds(0);
       setGenerationKind(waitKind);
     }
@@ -417,7 +480,10 @@ export function PersonVisualStudio({
           }),
         "create",
       );
-      if (visual?.status === "succeeded") setJustGeneratedId(visual.id);
+      if (visual?.status === "succeeded") {
+        setJustGeneratedId(visual.id);
+        setAttentionVisualId(visual.id);
+      }
       return;
     }
     const visual = await run(
@@ -435,7 +501,10 @@ export function PersonVisualStudio({
         }),
       "create",
     );
-    if (visual?.status === "succeeded") setJustGeneratedId(visual.id);
+    if (visual?.status === "succeeded") {
+      setJustGeneratedId(visual.id);
+      setAttentionVisualId(visual.id);
+    }
   }
 
   async function refine() {
@@ -452,7 +521,10 @@ export function PersonVisualStudio({
         }),
       "refine",
     );
-    if (visual?.status === "succeeded") setJustGeneratedId(visual.id);
+    if (visual?.status === "succeeded") {
+      setJustGeneratedId(visual.id);
+      setAttentionVisualId(visual.id);
+    }
   }
 
   async function selectCurrent(target = selected) {
@@ -465,6 +537,8 @@ export function PersonVisualStudio({
     if (visual) {
       setActiveId(target.id);
       setJustGeneratedId(null);
+      setAttentionVisualId(null);
+      setSelectionNotice("已设为当前形象");
     }
   }
 
@@ -525,7 +599,7 @@ export function PersonVisualStudio({
             形象预览
           </p>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {selected?.id === activeId ? <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><Check className="size-3.5" />当前使用</span> : selected?.id === justGeneratedId ? <span className="inline-flex items-center gap-1 text-xs font-medium text-primary"><Sparkles className="size-3.5" />新生成</span> : selected?.status === "succeeded" ? <Button disabled={loading} onClick={() => void selectCurrent()} size="sm" type="button" variant="outline"><Check className="size-4" />设为当前形象</Button> : null}
+            {selected?.id === activeId ? <span aria-live="polite" className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><Check className="size-3.5" />{selectionNotice || "当前使用"}</span> : selected?.status === "succeeded" ? <div className="flex items-center gap-2"><span className="hidden text-xs font-semibold text-primary sm:inline">{selected.id === justGeneratedId ? "新形象还未启用" : "当前未使用"}</span><Button aria-label="设为当前形象" className={cn("shadow-md ring-4 ring-primary-100", selected.id === attentionVisualId && "motion-safe:animate-pulse")} disabled={loading} onClick={() => void selectCurrent()} size="sm" type="button"><Check className="size-4" />设为当前形象</Button></div> : null}
             {workspaceMode === "create" && visuals.length ? <Button onClick={cancelStartOver} size="sm" type="button" variant="outline">取消重新创建</Button> : workspaceMode === "refine" ? <Button onClick={startOver} size="sm" type="button" variant="outline"><RotateCcw className="size-4" />重新创建</Button> : null}
           </div>
         </div>
@@ -661,7 +735,7 @@ export function PersonVisualStudio({
                           </p>
                         </div>
                         {visual.id === justGeneratedId ? (
-                          visual.id === activeId ? <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><Check className="size-3.5" />当前使用</span> : <Button className="ml-auto shrink-0" disabled={loading} onClick={() => void selectCurrent(visual)} size="sm" type="button"><Check className="size-4" />使用这个新形象</Button>
+                          visual.id === activeId ? <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><Check className="size-3.5" />当前使用</span> : <Button className={cn("ml-auto shrink-0 shadow-md ring-4 ring-primary-100", visual.id === attentionVisualId && "motion-safe:animate-pulse")} disabled={loading} onClick={() => void selectCurrent(visual)} size="sm" type="button"><Check className="size-4" />使用这个新形象</Button>
                         ) : null}
                       </div>
                     </div>
@@ -721,6 +795,7 @@ export function PersonVisualStudio({
           />
         ) : (
           <form onSubmit={generate}>
+            {profileJustCreated ? <div className="mb-4 flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-sm font-medium text-emerald-800" role="status"><Check className="mt-0.5 size-4 shrink-0" /><span>人物资料已保存，下一步创建人物形象</span></div> : null}
             <div className="mb-4 flex items-center gap-3">
               <span className="flex size-9 items-center justify-center rounded-lg bg-primary-50 text-primary">
                 <Palette className="size-4" />

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import React, { FormEvent, useState } from "react";
 import {
   ArrowRight,
   CalendarDays,
@@ -67,6 +67,7 @@ export function PersonEditorDialog({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [profileJustCreated, setProfileJustCreated] = useState(false);
 
   async function refreshWorkingPerson() {
     if (!workingPerson) return;
@@ -118,9 +119,15 @@ export function PersonEditorDialog({
       };
       if (!response.ok || !data.person)
         throw new Error(data.message || "保存失败");
+      const wasEditing = Boolean(workingPerson);
       setWorkingPerson(data.person);
       onSaved(data.person);
-      if (!workingPerson) setActiveTab("visual");
+      if (wasEditing) {
+        onClose();
+      } else {
+        setProfileJustCreated(true);
+        setActiveTab("visual");
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "保存失败");
     } finally {
@@ -316,6 +323,7 @@ export function PersonEditorDialog({
               onClose={onClose}
               open
               person={workingPerson}
+              profileJustCreated={profileJustCreated}
             />
           </div>
         ) : null}

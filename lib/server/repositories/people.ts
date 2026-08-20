@@ -180,7 +180,15 @@ export async function updatePerson(db: PeopleDb, id: string, input: PersonUpdate
       notes: optionalText(input.notes),
     },
   });
-  return profileWithoutRelations(person);
+  const refreshed = await db.person.findUnique({
+    where: { id },
+    include: {
+      activeVisualAsset: true,
+      visualAssets: { select: { status: true, updatedAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
+      coursePeople: { select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
+    },
+  });
+  return profileWithRelations(refreshed ?? person);
 }
 
 async function setArchived(db: PeopleDb, id: string, archivedAt: Date | null) {
