@@ -240,8 +240,9 @@ pm2 logs pbl-studio-v2 --lines 300
 
 - 前端早期捕获、React 错误边界、恢复页和复制错误编号：已实现。
 - `POST /api/client-errors` 与 PM2 结构化日志：已实现。
-- 验证：`pnpm test`（63 个文件 / 498 项测试）、`pnpm exec tsc --noEmit`、`pnpm lint` 与 `pnpm build` 均通过。
-- 提交：未创建。
+- 2026-08-20：错误编号 `CE-20260820T124656-wk0q31` 已确认 HTTP 下 Safari/微信 WebView 不提供 `crypto.randomUUID()`；浏览器请求 ID 已统一通过 UUID v4 兼容生成器创建，原生 API 不可用时回退到 `crypto.getRandomValues`，Web Crypto 完全不可用时再回退到随机字节。HTTPS 部署不在本次代码范围。兼容修复提交：`55b6739`。
+- 验证：`pnpm test`（64 个文件 / 502 项测试）、`pnpm exec tsc --noEmit`、`pnpm lint` 与 `pnpm build` 均通过。
+- 错误诊断提交：`7b421f8`。
 
 ## App Shell
 
