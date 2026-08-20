@@ -66,6 +66,8 @@ describe("共享主机安全发布", () => {
     expect(startService).toBeLessThan(healthCheck);
     expect(updateScript).toContain("Warning: old PM2 applications are online");
     expect(updateScript).not.toContain('fail "old PM2 service is not active');
+    expect(updateScript).toContain("date '+%Y-%m-%d %H:%M:%S'");
+    expect(updateScript).not.toContain("date --iso-8601=seconds");
   });
 
   test("项目根目录 deploy.sh 自动提权并转交一键更新器", async () => {

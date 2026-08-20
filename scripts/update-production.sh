@@ -57,7 +57,7 @@ systemd-analyze verify "$SERVICE_FILE"
 systemctl reset-failed "$SERVICE_NAME" 2>/dev/null || true
 
 echo "Starting the resource-limited production update. This can take several minutes."
-UPDATE_STARTED_AT="$(date --iso-8601=seconds)"
+UPDATE_STARTED_AT="$(date '+%Y-%m-%d %H:%M:%S')"
 systemctl start "$SERVICE_NAME" &
 SYSTEMCTL_PID=$!
 
