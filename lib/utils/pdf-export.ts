@@ -3,6 +3,9 @@
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
+export const PDF_EXPORT_SLIDE_WIDTH = 1600;
+export const PDF_EXPORT_SLIDE_HEIGHT = 900;
+
 const pdfColorTokens: Record<string, string> = {
   "--background": "rgb(250 250 251)", "--foreground": "rgb(38 39 48)",
   "--card": "rgb(255 255 255)", "--card-foreground": "rgb(38 39 48)",
@@ -28,14 +31,54 @@ const pdfColorTokens: Record<string, string> = {
 export function applyPdfColorCompatibility(targetDocument: Document) {
   for (const [name, value] of Object.entries(pdfColorTokens)) targetDocument.documentElement.style.setProperty(name, value);
   const style = targetDocument.createElement("style");
-  style.textContent = ".preview-deck-pdf, .preview-deck-pdf * { animation: none !important; transition: none !important; }";
+  style.textContent = `
+    [data-pdf-export-slide], [data-pdf-export-slide] * {
+      animation: none !important;
+      caret-color: transparent !important;
+      transition: none !important;
+    }
+  `;
   targetDocument.head.append(style);
 }
 
 export function pdfCaptureScale(size: { width: number; height: number }, devicePixelRatio = window.devicePixelRatio || 1) {
-  const preferred = Math.min(2, Math.max(1, devicePixelRatio));
+  const preferred = Math.max(2, devicePixelRatio, PDF_EXPORT_SLIDE_WIDTH / Math.max(1, size.width));
   const pixels = Math.max(1, size.width * size.height);
   return Math.min(preferred, Math.sqrt(4_000_000 / pixels));
+}
+
+export function createPdfExportWrapper(sourceWrapper: HTMLElement) {
+  const sourceRect = sourceWrapper.getBoundingClientRect();
+  const exportWrapper = sourceWrapper.cloneNode(true) as HTMLElement;
+  exportWrapper.dataset.pdfExportSlide = "true";
+  exportWrapper.style.position = "fixed";
+  exportWrapper.style.left = "-10000px";
+  exportWrapper.style.top = "0";
+  exportWrapper.style.width = `${sourceRect.width}px`;
+  exportWrapper.style.height = `${sourceRect.height}px`;
+  exportWrapper.style.margin = "0";
+  exportWrapper.style.borderRadius = "0";
+  exportWrapper.style.boxShadow = "none";
+  exportWrapper.style.overflow = "hidden";
+  exportWrapper.style.pointerEvents = "none";
+  exportWrapper.style.zIndex = "-1";
+
+  const slide = exportWrapper.querySelector<HTMLElement>(".preview-slide");
+  if (slide) {
+    slide.style.width = "100%";
+    slide.style.height = "100%";
+    slide.style.borderRadius = "0";
+    slide.style.boxShadow = "none";
+  }
+  for (const textBox of exportWrapper.querySelectorAll<HTMLElement>(".slide-text-box-inner")) {
+    textBox.style.boxShadow = "none";
+  }
+  for (const textContent of exportWrapper.querySelectorAll<HTMLElement>(".slide-text-content")) {
+    const fittedScale = Number.parseFloat(textContent.style.getPropertyValue("--auto-fit-scale")) || 1;
+    textContent.style.setProperty("--auto-fit-scale", String(Math.max(0.58, fittedScale * 0.96)));
+    textContent.style.paddingBottom = "0.25em";
+  }
+  return exportWrapper;
 }
 
 async function waitForSlideAssets(slide: HTMLElement) {
@@ -52,36 +95,35 @@ async function waitForSlideAssets(slide: HTMLElement) {
   }));
 }
 
-function downloadPdf(pdf: jsPDF, blob: Blob, filename: string) {
-  if (typeof URL.createObjectURL !== "function") {
-    pdf.save(filename);
-    return;
-  }
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.rel = "noopener";
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-}
-
 export async function exportSlidesToPDF(selector: string, filename: string) {
   const slides = document.querySelector(selector)?.querySelectorAll<HTMLElement>(".preview-slide-wrapper");
   if (!slides?.length) throw new Error("没有可导出的课件页面");
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [297, 167.0625] });
   for (let index = 0; index < slides.length; index += 1) {
-    const slide = slides[index];
-    await waitForSlideAssets(slide);
-    const canvas = await html2canvas(slide, { scale: pdfCaptureScale(slide.getBoundingClientRect()), useCORS: true, allowTaint: false, imageTimeout: 15_000, backgroundColor: "#ffffff", logging: false, onclone: applyPdfColorCompatibility });
-    if (index > 0) pdf.addPage([297, 167.0625], "landscape");
-    pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 297, 167.0625, undefined, "FAST");
-    canvas.width = 0;
-    canvas.height = 0;
+    const sourceRect = slides[index].getBoundingClientRect();
+    const exportSlide = createPdfExportWrapper(slides[index]);
+    document.body.append(exportSlide);
+    try {
+      await waitForSlideAssets(exportSlide);
+      const canvas = await html2canvas(exportSlide, {
+        scale: pdfCaptureScale(sourceRect),
+        useCORS: true,
+        allowTaint: false,
+        imageTimeout: 15_000,
+        backgroundColor: "#ffffff",
+        logging: false,
+        onclone: applyPdfColorCompatibility,
+      });
+      if (index > 0) pdf.addPage([297, 167.0625], "landscape");
+      const imageData = canvas.toDataURL("image/png");
+      pdf.addImage(imageData, "PNG", 0, 0, 297, 167.0625, undefined, "FAST");
+      canvas.width = 0;
+      canvas.height = 0;
+    } finally {
+      exportSlide.remove();
+    }
   }
   const blob = pdf.output("blob");
-  downloadPdf(pdf, blob, filename);
+  pdf.save(filename);
   return blob;
 }
