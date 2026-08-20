@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 const { addImage, addPage, output, save, html2canvas } = vi.hoisted(() => ({
   addImage: vi.fn(),
@@ -23,6 +25,11 @@ describe("PDF export", () => {
     applyPdfColorCompatibility(document);
     expect(document.documentElement.style.getPropertyValue("--primary")).toMatch(/^rgb\(/);
     expect(document.documentElement.style.getPropertyValue("--shadow")).not.toContain("oklch");
+  });
+
+  test("global styles do not contain color functions unsupported by html2canvas", () => {
+    const globalStyles = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8");
+    expect(globalStyles).not.toMatch(/\b(?:oklch|oklab|lab|lch|color)\s*\(/i);
   });
 
   test("limits capture pixels on small-memory device layouts", () => {
