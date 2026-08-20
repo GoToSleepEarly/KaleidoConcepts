@@ -190,6 +190,59 @@ Default account:
 - session is saved to `sessionStorage` or `localStorage` depending on remember-me
 - logout clears both stores and redirects to `/login`
 
+## 客户端异常恢复与诊断
+
+生产环境必须允许无法连接调试设备的用户自行恢复，并让管理员通过错误编号定位原始异常。
+
+### 捕获范围
+
+- 根目录 `instrumentation-client.ts` 在应用交互前注册监听。
+- 捕获浏览器运行时异常、未处理 Promise 异常，以及 `script` / `link` 等资源加载失败。
+- `app/error.tsx` 捕获路由树客户端异常；`app/global-error.tsx` 兜底根布局异常。
+- 同一个异常可能同时由浏览器监听器和 React 错误边界记录；保留两条记录，避免过早去重丢失资源或组件上下文。
+
+### 上报契约
+
+客户端调用 `POST /api/client-errors`，请求包含：
+
+- 客户端生成的 `reportId`，格式为 `CE-YYYYMMDDTHHMMSS-xxxxxx`
+- 异常类型、消息、堆栈、Next.js digest、当前 pathname
+- 加载失败的资源 URL（如有；查询参数在客户端移除）
+- User-Agent、视口、联网状态和发生时间
+- `isSecureContext`、`crypto.randomUUID` 可用性
+- `sessionStorage` / `localStorage` 读写探测结果及异常名称
+
+隐私与失败边界：
+
+- 不采集表单内容、密码、Cookie、Storage 实际值或页面查询参数。
+- 服务端最大接受 32 KiB，请求字段有长度与类型校验。
+- 客户端优先使用 `sendBeacon`，失败后使用 `keepalive fetch`；上报失败不得覆盖原始异常。
+- 服务端以 `[CLIENT_ERROR]` 前缀写入进程标准错误日志，返回 HTTP 202 和原 `reportId`。
+- 若网络本身不可用，上报可能失败；错误编号仍显示给用户，但日志中可能不存在该编号。
+
+管理员通过以下命令查看生产日志，并使用错误编号筛选：
+
+```bash
+pm2 logs pbl-studio-v2 --lines 300
+```
+
+### 用户恢复
+
+错误页只展示可执行信息，不展示内部异常：
+
+1. `重新加载页面`：给当前 URL 添加一次性 `__retry` 参数并重新请求页面。
+2. `清除登录状态并重试`：仅删除 `kaleido.mock.session`，然后返回登录页；Storage 本身不可访问时忽略清理异常并继续跳转。
+3. `复制错误编号`：优先使用 Clipboard API，在 HTTP 等不可用环境下回退到选择复制。
+
+清除操作不修改课程、人物、图片或数据库业务状态，只会要求用户重新登录。
+
+### 实现状态
+
+- 前端早期捕获、React 错误边界、恢复页和复制错误编号：已实现。
+- `POST /api/client-errors` 与 PM2 结构化日志：已实现。
+- 验证：`pnpm test`（63 个文件 / 498 项测试）、`pnpm exec tsc --noEmit`、`pnpm lint` 与 `pnpm build` 均通过。
+- 提交：未创建。
+
 ## App Shell
 
 The authenticated app shell uses a fixed left sidebar and a top header.
