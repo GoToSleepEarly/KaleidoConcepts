@@ -1,77 +1,53 @@
-# 重构版并行部署手册
+# 重构版同机部署手册
 
-## 部署目标
+## 部署边界
 
-重构版作为独立实例运行，不覆盖旧程序。两套程序必须使用不同的代码目录、PostgreSQL 数据库、图片目录、PM2 进程名、端口和域名。新实例稳定后再单独安排旧实例下线。
+重构版与旧程序运行在同一台 2 GiB 腾讯云服务器上。两套程序共享操作系统，但不得共享运行用户、代码目录、数据库、图片目录、PM2 daemon、端口或域名。
 
-| 资源 | 旧程序 | 重构版建议值 |
+| 资源 | 旧程序 | 重构版固定值 |
 | --- | --- | --- |
-| 代码目录 | 保持现状 | `/opt/pbl-studio-v2` |
+| Linux 用户 | `ubuntu` | `pblv2` |
+| 代码入口 | 保持现状 | 首次为 `/opt/pbl-studio-v2`，更新后为 `/data/pbl-studio-v2/current` |
+| 发布目录 | 不使用 | `/data/pbl-studio-v2/releases` |
 | 数据库 | 保持现状 | `pbl_studio_v2` |
 | 数据库用户 | 保持现状 | `pbl_v2_app` |
 | 图片目录 | 保持现状 | `/data/pbl-studio-v2/images` |
 | 备份目录 | 保持现状 | `/data/backups/pbl-studio-v2` |
-| PM2 进程 | 保持现状 | `pbl-studio-v2` |
-| 本机端口 | 保持现状 | `3100` |
-| 域名 | 保持现状 | 独立子域名，例如 `v2.example.com` |
+| PM2 应用 | 保持现状 | `pbl-studio-v2` |
+| PM2 用户 | `ubuntu` | `pblv2` |
+| 本机端口 | 保持现状 | `127.0.0.1:3100` |
 | 环境文件 | 保持现状 | `/etc/pbl-studio-v2.env` |
 
-不要把重构版挂到旧程序数据库的另一个 schema。使用独立数据库才能让 migration、回滚和后续下线互不影响。
+禁止在旧程序目录执行 `git pull master`。旧版代码固定在 `v1.0.0-pre-refactor-final`，重构版从 `master` 发布。
 
-## 一、部署前盘点旧实例
+## 主机资源保护
 
-先记录旧实例资源，后续命令不得复用这些值：
+服务器只有 2 GiB 内存，必须启用 2 GiB Swap：
 
 ```bash
+free -h
+sudo swapon --show
+```
+
+旧程序必须由 `ubuntu` 用户的 `pm2-ubuntu.service` 开机恢复：
+
+```bash
+sudo systemctl is-enabled pm2-ubuntu
 pm2 ls
-sudo nginx -T
-sudo -u postgres psql -c '\l'
-sudo ss -lntp
 ```
 
-旧程序继续运行，不停止、不重启，也不修改其 Nginx 配置。
+发布任务通过 systemd 固定限制为半个 CPU、768 MiB 内存软阈值、1200 MiB 硬上限和最低 I/O 调度优先级。不要在服务器直接运行 `pnpm install`、`pnpm build` 或 `pnpm deploy:prod`。
 
-## 二、创建新数据库和持久化目录
+## 环境变量
 
-数据库密码示例只作占位，执行时换成强密码：
+`/etc/pbl-studio-v2.env` 必须由 `pblv2` 读取，权限为 `600`：
 
 ```bash
-sudo -u postgres psql <<'SQL'
-CREATE ROLE pbl_v2_app LOGIN PASSWORD 'replace-with-database-password';
-CREATE DATABASE pbl_studio_v2 OWNER pbl_v2_app ENCODING 'UTF8';
-SQL
-
-sudo mkdir -p /opt/pbl-studio-v2
-sudo mkdir -p /data/pbl-studio-v2/images
-sudo mkdir -p /data/backups/pbl-studio-v2
-sudo chown -R "$USER":"$USER" /opt/pbl-studio-v2 /data/pbl-studio-v2 /data/backups/pbl-studio-v2
+sudo chown pblv2:pblv2 /etc/pbl-studio-v2.env
+sudo chmod 600 /etc/pbl-studio-v2.env
 ```
 
-代码重新部署不会删除 `/data/pbl-studio-v2/images`，人物与课程图片必须一直保存在这里。
-
-## 三、拉取 master
-
-```bash
-git clone --branch master git@github.com:GoToSleepEarly/KaleidoConcepts.git /opt/pbl-studio-v2
-cd /opt/pbl-studio-v2
-corepack enable
-corepack prepare pnpm@11.7.0 --activate
-```
-
-服务器需要 Node.js 22 或更高版本、PostgreSQL 客户端、Git、tar、pnpm 和 PM2。
-
-## 四、配置独立环境变量
-
-创建 `/etc/pbl-studio-v2.env` 并设置为仅部署用户可读：
-
-```bash
-sudo cp /opt/pbl-studio-v2/.env.example /etc/pbl-studio-v2.env
-sudo chown "$USER":"$USER" /etc/pbl-studio-v2.env
-chmod 600 /etc/pbl-studio-v2.env
-vi /etc/pbl-studio-v2.env
-```
-
-必须逐项填写：
+关键固定值：
 
 ```dotenv
 NODE_ENV="production"
@@ -79,108 +55,120 @@ HOSTNAME="127.0.0.1"
 PORT="3100"
 APP_NAME="pbl-studio-v2"
 BRANCH="master"
+DEPLOYMENT_TARGET="shared-host"
 
-DATABASE_URL="postgresql://pbl_v2_app:replace-with-database-password@localhost:5432/pbl_studio_v2?schema=public"
-DATABASE_URL_FOR_PG_DUMP="postgresql://pbl_v2_app:replace-with-database-password@localhost:5432/pbl_studio_v2"
+DATABASE_URL="postgresql://pbl_v2_app:数据库密码@127.0.0.1:5432/pbl_studio_v2?schema=public"
+DATABASE_URL_FOR_PG_DUMP="postgresql://pbl_v2_app:数据库密码@127.0.0.1:5432/pbl_studio_v2"
 STORAGE_DIR="/data/pbl-studio-v2/images"
 BACKUP_DIR="/data/backups/pbl-studio-v2"
-SEED_ADMIN_PASSWORD="replace-with-a-strong-password"
-
-QUICKROUTER_TEXT_API_KEY="replace-with-quickrouter-text-api-key"
-QUICKROUTER_IMAGE_API_KEY="replace-with-quickrouter-image-api-key"
-QUICKROUTER_GPT_TEXT_MODEL="gpt-5.6-sol"
-QUICKROUTER_RESEARCH_MODEL="gpt-5.6-sol"
-QUICKROUTER_IMAGE_MODEL="gpt-image-2"
-
-DEEPSEEK_API_KEY="replace-with-deepseek-api-key"
-DEEPSEEK_MODEL="deepseek-chat"
-DEEPSEEK_BASE_URL="https://api.deepseek.com"
-
-CRAZYROUTER_API_KEY="replace-with-crazyrouter-api-key"
-CRAZYROUTER_GPT_TEXT_MODEL="gpt-5.6-sol"
-CRAZYROUTER_RESEARCH_MODEL="gpt-5.6-sol"
-CRAZYROUTER_IMAGE_MODEL="gpt-image-2"
-
-TEXT_GENERATION_TIMEOUT_MS="600000"
-COURSE_CONTENT_GENERATION_TIMEOUT_MS="600000"
-IMAGE_GENERATION_TIMEOUT_MS="600000"
 ```
 
-账号预置为 `teacher`。`SEED_ADMIN_PASSWORD` 仅在新库首次创建账号时使用，后续部署不会覆盖数据库里的现有密码。账号默认选择 Crazyrouter，因此至少必须配置 `CRAZYROUTER_API_KEY`；如果界面允许切换 QuickRouter，也必须同时配置两组 QuickRouter key。DeepSeek 始终使用官方直连。
+数据库密码包含 URL 保留字符时必须编码。DeepSeek 使用官方直连；QuickRouter 与 Crazyrouter 使用各自配置的 key。生产环境不得配置 `HTTP_PROXY` 或 `HTTPS_PROXY`。
 
-## 五、一次性部署
+`DEPLOYMENT_TARGET="shared-host"` 会让旧的原地部署脚本主动拒绝执行，防止误用 `pnpm deploy:prod` 覆盖正在运行的 `.next`。专用独立主机只有显式配置 `dedicated-host` 才能使用旧脚本。
 
-```bash
-cd /opt/pbl-studio-v2
-ENV_FILE=/etc/pbl-studio-v2.env pnpm deploy:prod
-pm2 save
-```
+## 首次部署验证
 
-脚本按以下顺序执行：拉取 `master`、备份新实例数据库和图片目录、安装锁定依赖、生成 Prisma Client、执行当前 baseline migration、幂等导入账号和有效预设、构建、启动或重启 `pbl-studio-v2`。
+首次 baseline migration 与 seed 完成后的固定数据为：
 
-首次导入后的预期数据：
-
-- `Course` 为 `0`，不会携带本地测试课程。
-- `User` 为 `1`。
-- `Person` 为 `0`，人物档案由新环境自行创建。
-- `PersonVisualAsset` 为 `0`，不携带开发环境人物图片。
-- `PresetOption` 为 `114`，只包含当前有效预设。
+- `Course = 0`
+- `User = 1`
+- `Person = 0`
+- `PersonVisualAsset = 0`
+- `PresetOption = 114`
 
 验证：
 
 ```bash
-pm2 describe pbl-studio-v2
+cd /tmp
+sudo -u pblv2 env HOME=/home/pblv2 /bin/bash --noprofile --norc -c '
+  set -a
+  . /etc/pbl-studio-v2.env
+  set +a
+  psql "$DATABASE_URL_FOR_PG_DUMP" -c "
+    SELECT
+      (SELECT COUNT(*) FROM \"Course\") AS courses,
+      (SELECT COUNT(*) FROM \"User\") AS users,
+      (SELECT COUNT(*) FROM \"Person\") AS people,
+      (SELECT COUNT(*) FROM \"PersonVisualAsset\") AS visuals,
+      (SELECT COUNT(*) FROM \"PresetOption\") AS presets;
+  "
+'
+```
+
+直接执行 `sudo -iu pblv2 bash -lc` 会产生双层登录 Shell，可能让变量在加载环境文件前被展开为空；生产命令统一使用上面的单层 Bash 形式。
+
+## 一次性安装安全更新服务
+
+以下操作只执行一次。
+
+1. 创建发布目录并建立初始 `current` 链接：
+
+```bash
+sudo mkdir -p /data/pbl-studio-v2/releases /data/pbl-studio-v2/deploy
+sudo chown -R pblv2:pblv2 /data/pbl-studio-v2
+
+sudo -u pblv2 ln -s /opt/pbl-studio-v2 /data/pbl-studio-v2/current
+```
+
+如果 `current` 已存在，先用 `readlink -f /data/pbl-studio-v2/current` 确认目标，不要覆盖普通目录。
+
+2. 安装部署 service：
+
+```bash
+sudo cp /opt/pbl-studio-v2/deploy/pbl-v2-deploy.service /etc/systemd/system/pbl-v2-deploy.service
+sudo systemctl daemon-reload
+sudo systemctl cat pbl-v2-deploy.service
+```
+
+该 service 只允许手动启动，不提供 `[Install]` 段，因此不能被设成开机自动发布。
+
+3. 配置重构版 PM2 开机恢复：
+
+```bash
+sudo /usr/bin/pm2 startup systemd -u pblv2 --hp /home/pblv2
+sudo -u pblv2 env HOME=/home/pblv2 pm2 save
+sudo systemctl is-enabled pm2-pblv2
+```
+
+## 后续更新
+
+每次发布只执行：
+
+```bash
+sudo systemctl reset-failed pbl-v2-deploy.service
+sudo systemctl start --no-block pbl-v2-deploy.service
+sudo journalctl -fu pbl-v2-deploy.service
+```
+
+日志显示 `Deployment completed.` 后按 `Ctrl+C`，再验证：
+
+```bash
+sudo systemctl status pbl-v2-deploy.service --no-pager -l
+readlink -f /data/pbl-studio-v2/current
+sudo -u pblv2 env HOME=/home/pblv2 pm2 ls
 curl -I http://127.0.0.1:3100/login
-
-set -a
-. /etc/pbl-studio-v2.env
-set +a
-psql "$DATABASE_URL_FOR_PG_DUMP" -c 'SELECT COUNT(*) AS courses FROM "Course";'
-psql "$DATABASE_URL_FOR_PG_DUMP" -c 'SELECT COUNT(*) AS people FROM "Person";'
-psql "$DATABASE_URL_FOR_PG_DUMP" -c 'SELECT COUNT(*) AS visuals FROM "PersonVisualAsset";'
-psql "$DATABASE_URL_FOR_PG_DUMP" -c 'SELECT COUNT(*) AS presets FROM "PresetOption";'
+pm2 ls
 ```
 
-## 六、配置独立域名
+最后一条直接执行的 `pm2 ls` 属于 `ubuntu`，用于确认旧程序仍然在线。
 
-不要直接替换旧域名 upstream。新增一个 Nginx server：
+安全更新脚本执行顺序：
 
-```nginx
-server {
-    listen 80;
-    server_name v2.example.com;
+1. 验证应用名、端口、数据库名和持久化目录，防止误连旧资源。
+2. 在 `/data/pbl-studio-v2/releases/.staging.*` 拉取并低并发安装。
+3. 在 systemd 资源上限内生成 Prisma Client 和构建 Next.js。
+4. 构建成功后备份新数据库和图片。
+5. 从已构建的新 release 执行 `prisma migrate deploy` 和幂等 seed。
+6. 让 `pblv2` 的 PM2 切换至新 release。
+7. 本机 `/login` 健康检查成功后原子更新 `current` 链接并保存 PM2。
 
-    client_max_body_size 20m;
+构建、备份或 migration 失败时，当前运行版本不会停止。PM2 切换或健康检查失败时，脚本会恢复上一个代码版本。数据库 migration 不做自动逆向回滚，因此未来 schema 变更必须保持前后版本兼容；数据库 SQL 和图片压缩包会保留在备份目录供人工恢复。
 
-    location / {
-        proxy_pass http://127.0.0.1:3100;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 900s;
-        proxy_send_timeout 900s;
-    }
-}
-```
+脚本不会自动删除历史 release，避免误删当前版本或唯一回滚版本。磁盘剩余空间不足 5 GiB 时会拒绝发布，历史清理由人工核对 `current` 和 PM2 cwd 后单独执行。
 
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
-sudo certbot --nginx -d v2.example.com
-```
+## 公网入口
 
-长文本和图片请求可能持续数分钟，因此反向代理读写超时设为 15 分钟。使用独立子域名是因为当前 Next.js 应用没有配置 `basePath`，不能无损挂载到旧域名的 `/v2` 子路径。
+新版只监听 `127.0.0.1:3100`，腾讯云安全组不得开放 `3100` 或 `5432`。先通过 SSH 隧道完成登录、文本生成、图片生成、图片编辑和 PDF 验收，再为独立子域名增加反向代理。旧域名和旧 upstream 不在新版部署脚本作用域内。
 
-## 七、失败与回滚
-
-新域名未替换旧域名，因此重构版失败不会影响旧程序。停止新实例即可：
-
-```bash
-pm2 stop pbl-studio-v2
-```
-
-需要回滚新实例时，先停止新 PM2 进程，再把 `/opt/pbl-studio-v2` 切回指定提交，并恢复本次部署输出的数据库 SQL 和图片压缩包。不要把新数据库备份恢复到旧数据库，也不要让两套程序共用图片目录。
-
-旧程序下线必须作为后续独立操作：先确认新域名、课程生成、人物图片、AI 中转站和 PDF 导出全部验收通过，再迁移域名流量；至少保留旧数据库和图片备份一个完整回滚周期。
+当前 Next.js 没有配置 `basePath`，不能挂载到旧域名的 `/v2` 子路径；必须使用独立子域名。

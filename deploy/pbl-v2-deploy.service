@@ -1,0 +1,22 @@
+[Unit]
+Description=PBL Studio V2 resource-limited deployment
+Wants=network-online.target
+After=network-online.target postgresql.service pm2-pblv2.service
+
+[Service]
+Type=oneshot
+User=pblv2
+Group=pblv2
+Environment=HOME=/home/pblv2
+EnvironmentFile=/etc/pbl-studio-v2.env
+WorkingDirectory=/tmp
+ExecStart=/data/pbl-studio-v2/current/scripts/deploy-shared-host.sh
+CPUQuota=50%
+MemoryHigh=768M
+MemoryMax=1200M
+Nice=19
+IOSchedulingClass=idle
+IOSchedulingPriority=7
+UMask=0027
+TimeoutStartSec=infinity
+KillMode=control-group

@@ -22,6 +22,12 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
+if [[ "${DEPLOYMENT_TARGET:-}" != "dedicated-host" ]]; then
+  echo "In-place deployment is disabled unless DEPLOYMENT_TARGET=dedicated-host."
+  echo "For the shared 2 GiB host, use pbl-v2-deploy.service instead."
+  exit 1
+fi
+
 for cmd in curl git pnpm tar pg_dump pm2; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "Missing required command: $cmd"
