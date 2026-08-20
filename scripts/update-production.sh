@@ -28,8 +28,15 @@ SWAP_KB="$(awk '/^SwapTotal:/ { print $2 }' /proc/meminfo)"
 [[ "$SWAP_KB" =~ ^[0-9]+$ ]] || fail "could not determine Swap size"
 (( SWAP_KB >= 1024 * 1024 )) || fail "at least 1 GiB Swap must be enabled"
 
+for old_app_name in pbl-studio ielts-writing-pro; do
+  old_app_pid="$(runuser -u ubuntu -- env HOME=/home/ubuntu pm2 pid "$old_app_name" | tail -n 1)"
+  [[ "$old_app_pid" =~ ^[1-9][0-9]*$ ]] || fail "old PM2 application is not online: $old_app_name"
+done
+
 if systemctl list-unit-files pm2-ubuntu.service --no-legend 2>/dev/null | grep -q '^pm2-ubuntu.service'; then
-  systemctl is-active --quiet pm2-ubuntu.service || fail "old PM2 service is not active: pm2-ubuntu.service"
+  if ! systemctl is-active --quiet pm2-ubuntu.service; then
+    echo "Warning: old PM2 applications are online, but pm2-ubuntu.service is not active." >&2
+  fi
 fi
 
 mkdir -p "$APP_ROOT/releases" "$APP_ROOT/deploy"

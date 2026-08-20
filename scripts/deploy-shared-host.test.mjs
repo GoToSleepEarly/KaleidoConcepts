@@ -52,7 +52,7 @@ describe("共享主机安全发布", () => {
     const updateScript = await fs.readFile(updateScriptPath, "utf8");
 
     const swapCheck = updateScript.indexOf("SwapTotal:");
-    const oldServiceCheck = updateScript.indexOf("pm2-ubuntu.service");
+    const oldServiceCheck = updateScript.indexOf("for old_app_name in pbl-studio ielts-writing-pro");
     const installService = updateScript.indexOf('install -m 0644 "$UNIT_SOURCE" "$SERVICE_FILE"');
     const startService = updateScript.indexOf('systemctl start "$SERVICE_NAME"');
     const healthCheck = updateScript.indexOf("http://127.0.0.1:3100/login");
@@ -62,6 +62,8 @@ describe("共享主机安全发布", () => {
     expect(oldServiceCheck).toBeLessThan(installService);
     expect(installService).toBeLessThan(startService);
     expect(startService).toBeLessThan(healthCheck);
+    expect(updateScript).toContain("Warning: old PM2 applications are online");
+    expect(updateScript).not.toContain('fail "old PM2 service is not active');
   });
 
   test("项目根目录 deploy.sh 自动提权并转交一键更新器", async () => {
