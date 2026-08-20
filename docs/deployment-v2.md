@@ -133,15 +133,15 @@ sudo systemctl is-enabled pm2-pblv2
 
 ## 后续更新
 
-每次发布只执行：
+每次发布只执行一条命令：
 
 ```bash
-sudo systemctl reset-failed pbl-v2-deploy.service
-sudo systemctl start --no-block pbl-v2-deploy.service
-sudo journalctl -fu pbl-v2-deploy.service
+sudo /data/pbl-studio-v2/current/scripts/update-production.sh
 ```
 
-日志显示 `Deployment completed.` 后按 `Ctrl+C`，再验证：
+该入口会自动检查 Swap 和旧 PM2、同步最新版 systemd service、阻塞等待资源受限的发布任务完成，并在失败时打印最近 200 行日志。成功后会显示当前 release 和新版 PM2 状态，不需要再手工执行 `reset-failed`、`start` 或 `journalctl`。
+
+需要单独复核时再执行：
 
 ```bash
 sudo systemctl status pbl-v2-deploy.service --no-pager -l
