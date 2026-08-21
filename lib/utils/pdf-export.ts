@@ -6,6 +6,18 @@ import jsPDF from "jspdf";
 export const PDF_EXPORT_SLIDE_WIDTH = 1600;
 export const PDF_EXPORT_SLIDE_HEIGHT = 900;
 
+export type PdfExportProgress = {
+  phase: "preparing" | "rendering" | "assembling" | "complete";
+  completedPages: number;
+  totalPages: number;
+  currentPage?: number;
+};
+
+export type PdfExportOptions = {
+  signal?: AbortSignal;
+  onProgress?: (progress: PdfExportProgress) => void;
+};
+
 const pdfColorTokens: Record<string, string> = {
   "--background": "rgb(250 250 251)", "--foreground": "rgb(38 39 48)",
   "--card": "rgb(255 255 255)", "--card-foreground": "rgb(38 39 48)",
@@ -41,8 +53,11 @@ export function applyPdfColorCompatibility(targetDocument: Document) {
   targetDocument.head.append(style);
 }
 
-export function pdfCaptureScale(size: { width: number; height: number }, devicePixelRatio = window.devicePixelRatio || 1) {
-  const preferred = Math.max(2, devicePixelRatio, PDF_EXPORT_SLIDE_WIDTH / Math.max(1, size.width));
+export function pdfCaptureScale(size: { width: number; height: number }) {
+  const preferred = Math.min(
+    PDF_EXPORT_SLIDE_WIDTH / Math.max(1, size.width),
+    PDF_EXPORT_SLIDE_HEIGHT / Math.max(1, size.height),
+  );
   const pixels = Math.max(1, size.width * size.height);
   return Math.min(preferred, Math.sqrt(4_000_000 / pixels));
 }
@@ -81,9 +96,15 @@ export function createPdfExportWrapper(sourceWrapper: HTMLElement) {
   return exportWrapper;
 }
 
-async function waitForSlideAssets(slide: HTMLElement) {
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw new DOMException("PDF 导出已取消", "AbortError");
+}
+
+async function waitForSlideAssets(slides: HTMLElement[], signal?: AbortSignal) {
   await document.fonts?.ready;
-  await Promise.all([...slide.querySelectorAll("img")].map(async (image) => {
+  throwIfAborted(signal);
+  const images = slides.flatMap((slide) => [...slide.querySelectorAll("img")]);
+  await Promise.all(images.map(async (image) => {
     if (image.complete) return;
     await Promise.race([
       new Promise<void>((resolve) => {
@@ -93,18 +114,46 @@ async function waitForSlideAssets(slide: HTMLElement) {
       new Promise<void>((resolve) => window.setTimeout(resolve, 8_000)),
     ]);
   }));
+  throwIfAborted(signal);
 }
 
-export async function exportSlidesToPDF(selector: string, filename: string) {
-  const slides = document.querySelector(selector)?.querySelectorAll<HTMLElement>(".preview-slide-wrapper");
-  if (!slides?.length) throw new Error("没有可导出的课件页面");
+function yieldToBrowser() {
+  return new Promise<void>((resolve) => {
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
+    else window.setTimeout(resolve, 0);
+  });
+}
+
+async function canvasToJpeg(canvas: HTMLCanvasElement) {
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((value) => value ? resolve(value) : reject(new Error("PDF 页面压缩失败")), "image/jpeg", 0.92);
+  });
+  const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error ?? new Error("PDF 页面读取失败"));
+    reader.readAsArrayBuffer(blob);
+  });
+  return new Uint8Array(buffer);
+}
+
+export async function exportSlidesToPDF(selector: string, filename: string, options: PdfExportOptions = {}) {
+  const slides = [...(document.querySelector(selector)?.querySelectorAll<HTMLElement>(".preview-slide-wrapper") ?? [])];
+  if (!slides.length) throw new Error("没有可导出的课件页面");
+  const totalPages = slides.length;
+  options.onProgress?.({ phase: "preparing", completedPages: 0, totalPages });
+  throwIfAborted(options.signal);
+  await yieldToBrowser();
+  await waitForSlideAssets(slides, options.signal);
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [297, 167.0625] });
   for (let index = 0; index < slides.length; index += 1) {
+    throwIfAborted(options.signal);
+    options.onProgress?.({ phase: "rendering", currentPage: index + 1, completedPages: index, totalPages });
+    await yieldToBrowser();
     const sourceRect = slides[index].getBoundingClientRect();
     const exportSlide = createPdfExportWrapper(slides[index]);
     document.body.append(exportSlide);
     try {
-      await waitForSlideAssets(exportSlide);
       const canvas = await html2canvas(exportSlide, {
         scale: pdfCaptureScale(sourceRect),
         useCORS: true,
@@ -114,16 +163,26 @@ export async function exportSlidesToPDF(selector: string, filename: string) {
         logging: false,
         onclone: applyPdfColorCompatibility,
       });
-      if (index > 0) pdf.addPage([297, 167.0625], "landscape");
-      const imageData = canvas.toDataURL("image/png");
-      pdf.addImage(imageData, "PNG", 0, 0, 297, 167.0625, undefined, "FAST");
-      canvas.width = 0;
-      canvas.height = 0;
+      try {
+        throwIfAborted(options.signal);
+        const imageData = await canvasToJpeg(canvas);
+        throwIfAborted(options.signal);
+        if (index > 0) pdf.addPage([297, 167.0625], "landscape");
+        pdf.addImage(imageData, "JPEG", 0, 0, 297, 167.0625, undefined, "FAST");
+      } finally {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
     } finally {
       exportSlide.remove();
     }
+    options.onProgress?.({ phase: "rendering", currentPage: index + 1, completedPages: index + 1, totalPages });
   }
-  const blob = pdf.output("blob");
+  throwIfAborted(options.signal);
+  options.onProgress?.({ phase: "assembling", completedPages: totalPages, totalPages });
+  await yieldToBrowser();
+  throwIfAborted(options.signal);
   pdf.save(filename);
-  return blob;
+  options.onProgress?.({ phase: "complete", completedPages: totalPages, totalPages });
+  return { pageCount: totalPages };
 }

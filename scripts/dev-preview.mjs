@@ -8,6 +8,7 @@ import pg from "pg";
 import { cleanNextCache } from "./next-cache.mjs";
 import { createGracefulChildStopper } from "./child-process-lifecycle.mjs";
 import { findAvailableDatabasePort, waitForDatabaseChildReady } from "./dev-database-lifecycle.mjs";
+import { recoverLocalMigrationHistory } from "./local-migration-recovery.mjs";
 
 const { Client } = pg;
 
@@ -151,6 +152,11 @@ async function main() {
 
   const runtimeOptions = { env: { DATABASE_URL: database.url } };
   await run("pnpm", ["prisma:generate"], runtimeOptions);
+  const recovery = await recoverLocalMigrationHistory(database.url, async (migrationName) => {
+    console.warn(`[dev-preview] verified legacy local schema; resolving squashed baseline ${migrationName}`);
+    await run("pnpm", ["exec", "prisma", "migrate", "resolve", "--applied", migrationName], runtimeOptions);
+  });
+  if (recovery.action === "resolve") console.log("[dev-preview] local migration history reconciled; existing data was preserved");
   await run("pnpm", ["prisma:deploy"], runtimeOptions);
   await run("pnpm", ["prisma:seed"], runtimeOptions);
   console.log("[dev-preview] cleaning stale Next.js build cache");
