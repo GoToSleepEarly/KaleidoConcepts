@@ -193,8 +193,8 @@ describe("CourseAudienceForm basic information UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "30 分钟" }));
     fireEvent.click(screen.getByRole("button", { name: "下一步：故事大纲" }));
 
-    const dialogHeading = await screen.findByRole("heading", { name: "本次修改可能影响后续内容" });
-    expect(within(dialogHeading.closest("dialog")!).getByText("故事大纲")).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "本次修改可能影响后续内容" });
+    expect(within(dialog).getByText("故事大纲")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "保留后续成果，暂不应用" }));
     await waitFor(() => expect(screen.queryByRole("heading", { name: "本次修改可能影响后续内容" })).not.toBeInTheDocument());
     expect(fetchMock.mock.calls.filter((call) => String(call[0]) === "/api/courses/course-1/audience" && (call[1] as RequestInit | undefined)?.method === "PUT")).toHaveLength(1);

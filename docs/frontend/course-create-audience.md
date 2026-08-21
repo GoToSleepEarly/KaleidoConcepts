@@ -332,6 +332,8 @@ type CoursePerson = {
 - 2026-08-13：六个 Step1 模块加入统一浅蓝顶栏；人物选择改为整卡点击，已选卡、选择卡与无形象卡统一年龄/性别标签和居中信息布局；人物选择弹窗改为内容自适应高度。
 - 2026-08-15：Step1 下游影响提示替换为项目内弹窗；影响项按实际已有成果展示，用户可保留旧成果并暂不应用修改，或确认清理后应用修改。
 - 2026-08-20：新建课程首屏不再直接调用仅安全上下文可用的 `crypto.randomUUID()`；创建幂等键改用共享 UUID v4 兼容生成器，HTTP Safari/微信 WebView 可以正常进入 `/courses/new`。实现提交：`55b6739`。
+- 2026-08-21：修复 iPhone / iPad 微信内置浏览器中老师、学生和全课知识点弹窗点击无反应的问题。根因是共享弹窗依赖原生 `<dialog>.showModal()`，iOS 微信 WebView 对该 API 不稳定时会中断弹窗展示；共享 `Dialog` 已改为 React 固定层渲染，不再依赖原生 dialog API，并保留遮罩点击、关闭按钮和 Escape 关闭。
+- 本轮验证：`pnpm exec vitest run components/ui/dialog.test.tsx features/courses/components/course-audience-form.test.tsx features/courses/components/course-teaching-plan-workspace.test.tsx`、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm build` 通过；本地预览使用干净数据库目录 `.local/postgres-preview-dialog` 启动成功并进入 `/courses/new`。
 - 验证：`pnpm test -- --run`、`pnpm lint`、`pnpm build`；本地真实浏览器已完成“登录 → 选择老师和两名学生 → 保存课程 → 进入故事大纲边界页”的端到端验收。
 - 本轮验证：全量 138 项测试通过；`pnpm lint`、`pnpm build` 通过。
 - 实现提交：`ea206d7`。

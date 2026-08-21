@@ -196,7 +196,7 @@ Default account:
 
 ### 捕获范围
 
-- 根目录 `instrumentation-client.ts` 在应用交互前注册监听。
+- 根目录 `instrumentation-client.ts` 在应用交互前注册全局监听，具体逻辑由 `registerClientErrorInstrumentation` 维护。
 - 捕获浏览器运行时异常、未处理 Promise 异常，以及 `script` / `link` 等资源加载失败。
 - `app/error.tsx` 捕获路由树客户端异常；`app/global-error.tsx` 兜底根布局异常。
 - 同一个异常可能同时由浏览器监听器和 React 错误边界记录；保留两条记录，避免过早去重丢失资源或组件上下文。
@@ -241,6 +241,7 @@ pm2 logs pbl-studio-v2 --lines 300
 - 前端早期捕获、React 错误边界、恢复页和复制错误编号：已实现。
 - `POST /api/client-errors` 与 PM2 结构化日志：已实现。
 - 2026-08-20：错误编号 `CE-20260820T124656-wk0q31` 已确认 HTTP 下 Safari/微信 WebView 不提供 `crypto.randomUUID()`；浏览器请求 ID 已统一通过 UUID v4 兼容生成器创建，原生 API 不可用时回退到 `crypto.getRandomValues`，Web Crypto 完全不可用时再回退到随机字节。HTTPS 部署不在本次代码范围。兼容修复提交：`55b6739`。
+- 2026-08-21：全局自动捕获覆盖运行时错误、未处理 Promise 异常和资源加载失败；同一资源错误 30 秒内去重，不新增用户反馈入口或关键交互自检。
 - 验证：`pnpm test`（64 个文件 / 502 项测试）、`pnpm exec tsc --noEmit`、`pnpm lint` 与 `pnpm build` 均通过。
 - 错误诊断提交：`7b421f8`。
 

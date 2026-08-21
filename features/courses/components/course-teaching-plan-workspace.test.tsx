@@ -188,8 +188,7 @@ describe("CourseTeachingPlanWorkspace", () => {
     render(<CourseTeachingPlanWorkspace initialState={state()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "重置教学规划" }));
-    const resetDialog = screen.getByRole("heading", { name: "重置教学规划？" }).closest("dialog")!;
-    expect(resetDialog).toHaveAttribute("open");
+    expect(screen.getByRole("dialog", { name: "重置教学规划？" })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "确认重置" }));
 
@@ -198,7 +197,7 @@ describe("CourseTeachingPlanWorkspace", () => {
       { method: "POST" },
     ));
     await waitFor(() => expect(screen.getByLabelText("第 1 章目标词数")).toHaveValue(120));
-    await waitFor(() => expect(resetDialog).not.toHaveAttribute("open"));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "重置教学规划？" })).not.toBeInTheDocument());
   });
 
   test("deletes and restores optional正文 exercise types", async () => {
