@@ -26,7 +26,7 @@ export const visualCoverConfirmSchema = z.object({
 
 export const visualGenerateSchema = z.discriminatedUnion("scope", [
   z.object({ scope: z.literal("cover") }).strict(),
-  z.object({ scope: z.literal("slot"), slotId: z.string().min(1) }).strict(),
+  z.object({ scope: z.literal("slot"), slotId: z.string().min(1), recoveryMode: z.enum(["auto", "regenerate"]).optional() }).strict(),
   z.object({ scope: z.literal("chapter"), chapterId: z.string().min(1) }).strict(),
   z.object({ scope: z.literal("all") }).strict(),
 ]);

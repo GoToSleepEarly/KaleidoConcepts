@@ -14,6 +14,7 @@ import { buildCleanParagraphText } from "@/lib/domain/course-content";
 import { defaultCharacterVisualIntent, matchCoursePersonForCharacter } from "@/lib/domain/visual-resources";
 import { visualGenerationFingerprint } from "@/lib/domain/visual-resources";
 import { compileCourseImagePrompt, CourseVisualPlanResponseError, createCourseVisualPlanDeps, mergeOriginalizedVisualPlan, parseCourseVisualPlan, type CourseImagePromptCharacter, type CourseVisualPlan, type CourseVisualPlanDeps, type CourseVisualPlanDiagnostics, type CourseVisualPlanScene } from "@/lib/server/ai/course-visual-plan-deps";
+import { CourseImageSourceError } from "@/lib/server/storage/course-images";
 
 export type VisualResourcesDb = Pick<PrismaClient,
   | "course"
@@ -623,11 +624,18 @@ export async function generateCourseVisualPlan(
 }
 
 function recoverableUrl(url: string | null) {
-  return url && !url.startsWith("data:") ? url : null;
+  if (!url || url.startsWith("data:")) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 function imageFailureCode(error: unknown, hasRemoteResult: boolean): CourseImageFailureCode {
   if (error instanceof VisualImageGenerationError) return error.failureCode;
+  if (error instanceof CourseImageSourceError && !error.retryable) return "provider_result_invalid";
   if (hasRemoteResult) return "storage_recoverable";
   const message = error instanceof Error ? error.message : String(error);
   if (/safety|policy|copyright|content moderation|content policy|blocked by|违规|安全策略|版权/i.test(message)) return "policy_blocked";
@@ -755,6 +763,8 @@ async function finishCourseImage(
     const failureCode = imageFailureCode(error, Boolean(remoteUrl));
     const message = failureCode === "storage_recoverable"
       ? storageFailureMessage(error)
+      : failureCode === "provider_result_invalid"
+        ? "图片生成服务返回的地址或图片内容无效，请重新生成图片"
       : error instanceof Error ? error.message : "图片生成失败";
     await db.courseImage.updateMany({
       where: { id: asset.id, leaseToken, status: "generating" },
@@ -872,7 +882,7 @@ async function slotReferenceAssets(db: VisualResourcesDb, courseId: string, char
   return { paths, ids, characters };
 }
 
-export async function generateVisualSlot(db: VisualResourcesDb, courseId: string, slotId: string, idempotencyKey: string, deps: CourseImageGenerationDeps) {
+export async function generateVisualSlot(db: VisualResourcesDb, courseId: string, slotId: string, idempotencyKey: string, deps: CourseImageGenerationDeps, options: { forceRegenerate?: boolean } = {}) {
   const [course, slot, planRecord] = await Promise.all([
     db.course.findUnique({ where: { id: courseId }, select: { visualQuality: true } }),
     db.courseVisualImageSlot.findFirst({ where: { id: slotId, courseId } }),
@@ -895,7 +905,7 @@ export async function generateVisualSlot(db: VisualResourcesDb, courseId: string
     },
     orderBy: { createdAt: "desc" },
   });
-  if (latestAsset?.status === "failed" && latestAsset.failureCode === "storage_recoverable" && recoverableUrl(latestAsset.providerImageUrl)) {
+  if (!options.forceRegenerate && latestAsset?.status === "failed" && latestAsset.failureCode === "storage_recoverable" && recoverableUrl(latestAsset.providerImageUrl)) {
     return finishCourseImage(db, latestAsset, deps, { portrait: Boolean(latestAsset.characterVisualId) });
   }
   const references = await slotReferenceAssets(db, courseId, asStrings(slot.characterIds), plan);

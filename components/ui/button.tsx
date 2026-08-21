@@ -64,6 +64,7 @@ export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
     loading?: boolean;
+    ref?: React.Ref<HTMLButtonElement>;
   };
 
 export function Button({
@@ -74,6 +75,7 @@ export function Button({
   loading = false,
   children,
   disabled,
+  ref,
   ...props
 }: ButtonProps) {
   const isDisabled = disabled || loading;
@@ -82,6 +84,7 @@ export function Button({
     return (
       <Slot
         className={cn(buttonVariants({ variant, size, className }))}
+        ref={ref}
         {...props}
       >
         {children}
@@ -93,6 +96,7 @@ export function Button({
     <button
       className={cn(buttonVariants({ variant, size, className }))}
       disabled={isDisabled}
+      ref={ref}
       {...props}
     >
       {loading ? <SpinnerIcon /> : null}

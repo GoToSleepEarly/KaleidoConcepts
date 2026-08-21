@@ -1,4 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
+
+import { CourseImageSourceError } from "@/lib/server/storage/course-images";
 import { CourseVisualPlanResponseError } from "@/lib/server/ai/course-visual-plan-deps";
 import { adoptLatestPersonVisual, buildCourseImageEditPrompt, generateCourseVisualPlan, generateVisualSlot, getCourseVisualResources, hasUnsyncedCharacterAppearance, recoverStaleCourseImages, refineCourseVisualAsset, saveUploadedCharacterReference, selectCourseVisualAsset, updateCourseVisualSettings, updateCharacterVisualIntent, updateVisualCharacterAppearance } from "./visual-resources";
 
@@ -419,6 +421,104 @@ describe("视觉资源仓储", () => {
         failureReason: "图片已生成，但下载或保存失败：下载远端图片超时",
       }),
     }));
+  });
+
+  test("AI 返回的远端图片永久无效时退出重新保存循环", async () => {
+    const pending = { id: "asset-invalid-remote", courseId: "course-1", slotId: "slot-1", characterVisualId: null, prompt: "", quality: "medium", referenceAssetIds: [], planRevision: 1, status: "pending", providerImageUrl: null, temporarySourcePath: null };
+    const failedUpdate = vi.fn(async () => ({ count: 1 }));
+    const db = {
+      course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
+      courseVisualImageSlot: { findFirst: vi.fn(async () => ({ id: "slot-1", courseId: "course-1", slotType: "visual_cover", paragraphId: null, characterIds: [] })), update: vi.fn() },
+      courseVisualResourcePlan: { findUnique: vi.fn(async () => currentPlan), update: vi.fn() },
+      courseImage: {
+        findFirst: vi.fn(async () => null),
+        findUnique: vi.fn(async () => null),
+        upsert: vi.fn(async ({ create }) => ({ ...pending, ...create })),
+        updateMany: failedUpdate,
+      },
+    };
+
+    await expect(generateVisualSlot(db as never, "course-1", "slot-1", "invalid-remote", {
+      generate: vi.fn(async () => ({ imageUrl: "https://media.example.com/expired.png", quality: "medium" as const })),
+      edit: vi.fn(),
+      persist: vi.fn(async () => { throw new CourseImageSourceError("课程图片下载失败：404", false); }),
+      composeReferences: vi.fn(),
+      removeTemporarySource: vi.fn(),
+    })).rejects.toThrow("图片生成服务返回的地址或图片内容无效，请重新生成图片");
+
+    expect(failedUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        providerImageUrl: "https://media.example.com/expired.png",
+        failureCode: "provider_result_invalid",
+      }),
+    }));
+  });
+
+  test("强制重新生成会跳过不可保存的旧 URL，成功后才切换当前版本", async () => {
+    const failed = {
+      id: "asset-old-failed", courseId: "course-1", slotId: "slot-1", characterVisualId: null, prompt: "old",
+      quality: "medium", referenceAssetIds: [], planRevision: 1, status: "failed", failureCode: "storage_recoverable",
+      providerImageUrl: "https://media.example.com/broken.png", temporarySourcePath: null,
+    };
+    const pending = { ...failed, id: "asset-new", status: "pending", failureCode: null, providerImageUrl: null };
+    const generate = vi.fn(async () => ({ imageUrl: "data:image/png;base64,aGVsbG8=", quality: "medium" as const }));
+    const persist = vi.fn(async () => ({ storagePath: "new.webp", publicUrl: "/new.webp" }));
+    const slotUpdate = vi.fn(async () => ({ slotType: "visual_cover" }));
+    const db = {
+      course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
+      courseVisualImageSlot: { findFirst: vi.fn(async () => ({ id: "slot-1", courseId: "course-1", slotType: "visual_cover", paragraphId: null, characterIds: [] })), update: slotUpdate },
+      courseVisualResourcePlan: { findUnique: vi.fn(async () => currentPlan), update: vi.fn() },
+      courseImage: {
+        findFirst: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(failed),
+        findUnique: vi.fn(async () => ({ ...pending, status: "succeeded", storagePath: "new.webp", publicUrl: "/new.webp" })),
+        upsert: vi.fn(async ({ create }) => ({ ...pending, ...create })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+    };
+
+    await generateVisualSlot(db as never, "course-1", "slot-1", "forced-new-version", {
+      generate,
+      edit: vi.fn(),
+      persist,
+      composeReferences: vi.fn(),
+      removeTemporarySource: vi.fn(),
+    }, { forceRegenerate: true });
+
+    expect(generate).toHaveBeenCalledOnce();
+    expect(persist).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: "data:image/png;base64,aGVsbG8=" }));
+    expect(db.courseImage.upsert).toHaveBeenCalledOnce();
+    expect(slotUpdate).toHaveBeenCalledWith({ where: { id: "slot-1" }, data: { activeImageId: "asset-new" } });
+  });
+
+  test("强制重新生成保存失败时保留原当前版本", async () => {
+    const failed = {
+      id: "asset-old-failed", courseId: "course-1", slotId: "slot-1", characterVisualId: null, prompt: "old",
+      quality: "medium", referenceAssetIds: [], planRevision: 1, status: "failed", failureCode: "storage_recoverable",
+      providerImageUrl: "https://media.example.com/broken.png", temporarySourcePath: null,
+    };
+    const pending = { ...failed, id: "asset-new-failed", status: "pending", failureCode: null, providerImageUrl: null };
+    const slotUpdate = vi.fn();
+    const db = {
+      course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
+      courseVisualImageSlot: { findFirst: vi.fn(async () => ({ id: "slot-1", courseId: "course-1", slotType: "visual_cover", paragraphId: null, characterIds: [] })), update: slotUpdate },
+      courseVisualResourcePlan: { findUnique: vi.fn(async () => currentPlan), update: vi.fn() },
+      courseImage: {
+        findFirst: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(failed),
+        findUnique: vi.fn(async () => null),
+        upsert: vi.fn(async ({ create }) => ({ ...pending, ...create })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+    };
+
+    await expect(generateVisualSlot(db as never, "course-1", "slot-1", "forced-failure", {
+      generate: vi.fn(async () => ({ imageUrl: "https://media.example.com/new.png", quality: "medium" as const })),
+      edit: vi.fn(),
+      persist: vi.fn(async () => { throw new CourseImageSourceError("课程图片下载失败：404", false); }),
+      composeReferences: vi.fn(),
+      removeTemporarySource: vi.fn(),
+    }, { forceRegenerate: true })).rejects.toThrow("请重新生成图片");
+
+    expect(slotUpdate).not.toHaveBeenCalled();
   });
 
   test("原创化引用角色不再向图片模型传入旧 IP 参考图或原作名称", async () => {

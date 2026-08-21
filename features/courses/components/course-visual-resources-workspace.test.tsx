@@ -372,7 +372,7 @@ describe("Step 5 视觉资源工作区", () => {
     expect(screen.getByText("编辑图片失败，可以修改要求后重试")).toBeInTheDocument();
   });
 
-  test("远端图片已生成但保存失败时，只提供不调用 AI 的重新保存操作", () => {
+  test("远端图片已生成但保存失败时，默认重新保存并提供强制重新生成兜底", async () => {
     const failed = asset({
       id: "recoverable-cover",
       operation: "revision",
@@ -382,14 +382,35 @@ describe("Step 5 视觉资源工作区", () => {
       failureCode: "storage_recoverable",
       failureReason: "图片已生成，但下载或保存失败：下载远端图片超时",
     });
-    render(<CourseVisualResourcesWorkspace initialState={{
+    const failedState = {
       ...plannedState,
       slots: plannedState.slots.map((item) => item.slotType === "visual_cover" ? { ...item, versions: [failed] } : item),
-    }} />);
+    };
+    const request = vi.fn()
+      .mockResolvedValueOnce(Response.json({ results: [{ slotId: "cover", assetId: "new-cover" }] }))
+      .mockResolvedValueOnce(Response.json(failedState));
+    vi.stubGlobal("fetch", request);
+    render(<CourseVisualResourcesWorkspace initialState={failedState} />);
 
     expect(screen.getByRole("button", { name: "重新保存图片" })).toBeEnabled();
     expect(screen.getByText("图片内容已经生成，可以重新保存，不会再次调用 AI")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "修改要求后重试" })).not.toBeInTheDocument();
+
+    const menuTrigger = screen.getByRole("button", { name: "更多图片恢复操作" });
+    fireEvent.click(menuTrigger);
+    expect(menuTrigger).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menuitem", { name: "重新生成图片" })).not.toBeInTheDocument();
+    expect(menuTrigger).toHaveFocus();
+    fireEvent.click(menuTrigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "重新生成图片" }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(String((request.mock.calls[0]?.[1] as RequestInit).body))).toEqual({
+      scope: "slot",
+      slotId: "cover",
+      recoveryMode: "regenerate",
+    });
   });
 
   test("高级模式始终提供 IP 角色原创化入口并在执行前确认影响", () => {
