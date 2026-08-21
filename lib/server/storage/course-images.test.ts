@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import sharp from "sharp";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { composeCourseImageReferences, CourseImageSourceError, downloadCourseImageSource, persistCourseImage, removeCourseImageFiles } from "./course-images";
+import { loadCourseImageReferences, CourseImageSourceError, downloadCourseImageSource, persistCourseImage, removeCourseImageFiles } from "./course-images";
 
 sharp.cache(false);
 
@@ -77,13 +77,12 @@ describe("课程图片存储", () => {
     })).rejects.toBeInstanceOf(CourseImageSourceError);
   });
 
-  test("单张竖版人物参考也会先组成 16:9 横版参考板", async () => {
+  test("多张人物参考按顺序独立读取，不合并为参考板", async () => {
     const { root, imagePath } = await temporaryImage(600, 900, "#bfdbfe");
     process.env.STORAGE_DIR = root;
-    const dataUrl = await composeCourseImageReferences([path.relative(root, imagePath)]);
-    const metadata = await sharp(Buffer.from(dataUrl.split(",")[1]!, "base64")).metadata();
-    expect(metadata.width).toBe(1536);
-    expect(metadata.height).toBe(864);
+    const references = await loadCourseImageReferences([path.relative(root, imagePath), path.relative(root, imagePath)]);
+    expect(references).toHaveLength(2);
+    expect(references.every((reference) => reference.startsWith("data:image/webp;base64,"))).toBe(true);
   });
 
   test("场景图片以裁切方式落为 PPT 16:9，不给 3:2 图片补边", async () => {

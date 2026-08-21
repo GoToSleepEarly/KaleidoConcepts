@@ -1,7 +1,7 @@
 import { createCourseImageProvider } from "@/lib/server/ai/course-image-provider";
 import { imageQualityForModel } from "@/lib/server/ai/image-model-capabilities";
 import type { AiGateway } from "@/lib/ai-gateway";
-import { composeCourseImageReferences, persistCourseImage, removeTemporaryCourseImage } from "@/lib/server/storage/course-images";
+import { loadCourseImageReferences, persistCourseImage, removeTemporaryCourseImage } from "@/lib/server/storage/course-images";
 
 export function createCourseImageGenerationDeps(aiGateway: AiGateway = "quickrouter") {
   let provider: ReturnType<typeof createCourseImageProvider> | null = null;
@@ -14,7 +14,7 @@ export function createCourseImageGenerationDeps(aiGateway: AiGateway = "quickrou
     generate: (input: Parameters<ReturnType<typeof createCourseImageProvider>["generate"]>[0]) => client().generate(input),
     edit: (input: Parameters<ReturnType<typeof createCourseImageProvider>["edit"]>[0]) => client().edit(input),
     persist: persistCourseImage,
-    composeReferences: composeCourseImageReferences,
+    loadReferences: loadCourseImageReferences,
     removeTemporarySource: removeTemporaryCourseImage,
     normalizeQuality: (quality: Parameters<typeof imageQualityForModel>[1]) => imageQualityForModel(model, quality),
   };

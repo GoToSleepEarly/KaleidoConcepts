@@ -34,9 +34,9 @@ export type VisualResourcesDb = Pick<PrismaClient,
 export type CourseImageGenerationDeps = {
   provider?: "quickrouter_gpt_image_2" | "crazyrouter_gpt_image_2";
   generate: (input: { prompt: string; quality: CourseImageQuality; portrait?: boolean }) => Promise<{ imageUrl: string; model?: string; quality?: CourseImageQuality }>;
-  edit: (input: { prompt: string; quality: CourseImageQuality; imageDataUrl: string; portrait?: boolean }) => Promise<{ imageUrl: string; model?: string; quality?: CourseImageQuality }>;
+  edit: (input: { prompt: string; quality: CourseImageQuality; imageDataUrls: string[]; portrait?: boolean }) => Promise<{ imageUrl: string; model?: string; quality?: CourseImageQuality }>;
   persist: (input: { sourceUrl: string; courseId: string; assetId: string; portrait?: boolean }) => Promise<{ storagePath: string; publicUrl: string }>;
-  composeReferences: (storagePaths: string[]) => Promise<string>;
+  loadReferences: (storagePaths: string[]) => Promise<string[]>;
   removeTemporarySource: (storagePath: string) => Promise<void>;
   normalizeQuality?: (quality: CourseImageQuality) => CourseImageQuality;
 };
@@ -672,7 +672,7 @@ async function finishCourseImage(
   db: VisualResourcesDb,
   asset: { id: string; courseId: string; slotId?: string | null; characterVisualId?: string | null; prompt: string; quality: CourseImageQuality; referenceAssetIds?: unknown; status: CourseImageStatus; failureCode?: CourseImageFailureCode | null; providerImageUrl: string | null; temporarySourcePath: string | null },
   deps: CourseImageGenerationDeps,
-  input: { storagePaths?: string[]; portrait?: boolean; sourceDataUrl?: string; allowTextGeneration?: boolean },
+  input: { storagePaths?: string[]; portrait?: boolean; allowTextGeneration?: boolean },
 ) {
   const leaseToken = randomUUID();
   const leaseExpiresAt = new Date(Date.now() + COURSE_IMAGE_LEASE_MS);
@@ -714,8 +714,8 @@ async function finishCourseImage(
         actualQuality = generated.quality ?? asset.quality;
       }
       else {
-        const imageDataUrl = input.sourceDataUrl ?? await deps.composeReferences(input.storagePaths ?? []);
-        const edited = await deps.edit({ prompt: asset.prompt, quality: asset.quality, imageDataUrl, portrait: input.portrait });
+        const imageDataUrls = await deps.loadReferences(input.storagePaths ?? []);
+        const edited = await deps.edit({ prompt: asset.prompt, quality: asset.quality, imageDataUrls, portrait: input.portrait });
         sourceUrl = edited.imageUrl;
         actualQuality = edited.quality ?? asset.quality;
       }

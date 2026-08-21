@@ -137,21 +137,12 @@ export async function persistCourseImage(input: { sourceUrl: string; courseId: s
   return { storagePath, publicUrl: `/api/course-images/${input.courseId}/${input.assetId}.webp` };
 }
 
-export async function composeCourseImageReferences(storagePaths: string[]) {
+export async function loadCourseImageReferences(storagePaths: string[]) {
   if (storagePaths.length === 0) throw new Error("缺少可用的视觉参考图");
-  const canvasWidth = 1536;
-  const canvasHeight = 864;
-  const columns = storagePaths.length <= 2 ? storagePaths.length : Math.min(4, Math.ceil(Math.sqrt(storagePaths.length * 16 / 9)));
-  const rows = Math.ceil(storagePaths.length / columns);
-  const width = Math.floor(canvasWidth / columns);
-  const height = Math.floor(canvasHeight / rows);
-  const cells = await Promise.all(storagePaths.map(async (storagePath, index) => ({
-    input: await sharp(await readFile(resolveStorageKey(storagePath))).resize(width, height, { fit: "contain", background: "#f8fafc" }).webp().toBuffer(),
-    left: (index % columns) * width,
-    top: Math.floor(index / columns) * height,
-  })));
-  const sheet = await sharp({ create: { width: canvasWidth, height: canvasHeight, channels: 4, background: "#f8fafc" } }).composite(cells).webp({ quality: 88 }).toBuffer();
-  return `data:image/webp;base64,${sheet.toString("base64")}`;
+  return Promise.all(storagePaths.map(async (storagePath) => {
+    const image = await readFile(resolveStorageKey(storagePath));
+    return `data:image/webp;base64,${image.toString("base64")}`;
+  }));
 }
 
 export async function removeTemporaryCourseImage(storagePath: string) {

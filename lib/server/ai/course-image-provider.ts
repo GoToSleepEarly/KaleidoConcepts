@@ -33,6 +33,12 @@ function imageBlob(dataUrl: string) {
   return new Blob([Buffer.from(match[2], "base64")], { type: match[1] });
 }
 
+function imageExtension(blob: Blob) {
+  if (blob.type === "image/png") return "png";
+  if (blob.type === "image/jpeg") return "jpg";
+  return "webp";
+}
+
 function resultImage(data: ProviderResponse) {
   const image = data.data?.[0];
   if (image?.url) return image.url;
@@ -110,19 +116,23 @@ export function createCourseImageProvider(config?: ProviderConfig, selectedGatew
       const size = input.portrait ? "1024x1536" : "1536x864";
       return request("course_image_generate", "/v1/images/generations", input.quality, (requestModel, quality) => JSON.stringify({ model: requestModel, prompt: input.prompt, n: 1, size, quality, ...(gateway === "crazyrouter" ? { output_format: "webp" } : { format: "webp" }) }), { "Content-Type": "application/json" }, { prompt: input.prompt, size });
     },
-    edit(input: { prompt: string; quality: CourseImageQuality; imageDataUrl: string; portrait?: boolean }) {
+    edit(input: { prompt: string; quality: CourseImageQuality; imageDataUrls: string[]; portrait?: boolean }) {
+      if (input.imageDataUrls.length === 0) throw new Error("缺少可用的视觉参考图");
       const size = input.portrait ? "1024x1536" : "1536x1024";
       return request("course_image_edit", "/v1/images/edits", input.quality, (requestModel, quality) => {
         const body = new FormData();
         body.set("model", requestModel);
-        body.set("image", imageBlob(input.imageDataUrl), "visual-reference.webp");
+        input.imageDataUrls.forEach((dataUrl, index) => {
+          const blob = imageBlob(dataUrl);
+          body.append("image[]", blob, `visual-reference-${index + 1}.${imageExtension(blob)}`);
+        });
         body.set("prompt", input.prompt);
         body.set("n", "1");
         body.set("size", size);
         body.set("quality", quality);
         if (gateway === "crazyrouter") body.set("output_format", "webp");
         return body;
-      }, {}, { prompt: input.prompt, size, requestEncoding: "multipart/form-data" });
+      }, {}, { prompt: input.prompt, size, referenceImageCount: input.imageDataUrls.length, requestEncoding: "multipart/form-data" });
     },
   };
 }
