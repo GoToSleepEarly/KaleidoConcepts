@@ -3,6 +3,7 @@ import { createCourseContentGenerationDeps } from "@/lib/server/ai/course-conten
 import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
 import { hasCourseDownstream, runBeforeCourseDownstreamReset, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 import { getDb } from "@/lib/server/db";
+import { authenticationErrorResponse } from "@/lib/server/http/authentication";
 import { CourseContentConflictError, CourseContentSupersededError, generateCourseExercises, getCourseContentState } from "@/lib/server/repositories/course-content";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -26,6 +27,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json(await generateCourseExercises(db, id, key, createCourseContentGenerationDeps(aiGateway), { regenerate }));
   }
   catch (error) {
+    const authenticationResponse = authenticationErrorResponse(error);
+    if (authenticationResponse) return authenticationResponse;
     if (error instanceof CourseContentConflictError || error instanceof CourseContentSupersededError) return NextResponse.json({ message: error.message }, { status: 409 });
     return NextResponse.json({ message: error instanceof Error ? error.message : "练习生成失败" }, { status: 500 });
   }

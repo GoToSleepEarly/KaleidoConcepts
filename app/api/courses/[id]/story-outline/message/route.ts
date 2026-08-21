@@ -5,6 +5,7 @@ import { devAiLog } from "@/lib/server/ai/dev-ai-log";
 import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
 import type { AiGateway } from "@/lib/ai-gateway";
 import { getDb } from "@/lib/server/db";
+import { authenticationErrorResponse } from "@/lib/server/http/authentication";
 import {
   CourseStoryOutlineNotFoundError,
   CourseStoryOutlineOperationConflictError,
@@ -46,6 +47,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
     return NextResponse.json(await handleStoryOutlineMessage(db, id, parsed.data, createStoryOutlineGenerationDeps(aiGateway)));
   } catch (error) {
+    const authenticationResponse = authenticationErrorResponse(error);
+    if (authenticationResponse) return authenticationResponse;
     if (error instanceof CourseStoryOutlineNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });
     if (error instanceof CourseStoryOutlineOperationConflictError) return NextResponse.json({ message: error.message }, { status: 409 });
     devAiLog({

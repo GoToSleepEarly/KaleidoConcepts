@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { createPersonVisualGenerationDeps } from "@/lib/server/ai/person-visual-deps";
 import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
 import { getDb } from "@/lib/server/db";
+import { authenticationErrorResponse } from "@/lib/server/http/authentication";
 import { createPhotoVisual, PersonVisualNotFoundError } from "@/lib/server/repositories/person-visuals";
 import { preparePersonPhoto } from "@/lib/server/storage/person-visuals";
 
@@ -26,6 +27,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     );
     return NextResponse.json({ visual }, { status: visual.status === "succeeded" ? 201 : 502 });
   } catch (error) {
+    const authenticationResponse = authenticationErrorResponse(error);
+    if (authenticationResponse) return authenticationResponse;
     if (error instanceof PersonVisualNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });
     return NextResponse.json({ message: error instanceof Error ? error.message : "照片生成失败" }, { status: 500 });
   }

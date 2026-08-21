@@ -9,7 +9,7 @@ import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { AI_GATEWAYS, aiGatewayDescriptions, aiGatewayLabels, type AiGateway } from "@/lib/ai-gateway";
-import { clearAuthSession, getStoredSession, updateStoredAiGateway } from "@/lib/auth-session";
+import { clearAuthSession, getStoredSession } from "@/lib/auth-session";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -87,7 +87,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const session = useMemo(() => getStoredSession(), []);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
-  const [aiGateway, setAiGateway] = useState<AiGateway>(session?.user.aiGateway ?? "quickrouter");
+  const [aiGateway, setAiGateway] = useState<AiGateway>("quickrouter");
+  const [isLoadingGateway, setIsLoadingGateway] = useState(false);
+  const [hasLoadedGateway, setHasLoadedGateway] = useState(false);
   const [isSavingGateway, setIsSavingGateway] = useState(false);
   const [gatewayError, setGatewayError] = useState("");
   const accountMenuRef = useRef<HTMLDivElement>(null);
@@ -114,9 +116,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [isMenuOpen]);
 
-  function handleLogout() {
-    clearAuthSession();
-    router.replace("/login");
+  async function handleLogout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      clearAuthSession();
+      router.replace("/login");
+    }
+  }
+
+  async function openAdvancedSettings() {
+    setIsMenuOpen(false);
+    setGatewayError("");
+    setIsAdvancedOpen(true);
+    setIsLoadingGateway(true);
+    setHasLoadedGateway(false);
+    try {
+      const response = await fetch("/api/account/ai-gateway", { method: "GET", cache: "no-store" });
+      const result = await response.json() as { aiGateway?: AiGateway; message?: string };
+      if (!response.ok || !result.aiGateway) throw new Error(result.message || "中转站设置加载失败");
+      setAiGateway(result.aiGateway);
+      setHasLoadedGateway(true);
+    } catch (error) {
+      setGatewayError(error instanceof Error ? error.message : "中转站设置加载失败");
+    } finally {
+      setIsLoadingGateway(false);
+    }
   }
 
   async function saveAiGateway() {
@@ -131,7 +156,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const result = await response.json() as { aiGateway?: AiGateway; message?: string };
       if (!response.ok || !result.aiGateway) throw new Error(result.message || "中转站设置保存失败");
       setAiGateway(result.aiGateway);
-      updateStoredAiGateway(result.aiGateway);
       setIsAdvancedOpen(false);
     } catch (error) {
       setGatewayError(error instanceof Error ? error.message : "中转站设置保存失败");
@@ -207,7 +231,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="absolute right-0 top-full z-dropdown mt-2 w-full overflow-hidden rounded-xl bg-white shadow-[0_6px_14px_rgba(46,78,108,0.14)] animate-fade-in" data-testid="account-menu">
                 <button
                   className="flex h-10 w-full items-center gap-2 px-3 text-left text-sm text-[#38536E] transition-colors duration-200 hover:bg-[#F3F8FC]"
-                  onClick={() => { setIsMenuOpen(false); setGatewayError(""); setIsAdvancedOpen(true); }}
+                  onClick={() => void openAdvancedSettings()}
                   type="button"
                 >
                   <Settings2 className="size-4" />
@@ -215,7 +239,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </button>
                 <button
                   className="flex h-10 w-full items-center gap-2 border-t border-[#E7EFF6] px-3 text-left text-sm text-red-600 transition-colors duration-200 hover:bg-red-50"
-                  onClick={handleLogout}
+                  onClick={() => void handleLogout()}
                   type="button"
                 >
                   <LogOut className="size-4" />
@@ -235,7 +259,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           title="高级设置"
         >
           <div className="space-y-5 p-5 sm:p-6">
-            <fieldset>
+            <fieldset disabled={isLoadingGateway || isSavingGateway}>
               <legend className="text-sm font-semibold text-foreground">GPT 中转站</legend>
               <div className="mt-3 grid gap-3">
                 {AI_GATEWAYS.map((gateway) => (
@@ -254,7 +278,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {gatewayError ? <p className="text-sm text-destructive" role="alert">{gatewayError}</p> : null}
             <div className="flex justify-end gap-3 border-t border-border pt-4">
               <Button disabled={isSavingGateway} onClick={() => setIsAdvancedOpen(false)} type="button" variant="outline">取消</Button>
-              <Button loading={isSavingGateway} onClick={() => void saveAiGateway()} type="button">保存设置</Button>
+              <Button disabled={isLoadingGateway || !hasLoadedGateway} loading={isSavingGateway} onClick={() => void saveAiGateway()} type="button">保存设置</Button>
             </div>
           </div>
         </Dialog>

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createCourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
 import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
 import { getDb } from "@/lib/server/db";
+import { authenticationErrorResponse } from "@/lib/server/http/authentication";
 import { CourseContentConflictError, CourseContentSupersededError, generateCourseExercises, generateCourseReading } from "@/lib/server/repositories/course-content";
 
 const retrySchema = z.object({ operation: z.enum(["reading", "exercises"]) }).strict();
@@ -16,6 +17,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const deps = createCourseContentGenerationDeps(await aiGatewayFromRequest(request));
     return NextResponse.json(parsed.data.operation === "reading" ? await generateCourseReading(getDb(), id, key, deps) : await generateCourseExercises(getDb(), id, key, deps));
   } catch (error) {
+    const authenticationResponse = authenticationErrorResponse(error);
+    if (authenticationResponse) return authenticationResponse;
     const status = error instanceof CourseContentConflictError || error instanceof CourseContentSupersededError ? 409 : 500;
     return NextResponse.json({ message: error instanceof Error ? error.message : "重试失败" }, { status });
   }

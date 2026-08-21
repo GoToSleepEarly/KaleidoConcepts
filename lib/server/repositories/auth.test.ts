@@ -20,7 +20,7 @@ describe("verifyTeacherLogin", () => {
       { username: "teacher", password: "123456" },
     );
 
-    expect(user).toEqual({ id: "user-1", displayName: "教师账号", aiGateway: "crazyrouter" });
+    expect(user).toEqual({ id: "user-1", displayName: "教师账号" });
   });
 
   test("returns null when the database user is missing or password differs", async () => {

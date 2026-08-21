@@ -1,9 +1,9 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { aiGatewayFromRequest } from "./request-gateway";
+import { AiGatewayAuthenticationError, aiGatewayFromRequest } from "./request-gateway";
 
 describe("aiGatewayFromRequest", () => {
-  test("uses the authenticated account preference instead of a stale gateway cookie", async () => {
+  test("uses the authenticated account preference and ignores unrelated cookies", async () => {
     const findUnique = vi.fn().mockResolvedValue({
       id: "teacher-1",
       username: "teacher",
@@ -12,7 +12,7 @@ describe("aiGatewayFromRequest", () => {
       aiGateway: "crazyrouter",
     });
     const request = new Request("http://localhost/api/test", {
-      headers: { cookie: "kaleido.user-id=teacher-1; kaleido.ai-gateway=quickrouter" },
+      headers: { cookie: "kaleido.user-id=teacher-1; theme=dark" },
     });
 
     await expect(aiGatewayFromRequest(request, { user: { findUnique } })).resolves.toBe("crazyrouter");
@@ -37,18 +37,18 @@ describe("aiGatewayFromRequest", () => {
     expect(findUnique).toHaveBeenCalledTimes(2);
   });
 
-  test("keeps the gateway cookie as an unauthenticated compatibility fallback", async () => {
+  test("rejects a request without an authenticated account instead of falling back to a gateway cookie", async () => {
     const request = new Request("http://localhost/api/test", { headers: { cookie: "kaleido.ai-gateway=crazyrouter" } });
     const findUnique = vi.fn();
 
-    await expect(aiGatewayFromRequest(request, { user: { findUnique } })).resolves.toBe("crazyrouter");
+    await expect(aiGatewayFromRequest(request, { user: { findUnique } })).rejects.toBeInstanceOf(AiGatewayAuthenticationError);
     expect(findUnique).not.toHaveBeenCalled();
   });
 
-  test("defaults missing or invalid compatibility preferences to QuickRouter", async () => {
-    const db = { user: { findUnique: vi.fn() } };
-    await expect(aiGatewayFromRequest(new Request("http://localhost/api/test"), db)).resolves.toBe("quickrouter");
-    await expect(aiGatewayFromRequest(new Request("http://localhost/api/test", { headers: { cookie: "kaleido.ai-gateway=unknown" } }), db)).resolves.toBe("quickrouter");
-    await expect(aiGatewayFromRequest(new Request("http://localhost/api/test", { headers: { cookie: "kaleido.ai-gateway=easy88ai" } }), db)).resolves.toBe("quickrouter");
+  test("rejects a removed account instead of using a default gateway", async () => {
+    const db = { user: { findUnique: vi.fn().mockResolvedValue(null) } };
+    const request = new Request("http://localhost/api/test", { headers: { cookie: "kaleido.user-id=removed-user" } });
+
+    await expect(aiGatewayFromRequest(request, db)).rejects.toBeInstanceOf(AiGatewayAuthenticationError);
   });
 });
