@@ -39,6 +39,23 @@ describe("Dialog", () => {
     );
   });
 
+  test("keeps modal dialogs inside phone safe areas with a sheet layout", () => {
+    render(
+      <Dialog onClose={vi.fn()} open title="选择人物">
+        <span>内容</span>
+      </Dialog>,
+    );
+
+    expect(screen.getByRole("dialog")).toHaveClass(
+      "max-sm:inset-x-2",
+      "max-sm:bottom-2",
+      "max-sm:top-auto",
+      "max-sm:max-h-[calc(100dvh-1rem)]",
+      "max-sm:translate-x-0",
+      "max-sm:translate-y-0",
+    );
+  });
+
   test("does not close when a file input emits a bubbling cancel event", () => {
     const onClose = vi.fn();
     render(

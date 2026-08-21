@@ -11,7 +11,7 @@ export default function LoginPage() {
     >
       <div
         aria-hidden="true"
-        className="login-background pointer-events-none absolute inset-y-0 left-1/2 z-0 w-[min(100vw,177.78dvh)] -translate-x-1/2 bg-[url('/mock-assets/login-learning-lab.png')] bg-cover bg-[42%_center] bg-no-repeat min-[1200px]:bg-center"
+        className="login-background pointer-events-none absolute inset-y-0 left-1/2 z-0 w-[min(100vw,177.78dvh)] -translate-x-1/2 bg-[url('/mock-assets/login-learning-lab.png')] bg-cover bg-[42%_center] bg-no-repeat opacity-20 lg:opacity-100 min-[1200px]:bg-center"
         data-testid="login-background"
       />
       <div
@@ -24,11 +24,11 @@ export default function LoginPage() {
         data-testid="login-transition"
       />
 
-      <div className="relative z-10 grid min-h-dvh grid-cols-[54%_46%] min-[1200px]:grid-cols-[62%_38%]">
-        <section aria-label="少儿项目式学习插画" data-testid="login-illustration" />
+      <div className="relative z-10 grid min-h-dvh grid-cols-1 lg:grid-cols-[54%_46%] min-[1200px]:grid-cols-[62%_38%]" data-testid="login-grid">
+        <section aria-label="少儿项目式学习插画" className="hidden lg:block" data-testid="login-illustration" />
 
         <section
-          className="flex min-h-dvh min-w-[440px] items-center justify-center px-6 py-3 text-[#17335C] min-[1200px]:px-8"
+          className="flex min-h-dvh min-w-0 items-center justify-center px-4 py-[max(1.5rem,env(safe-area-inset-top))] text-[#17335C] sm:px-6 lg:min-w-[440px] lg:py-3 min-[1200px]:px-8"
           data-testid="login-workspace"
         >
           <div className="flex w-full max-w-[420px] flex-col items-center">
@@ -36,17 +36,17 @@ export default function LoginPage() {
               <span className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-white text-[#17335C] shadow-[0_2px_8px_rgba(23,51,92,0.12)]">
                 <Sparkles aria-hidden="true" className="size-7" />
               </span>
-              <span className="text-[2rem] leading-none tracking-[-0.03em]">Kaleido Concepts</span>
+              <span className="text-2xl leading-none sm:text-[2rem]">Kaleido Concepts</span>
             </div>
 
-            <h1 className="mt-6 whitespace-nowrap text-center text-[1.75rem] font-bold leading-[1.08] tracking-[-0.02em] text-[#17335C] min-[1200px]:text-[1.875rem]">
+            <h1 className="mt-6 whitespace-nowrap text-center text-[1.5rem] font-bold leading-[1.08] text-[#17335C] sm:text-[1.75rem] min-[1200px]:text-[1.875rem]">
               万象为镜，照见奇思
             </h1>
-            <p className="mt-2.5 text-center text-lg font-medium leading-6 text-[#294E75]">
+            <p className="mt-2.5 text-center text-base font-medium leading-6 text-[#294E75] sm:text-lg">
               AI 定制互动绘本英语项目
             </p>
 
-            <div className="mt-5 w-full rounded-xl bg-white p-6 text-slate-950 shadow-[0_8px_24px_rgba(34,77,111,0.16)] min-[1200px]:p-7 min-[1440px]:mt-7 min-[1440px]:p-8">
+            <div className="mt-5 w-full rounded-xl bg-white p-5 text-slate-950 shadow-[0_8px_24px_rgba(34,77,111,0.16)] sm:p-6 min-[1200px]:p-7 min-[1440px]:mt-7 min-[1440px]:p-8">
               <LoginForm />
             </div>
           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { FormEvent, useEffect, useRef, useState } from "react";
+import React, { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, BookOpen, Bot, Check, Loader2, Pencil, RotateCcw, Search, Sparkles, UserRound } from "lucide-react";
 
@@ -61,10 +61,15 @@ function resultTabAfterUpdate(previous: CourseStoryOutlineState, next: CourseSto
   return current;
 }
 
+function hasStoryResult(state: CourseStoryOutlineState) {
+  return Boolean(state.directions.length || state.referenceMaterials.length || state.outline);
+}
+
 export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], storyTypePresets = [], storyTonePresets = [] }: { initialState: CourseStoryOutlineState; themePresets?: PresetOption[]; storyTypePresets?: PresetOption[]; storyTonePresets?: PresetOption[] }) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
   const [mode, setMode] = useState<"idea" | "random">("idea");
+  const [mobileView, setMobileView] = useState<"chat" | "result">("chat");
   const [message, setMessage] = useState("");
   const [randomSupplement, setRandomSupplement] = useState("");
   const [chapterCount, setChapterCount] = useState(initialState.settings.chapterCount);
@@ -101,12 +106,13 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     action.action === "retry_operation" && (!action.targetId || action.targetId === state.operation?.requestId)
   )));
 
-  function applyNextState(nextState: CourseStoryOutlineState) {
+  const applyNextState = useCallback((nextState: CourseStoryOutlineState) => {
     const previousState = stateRef.current;
     stateRef.current = nextState;
     setResultTab((currentTab) => resultTabAfterUpdate(previousState, nextState, currentTab));
+    if (!hasStoryResult(previousState) && hasStoryResult(nextState)) setMobileView("result");
     setState(nextState);
-  }
+  }, []);
 
   function navigate(href: string) {
     if (hasUnsentInput) {
@@ -166,7 +172,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
       window.clearTimeout(first);
       window.clearInterval(timer);
     };
-  }, [optimisticTeacherMessage, pending, state.course.id]);
+  }, [applyNextState, optimisticTeacherMessage, pending, state.course.id]);
 
   async function postMessage(
     input: CourseStoryMessageInput,
@@ -413,9 +419,9 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto flex max-w-7xl flex-col gap-4 max-lg:h-[calc(100dvh-7.25rem)] max-lg:overflow-hidden lg:gap-6" data-testid="story-outline-shell">
       <CourseCreateSteps courseId={state.course.id} currentStep={2} furthestStep={courseStageStep(state.course.currentStage)} onNavigate={navigate} />
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex shrink-0 items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold text-foreground">故事大纲</h2>
         </div>
@@ -431,15 +437,23 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
 
       <div
         className={cn(
-          "grid gap-5 transition-[max-width,grid-template-columns] duration-300",
+          "grid min-h-0 gap-4 transition-[max-width,grid-template-columns] duration-300 max-lg:flex-1 max-lg:overflow-hidden lg:gap-5",
           hasResultContent
-            ? "md:h-[calc(100dvh-13.5rem)] md:min-h-[680px] md:grid-cols-[minmax(300px,0.85fr)_minmax(360px,1.15fr)] xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)]"
+            ? "lg:h-[calc(100dvh-13.5rem)] lg:min-h-[680px] lg:grid-cols-[minmax(300px,0.85fr)_minmax(360px,1.15fr)] xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)]"
             : "mx-auto w-full max-w-5xl",
         )}
         data-layout={hasResultContent ? "split" : "focus"}
         data-testid="story-outline-layout"
       >
-        <section className={cn("flex min-w-0 flex-col rounded-lg bg-card shadow-sm", hasResultContent ? "min-h-[680px] md:h-full md:min-h-0 md:overflow-hidden" : "min-h-[clamp(560px,calc(100dvh-18rem),720px)]")} data-testid="story-chat-pane">
+        {hasResultContent ? <div className="grid shrink-0 grid-cols-2 gap-1 rounded-lg bg-muted p-1 lg:hidden" data-testid="story-mobile-view-tabs">
+          <button aria-pressed={mobileView === "chat"} className={modeClass(mobileView === "chat")} onClick={() => setMobileView("chat")} type="button">聊天</button>
+          <button aria-pressed={mobileView === "result"} className={modeClass(mobileView === "result")} onClick={() => setMobileView("result")} type="button">结果</button>
+        </div> : null}
+        <section className={cn(
+          "flex min-h-0 min-w-0 flex-col rounded-lg bg-card shadow-sm",
+          hasResultContent ? "overflow-hidden lg:h-full" : "min-h-[clamp(560px,calc(100dvh-18rem),720px)]",
+          hasResultContent && mobileView === "result" && "hidden lg:flex",
+        )} data-testid="story-chat-pane">
           <div className="border-b border-border p-4">
             {!conversationStarted ? (
               <div className={cn("grid grid-cols-2 gap-2 rounded-lg bg-muted p-1", !hasResultContent && "w-full")}>
@@ -449,20 +463,20 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
             ) : null}
             <div
               className={cn(
-                "mt-3 grid gap-3",
-                hasResultContent ? "grid-cols-1 xl:grid-cols-2" : "w-full grid-cols-2",
+                "mt-3 grid grid-cols-2 gap-2 sm:gap-3",
+                !hasResultContent && "w-full",
               )}
               data-testid="story-chat-settings"
             >
               <label className="block">
                 <span className="text-xs text-muted-foreground">章节数</span>
-                <select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" onChange={(event) => setChapterCount(Number(event.target.value))} value={chapterCount}>
+                <select aria-label="章节数" className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm sm:h-10 sm:px-3" onChange={(event) => setChapterCount(Number(event.target.value))} value={chapterCount}>
                   {[3, 4, 5].map((value) => <option key={value} value={value}>{value} 章</option>)}
                 </select>
               </label>
               <label className="block">
                 <span className="text-xs text-muted-foreground">写作模型</span>
-                <select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" onChange={(event) => setWritingProvider(event.target.value as StoryWritingProvider)} value={writingProvider}>
+                <select aria-label="写作模型" className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm sm:h-10 sm:px-3" onChange={(event) => setWritingProvider(event.target.value as StoryWritingProvider)} value={writingProvider}>
                   <option value="quickrouter_gpt">GPT</option>
                   <option value="quickrouter_deepseek">DeepSeek（成本更低）</option>
                 </select>
@@ -470,7 +484,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain scroll-pb-24 p-4" data-testid="story-chat-scroll" ref={chatScrollRef}>
+          <div className="min-h-0 flex-1 touch-pan-y space-y-3 overflow-y-auto overscroll-contain scroll-pb-24 p-4" data-testid="story-chat-scroll" ref={chatScrollRef}>
             {!conversationStarted && mode === "random" ? (
               <form className="w-full space-y-4 rounded-lg border border-border bg-muted/30 p-4" onSubmit={submit}>
                 <h3 className="font-medium text-foreground">生成故事方向</h3>
@@ -554,7 +568,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
             ) : null}
           </div>
 
-          {mode === "idea" || conversationStarted ? <form className="border-t border-border p-4" onSubmit={submit}>
+          {mode === "idea" || conversationStarted ? <form className="shrink-0 border-t border-border p-4" data-testid="story-chat-composer" onSubmit={submit}>
             <div className={cn("mx-auto w-full", !hasResultContent && "max-w-4xl")}>
             {composerIntent ? (
               <div className="mb-2 flex items-center justify-between gap-3 rounded-md bg-primary-50 px-3 py-2 text-xs text-primary-800" role="status">
@@ -585,7 +599,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
           </form> : null}
         </section>
 
-        {hasResultContent ? <div className="min-w-0 overscroll-contain scroll-pb-24 md:h-full md:min-h-0 md:overflow-y-auto" data-testid="story-result-scroll"><ResultPanel
+        {hasResultContent ? <div className={cn("min-w-0 overscroll-contain scroll-pb-24 lg:h-full lg:min-h-0 lg:overflow-y-auto", mobileView === "chat" && "hidden lg:block")} data-testid="story-result-scroll"><ResultPanel
           onDescribeDirection={() => continueModify("我希望的故事方向：")}
           onConfirmDirection={(direction) => postMessage(
             { message: "", mode: "idea", action: "confirm_direction", targetId: direction.id },
@@ -608,7 +622,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
           state={state}
         /></div> : null}
       </div>
-      <div className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-lg border border-border bg-card/95 px-4 py-3 shadow-md backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+      <div className="hidden flex-col gap-3 rounded-lg border border-border bg-card/95 px-4 py-3 shadow-md backdrop-blur sm:items-center sm:justify-between lg:sticky lg:bottom-4 lg:z-20 lg:flex lg:flex-row" data-testid="story-step-footer">
         <p aria-live="polite" className="text-sm text-muted-foreground">{hasUnsentInput ? "输入内容尚未发送" : state.outline ? "故事大纲已生成，可以进入教学规划" : "还需：生成故事大纲"}</p>
         <div className="flex gap-2"><Button disabled={pending} onClick={() => navigate(`/courses/${state.course.id}/create/audience`)} type="button" variant="outline"><ArrowLeft className="size-4" />上一步</Button><Button disabled={pending || !state.outline} onClick={() => courseStageStep(state.course.currentStage) >= 3 ? navigate(`/courses/${state.course.id}/create/teaching-plan`) : void confirm()} type="button">下一步：教学规划<ArrowRight className="size-4" /></Button></div>
       </div>

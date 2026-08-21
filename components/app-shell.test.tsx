@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { AppShell } from "@/components/app-shell";
@@ -25,6 +25,21 @@ vi.mock("@/lib/auth-session", () => ({
 
 describe("AppShell account menu", () => {
   beforeEach(() => replace.mockClear());
+
+  test("provides a touch-safe navigation drawer below desktop width", () => {
+    render(<AppShell><div>课程内容</div></AppShell>);
+
+    const menuButton = screen.getByRole("button", { name: "打开主导航" });
+    expect(menuButton).toHaveClass("lg:hidden", "min-h-11", "min-w-11");
+    expect(screen.getByTestId("account-menu-anchor")).toHaveClass("w-11", "sm:w-40");
+
+    fireEvent.click(menuButton);
+
+    const mobileNavigation = screen.getByRole("navigation", { name: "移动端主导航" });
+    expect(mobileNavigation).toHaveClass("lg:hidden");
+    expect(within(mobileNavigation).getByRole("link", { name: /课程列表/ })).toHaveAttribute("href", "/courses");
+    expect(within(mobileNavigation).getByRole("button", { name: "关闭主导航" })).toHaveClass("min-h-11", "min-w-11");
+  });
 
   test("aligns the menu to its trigger and closes on Escape or outside click", () => {
     render(<AppShell><div>课程内容</div></AppShell>);

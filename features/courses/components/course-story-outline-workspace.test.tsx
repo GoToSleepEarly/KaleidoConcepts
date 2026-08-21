@@ -164,13 +164,76 @@ describe("CourseStoryOutlineWorkspace", () => {
     render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
 
     expect(screen.getByTestId("story-outline-layout")).toHaveAttribute("data-layout", "split");
-    expect(screen.getByTestId("story-outline-layout")).toHaveClass("md:grid-cols-[minmax(300px,0.85fr)_minmax(360px,1.15fr)]");
-    expect(screen.getByTestId("story-outline-layout")).toHaveClass("md:h-[calc(100dvh-13.5rem)]");
-    expect(screen.getByTestId("story-chat-pane")).toHaveClass("md:h-full", "md:overflow-hidden");
-    expect(screen.getByTestId("story-chat-scroll")).toHaveClass("overflow-y-auto", "overscroll-contain");
-    expect(screen.getByTestId("story-result-scroll")).toHaveClass("md:h-full", "md:overflow-y-auto", "overscroll-contain");
-    expect(screen.getByTestId("story-chat-settings")).toHaveClass("grid-cols-1", "xl:grid-cols-2");
+    expect(screen.getByTestId("story-outline-layout")).toHaveClass("min-h-0", "lg:grid-cols-[minmax(300px,0.85fr)_minmax(360px,1.15fr)]");
+    expect(screen.getByTestId("story-outline-layout")).toHaveClass("lg:h-[calc(100dvh-13.5rem)]");
+    expect(screen.getByTestId("story-mobile-view-tabs")).toHaveClass("shrink-0", "lg:hidden");
+    expect(screen.getByTestId("story-chat-pane")).toHaveClass("min-h-0", "overflow-hidden", "lg:h-full");
+    expect(screen.getByTestId("story-chat-scroll")).toHaveClass("overflow-y-auto", "overscroll-contain", "touch-pan-y");
+    expect(screen.getByTestId("story-result-scroll")).toHaveClass("lg:h-full", "lg:overflow-y-auto", "overscroll-contain");
+    expect(screen.getByTestId("story-mobile-view-tabs")).toHaveClass("lg:hidden");
+    expect(screen.queryByTestId("story-step-mobile-actions")).not.toBeInTheDocument();
+    expect(screen.getByTestId("story-chat-settings")).toHaveClass("grid-cols-2");
+    expect(screen.getByTestId("story-chat-settings")).not.toHaveClass("grid-cols-1");
+    expect(screen.getByTestId("story-step-footer")).toHaveClass("hidden", "lg:sticky", "lg:bottom-4");
+    expect(screen.getByTestId("story-step-footer")).not.toHaveClass("sticky");
     expect(screen.getByRole("button", { name: "故事大纲" })).toHaveClass("min-h-11");
+  });
+
+  test("keeps the mobile chat controls reachable by scrolling the message list inside the pane", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      chatMessages: [
+        { id: "assistant-1", courseId: "course-1", role: "assistant", content: "第一条消息", actions: [], createdAt: "2026-08-18T12:00:00.000Z" },
+        { id: "teacher-1", courseId: "course-1", role: "teacher", content: "第二条消息", actions: [], createdAt: "2026-08-18T12:01:00.000Z" },
+      ],
+    }} />);
+
+    expect(screen.getByTestId("story-outline-shell")).toHaveClass("flex", "max-lg:h-[calc(100dvh-7.25rem)]", "max-lg:overflow-hidden");
+    expect(screen.getByTestId("story-outline-layout")).toHaveClass("min-h-0", "max-lg:flex-1", "max-lg:overflow-hidden");
+    expect(screen.getByTestId("story-chat-pane")).toHaveClass("min-h-0", "overflow-hidden");
+    expect(screen.getByTestId("story-chat-scroll")).toHaveClass("min-h-0", "flex-1", "overflow-y-auto", "touch-pan-y");
+    expect(screen.getByTestId("story-chat-composer")).toHaveClass("shrink-0");
+    expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+    expect(screen.queryByTestId("story-step-mobile-actions")).not.toBeInTheDocument();
+    expect(screen.getByTestId("story-step-footer")).toHaveClass("hidden", "lg:flex");
+  });
+
+  test("lets compact Step 2 settings share one row with clear labels", () => {
+    render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
+
+    const settings = screen.getByTestId("story-chat-settings");
+    expect(settings).toHaveClass("grid-cols-2");
+    expect(screen.getByText("章节数")).toBeInTheDocument();
+    expect(screen.getByText("写作模型")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "章节数" })).toHaveClass("h-9");
+    expect(screen.getByRole("combobox", { name: "写作模型" })).toHaveClass("h-9");
+  });
+
+  test("lets phone and iPad portrait switch between chat and result without scrolling to the other pane", () => {
+    render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
+
+    const tabs = screen.getByTestId("story-mobile-view-tabs");
+    const chatPane = screen.getByTestId("story-chat-pane");
+    const resultPane = screen.getByTestId("story-result-scroll");
+
+    expect(tabs).toHaveClass("lg:hidden");
+    expect(screen.getByRole("button", { name: "聊天" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "结果" })).toHaveAttribute("aria-pressed", "false");
+    expect(chatPane).not.toHaveClass("hidden");
+    expect(resultPane).toHaveClass("hidden", "lg:block");
+
+    fireEvent.click(screen.getByRole("button", { name: "结果" }));
+
+    expect(screen.getByRole("button", { name: "聊天" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "结果" })).toHaveAttribute("aria-pressed", "true");
+    expect(chatPane).toHaveClass("hidden", "lg:flex");
+    expect(resultPane).not.toHaveClass("hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: "聊天" }));
+
+    expect(screen.getByRole("button", { name: "聊天" })).toHaveAttribute("aria-pressed", "true");
+    expect(chatPane).not.toHaveClass("hidden");
+    expect(resultPane).toHaveClass("hidden", "lg:block");
   });
 
   test("keeps the chat timeline at the bottom when a result is shown", () => {

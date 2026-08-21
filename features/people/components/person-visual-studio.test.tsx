@@ -42,6 +42,30 @@ afterEach(() => {
 });
 
 describe("PersonVisualStudio", () => {
+  test("uses one scroll surface for the embedded mobile editor while keeping desktop panes", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ visuals: [visual("succeeded")] })));
+
+    render(
+      <PersonVisualStudio
+        embedded
+        onChanged={vi.fn()}
+        onClose={vi.fn()}
+        open
+        person={{ ...person, activeVisual: { id: "visual-1", publicUrl: "/summer.webp", sourceMode: "description", createdAt: "2026-08-20T00:00:00.000Z" }, visualStatus: "ready" }}
+      />,
+    );
+
+    const workspace = await screen.findByTestId("person-visual-workspace");
+    const previewPane = screen.getByTestId("person-visual-preview-pane");
+    const previewFrame = screen.getByRole("button", { name: "查看人物形象大图" });
+    const settingsPane = screen.getByTestId("person-visual-settings-pane");
+
+    expect(workspace).toHaveClass("flex", "flex-col", "overflow-y-auto", "lg:grid", "lg:overflow-hidden", "lg:grid-cols-2");
+    expect(previewPane).toHaveClass("lg:overflow-hidden", "lg:border-r");
+    expect(previewFrame).toHaveClass("h-[min(56dvh,420px)]", "lg:h-full");
+    expect(settingsPane).toHaveClass("lg:overflow-hidden");
+  });
+
   test("restores polling after refresh and reveals the completed image without another generation request", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const fetchMock = vi

@@ -29,4 +29,13 @@ describe("LoginPage", () => {
     expect(screen.queryByText("照见奇思")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("login-form")).toHaveLength(1);
   });
+
+  test("uses a single-column phone layout without the desktop minimum workspace width", () => {
+    render(<LoginPage />);
+
+    expect(screen.getByTestId("login-grid")).toHaveClass("grid-cols-1", "lg:grid-cols-[54%_46%]");
+    expect(screen.getByTestId("login-illustration")).toHaveClass("hidden", "lg:block");
+    expect(screen.getByTestId("login-workspace")).toHaveClass("min-w-0", "px-4");
+    expect(screen.getByText("Kaleido Concepts")).toHaveClass("text-2xl", "sm:text-[2rem]");
+  });
 });

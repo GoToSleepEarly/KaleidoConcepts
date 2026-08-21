@@ -588,11 +588,12 @@ export function PersonVisualStudio({
   const content = person ? (
     <div
       className={cn(
-        "grid min-h-0 overflow-hidden lg:grid-cols-2",
+        "flex min-h-0 flex-col overflow-y-auto lg:grid lg:overflow-hidden lg:grid-cols-2",
         embedded && "h-full",
       )}
+      data-testid="person-visual-workspace"
     >
-      <section className="flex min-h-0 flex-col overflow-hidden border-b border-border bg-muted/35 p-4 sm:p-5 lg:border-b-0 lg:border-r">
+      <section className="flex min-h-0 shrink-0 flex-col border-b border-border bg-muted/35 p-4 sm:p-5 lg:shrink lg:overflow-hidden lg:border-b-0 lg:border-r" data-testid="person-visual-preview-pane">
         <div className="flex items-center justify-between gap-4">
           <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <ImageIcon className="size-4 text-primary" />
@@ -604,15 +605,15 @@ export function PersonVisualStudio({
           </div>
         </div>
 
-        <div className="mt-4 flex min-h-0 flex-1 items-center justify-center">
+        <div className="mt-4 flex min-h-0 justify-center lg:flex-1 lg:items-center">
           {selected?.publicUrl ? (
-            <button aria-label="查看人物形象大图" className="group/preview relative aspect-[2/3] h-full max-h-[460px] max-w-full overflow-hidden border border-border bg-white shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={() => setPreviewOpen(true)} type="button">
+            <button aria-label="查看人物形象大图" className="group/preview relative aspect-[2/3] h-[min(56dvh,420px)] max-h-[460px] max-w-full overflow-hidden border border-border bg-white shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary lg:h-full" onClick={() => setPreviewOpen(true)} type="button">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img alt={`${person.chineseName} 的全身人物形象`} className="size-full object-contain" src={selected.publicUrl} />
               <span className="absolute inset-x-0 bottom-0 bg-slate-950/65 py-2 text-xs font-medium text-white opacity-0 transition-opacity group-hover/preview:opacity-100 group-focus-visible/preview:opacity-100">查看大图</span>
             </button>
           ) : (
-            <div className="flex aspect-[2/3] h-full max-h-[460px] max-w-full flex-col items-center justify-center border border-dashed border-border bg-card px-8 text-center">
+            <div className="flex aspect-[2/3] h-[min(56dvh,420px)] max-h-[460px] max-w-full flex-col items-center justify-center border border-dashed border-border bg-card px-8 text-center lg:h-full">
               <span className="rounded-full bg-primary-50 p-3 ring-8 ring-primary-50/60">
                 <PersonAvatar
                   gender={person.gender}
@@ -672,11 +673,12 @@ export function PersonVisualStudio({
 
       <section
         className={cn(
-          "h-full min-h-0 overflow-hidden bg-card",
+          "min-h-0 shrink-0 bg-card lg:h-full lg:shrink lg:overflow-hidden",
           workspaceMode === "refine"
             ? "flex flex-col"
-            : "overflow-y-auto p-4 sm:p-6",
+            : "p-4 sm:p-6 lg:overflow-y-auto",
         )}
+        data-testid="person-visual-settings-pane"
       >
         {workspaceMode === "refine" ? (
           <>
@@ -696,7 +698,7 @@ export function PersonVisualStudio({
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+            <div className="min-h-0 flex-1 px-4 py-5 sm:px-6 lg:overflow-y-auto">
               {generationKind === "refine" ? (
                 <GenerationWaitingState
                   elapsedSeconds={elapsedSeconds}

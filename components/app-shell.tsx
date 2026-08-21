@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, ChevronDown, ListChecks, LogOut, Settings2, Sparkles, Tags, UsersRound } from "lucide-react";
+import { BookOpen, ChevronDown, ListChecks, LogOut, Menu, Settings2, Sparkles, Tags, UsersRound, X } from "lucide-react";
 
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
@@ -86,6 +86,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const session = useMemo(() => getStoredSession(), []);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [aiGateway, setAiGateway] = useState<AiGateway>(session?.user.aiGateway ?? "quickrouter");
   const [isSavingGateway, setIsSavingGateway] = useState(false);
@@ -113,6 +114,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [isMenuOpen]);
+
+  useEffect(() => {
+    if (!isMobileNavOpen) return;
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsMobileNavOpen(false);
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [isMobileNavOpen]);
 
   function handleLogout() {
     clearAuthSession();
@@ -183,6 +195,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-h-dvh min-w-0 flex-1 flex-col lg:pl-60">
         <header className="print-hidden sticky top-0 z-sticky flex min-h-[64px] items-center gap-4 border-b border-[#DCEAF6] bg-white px-4 py-3 sm:px-6 lg:h-[72px] lg:px-8 lg:py-0">
+          <button
+            aria-expanded={isMobileNavOpen}
+            aria-label="打开主导航"
+            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-[#D7E5F1] bg-white text-[#38536E] transition-colors active:bg-[#EEF0FF] lg:hidden"
+            onClick={() => setIsMobileNavOpen(true)}
+            type="button"
+          >
+            <Menu className="size-5" />
+          </button>
           <div className="min-w-0 shrink-0">
             <h1 className="truncate text-lg font-semibold text-[#19324D] sm:text-xl">{routeMeta.title}</h1>
             {routeMeta.subtitle ? <p className="mt-0.5 line-clamp-1 text-[13px] text-[#69829B]">{routeMeta.subtitle}</p> : null}
@@ -190,17 +211,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {isCourseCreateRoute ? <div className="min-w-0 flex-1" id="course-create-progress-slot" /> : <div className="flex-1" />}
 
-          <div className="relative w-40 shrink-0" ref={accountMenuRef}>
+          <div className="relative w-11 shrink-0 sm:w-40" data-testid="account-menu-anchor" ref={accountMenuRef}>
             <button
               aria-expanded={isMenuOpen}
               aria-label="用户菜单"
-              className="flex min-h-11 w-full items-center gap-2 rounded-full border border-[#D7E5F1] bg-white px-2.5 pr-3 text-sm font-medium text-[#38536E] transition-colors hover:border-[#BBCFE0] hover:bg-[#F7FBFE] sm:gap-3"
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-[#D7E5F1] bg-white px-1.5 text-sm font-medium text-[#38536E] transition-colors hover:border-[#BBCFE0] hover:bg-[#F7FBFE] sm:justify-start sm:gap-3 sm:px-2.5 sm:pr-3"
               onClick={() => setIsMenuOpen((value) => !value)}
               type="button"
             >
               <PersonAvatar name={displayName} seed={displayName} size={30} />
               <span className="hidden sm:block">{displayName}</span>
-              <ChevronDown className={cn("ml-auto size-4 text-[#7890A7] transition-transform duration-200", isMenuOpen && "rotate-180")} />
+              <ChevronDown className={cn("ml-auto hidden size-4 text-[#7890A7] transition-transform duration-200 sm:block", isMenuOpen && "rotate-180")} />
             </button>
 
             {isMenuOpen ? (
@@ -225,6 +246,64 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
           </div>
         </header>
+
+        {isMobileNavOpen ? (
+          <div className="fixed inset-0 z-modal lg:hidden">
+            <button
+              aria-hidden="true"
+              className="fixed inset-0 bg-slate-950/35"
+              onClick={() => setIsMobileNavOpen(false)}
+              tabIndex={-1}
+              type="button"
+            />
+            <nav
+              aria-label="移动端主导航"
+              className="fixed inset-y-0 left-0 flex w-[min(82vw,320px)] flex-col border-r border-[#DCEAF6] bg-white pb-[max(1rem,env(safe-area-inset-bottom))] pt-[env(safe-area-inset-top)] text-[#19324D] shadow-lg lg:hidden"
+            >
+              <div className="flex min-h-16 items-center justify-between gap-3 border-b border-[#E7EFF6] px-4">
+                <Link className="flex min-w-0 items-center gap-3" href="/courses" onClick={() => setIsMobileNavOpen(false)}>
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF] text-[#4D5FE8]">
+                    <Sparkles className="size-5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-bold">Kaleido Concepts</span>
+                    <span className="block text-xs font-medium text-[#69829B]">万象之境</span>
+                  </span>
+                </Link>
+                <button
+                  aria-label="关闭主导航"
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[#526B84] transition-colors active:bg-[#EEF0FF]"
+                  onClick={() => setIsMobileNavOpen(false)}
+                  type="button"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+              <div className="space-y-1 px-3 py-4">
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = item.key === routeMeta.activeKey;
+
+                  return (
+                    <Link
+                      className={cn(
+                        "flex min-h-12 items-center gap-3 rounded-lg px-3 text-[15px] font-semibold transition-colors",
+                        isActive ? "bg-[#EEF0FF] text-[#3447D4]" : "text-[#526B84] active:bg-[#F3F8FC]",
+                      )}
+                      href={item.href}
+                      key={item.href}
+                      onClick={() => setIsMobileNavOpen(false)}
+                    >
+                      <Icon className={cn("size-[18px]", isActive ? "text-[#5365EC]" : "text-[#7890A7]")} />
+                      <span className="flex-1">{item.label}</span>
+                      {isActive ? <span className="size-1.5 rounded-full bg-[#6FD8C2]" /> : null}
+                    </Link>
+                  );
+                })}
+              </div>
+            </nav>
+          </div>
+        ) : null}
 
         <Dialog
           description="仅选择国外 GPT 文本、联网研究、图片生成和编辑使用的中转站；DeepSeek 仍走原有直连。"
@@ -259,32 +338,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </Dialog>
 
-        <main className="flex-1 px-4 py-5 pb-24 sm:px-6 lg:p-8">{children}</main>
-
-        <nav className="print-hidden fixed inset-x-0 bottom-0 z-sticky border-t border-slate-200 bg-white/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-md lg:hidden" aria-label="Mobile navigation">
-          <div className="mx-auto grid max-w-md grid-cols-4 gap-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = item.key === routeMeta.activeKey;
-
-              return (
-                <Link
-                  className={cn(
-                    "flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors duration-200",
-                    isActive
-                      ? "bg-primary-50 text-primary"
-                      : "text-slate-500 active:bg-slate-100",
-                  )}
-                  href={item.href}
-                  key={item.href}
-                >
-                  <Icon className="size-5" />
-                  <span className="max-w-full truncate">{item.label}</span>
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
+        <main className="flex-1 px-4 py-5 sm:px-6 lg:p-8">{children}</main>
       </div>
     </div>
   );

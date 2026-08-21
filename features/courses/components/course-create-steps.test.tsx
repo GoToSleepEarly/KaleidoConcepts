@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { CourseCreateSteps } from "./course-create-steps";
@@ -23,6 +23,33 @@ describe("CourseCreateSteps", () => {
     expect(screen.getAllByText("基础信息").length).toBeGreaterThan(0);
     expect(screen.getByText("1")).toBeInTheDocument();
     expect(screen.queryByText(/下一步/)).not.toBeInTheDocument();
+  });
+
+  test("uses an expandable mobile step list instead of forcing six columns into the phone header", () => {
+    render(<CourseCreateSteps courseId="course-1" currentStep={3} furthestStep={4} />);
+
+    const mobileSummary = screen.getByRole("button", { name: "展开课程步骤导航" });
+    expect(mobileSummary).toHaveClass("lg:hidden", "min-h-11");
+    expect(screen.getByText("第 3 / 6 步")).toBeInTheDocument();
+
+    fireEvent.click(mobileSummary);
+
+    const mobileList = screen.getByRole("list", { name: "移动端课程步骤列表" });
+    expect(mobileList).toHaveClass("absolute", "lg:hidden", "z-dropdown", "bg-white", "shadow-xl");
+    expect(mobileList).not.toHaveClass("bg-primary-50/95");
+    expect(within(mobileList).getByRole("link", { name: "基础信息" })).toHaveAttribute("href", "/courses/course-1/create/audience");
+    expect(within(mobileList).getAllByText("预览发布").find((node) => node.closest("[aria-disabled='true']"))?.closest("[aria-disabled='true']")).toHaveAttribute("aria-disabled", "true");
+  });
+
+  test("closes the floating mobile step list when tapping outside it", () => {
+    render(<CourseCreateSteps courseId="course-1" currentStep={3} furthestStep={4} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "展开课程步骤导航" }));
+    expect(screen.getByRole("list", { name: "移动端课程步骤列表" })).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+
+    expect(screen.queryByRole("list", { name: "移动端课程步骤列表" })).not.toBeInTheDocument();
   });
 
   test("links completed steps when a course id exists and disables locked steps", () => {

@@ -48,6 +48,21 @@ describe("CoursePreviewWorkspace", () => {
     expect(screen.getByText("Mystery")).toBeInTheDocument();
   });
 
+  it("stacks the slide preview and style controls below desktop width", () => {
+    render(<CoursePreviewWorkspace initialState={{
+      course: { id: "course-1", title: "Mystery", lifecycleStatus: "draft", teacherName: "Lin", studentNames: ["Summer"] },
+      presentation: { coverTheme: "dark", coverTitleFontSize: 1, chapterTheme: "blue-purple", slideOverrides: {} },
+      pages: [
+        { id: "cover", type: "cover_title", image: { publicUrl: null }, title: "Mystery", teacherName: "Lin", studentNames: ["Summer"] },
+      ],
+    }} />);
+
+    expect(screen.getByTestId("preview-workbench")).toHaveClass("flex-col", "lg:flex-row");
+    expect(screen.getByTestId("preview-slide-region")).toHaveClass("p-3", "sm:p-6");
+    expect(screen.getByTestId("preview-slide-frame")).toHaveClass("min-h-[280px]", "sm:min-h-[440px]");
+    expect(screen.getByTestId("preview-style-panel")).toHaveClass("w-full", "lg:w-80", "lg:border-l");
+  });
+
   it("auto-saves a per-page font size change", async () => {
     const fetchMock = vi.fn(async () => Response.json({ presentation: {} }));
     vi.stubGlobal("fetch", fetchMock);
