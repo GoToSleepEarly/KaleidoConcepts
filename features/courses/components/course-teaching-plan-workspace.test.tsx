@@ -111,9 +111,9 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.getByRole("heading", { name: "海底图书馆" })).toBeInTheDocument();
     expect(screen.getByText("45 分钟")).toBeInTheDocument();
     expect(screen.queryByText("选择全课英语难度")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "课后练习" })).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /章节/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /课后/ })).toBeInTheDocument();
+    const desktopSidebar = screen.getByTestId("teaching-plan-desktop-sidebar");
+    expect(within(desktopSidebar).getByRole("tab", { name: /章节/ })).toBeInTheDocument();
+    expect(within(desktopSidebar).getByRole("tab", { name: /课后/ })).toBeInTheDocument();
 
     expect(screen.getAllByText("选项填空").length).toBeGreaterThan(0);
     expect(screen.getAllByText("给词变形").length).toBeGreaterThan(0);
@@ -124,11 +124,75 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.getAllByText("B1").length).toBeGreaterThan(0);
     expect(screen.getByText("全课 2 个知识点")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: /课后/ }));
-    expect(screen.getByText("课后练习")).toBeInTheDocument();
+    fireEvent.click(within(desktopSidebar).getByRole("tab", { name: /课后/ }));
+    expect(screen.getByRole("heading", { name: "课后练习" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "生成课后练习" }));
     expect(screen.getByRole("button", { name: "词汇复习已开启" })).toBeInTheDocument();
     expect(screen.getByText(/从各章节正文的词汇习题自动汇总并去重/)).toBeInTheDocument();
+  });
+
+  test("uses a single-column mobile workbench without horizontal chapter dragging", () => {
+    render(<CourseTeachingPlanWorkspace initialState={state()} />);
+
+    expect(screen.getByTestId("teaching-plan-layout")).toHaveClass("lg:grid-cols-[300px_minmax(0,1fr)]");
+    expect(screen.getByTestId("teaching-plan-desktop-sidebar")).toHaveClass("hidden", "lg:block");
+    expect(screen.getByTestId("teaching-plan-mobile-controls")).toHaveClass("lg:hidden");
+    expect(screen.getByTestId("teaching-plan-mobile-panel-tabs")).toHaveClass("grid-cols-2");
+    expect(screen.queryByTestId("teaching-plan-mobile-chapter-tabs")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重置" })).toHaveClass("lg:hidden");
+    expect(screen.getByRole("button", { name: "重置教学规划" })).toHaveClass("hidden", "lg:inline-flex");
+    expect(screen.getByRole("button", { name: "章节" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "课后" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("combobox", { name: "移动端章节选择" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "第 1/2 章 · 发光地图" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByTestId("teaching-plan-mobile-section-tabs")).toHaveClass("grid-cols-3");
+    expect(screen.getByRole("button", { name: "目标" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "正文" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "练习" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("teaching-plan-bottom-summary")).toHaveClass("flex", "flex-wrap");
+    expect(screen.getByTestId("teaching-plan-bottom-summary")).toHaveTextContent("章节 2/2 · 课后练习不生成");
+    expect(screen.getByTestId("teaching-plan-bottom-summary")).toHaveTextContent("已自动保存");
+
+    fireEvent.click(screen.getByRole("button", { name: "第 1/2 章 · 发光地图" }));
+    expect(screen.getByRole("button", { name: "第 1/2 章 · 发光地图" })).toHaveAttribute("aria-controls", "mobile-chapter-list");
+    expect(screen.getByRole("listbox", { name: "移动端章节列表" })).toHaveAttribute("id", "mobile-chapter-list");
+    expect(screen.getByRole("listbox", { name: "移动端章节列表" })).toHaveClass("max-h-[40dvh]", "overflow-y-auto");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("listbox", { name: "移动端章节列表" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "第 1/2 章 · 发光地图" }));
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("listbox", { name: "移动端章节列表" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "第 1/2 章 · 发光地图" }));
+    fireEvent.click(screen.getByRole("option", { name: "第 2/2 章 · 蓝色书页" }));
+
+    expect(screen.getByRole("heading", { name: "第 2 章 · 蓝色书页" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "第 2/2 章 · 蓝色书页" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("listbox", { name: "移动端章节列表" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("teaching-plan-goals-section")).not.toHaveClass("max-lg:hidden");
+    expect(screen.getByTestId("teaching-plan-reading-section")).toHaveClass("max-lg:hidden");
+    expect(screen.getByTestId("teaching-plan-practice-section")).toHaveClass("max-lg:hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: "正文" }));
+    expect(screen.getByRole("radiogroup", { name: "正文模式" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "同步正文设置到全部章节" })).toHaveClass("self-start", "sm:self-auto");
+    expect(screen.getByTestId("teaching-plan-goals-section")).toHaveClass("max-lg:hidden");
+    expect(screen.getByTestId("teaching-plan-reading-section")).not.toHaveClass("max-lg:hidden");
+    expect(screen.getByTestId("teaching-plan-practice-section")).toHaveClass("max-lg:hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: "练习" }));
+    expect(screen.getByRole("button", { name: "章节练习已开启" })).toBeInTheDocument();
+    expect(screen.getByTestId("teaching-plan-goals-section")).toHaveClass("max-lg:hidden");
+    expect(screen.getByTestId("teaching-plan-reading-section")).toHaveClass("max-lg:hidden");
+    expect(screen.getByTestId("teaching-plan-practice-section")).not.toHaveClass("max-lg:hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: "课后" }));
+
+    expect(screen.queryByRole("button", { name: /第 2\/2 章/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "课后阅读" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "章节" }));
+    expect(screen.queryByRole("listbox", { name: "移动端章节列表" })).not.toBeInTheDocument();
   });
 
   test("auto-saves edits and shows saved status without navigating", async () => {
@@ -269,11 +333,12 @@ describe("CourseTeachingPlanWorkspace", () => {
     fireEvent.click(screen.getByRole("radio", { name: /边读边练/ }));
     fireEvent.click(screen.getByLabelText("第 1 章正文选项填空增加"));
 
-    fireEvent.click(screen.getByRole("button", { name: /第 2 章/ }));
-    fireEvent.click(screen.getByRole("button", { name: /第 1 章/ }));
+    const desktopSidebar = screen.getByTestId("teaching-plan-desktop-sidebar");
+    fireEvent.click(within(desktopSidebar).getByRole("button", { name: /第 2 章/ }));
+    fireEvent.click(within(desktopSidebar).getByRole("button", { name: /第 1 章/ }));
     fireEvent.click(screen.getByRole("button", { name: "同步正文设置到全部章节" }));
 
-    fireEvent.click(screen.getByRole("button", { name: /第 2 章/ }));
+    fireEvent.click(within(desktopSidebar).getByRole("button", { name: /第 2 章/ }));
     expect(screen.getByText("特殊疑问句 · Wh- Questions")).toBeInTheDocument();
     expect(screen.queryByText("一般过去时 · Past Simple")).not.toBeInTheDocument();
     expect(screen.getByLabelText("第 2 章目标词数")).toHaveValue(180);

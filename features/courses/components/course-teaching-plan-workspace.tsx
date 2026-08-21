@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, BookOpenText, Check, ChevronRight, Clock3, Loader2, Minus, PencilLine, Plus, RotateCcw, X } from "lucide-react";
+import { ArrowLeft, BookOpenText, Check, ChevronDown, ChevronRight, Clock3, Loader2, Minus, PencilLine, Plus, RotateCcw, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -33,6 +33,7 @@ function unionKnowledgePointIds(chapters: TeachingPlanChapter[]) {
 
 type SaveStatus = "saved" | "dirty" | "saving" | "failed";
 type ActivePanel = "chapters" | "afterClass";
+type MobileChapterSection = "goals" | "reading" | "practice";
 
 function chapterReady(chapter: TeachingPlanChapter) {
   return Boolean(chapter.targetWordCount && chapter.knowledgePointIds.length);
@@ -41,6 +42,10 @@ function chapterReady(chapter: TeachingPlanChapter) {
 function saveStatusLabel(status: SaveStatus, incomplete = false) {
   if (incomplete) return "待完善";
   return status === "dirty" ? "未保存" : status === "saving" ? "正在保存..." : status === "failed" ? "保存失败" : "已自动保存";
+}
+
+function compactTabClass(active: boolean) {
+  return cn("min-h-11 rounded-md px-3 text-sm font-medium", active ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70");
 }
 
 function hasValidExercisePlan(plan: TeachingPlan) {
@@ -66,6 +71,8 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
   const [plan, setPlan] = useState<TeachingPlan>(initialState.plan);
   const [activePanel, setActivePanel] = useState<ActivePanel>("chapters");
   const [selectedChapterIndex, setSelectedChapterIndex] = useState(0);
+  const [mobileChapterSection, setMobileChapterSection] = useState<MobileChapterSection>("goals");
+  const [mobileChapterMenuOpen, setMobileChapterMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [downstreamConfirmOpen, setDownstreamConfirmOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
@@ -76,6 +83,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
   const hasMounted = useRef(false);
   const saveController = useRef<AbortController | null>(null);
   const saveInFlight = useRef<Promise<boolean> | null>(null);
+  const mobileChapterMenuRef = useRef<HTMLDivElement | null>(null);
   const selectedChapter = plan.chapters[selectedChapterIndex];
   const selectedOutlineChapter = initialState.outline.chapters[selectedChapterIndex];
   const readyChapterCount = plan.chapters.filter(chapterReady).length;
@@ -206,6 +214,24 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
     return () => window.removeEventListener("beforeunload", beforeUnload);
   }, [saveStatus]);
 
+  useEffect(() => {
+    if (!mobileChapterMenuOpen) return;
+    function closeMobileChapterMenu(event: KeyboardEvent | MouseEvent) {
+      if (event instanceof KeyboardEvent) {
+        if (event.key === "Escape") setMobileChapterMenuOpen(false);
+        return;
+      }
+      if (event.target instanceof Node && mobileChapterMenuRef.current?.contains(event.target)) return;
+      setMobileChapterMenuOpen(false);
+    }
+    document.addEventListener("keydown", closeMobileChapterMenu);
+    document.addEventListener("mousedown", closeMobileChapterMenu);
+    return () => {
+      document.removeEventListener("keydown", closeMobileChapterMenu);
+      document.removeEventListener("mousedown", closeMobileChapterMenu);
+    };
+  }, [mobileChapterMenuOpen]);
+
   async function navigate(href: string) {
     if (saveStatus !== "saved" && !(await saveDraft(plan))) return;
     router.push(href);
@@ -276,20 +302,79 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
       <CourseCreateSteps currentStep={3} courseId={initialState.course.id} furthestStep={plan.status === "confirmed" ? courseStageStep(initialState.course.currentStage) : 3} onNavigate={(href) => void navigate(href)} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-muted-foreground">教学规划</p>
-          <h2 className="mt-1 truncate text-2xl font-semibold text-foreground">{initialState.outline.title}</h2>
+          <div className="flex min-w-0 items-start justify-between gap-3 sm:block">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-muted-foreground">教学规划</p>
+              <h2 className="mt-1 truncate text-xl font-semibold text-foreground sm:text-2xl">{initialState.outline.title}</h2>
+            </div>
+            <Button className="shrink-0 lg:hidden" disabled={confirming || resetting || saveStatus === "saving"} onClick={() => setResetConfirmOpen(true)} size="sm" type="button" variant="outline"><RotateCcw className="size-4" />重置</Button>
+          </div>
         </div>
-        <div className="flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap text-sm">
-          <Button disabled={confirming || resetting || saveStatus === "saving"} onClick={() => setResetConfirmOpen(true)} size="sm" type="button" variant="outline"><RotateCcw className="size-4" />重置教学规划</Button>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 font-medium text-muted-foreground"><Clock3 className="size-4" />{initialState.course.durationMinutes} 分钟</span>
+        <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 text-xs sm:justify-end sm:text-sm">
+          <Button className="hidden lg:inline-flex" disabled={confirming || resetting || saveStatus === "saving"} onClick={() => setResetConfirmOpen(true)} size="sm" type="button" variant="outline"><RotateCcw className="size-4" />重置教学规划</Button>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1.5 font-medium text-muted-foreground sm:px-3"><Clock3 className="size-4" />{initialState.course.durationMinutes} 分钟</span>
           <span className="rounded-full bg-primary-50 px-3 py-1.5 text-sm font-semibold text-primary-700">{initialState.course.englishLevel}</span>
-          <span className="rounded-full bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">全课 {courseKnowledgePointCount} 个知识点</span>
+          <span className="rounded-full bg-muted px-2.5 py-1.5 font-medium text-muted-foreground sm:px-3">全课 {courseKnowledgePointCount} 个知识点</span>
           <span className={cn("shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium", saveStatus === "failed" ? "bg-red-50 text-red-700" : !exercisePlanValid ? "bg-amber-50 text-amber-800" : saveStatus === "saving" ? "bg-primary-50 text-primary-700" : "bg-muted text-muted-foreground")}>{saveStatusLabel(saveStatus, !exercisePlanValid)}</span>
         </div>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-5" data-testid="teaching-plan-layout">
+        <div className="min-w-0 space-y-3 rounded-lg border border-border bg-card p-3 shadow-sm lg:hidden" data-testid="teaching-plan-mobile-controls">
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1" data-testid="teaching-plan-mobile-panel-tabs" aria-label="教学规划配置">
+            <button aria-pressed={activePanel === "chapters"} className={compactTabClass(activePanel === "chapters")} onClick={() => setActivePanel("chapters")} type="button">章节</button>
+            <button aria-pressed={activePanel === "afterClass"} className={compactTabClass(activePanel === "afterClass")} onClick={() => setActivePanel("afterClass")} type="button">课后</button>
+          </div>
+          {activePanel === "chapters" ? (
+            <div className="space-y-3">
+              <div className="block" ref={mobileChapterMenuRef}>
+                <span className="mb-1 block text-xs font-semibold text-muted-foreground">当前章节</span>
+                <button
+                  aria-controls="mobile-chapter-list"
+                  aria-expanded={mobileChapterMenuOpen}
+                  aria-haspopup="listbox"
+                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-md border border-input bg-background px-3 text-left text-sm font-semibold text-foreground transition-colors hover:border-primary-200 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setMobileChapterMenuOpen((open) => !open)}
+                  type="button"
+                >
+                  <span className="min-w-0 truncate">第 {selectedOutlineChapter?.order ?? selectedChapterIndex + 1}/{plan.chapters.length} 章 · {selectedOutlineChapter?.title ?? "未命名章节"}</span>
+                  <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", mobileChapterMenuOpen ? "rotate-180" : "")} />
+                </button>
+                {mobileChapterMenuOpen ? (
+                  <div aria-label="移动端章节列表" className="mt-2 max-h-[40dvh] space-y-1 overflow-y-auto rounded-md border border-border bg-card p-1 shadow-sm" id="mobile-chapter-list" role="listbox">
+                    {plan.chapters.map((chapter, index) => {
+                      const outline = initialState.outline.chapters[index];
+                      const active = selectedChapterIndex === index;
+                      return (
+                        <button
+                          aria-selected={active}
+                          className={cn("flex min-h-10 w-full items-center justify-between gap-2 rounded-md px-3 text-left text-sm transition-colors", active ? "bg-primary-50 font-semibold text-primary-700" : "text-foreground hover:bg-muted")}
+                          key={chapter.outlineChapterId}
+                          onClick={() => {
+                            setSelectedChapterIndex(index);
+                            setMobileChapterSection("goals");
+                            setMobileChapterMenuOpen(false);
+                          }}
+                          role="option"
+                          type="button"
+                        >
+                          <span className="min-w-0 truncate">第 {outline.order}/{plan.chapters.length} 章 · {outline.title}</span>
+                          {active ? <Check className="size-4 shrink-0 text-primary" /> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1" data-testid="teaching-plan-mobile-section-tabs" aria-label="当前章节配置">
+                <button aria-pressed={mobileChapterSection === "goals"} className={compactTabClass(mobileChapterSection === "goals")} onClick={() => setMobileChapterSection("goals")} type="button">目标</button>
+                <button aria-pressed={mobileChapterSection === "reading"} className={compactTabClass(mobileChapterSection === "reading")} onClick={() => setMobileChapterSection("reading")} type="button">正文</button>
+                <button aria-pressed={mobileChapterSection === "practice"} className={compactTabClass(mobileChapterSection === "practice")} onClick={() => setMobileChapterSection("practice")} type="button">练习</button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <aside className="hidden space-y-4 lg:block" data-testid="teaching-plan-desktop-sidebar">
           <section className="rounded-lg bg-card p-3 shadow-sm">
             <div aria-label="教学规划配置" className="space-y-2" role="tablist">
               <PanelTab
@@ -341,6 +426,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
               index={selectedChapterIndex}
               knowledgePoints={initialState.knowledgePoints}
               unrecommendedSelectedKnowledgePointIds={unrecommendedSelectedKnowledgePointIds}
+              mobileSection={mobileChapterSection}
               onApplyChapterPracticeToAll={applyCurrentChapterPracticeToAll}
               onApplyReadingToAll={applyCurrentChapterReadingToAll}
               onChange={(updater) => updateChapter(selectedChapterIndex, updater)}
@@ -366,14 +452,15 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
         </main>
       </div>
 
-      <div className="sticky bottom-4 flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-md sm:px-5">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">{confirmHint}</p>
-          {error ? <p className="mt-0.5 text-xs text-red-700" role="alert">{error}</p> : <p className={cn("mt-0.5 text-xs", saveStatus === "failed" ? "text-red-700" : !exercisePlanValid ? "text-amber-700" : "text-muted-foreground")}>{saveStatusLabel(saveStatus, !exercisePlanValid)}</p>}
+      <div className="sticky bottom-3 flex flex-col gap-3 rounded-lg border border-border bg-card px-3 py-3 shadow-md sm:bottom-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm" data-testid="teaching-plan-bottom-summary">
+          <span className="font-medium text-foreground">{confirmHint}</span>
+          <span aria-hidden="true" className="text-muted-foreground">·</span>
+          {error ? <span className="text-xs text-red-700" role="alert">{error}</span> : <span className={cn("text-xs", saveStatus === "failed" ? "text-red-700" : !exercisePlanValid ? "text-amber-700" : "text-muted-foreground")}>{saveStatusLabel(saveStatus, !exercisePlanValid)}</span>}
         </div>
-        <div className="flex gap-2">
-          <Button disabled={confirming || saveStatus === "saving"} onClick={() => void navigate(`/courses/${initialState.course.id}/create/story-outline`)} type="button" variant="outline"><ArrowLeft className="size-4" />上一步</Button>
-          <Button disabled={confirming || !exercisePlanValid} onClick={advanceToContent} type="button">{confirming ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}{confirming ? "确认中" : plan.status === "confirmed" ? "进入文案与练习" : "确认并进入文案与练习"}</Button>
+        <div className="grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] gap-2 sm:flex">
+          <Button className="min-w-0 px-3" disabled={confirming || saveStatus === "saving"} onClick={() => void navigate(`/courses/${initialState.course.id}/create/story-outline`)} type="button" variant="outline"><ArrowLeft className="size-4" /><span className="truncate">上一步</span></Button>
+          <Button className="min-w-0 px-3" disabled={confirming || !exercisePlanValid} onClick={advanceToContent} type="button">{confirming ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}<span className="truncate">{confirming ? "确认中" : plan.status === "confirmed" ? "进入文案与练习" : "确认并进入文案与练习"}</span></Button>
         </div>
       </div>
       <Dialog description="将放弃本阶段的手动调整" onClose={() => setResetConfirmOpen(false)} open={resetConfirmOpen} title="重置教学规划？">
@@ -420,12 +507,13 @@ function PanelTab({ active, label, summary, onClick }: { active: boolean; label:
   );
 }
 
-function ChapterEditor({ chapter, outline, index, knowledgePoints, unrecommendedSelectedKnowledgePointIds, onApplyReadingToAll, onApplyChapterPracticeToAll, onChange }: {
+function ChapterEditor({ chapter, outline, index, knowledgePoints, unrecommendedSelectedKnowledgePointIds, mobileSection, onApplyReadingToAll, onApplyChapterPracticeToAll, onChange }: {
   chapter: TeachingPlanChapter;
   outline: TeachingPlanState["outline"]["chapters"][number];
   index: number;
   knowledgePoints: TeachingPlanState["knowledgePoints"];
   unrecommendedSelectedKnowledgePointIds: string[];
+  mobileSection?: MobileChapterSection;
   onApplyReadingToAll: () => void;
   onApplyChapterPracticeToAll: () => void;
   onChange: (updater: (chapter: TeachingPlanChapter) => TeachingPlanChapter) => void;
@@ -434,10 +522,11 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, unrecommended
   const [pickerOpen, setPickerOpen] = useState(false);
   const recommendedIds = outline.recommendedKnowledgePointIds;
   const knowledgePointsChanged = !sameIdSet(chapter.knowledgePointIds, recommendedIds);
+  const mobileSectionClass = (section: MobileChapterSection) => mobileSection && mobileSection !== section ? "max-lg:hidden" : "";
   return (
     <section>
       <div className="space-y-5">
-        <div className="rounded-lg bg-card p-5 shadow-sm">
+        <div className={cn("rounded-lg bg-card p-5 shadow-sm", mobileSectionClass("goals"))} data-testid="teaching-plan-goals-section">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               <h3 className="text-lg font-semibold text-foreground">{chapterLabel} · {outline.title}</h3>
@@ -506,10 +595,10 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, unrecommended
           ) : null}
         </div>
 
-        <div className="rounded-lg bg-card p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
+        <div className={cn("rounded-lg bg-card p-5 shadow-sm", mobileSectionClass("reading"))} data-testid="teaching-plan-reading-section">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h4 className="text-sm font-semibold text-foreground">正文模式</h4>
-            <Button onClick={onApplyReadingToAll} size="sm" type="button" variant="outline">同步正文设置到全部章节</Button>
+            <Button aria-label="同步正文设置到全部章节" className="self-start sm:self-auto" onClick={onApplyReadingToAll} size="sm" type="button" variant="outline"><span className="sm:hidden">同步到全部章节</span><span className="hidden sm:inline">同步正文设置到全部章节</span></Button>
           </div>
           <div aria-label="正文模式" className="mt-4 grid gap-3 sm:grid-cols-2" role="radiogroup">
             <ReadingModeOption
@@ -537,7 +626,7 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, unrecommended
           <ReadingExerciseEditor ariaPrefix={`${chapterLabel}正文`} config={chapter.readingExercises} onChange={(readingExercises) => onChange((current) => ({ ...current, readingExercises, paragraphCount: minimumReadingParagraphCount(current.targetWordCount ?? 90, readingExercises), touched: { ...current.touched, readingExercises: true } }))} />
         </div>
 
-        <div className="rounded-lg bg-card p-5 shadow-sm">
+        <div className={cn("rounded-lg bg-card p-5 shadow-sm", mobileSectionClass("practice"))} data-testid="teaching-plan-practice-section">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <ToggleHeader enabled={chapter.chapterPractice.enabled} label="章节练习" onChange={(enabled) => onChange((current) => ({ ...current, chapterPractice: { ...current.chapterPractice, enabled }, touched: { ...current.touched, chapterPractice: true } }))} />
             <Button onClick={onApplyChapterPracticeToAll} size="sm" type="button" variant="outline">同步章节练习到全部章节</Button>
