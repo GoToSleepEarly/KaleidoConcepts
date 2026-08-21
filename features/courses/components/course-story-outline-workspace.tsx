@@ -61,6 +61,16 @@ function resultTabAfterUpdate(previous: CourseStoryOutlineState, next: CourseSto
   return current;
 }
 
+function isCourseStoryOutlineState(value: unknown): value is CourseStoryOutlineState {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<CourseStoryOutlineState>;
+  return Boolean(candidate.course?.id && candidate.settings)
+    && Array.isArray(candidate.chatMessages)
+    && Array.isArray(candidate.directions)
+    && Array.isArray(candidate.referenceMaterials)
+    && Array.isArray(candidate.coursePeople);
+}
+
 export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], storyTypePresets = [], storyTonePresets = [] }: { initialState: CourseStoryOutlineState; themePresets?: PresetOption[]; storyTypePresets?: PresetOption[]; storyTonePresets?: PresetOption[] }) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
@@ -135,6 +145,30 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     const timeline = chatScrollRef.current;
     if (timeline) timeline.scrollTop = timeline.scrollHeight;
   }, [optimisticTeacherMessage, pending, pendingLabel, state.chatMessages.length, state.operation?.status, state.operation?.updatedAt, state.outline?.updatedAt]);
+
+  useEffect(() => {
+    let active = true;
+    const refreshPersistedState = async () => {
+      try {
+        const response = await fetch(`/api/courses/${initialState.course.id}/story-outline`, { cache: "no-store" });
+        if (!response.ok || !active) return;
+        const nextState: unknown = await response.json();
+        if (!active || requestInFlight.current || !isCourseStoryOutlineState(nextState)) return;
+        if (JSON.stringify(nextState) === JSON.stringify(stateRef.current)) return;
+        applyNextState(nextState);
+        setChapterCount(nextState.settings.chapterCount);
+        setWritingProvider(nextState.settings.writingProvider);
+        const operationRunning = nextState.operation?.status === "running";
+        setPending(operationRunning);
+        setPendingLabel(operationRunning ? operationLoadingLabel(nextState.operation?.phase) : "");
+        setError(nextState.operation?.status === "failed" ? nextState.operation.errorMessage ?? "" : "");
+      } catch {
+        // 首屏仍可使用时，恢复请求失败不能把已有内容替换为空状态。
+      }
+    };
+    void refreshPersistedState();
+    return () => { active = false; };
+  }, [initialState.course.id]);
 
   useEffect(() => {
     if (!pending) return;
@@ -1235,8 +1269,8 @@ function CharactersSection({ outline }: { outline: CourseStoryOutline }) {
 function CharacterCard({ character }: { character: CourseStoryOutline["characters"][number] }) {
   return (
     <article className="rounded-md border border-border p-3">
-      <h5 className="text-sm font-semibold text-foreground">{character.displayName}</h5>
-      <p className="mt-0.5 text-xs font-medium text-muted-foreground">{character.englishName}</p>
+      <h5 className="text-sm font-semibold text-foreground">{character.englishName || character.displayName}</h5>
+      {character.displayName !== character.englishName ? <p className="mt-0.5 text-xs font-medium text-muted-foreground">{character.displayName}</p> : null}
       <p className="mt-1 text-xs text-muted-foreground">{sourceTypeLabel(character.sourceType)} · {character.roleInStory}</p>
       {character.shortDescription !== character.roleInStory ? <p className="mt-2 text-sm text-muted-foreground">{character.shortDescription}</p> : null}
     </article>

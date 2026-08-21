@@ -300,6 +300,49 @@ describe("story outline repository", () => {
     expect(state.chatMessages.at(-1)?.actions.map((action) => action.action)).toEqual(["confirm_requirements", "modify_requirements"]);
   });
 
+  test("normalizes legacy object-valued direction characters when loading state", async () => {
+    const db = createDb();
+    db.state.directions.push(record({
+      courseId: "course-1",
+      title: "英雄战队",
+      hook: "林老师带领夏天迎战怪兽。",
+      whyFits: "夏天有关键行动。",
+      storyHighlight: "夏天发现弱点。",
+      growthCore: "林老师帮助团队协作。",
+      mainCharacters: [{ displayName: "林老师" }, { englishName: "Summer" }, { name: "学生英雄队" }],
+      classroomValue: "",
+      seedPrompt: "hero team",
+      selectedAt: null,
+    }));
+
+    const state = await getStoryOutlineState(db, "course-1");
+
+    expect(state.directions[0].mainCharacters).toEqual(["Ms. Lin", "Summer"]);
+    expect(state.directions[0].hook).toBe("Ms. Lin带领Summer迎战怪兽。");
+  });
+
+  test("sanitizes a previously persisted raw database error when loading state", async () => {
+    const db = createDb();
+    const rawError = "Invalid `prisma.courseStoryOutlineChapter.createMany()` invocation: Argument storyGoal: Expected String, provided (String, String)";
+    db.state.setting = record({
+      courseId: "course-1",
+      chapterCount: 4,
+      writingProvider: "quickrouter_gpt",
+      operationRequestId: "request-1",
+      operationAction: "confirm_direction",
+      operationPhase: "generating_outline",
+      operationStatus: "failed",
+      operationError: rawError,
+      operationStartedAt: new Date("2026-08-21T08:00:00.000Z"),
+    });
+    db.state.messages.push(record({ courseId: "course-1", role: "assistant", content: rawError, actions: [] }));
+
+    const state = await getStoryOutlineState(db, "course-1");
+
+    expect(state.operation?.errorMessage).toBe("故事大纲生成失败，请重试本步");
+    expect(state.chatMessages[0].content).not.toContain("prisma");
+  });
+
   test("confirms aligned requirements, prepares background once, then generates directions", async () => {
     const db = createDb();
     const prepareBackgroundKnowledge = vi.fn(deps.prepareBackgroundKnowledge);
@@ -653,6 +696,26 @@ describe("story outline repository", () => {
 
     expect(db.state.outline).not.toBeNull();
     expect(db.state.messages.filter((message) => String(message.content).startsWith("我选择并生成故事大纲："))).toHaveLength(1);
+  });
+
+  test("does not persist raw Prisma diagnostics as a teacher-facing operation error", async () => {
+    const db = createDb();
+    await handleStoryOutlineMessage(db, "course-1", { message: "主题：海底", mode: "random" }, deps);
+    const directionId = String(db.state.directions[0]?.id);
+    const generateOutline = vi.fn(async () => {
+      throw new Error("Invalid `prisma.courseStoryOutlineChapter.createMany()` invocation:\nArgument storyGoal: Expected String, provided (String, String)");
+    });
+
+    await expect(handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "confirm_direction",
+      targetId: directionId,
+    }, { ...deps, generateOutline })).rejects.toThrow("Invalid `prisma");
+
+    expect(db.state.setting?.operationError).toBe("故事大纲生成失败，请重试本步");
+    expect(db.state.messages.at(-1)?.content).toBe("故事大纲生成失败，请重试本步。你可以重试本步，或修改要求后重新提交。");
+    expect(db.state.messages.at(-1)?.content).not.toContain("prisma");
   });
 
   test("revises one chapter without replacing characters or other chapters", async () => {

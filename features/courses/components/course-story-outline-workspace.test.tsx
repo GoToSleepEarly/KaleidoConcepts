@@ -89,8 +89,17 @@ const outlineState: CourseStoryOutlineState = {
 };
 
 function fetchBody(fetchMock: ReturnType<typeof vi.fn>, index = 0) {
-  const init = fetchMock.mock.calls[index]?.[1] as RequestInit | undefined;
+  const callsWithBody = fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.body !== undefined);
+  const init = callsWithBody[index]?.[1] as RequestInit | undefined;
   return JSON.parse(String(init?.body));
+}
+
+function fetchBodyCallCount(fetchMock: ReturnType<typeof vi.fn>) {
+  return fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.body !== undefined).length;
+}
+
+function fetchPostCallCount(fetchMock: ReturnType<typeof vi.fn>) {
+  return fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === "POST").length;
 }
 
 describe("CourseStoryOutlineWorkspace", () => {
@@ -193,6 +202,45 @@ describe("CourseStoryOutlineWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "放弃并离开" }));
     expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/audience");
+  });
+
+  test("reloads persisted unselected directions when re-entering Step 2 with a stale empty page state", async () => {
+    const persistedState: CourseStoryOutlineState = {
+      ...emptyState,
+      chatMessages: [{
+        id: "assistant-directions",
+        courseId: "course-1",
+        role: "assistant",
+        content: "故事方向已经生成。",
+        actions: [],
+        createdAt: "2026-08-21T08:00:00.000Z",
+      }],
+      directions: ["协作突围", "技能接力", "老师的最后一课"].map((title, index) => ({
+        id: `direction-${index + 1}`,
+        courseId: "course-1",
+        title,
+        hook: `第 ${index + 1} 个超级英雄故事方向。`,
+        whyFits: "四名学生都能参与推进故事。",
+        mainCharacters: ["学生一", "学生二", "学生三", "学生四", "老师"],
+        classroomValue: "团队合作",
+        seedPrompt: `第 ${index + 1} 个超级英雄故事方向。`,
+        selectedAt: null,
+        createdAt: `2026-08-21T08:00:0${index}.000Z`,
+      })),
+    };
+    const fetchMock = vi.fn(async () => Response.json(persistedState));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CourseStoryOutlineWorkspace initialState={emptyState} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/courses/course-1/story-outline",
+      { cache: "no-store" },
+    ));
+    expect(await screen.findByText("协作突围")).toBeInTheDocument();
+    expect(screen.getByText("技能接力")).toBeInTheDocument();
+    expect(screen.getByText("老师的最后一课")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "选择并生成大纲" })).toHaveLength(3);
   });
 
   test("renders persisted AI progress messages while a multi-round request is still running", async () => {
@@ -622,9 +670,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getAllByRole("button", { name: "重试本步" })).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "重试本步" }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    const retryBody = JSON.parse(String((fetchMock.mock.calls[2]?.[1] as RequestInit | undefined)?.body));
-    expect(retryBody).toMatchObject({ action: "retry_operation", message: "" });
+    await waitFor(() => expect(fetchBody(fetchMock, 1)).toMatchObject({ action: "retry_operation", message: "" }));
   });
 
   test("restores the draft only when the server cannot confirm receiving the request", async () => {
@@ -749,7 +795,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "继续修改" }));
 
     expect(screen.getByRole("textbox", { name: "故事想法" })).toHaveValue("帮我修改：");
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchBodyCallCount(fetchMock)).toBe(0);
   });
 
   test("selects a random direction from the right panel", async () => {
@@ -801,7 +847,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
     expect(screen.getByRole("heading", { name: "重新生成会清除后续内容" })).toBeInTheDocument();
     expect(screen.getByText(/教学规划、文案与练习、视觉资源、图片和预览发布设置/)).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchBodyCallCount(fetchMock)).toBe(0);
     fireEvent.click(screen.getByRole("button", { name: "确认并重新生成" }));
 
     await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({ action: "regenerate_outline", resetDownstream: true }));
@@ -822,7 +868,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     expect(screen.getByRole("heading", { name: "修改故事大纲会清除后续内容" })).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchBodyCallCount(fetchMock)).toBe(0);
     fireEvent.click(screen.getByRole("button", { name: "清空后续内容并继续" }));
 
     await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({
@@ -833,9 +879,14 @@ describe("CourseStoryOutlineWorkspace", () => {
   });
 
   test("shows the reset dialog when the server finds downstream data behind a stale course stage", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(Response.json({ message: "需要重置", requiresReset: true }, { status: 409 }))
-      .mockResolvedValueOnce(Response.json(outlineState));
+    let postCount = 0;
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method !== "POST") return Response.json(outlineState);
+      postCount += 1;
+      return postCount === 1
+        ? Response.json({ message: "需要重置", requiresReset: true }, { status: 409 })
+        : Response.json(outlineState);
+    });
     vi.stubGlobal("fetch", fetchMock);
     render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
 
@@ -848,8 +899,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "修改故事大纲会清除后续内容" })).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "清空后续内容并继续" }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(fetchBody(fetchMock, 1)).toMatchObject({ action: "revise_chapter", resetDownstream: true });
+    await waitFor(() => expect(fetchBody(fetchMock, 1)).toMatchObject({ action: "revise_chapter", resetDownstream: true }));
   });
 
   test("lands on the outline when one response adds references and finishes the outline", async () => {
@@ -1406,6 +1456,6 @@ describe("CourseStoryOutlineWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "进入教学规划" }));
 
     expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/teaching-plan");
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchPostCallCount(fetchMock)).toBe(0);
   });
 });
