@@ -319,9 +319,51 @@ function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function textValue(value: unknown) {
+  if (typeof value === "string") return value.trim();
+  if (!Array.isArray(value)) return "";
+  return value.map(stringValue).filter(Boolean).join("");
+}
+
 function stringArray(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.map(stringValue).filter(Boolean);
+}
+
+function nameArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string") return item.trim() ? [item.trim()] : [];
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    const name = stringValue(record.displayName) || stringValue(record.chineseName) || stringValue(record.name) || stringValue(record.englishName);
+    return name ? [name] : [];
+  });
+}
+
+function normalizeNameForMatch(value: string | undefined) {
+  return value?.normalize("NFKC").trim().toLowerCase() ?? "";
+}
+
+function findUniqueCoursePerson(
+  people: CoursePersonPrompt,
+  character: { displayName?: string; englishName?: string; sourcePersonId?: string | null },
+) {
+  if (character.sourcePersonId) {
+    return people.find((candidate) => candidate.personId === character.sourcePersonId) ?? null;
+  }
+  const displayName = normalizeNameForMatch(character.displayName);
+  const englishName = normalizeNameForMatch(character.englishName);
+  if (!displayName && !englishName) return null;
+  const matches = people.filter((candidate) => {
+    const chinese = normalizeNameForMatch(candidate.chineseName);
+    const english = normalizeNameForMatch(candidate.englishName);
+    return Boolean(
+      (displayName && (displayName === chinese || displayName === english)) ||
+      (englishName && (englishName === english || englishName === chinese)),
+    );
+  });
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function normalizeReference(
@@ -690,6 +732,7 @@ export function createStoryOutlineGenerationDeps(aiGateway: AiGateway = "quickro
       }>>(text, "故事方向解析失败，请重试");
       return parsed.map((direction) => ({
         ...direction,
+        mainCharacters: nameArray(direction.mainCharacters),
         classroomValue: "",
         seedPrompt: direction.hook,
       }));
@@ -725,6 +768,7 @@ export function createStoryOutlineGenerationDeps(aiGateway: AiGateway = "quickro
       }>(text, "故事方向修改失败，请重试");
       return {
         ...parsed,
+        mainCharacters: nameArray(parsed.mainCharacters),
         classroomValue: stringValue((input.direction as { classroomValue?: unknown }).classroomValue),
         seedPrompt: parsed.hook,
       };
@@ -937,9 +981,7 @@ export function createStoryOutlineGenerationDeps(aiGateway: AiGateway = "quickro
         title: bilingualChapterTitle(parsed.title),
         summary: bilingualText(parsed.summary),
         characters: parsed.characters.map((character, index) => {
-          const person = character.sourcePersonId
-            ? input.coursePeople.find((candidate) => candidate.personId === character.sourcePersonId)
-            : null;
+          const person = findUniqueCoursePerson(input.coursePeople, character);
           if (character.sourceType === "person" && !person) {
             throw new Error(`人物档案角色 ${character.displayName || character.key || index + 1} 缺少有效 sourcePersonId`);
           }
@@ -973,7 +1015,7 @@ export function createStoryOutlineGenerationDeps(aiGateway: AiGateway = "quickro
         chapters: parsed.chapters.map((chapter) => ({
           ...chapter,
           title: bilingualChapterTitle(chapter.title),
-          storyGoal: chapter.whatHappens || chapter.storyGoal || "",
+          storyGoal: textValue(chapter.whatHappens) || textValue(chapter.storyGoal),
           keyEvents: [
             chapter.characterActions,
             chapter.mainlineProgress,
@@ -981,7 +1023,7 @@ export function createStoryOutlineGenerationDeps(aiGateway: AiGateway = "quickro
           ].filter((item): item is string => Boolean(item)),
           setting: chapter.setting || "",
           endingHook: chapter.endingHook || "",
-          whatHappens: chapter.whatHappens || chapter.storyGoal || "",
+          whatHappens: textValue(chapter.whatHappens) || textValue(chapter.storyGoal),
           characterActions: chapter.characterActions || "",
           mainlineProgress: chapter.mainlineProgress || "",
           characterKeys: chapter.characterKeys ?? [],

@@ -16,6 +16,7 @@ import { createRequestId } from "@/lib/utils/request-id";
 type TextPreviewPage = Extract<CoursePreviewPage, { type: "shot_text" | "grammar_practice" | "main_idea" | "vocabulary_matching" }>;
 type ContentSection = { id: string; label: string; kind: "reading" | "practice" | "main" | "homework"; chapterId?: string; pages: TextPreviewPage[]; pageCount: number };
 type ModificationTarget = { value: string; label: string };
+type ContentMobileView = "chat" | "preview";
 
 const phaseLabels: Record<string, string> = {
   preparing: "正在准备课程内容",
@@ -43,6 +44,22 @@ function contentHeaderSummary(state: CourseContentState) {
   if (state.status === "generating_exercises") return `${state.course.englishLevel} · ${generatedChapterCount}/${plannedChapterCount} 章正文已完成 · 正在生成练习`;
   if (!chapterPracticeCount && !homeworkPracticeCount) return `${state.course.englishLevel} · ${generatedChapterCount}/${plannedChapterCount} 章正文已完成 · 课后阅读已生成 · 无额外语法练习`;
   return `${state.course.englishLevel} · ${generatedChapterCount}/${plannedChapterCount} 章正文已完成 · ${chapterPracticeCount} 道章节练习 · ${homeworkPracticeCount} 道课后练习`;
+}
+
+function contentMobileSummary(state: CourseContentState) {
+  if (state.status === "empty") return `${state.course.englishLevel} · 待生成`;
+  if (state.status === "failed") return `${state.course.englishLevel} · 生成未完成`;
+  if (state.status === "generating_reading" || state.status === "generating_exercises") return `${state.course.englishLevel} · 生成中`;
+  if (state.status === "reading_ready") return `${state.course.englishLevel} · 练习待生成`;
+  if (state.exercisesStale) return `${state.course.englishLevel} · 练习需更新`;
+  return `${state.course.englishLevel} · 内容就绪`;
+}
+
+function findLastIndexCompat<T>(items: T[], predicate: (item: T) => boolean) {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index]!)) return index;
+  }
+  return -1;
 }
 
 function pageModification(state: CourseContentState, page: TextPreviewPage): ModificationTarget | null {
@@ -96,6 +113,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
   const [resetting, setResetting] = useState(false);
   const [navigating, setNavigating] = useState(false);
   const [destructiveRegeneration, setDestructiveRegeneration] = useState<"reading" | "exercises" | null>(null);
+  const [mobileView, setMobileView] = useState<ContentMobileView>(() => initialState.chapters.length ? "preview" : "chat");
 
   const isGenerating = state.operation?.type === "reading" || state.operation?.type === "exercises" || state.status === "generating_reading" || state.status === "generating_exercises";
   const hasPersistedOperation = Boolean(state.operation) || isGenerating;
@@ -133,7 +151,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
     return result;
   }, [state.chapters, textPages]);
   const hasGeneratedGrammarExercises = state.chapters.some((chapter) => chapter.chapterPractice.length > 0) || Boolean(state.homework?.grammar.length);
-  const latestRepairMessageIndex = state.messages.findLastIndex((message) => isRepairMessage(message.content));
+  const latestRepairMessageIndex = findLastIndexCompat(state.messages, (message) => isRepairMessage(message.content));
   const repairInProgress = isGenerating && Boolean(state.phase?.startsWith("repairing_"));
   const visibleOptimisticTeacherMessage = optimisticTeacherMessage
     && !state.messages.some((message) => message.role === "teacher" && message.content === optimisticTeacherMessage)
@@ -308,16 +326,20 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
       <CourseCreateSteps courseId={state.course.id} currentStep={4} furthestStep={furthestStep} onNavigate={navigate} />
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between" data-testid="content-stage-header">
+      <header className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between" data-testid="content-stage-header">
         <div className="min-w-0" data-testid="content-stage-heading">
           <p className="text-sm font-medium text-muted-foreground">文案与练习</p>
           <h2 className="mt-1 truncate text-2xl font-semibold text-foreground">{state.storyTitle}</h2>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 sm:shrink-0">
+        <div className="hidden flex-wrap items-center justify-end gap-2 lg:flex lg:shrink-0" data-testid="content-stage-actions">
           <span aria-live="polite" className={cn("rounded-full px-3 py-1.5 text-sm font-medium", isWorking ? "bg-primary-50 text-primary-700" : state.status === "failed" ? "bg-red-50 text-red-700" : "bg-muted text-muted-foreground")} data-testid="content-stage-progress">{contentHeaderSummary(state)}</span>
           {!isWorking && state.status === "ready" && !state.exercisesStale ? <Button onClick={() => generate("reading", true)} size="sm" type="button" variant="outline"><RotateCcw className="size-4" />重新生成正文与课后阅读</Button> : null}
           {!isWorking && state.status === "ready" && !state.exercisesStale && hasGeneratedGrammarExercises ? <Button onClick={() => generate("exercises", true)} size="sm" type="button" variant="outline"><RotateCcw className="size-4" />重新生成练习</Button> : null}
           {hasStepContent ? <Button disabled={resetting} onClick={() => setResetOpen(true)} type="button" variant="outline"><RotateCcw className="size-4" />重新开始</Button> : null}
+        </div>
+        <div className="flex min-w-0 items-center gap-2 overflow-x-auto lg:hidden" data-testid="content-mobile-actions">
+          <span aria-live="polite" className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-medium", isWorking ? "bg-primary-50 text-primary-700" : state.status === "failed" ? "bg-red-50 text-red-700" : "bg-muted text-muted-foreground")}>{contentMobileSummary(state)}</span>
+          {hasStepContent ? <Button className="shrink-0 whitespace-nowrap" disabled={resetting} onClick={() => setResetOpen(true)} size="sm" type="button" variant="outline"><RotateCcw className="size-4" />重开</Button> : null}
         </div>
       </header>
 
@@ -325,14 +347,18 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
         className={cn(
           "grid gap-5",
           sections.length
-            ? "md:h-[calc(100dvh-13.5rem)] md:min-h-[680px] md:grid-cols-[minmax(300px,0.85fr)_minmax(360px,1.15fr)] md:grid-rows-[minmax(0,1fr)] xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)]"
+            ? "lg:h-[calc(100dvh-13.5rem)] lg:min-h-[680px] lg:grid-cols-[minmax(300px,0.85fr)_minmax(360px,1.15fr)] lg:grid-rows-[minmax(0,1fr)] xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)]"
             : "mx-auto w-full max-w-5xl",
         )}
         data-layout={sections.length ? "split" : "focus"}
         data-testid="content-workspace-layout"
       >
-        <aside className={cn("min-w-0", sections.length && "md:h-full md:min-h-0 md:overflow-hidden")}>
-          <section className={cn("flex min-w-0 flex-col overflow-hidden rounded-lg bg-card shadow-sm", sections.length ? "min-h-[680px] md:h-full md:min-h-0 md:overflow-hidden" : "min-h-[clamp(560px,calc(100dvh-18rem),720px)]")} data-testid="content-chat-pane">
+        {sections.length ? <div className="grid grid-cols-[repeat(2,minmax(5.5rem,1fr))] gap-1 overflow-x-auto rounded-lg bg-muted p-1 lg:hidden" data-testid="content-mobile-view-tabs">
+          <button aria-pressed={mobileView === "chat"} className={mobileModeClass(mobileView === "chat")} onClick={() => setMobileView("chat")} type="button">对话</button>
+          <button aria-pressed={mobileView === "preview"} className={mobileModeClass(mobileView === "preview")} onClick={() => setMobileView("preview")} type="button">预览</button>
+        </div> : null}
+        <aside className={cn("min-w-0", sections.length && "lg:h-full lg:min-h-0 lg:overflow-hidden")}>
+          <section className={cn("flex min-w-0 flex-col overflow-hidden rounded-lg bg-card shadow-sm", sections.length ? "h-[calc(100dvh-18rem)] min-h-[480px] max-h-[760px] lg:h-full lg:max-h-none lg:min-h-0 lg:overflow-hidden" : "min-h-[clamp(560px,calc(100dvh-18rem),720px)]", sections.length && mobileView === "preview" && "hidden lg:flex")} data-testid="content-chat-pane">
             <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3"><div className="flex items-center gap-2 text-sm font-semibold"><MessageSquareText className="size-4 text-primary" />创作对话</div><select aria-label="文本生成模型" className="h-9 rounded-md border border-input bg-muted/60 px-2 text-xs font-medium text-foreground" disabled={isWorking} onChange={(event) => updateProvider(event.target.value as StoryWritingProvider)} value={state.writingProvider}><option value="quickrouter_gpt">GPT</option><option value="quickrouter_deepseek">DeepSeek</option></select></div>
 
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain scroll-pb-24 p-4" data-testid="content-chat-scroll" ref={chatScrollRef}>
@@ -358,26 +384,26 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
           </section>
         </aside>
 
-        {sections.length > 0 && selected ? <main className="min-w-0 overflow-hidden rounded-lg border border-border bg-muted/30 shadow-sm md:h-full md:min-h-0 md:overflow-hidden" data-testid="content-preview-pane">
+        {sections.length > 0 && selected ? <main className={cn("min-w-0 overflow-hidden rounded-lg border border-border bg-muted/30 shadow-sm lg:h-full lg:min-h-0 lg:overflow-hidden", mobileView === "chat" && "hidden lg:block")} data-testid="content-preview-pane">
           <section aria-label="课程内容预览" className="flex h-full min-h-0 min-w-0 flex-col rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "ArrowLeft") { event.preventDefault(); goPreviousPage(); } if (event.key === "ArrowRight") { event.preventDefault(); goNextPage(); } }} tabIndex={0}>
-            <div className="space-y-3 border-b border-border bg-card p-4">
-              <div aria-label="课程内容" className="flex flex-wrap gap-x-1 border-b border-border" data-testid="content-primary-tabs" role="tablist">
+            <div className="space-y-3 border-b border-border bg-card p-3 sm:p-4">
+              <div aria-label="课程内容" className="flex gap-x-1 overflow-x-auto whitespace-nowrap border-b border-border" data-testid="content-primary-tabs" role="tablist">
                 {state.chapters.map((chapter) => {
                   const active = selectedTopLevel === `chapter:${chapter.id}`;
-                  return <button aria-selected={active} className={cn("-mb-px min-h-10 border-b-2 px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:border-primary-200 hover:text-foreground")} key={chapter.id} onClick={() => selectSection(`reading:${chapter.id}`)} role="tab" title={chapter.title} type="button">Chapter {chapter.order}</button>;
+                  return <button aria-selected={active} className={cn("-mb-px min-h-10 shrink-0 whitespace-nowrap border-b-2 px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:border-primary-200 hover:text-foreground")} key={chapter.id} onClick={() => selectSection(`reading:${chapter.id}`)} role="tab" title={chapter.title} type="button">Chapter {chapter.order}</button>;
                 })}
-                {state.mainIdea ? <button aria-selected={selectedTopLevel === "reading"} className={cn("-mb-px min-h-10 border-b-2 px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selectedTopLevel === "reading" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:border-primary-200 hover:text-foreground")} onClick={() => selectSection("main-idea")} role="tab" type="button">Reading</button> : null}
-                {sections.some((section) => section.kind === "homework") ? <button aria-selected={selectedTopLevel === "homework"} className={cn("-mb-px min-h-10 border-b-2 px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selectedTopLevel === "homework" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:border-primary-200 hover:text-foreground")} onClick={() => selectSection("homework")} role="tab" type="button">课后练习</button> : null}
+                {state.mainIdea ? <button aria-selected={selectedTopLevel === "reading"} className={cn("-mb-px min-h-10 shrink-0 whitespace-nowrap border-b-2 px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selectedTopLevel === "reading" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:border-primary-200 hover:text-foreground")} onClick={() => selectSection("main-idea")} role="tab" type="button">Reading</button> : null}
+                {sections.some((section) => section.kind === "homework") ? <button aria-selected={selectedTopLevel === "homework"} className={cn("-mb-px min-h-10 shrink-0 whitespace-nowrap border-b-2 px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selectedTopLevel === "homework" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:border-primary-200 hover:text-foreground")} onClick={() => selectSection("homework")} role="tab" type="button">课后练习</button> : null}
               </div>
 
-              <div className="flex min-h-10 items-center justify-between gap-3">
-                <div className="inline-flex min-h-10 border-b border-border" data-testid="content-secondary-tabs" {...(selectedChapter ? { "aria-label": "章节内容", role: "tablist" } : {})}>
+              <div className="flex min-h-10 min-w-0 items-center justify-between gap-2 overflow-hidden">
+                <div className="inline-flex min-h-10 min-w-0 overflow-x-auto whitespace-nowrap border-b border-border" data-testid="content-secondary-tabs" {...(selectedChapter ? { "aria-label": "章节内容", role: "tablist" } : {})}>
                   {selectedChapter ? <>
-                    <button aria-selected={selected.kind === "reading"} className={cn("-mb-px min-h-10 border-b-2 px-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selected.kind === "reading" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")} onClick={() => selectSection(`reading:${selectedChapter.id}`)} role="tab" type="button">正文</button>
-                    {sections.some((section) => section.id === `practice:${selectedChapter.id}`) ? <button aria-selected={selected.kind === "practice"} className={cn("-mb-px min-h-10 border-b-2 px-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selected.kind === "practice" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")} onClick={() => selectSection(`practice:${selectedChapter.id}`)} role="tab" type="button">练习</button> : null}
-                  </> : <span aria-current="page" className="-mb-px inline-flex min-h-10 items-center border-b-2 border-primary px-4 text-sm font-medium text-primary">{selected.label}</span>}
+                    <button aria-selected={selected.kind === "reading"} className={cn("-mb-px min-h-10 shrink-0 whitespace-nowrap border-b-2 px-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selected.kind === "reading" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")} onClick={() => selectSection(`reading:${selectedChapter.id}`)} role="tab" type="button">正文</button>
+                    {sections.some((section) => section.id === `practice:${selectedChapter.id}`) ? <button aria-selected={selected.kind === "practice"} className={cn("-mb-px min-h-10 shrink-0 whitespace-nowrap border-b-2 px-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selected.kind === "practice" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")} onClick={() => selectSection(`practice:${selectedChapter.id}`)} role="tab" type="button">练习</button> : null}
+                  </> : <span aria-current="page" className="-mb-px inline-flex min-h-10 shrink-0 items-center whitespace-nowrap border-b-2 border-primary px-4 text-sm font-medium text-primary">{selected.label}</span>}
                 </div>
-                {currentModification ? <Button aria-label={currentModification.label} onClick={() => selectTarget(currentModification.value)} size="sm" variant={modifyTarget === currentModification.value ? "secondary" : "outline"}><Pencil className="size-3.5" />{modifyTarget === currentModification.value ? "已选择此页" : "修改当前页"}</Button> : null}
+                {currentModification ? <Button aria-label={currentModification.label} className="shrink-0 whitespace-nowrap" onClick={() => selectTarget(currentModification.value)} size="sm" variant={modifyTarget === currentModification.value ? "secondary" : "outline"}><Pencil className="size-3.5" />{modifyTarget === currentModification.value ? "已选" : "修改当前页"}</Button> : null}
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scroll-pb-24 p-4" data-testid="content-preview-scroll">
@@ -391,7 +417,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
           </section>
         </main> : null}
       </div>
-      <div className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-lg border border-border bg-card/95 px-4 py-3 shadow-md backdrop-blur sm:flex-row sm:items-center sm:justify-between"><p aria-live="polite" className="text-sm text-muted-foreground">{navigating ? "正在加载目标步骤..." : hasUnsentInput ? "修改要求尚未发送" : state.status === "confirmed" ? "本步骤已完成" : state.status === "ready" && !state.exercisesStale ? "内容已就绪，可以进入视觉资源" : state.exercisesStale ? "还需：重新生成已过期练习" : "还需：完成正文与练习"}</p><div className="flex gap-2"><Button disabled={isWorking} loading={navigating} onClick={() => navigate(`/courses/${state.course.id}/create/teaching-plan`)} type="button" variant="outline"><ChevronLeft className="size-4" />上一步</Button><Button disabled={navigating || isWorking || !["ready", "confirmed"].includes(state.status) || state.exercisesStale} onClick={() => state.status === "confirmed" ? navigate(`/courses/${state.course.id}/create/visual-resources`) : void confirm()} type="button">下一步：视觉资源<ChevronRight className="size-4" /></Button></div></div>
+      <div className="max-xl:static xl:sticky xl:bottom-4 z-20 flex flex-col gap-2 rounded-lg border border-border bg-card/95 px-3 py-3 shadow-md backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-4" data-testid="content-bottom-actions"><p aria-live="polite" className="truncate text-sm text-muted-foreground">{navigating ? "正在加载目标步骤..." : hasUnsentInput ? "修改要求尚未发送" : state.status === "confirmed" ? "本步骤已完成" : state.status === "ready" && !state.exercisesStale ? "内容已就绪，可以进入视觉资源" : state.exercisesStale ? "还需：重新生成已过期练习" : "还需：完成正文与练习"}</p><div className="grid grid-cols-2 gap-2 sm:flex"><Button disabled={isWorking} loading={navigating} onClick={() => navigate(`/courses/${state.course.id}/create/teaching-plan`)} type="button" variant="outline"><ChevronLeft className="size-4" />上一步</Button><Button aria-label="下一步：视觉资源" disabled={navigating || isWorking || !["ready", "confirmed"].includes(state.status) || state.exercisesStale} onClick={() => state.status === "confirmed" ? navigate(`/courses/${state.course.id}/create/visual-resources`) : void confirm()} type="button"><span className="sm:hidden">下一步</span><span className="hidden sm:inline">下一步：视觉资源</span><ChevronRight className="size-4" /></Button></div></div>
       {resetOpen ? <Dialog onClose={() => setResetOpen(false)} open title="重新开始">
         <div className="space-y-5 p-5 sm:p-6">
           <p className="text-pretty text-sm leading-6 text-muted-foreground">确认后将立即删除文案与练习、视觉资源、图片和预览发布设置，并从文案创作重新开始。即使后续生成失败，已删除内容也不会恢复。</p>
@@ -449,6 +475,13 @@ function AssistantBubble({ children }: { children: React.ReactNode }) {
 
 function ChatAction({ title, children }: { title: string; children: React.ReactNode }) {
   return <AssistantMessage><div className="w-fit max-w-xl rounded-lg border border-primary-100 bg-primary-50/60 p-3" data-chat-action><p className="mb-2 text-sm font-medium text-primary-900">{title}</p>{children}</div></AssistantMessage>;
+}
+
+function mobileModeClass(active: boolean) {
+  return cn(
+    "min-h-10 shrink-0 whitespace-nowrap rounded-md px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
+  );
 }
 
 function isRepairMessage(content: string) { return content.includes("正在统一修复") || content.includes("正在单独修复"); }

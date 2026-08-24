@@ -32,6 +32,42 @@ vi.mock("./story-outline-provider", () => ({
 }));
 
 describe("createStoryOutlineGenerationDeps", () => {
+  test("normalizes chapter story goal arrays returned by AI into display text", async () => {
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
+      title: { zh: "无声广场", en: "The Silent Square" },
+      summary: "城市失去声音，学生合作追踪巨兽。",
+      characters: [],
+      chapters: [{
+        order: 1,
+        title: { zh: "声音消失", en: "The Sound Vanishes" },
+        storyGoal: [
+          "回声巨兽吸走广场上的声音。",
+          "学生们发现城市陷入寂静。",
+        ],
+        characterKeys: [],
+        recommendedKnowledgePointKeys: ["KP1"],
+        knowledgePointRecommendationSummary: "KP1 描述正在发生的行动。",
+      }],
+    }) });
+
+    const outline = await createStoryOutlineGenerationDeps().generateOutline({
+      task: "生成大纲。",
+      references: [],
+      chapterCount: 1,
+      writingProvider: "quickrouter_gpt",
+      coursePeople: [],
+      conversationHistory: [],
+      selectedDirection: null,
+      currentOutline: null,
+      englishLevel: "A1",
+      durationMinutes: 30,
+      selectedKnowledgePoints: [{ id: "knowledge-1", label: "Present Continuous", category: "时态" }],
+    });
+
+    expect(outline.chapters[0].storyGoal).toBe("回声巨兽吸走广场上的声音。学生们发现城市陷入寂静。");
+    expect(outline.chapters[0].whatHappens).toBe("回声巨兽吸走广场上的声音。学生们发现城市陷入寂静。");
+  });
+
   test("converts response-only KP keys to knowledge point labels in the saved recommendation summary", async () => {
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
       title: { zh: "港口任务", en: "Harbor Mission" },
@@ -735,6 +771,55 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).not.toContain("课程：海底图书馆");
   });
 
+  test("repairs person characters missing sourcePersonId when the name uniquely matches a course person", async () => {
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
+      title: { zh: "无声广场", en: "The Silent Square" },
+      summary: "学生合作恢复城市声音。",
+      characters: [{
+        key: "C1",
+        displayName: "李世翊",
+        englishName: "Shiyi Li",
+        sourceType: "person",
+        roleInStory: "用观察和行动帮助团队追踪声音线索。",
+      }],
+      chapters: [{
+        order: 1,
+        title: { zh: "声音消失", en: "The Sound Vanishes" },
+        whatHappens: "李世翊发现广场上的声音消失了，团队开始寻找原因。",
+        characterKeys: ["C1"],
+        recommendedKnowledgePointKeys: ["KP1"],
+        knowledgePointRecommendationSummary: "KP1 描述正在发生的行动。",
+      }],
+    }) });
+
+    const outline = await createStoryOutlineGenerationDeps().generateOutline({
+      task: "生成故事大纲。",
+      references: [],
+      chapterCount: 1,
+      writingProvider: "quickrouter_gpt",
+      coursePeople: [{
+        personId: "student-li",
+        role: "student",
+        chineseName: "李世翊",
+        englishName: "Shiyi Li",
+        age: 10,
+        gender: "male",
+      }],
+      conversationHistory: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+      selectedKnowledgePoints: [{ id: "kp-1", label: "Present Continuous" }],
+    });
+
+    expect(outline.characters[0]).toMatchObject({
+      displayName: "李世翊",
+      englishName: "Shiyi Li",
+      sourceType: "person",
+      sourcePersonId: "student-li",
+    });
+  });
+
   test("keeps every confirmed upstream input in the outline prompt", async () => {
     await createStoryOutlineGenerationDeps().generateOutline({
       task: "把第三章改得更紧张。",
@@ -838,6 +923,36 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("hook 使用自然的团队称呼表达课堂人物共同参与");
     expect(prompt).toContain("mainCharacters 完整保留 Step 1 人物");
     expect(directions[0]).toMatchObject({ storyHighlight: expect.any(String), growthCore: expect.any(String), seedPrompt: directions[0].hook });
+  });
+
+  test("normalizes direction main character objects returned by AI into names", async () => {
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify([
+      {
+        title: "无声广场",
+        hook: "学生们发现城市突然失去声音。",
+        storyHighlight: "声音会被回声核吸走。",
+        growthCore: "学生学会用不同信号合作。",
+        mainCharacters: [
+          { displayName: "孟雨老师", englishName: "Ms. Meng" },
+          { name: "夏天" },
+          "Ethan",
+        ],
+        whyFits: "适合团队协作。",
+      },
+    ]) });
+
+    const directions = await createStoryOutlineGenerationDeps().generateDirections({
+      task: "请生成故事方向。",
+      chapterCount: 4,
+      coursePeople: [],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+    });
+
+    expect(directions[0].mainCharacters).toEqual(["孟雨老师", "夏天", "Ethan"]);
   });
 
   test("keeps causal clarity rules when revising one direction or chapter", async () => {

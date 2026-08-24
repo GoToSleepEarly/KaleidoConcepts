@@ -482,6 +482,30 @@ describe("story outline repository", () => {
     expect(state.chatMessages.map((message) => message.content)).toContain("我确认参考资料，请生成 3 个故事方向。");
   });
 
+  test("loads direction main character objects as names instead of object strings", async () => {
+    const db = createDb();
+    db.state.directions = [record({
+      courseId: "course-1",
+      title: "无声广场",
+      hook: "学生们发现城市突然失去声音。",
+      whyFits: "适合团队协作。",
+      mainCharacters: [
+        { displayName: "孟雨老师", englishName: "Ms. Meng" },
+        { name: "夏天" },
+        "Ethan",
+      ],
+      storyHighlight: "声音会被回声核吸走。",
+      growthCore: "学生学会用不同信号合作。",
+      classroomValue: "",
+      seedPrompt: "学生们发现城市突然失去声音。",
+      selectedAt: null,
+    })];
+
+    const state = await getStoryOutlineState(db, "course-1");
+
+    expect(state.directions[0].mainCharacters).toEqual(["孟雨老师", "夏天", "Ethan"]);
+  });
+
   test("generates an outline from confirmed reference material", async () => {
     const db = createDb();
     await handleStoryOutlineMessage(db, "course-1", {
@@ -982,6 +1006,34 @@ describe("story outline repository", () => {
       keyEvents: ["夏天决定带队出发。", "队伍离开教室进入第一段旅程。"],
       setting: "",
       endingHook: "",
+    });
+  });
+
+  test("normalizes chapter story goal arrays before persistence", async () => {
+    const db = createDb();
+    await saveStoryOutline(db, "course-1", {
+      title: "Silent City",
+      summary: "Students restore sound.",
+      chapterCount: 1,
+      writingProvider: "quickrouter_gpt",
+      characters: [],
+      sourceReferences: [],
+      chapters: [{
+        order: 1,
+        title: "Silent Square",
+        storyGoal: [
+          "回声巨兽吸走广场上的声音。",
+          "学生们发现城市陷入寂静。",
+        ] as unknown as string,
+        keyEvents: [],
+        characterIds: [],
+        setting: "",
+        endingHook: "",
+      }],
+    }, false);
+
+    expect(db.state.chapters[0]).toMatchObject({
+      storyGoal: "回声巨兽吸走广场上的声音。学生们发现城市陷入寂静。",
     });
   });
 

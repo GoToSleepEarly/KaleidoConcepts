@@ -344,6 +344,22 @@ function array(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
 
+function text(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  return array(value).map((item) => item.trim()).filter(Boolean).join("");
+}
+
+function nameArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string") return item.trim() ? [item.trim()] : [];
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    const name = text(record.displayName) || text(record.chineseName) || text(record.name) || text(record.englishName);
+    return name ? [name] : [];
+  });
+}
+
 function toMessage(message: DbMessage): CourseStoryChatMessage {
   return {
     id: message.id,
@@ -362,7 +378,7 @@ function toDirection(direction: DbDirection): CourseStoryDirection {
     title: direction.title,
     hook: direction.hook,
     whyFits: direction.whyFits,
-    mainCharacters: array(direction.mainCharacters),
+    mainCharacters: nameArray(direction.mainCharacters),
     storyHighlight: direction.storyHighlight ?? "",
     growthCore: direction.growthCore ?? "",
     classroomValue: direction.classroomValue,
@@ -611,7 +627,7 @@ async function writeOutline(db: StoryOutlineDb, course: DbCourse, outline: Gener
       outlineId: saved.id,
       order: chapter.order,
       title: chapter.title,
-      storyGoal: chapter.whatHappens || chapter.storyGoal,
+      storyGoal: text(chapter.whatHappens) || text(chapter.storyGoal),
       keyEvents: [
         chapter.characterActions,
         chapter.mainlineProgress,
@@ -1413,7 +1429,7 @@ export async function saveStoryOutline(
     chapters: outline.chapters.map((chapter) => ({
       order: chapter.order,
       title: chapter.title,
-      storyGoal: chapter.whatHappens || chapter.storyGoal,
+      storyGoal: text(chapter.whatHappens) || text(chapter.storyGoal),
       keyEvents: [
         chapter.characterActions,
         chapter.mainlineProgress,

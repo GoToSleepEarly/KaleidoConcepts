@@ -5,7 +5,10 @@ import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { AppShell } from "@/components/app-shell";
 
-const replace = vi.fn();
+const { pathnameMock, replace } = vi.hoisted(() => ({
+  pathnameMock: vi.fn(() => "/courses"),
+  replace: vi.fn(),
+}));
 
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function showModal() { this.setAttribute("open", ""); };
@@ -13,7 +16,7 @@ beforeAll(() => {
 });
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/courses",
+  usePathname: () => pathnameMock(),
   useRouter: () => ({ replace }),
 }));
 
@@ -24,13 +27,17 @@ vi.mock("@/lib/auth-session", () => ({
 }));
 
 describe("AppShell account menu", () => {
-  beforeEach(() => replace.mockClear());
+  beforeEach(() => {
+    replace.mockClear();
+    pathnameMock.mockReturnValue("/courses");
+  });
 
   test("provides a touch-safe navigation drawer below desktop width", () => {
     render(<AppShell><div>课程内容</div></AppShell>);
 
     const menuButton = screen.getByRole("button", { name: "打开主导航" });
     expect(menuButton).toHaveClass("lg:hidden", "min-h-11", "min-w-11");
+    expect(screen.getByTestId("app-shell-route-heading")).toHaveClass("flex-1", "sm:shrink-0");
     expect(screen.getByTestId("account-menu-anchor")).toHaveClass("w-11", "sm:w-40");
 
     fireEvent.click(menuButton);
@@ -39,6 +46,18 @@ describe("AppShell account menu", () => {
     expect(mobileNavigation).toHaveClass("lg:hidden");
     expect(within(mobileNavigation).getByRole("link", { name: /课程列表/ })).toHaveAttribute("href", "/courses");
     expect(within(mobileNavigation).getByRole("button", { name: "关闭主导航" })).toHaveClass("min-h-11", "min-w-11");
+  });
+
+  test("keeps the course step portal visible on phones without pushing the account menu off screen", () => {
+    pathnameMock.mockReturnValue("/courses/course-1/create/content");
+
+    render(<AppShell><div>课程内容</div></AppShell>);
+
+    const progressSlot = document.getElementById("course-create-progress-slot");
+    expect(progressSlot).toHaveClass("order-last", "w-full", "sm:order-none", "sm:flex-1");
+    expect(progressSlot).not.toHaveClass("hidden");
+    expect(screen.getByTestId("app-shell-route-heading")).toHaveClass("flex-1", "sm:flex-none");
+    expect(screen.getByTestId("account-menu-anchor")).toHaveClass("w-11", "shrink-0");
   });
 
   test("aligns the menu to its trigger and closes on Escape or outside click", () => {

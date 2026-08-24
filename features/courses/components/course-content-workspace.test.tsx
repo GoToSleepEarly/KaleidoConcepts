@@ -68,6 +68,7 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByRole("tab", { name: "正文" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("content-primary-tabs")).toHaveClass("border-b");
     expect(screen.getByRole("tab", { name: "Chapter 1" })).toHaveClass("border-b-2");
+    expect(screen.getByRole("tab", { name: "Chapter 1" })).toHaveClass("shrink-0", "whitespace-nowrap");
     expect(screen.getByTestId("content-secondary-tabs")).toHaveClass("border-b");
     expect(screen.queryByRole("tab", { name: "练习" })).not.toBeInTheDocument();
     expect(screen.getByText("1 / 1 页")).toBeInTheDocument();
@@ -160,6 +161,21 @@ describe("CourseContentWorkspace", () => {
     expect(screen.queryByText("修复中")).not.toBeInTheDocument();
   });
 
+  test("renders repair messages in older browsers without Array.prototype.findLastIndex", () => {
+    const originalFindLastIndex = Array.prototype.findLastIndex;
+    Object.defineProperty(Array.prototype, "findLastIndex", { configurable: true, value: undefined });
+    try {
+      render(<CourseContentWorkspace initialState={{
+        ...initialState,
+        messages: [{ id: "repair-1", role: "system", content: "检测到第 1 章需要修复。正在统一修复。", createdAt: "2026-08-10T00:00:00.000Z" }],
+      }} />);
+
+      expect(screen.getByText("修复完成")).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(Array.prototype, "findLastIndex", { configurable: true, value: originalFindLastIndex });
+    }
+  });
+
   test("starts with guided chat and disables the composer before reading generation", () => {
     render(<CourseContentWorkspace initialState={{ ...initialState, status: "empty", chapters: [], mainIdea: null, homework: null }} />);
     expect(screen.getByText("B1 · 1 章 · 待生成正文")).toBeInTheDocument();
@@ -177,19 +193,46 @@ describe("CourseContentWorkspace", () => {
     expect(screen.queryByText("等待生成正文")).not.toBeInTheDocument();
   });
 
-  test("matches the story workspace split layout and independent scroll regions", () => {
+  test("keeps Step 4 sequential on phone and iPad portrait while preserving desktop split scroll regions", () => {
     render(<CourseContentWorkspace initialState={initialState} />);
 
     expect(screen.getByTestId("content-workspace-layout")).toHaveAttribute("data-layout", "split");
     expect(screen.getByTestId("content-workspace-layout")).toHaveClass(
-      "md:h-[calc(100dvh-13.5rem)]",
-      "md:grid-cols-[minmax(300px,0.85fr)_minmax(360px,1.15fr)]",
-      "md:grid-rows-[minmax(0,1fr)]",
+      "lg:h-[calc(100dvh-13.5rem)]",
+      "lg:grid-cols-[minmax(300px,0.85fr)_minmax(360px,1.15fr)]",
+      "lg:grid-rows-[minmax(0,1fr)]",
     );
-    expect(screen.getByTestId("content-chat-pane")).toHaveClass("md:h-full", "md:overflow-hidden");
+    expect(screen.getByTestId("content-workspace-layout")).not.toHaveClass("md:h-[calc(100dvh-13.5rem)]");
+    expect(screen.getByTestId("content-chat-pane")).toHaveClass("h-[calc(100dvh-18rem)]", "min-h-[480px]", "lg:h-full", "lg:overflow-hidden");
     expect(screen.getByTestId("content-chat-scroll")).toHaveClass("overflow-y-auto", "overscroll-contain");
-    expect(screen.getByTestId("content-preview-pane")).toHaveClass("md:h-full", "md:overflow-hidden");
+    expect(screen.getByTestId("content-preview-pane")).toHaveClass("lg:h-full", "lg:overflow-hidden");
     expect(screen.getByTestId("content-preview-scroll")).toHaveClass("overflow-y-auto", "overscroll-contain");
+  });
+
+  test("uses mobile chat and preview tabs with preview selected first when content exists", () => {
+    render(<CourseContentWorkspace initialState={initialState} />);
+
+    expect(screen.getByTestId("content-mobile-view-tabs")).toBeInTheDocument();
+    expect(screen.getByTestId("content-mobile-view-tabs")).toHaveClass("overflow-x-auto");
+    expect(screen.getByRole("button", { name: "预览" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "预览" })).toHaveClass("whitespace-nowrap");
+    expect(screen.getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("content-chat-pane")).toHaveClass("hidden", "lg:flex");
+    expect(screen.getByTestId("content-preview-pane")).not.toHaveClass("hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: "对话" }));
+
+    expect(screen.getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("content-chat-pane")).not.toHaveClass("hidden");
+    expect(screen.getByTestId("content-preview-pane")).toHaveClass("hidden", "lg:block");
+  });
+
+  test("keeps mobile actions compact and prevents the bottom action bar from covering the composer", () => {
+    render(<CourseContentWorkspace initialState={initialState} />);
+
+    expect(screen.getByTestId("content-stage-actions")).toHaveClass("hidden", "lg:flex");
+    expect(screen.getByTestId("content-mobile-actions")).toHaveClass("lg:hidden");
+    expect(screen.getByTestId("content-bottom-actions")).toHaveClass("max-xl:static", "xl:sticky");
   });
 
   test("keeps the chat timeline at the bottom when an operation result is shown", () => {

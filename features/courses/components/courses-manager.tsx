@@ -110,14 +110,14 @@ export function CoursesManager() {
   return (
     <div className="mx-auto max-w-7xl space-y-5">
       <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <form className="flex w-full max-w-md items-center gap-2" onSubmit={searchCourses} role="search">
-          <label className="relative min-w-0 flex-1">
+        <form className="flex w-full max-w-md items-center gap-2 max-sm:max-w-none max-sm:flex-col max-sm:items-stretch" onSubmit={searchCourses} role="search">
+          <label className="relative min-w-0 flex-1 max-sm:w-full">
             <span className="sr-only">搜索课程</span>
             <Search aria-hidden="true" className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#7890A7]" />
             <input aria-label="搜索课程" className="h-10 w-full rounded-lg border border-[#D7E5F1] bg-white pl-9 pr-9 text-sm text-[#19324D] outline-none placeholder:text-[#7890A7] focus:border-[#7A88EF] focus:ring-2 focus:ring-[#DDE2FF]" onChange={(event) => setQueryInput(event.target.value)} placeholder="搜索课程名称或故事名称" role="searchbox" value={queryInput} />
             {queryInput ? <button aria-label="清除搜索" className="absolute right-2 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-[#7890A7] hover:bg-[#EEF3F8] hover:text-[#38536E]" onClick={clearSearch} type="button"><X className="size-4" /></button> : null}
           </label>
-          <Button type="submit" variant="outline">搜索</Button>
+          <Button className="max-sm:min-h-11 max-sm:w-full" type="submit" variant="outline">搜索</Button>
         </form>
         <div className="flex flex-wrap justify-end gap-2">
           <Button asChild><Link href="/courses/new"><Plus className="size-4" />新建课程</Link></Button>
@@ -152,10 +152,10 @@ export function CoursesManager() {
               </div>
               <div className="min-w-0"><p className="text-xs font-medium text-[#7890A7] xl:hidden">制作进度</p><p className="mt-1 truncate text-sm font-semibold tabular-nums text-[#4659DC] xl:mt-0">Step {stageSteps[course.currentStage]}/6</p><p className="mt-1 truncate text-[13px] text-[#69829B]">{stageLabels[course.currentStage]}</p></div>
               <div><p className="text-xs font-medium text-[#7890A7] xl:hidden">状态与更新</p><div className="mt-1 flex items-center gap-2 xl:mt-0 xl:block"><Badge variant={course.lifecycleStatus === "published" ? "success" : "secondary"}>{course.lifecycleStatus === "published" ? "已发布" : "草稿"}</Badge><p className="text-xs tabular-nums text-[#69829B] xl:mt-2">{formatDate(course.updatedAt)}</p></div></div>
-              <div className="flex items-center gap-1 self-center sm:col-span-2 sm:justify-end xl:col-span-1 xl:justify-end">
-                <Button asChild size="sm" variant="outline"><Link href={editPath(course)}>编辑</Link></Button>
-                {course.lifecycleStatus === "published" ? <Button asChild size="sm"><Link href={`/courses/${course.id}`} rel="noopener noreferrer" target="_blank">授课</Link></Button> : course.lessonDraftExists ? <Button asChild size="sm" variant="outline"><Link href={`/courses/${course.id}/create/preview`}>预览</Link></Button> : <span title="请先生成课文草稿"><Button aria-disabled="true" disabled size="sm" variant="outline">预览</Button></span>}
-                <Button aria-label={`删除课程 ${course.title}`} onClick={() => setCourseToDelete(course)} size="icon-sm" title="删除课程" type="button" variant="ghost"><Trash2 className="size-4" /></Button>
+              <div className="flex items-center gap-1 self-center sm:col-span-2 sm:justify-end max-sm:grid max-sm:w-full max-sm:grid-cols-[1fr_1fr_44px] max-sm:gap-2 xl:col-span-1 xl:justify-end" data-testid={`course-row-actions-${course.id}`}>
+                <Button asChild className="max-sm:min-h-11 max-sm:w-full" size="sm" variant="outline"><Link href={editPath(course)}>编辑</Link></Button>
+                {course.lifecycleStatus === "published" ? <Button asChild className="max-sm:min-h-11 max-sm:w-full" size="sm"><Link href={`/courses/${course.id}`} rel="noopener noreferrer" target="_blank">授课</Link></Button> : course.lessonDraftExists ? <Button asChild className="max-sm:min-h-11 max-sm:w-full" size="sm" variant="outline"><Link href={`/courses/${course.id}/create/preview`}>预览</Link></Button> : <span className="max-sm:w-full" title="请先生成课文草稿"><Button aria-disabled="true" className="max-sm:min-h-11 max-sm:w-full" disabled size="sm" variant="outline">预览</Button></span>}
+                <Button aria-label={`删除课程 ${course.title}`} className="max-sm:h-11 max-sm:w-11" onClick={() => setCourseToDelete(course)} size="icon-sm" title="删除课程" type="button" variant="ghost"><Trash2 className="size-4" /></Button>
               </div>
             </article>
           ))}
@@ -166,12 +166,12 @@ export function CoursesManager() {
           </div>
         ) : null}
         {!loading && total > 0 ? (
-          <div className="flex items-center justify-between border-t border-[#DCEAF6] bg-[#F8FBFE] px-5 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#DCEAF6] bg-[#F8FBFE] px-4 py-3 max-sm:justify-center sm:px-5" data-testid="courses-pagination">
           <span className="text-[13px] font-medium text-[#69829B]">共 {total} 门课程</span>
-          <div className="flex items-center gap-2">
-            <Button aria-label="上一页" disabled={page <= 1} onClick={() => { setLoading(true); setPage((current) => current - 1); }} size="icon-sm" type="button" variant="outline"><ChevronLeft className="size-4" /></Button>
+          <div className="flex items-center gap-2 max-sm:w-full max-sm:justify-between" data-testid="courses-pagination-controls">
+            <Button aria-label="上一页" className="max-sm:h-11 max-sm:w-11" disabled={page <= 1} onClick={() => { setLoading(true); setPage((current) => current - 1); }} size="icon-sm" type="button" variant="outline"><ChevronLeft className="size-4" /></Button>
             <span className="min-w-20 text-center text-[13px] font-semibold tabular-nums text-[#38536E]">第 {page} / {totalPages} 页</span>
-            <Button aria-label="下一页" disabled={page >= totalPages} onClick={() => { setLoading(true); setPage((current) => current + 1); }} size="icon-sm" type="button" variant="outline"><ChevronRight className="size-4" /></Button>
+            <Button aria-label="下一页" className="max-sm:h-11 max-sm:w-11" disabled={page >= totalPages} onClick={() => { setLoading(true); setPage((current) => current + 1); }} size="icon-sm" type="button" variant="outline"><ChevronRight className="size-4" /></Button>
           </div>
           </div>
         ) : null}

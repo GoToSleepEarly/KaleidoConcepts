@@ -194,7 +194,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-h-dvh min-w-0 flex-1 flex-col lg:pl-60">
-        <header className="print-hidden sticky top-0 z-sticky flex min-h-[64px] items-center gap-4 border-b border-[#DCEAF6] bg-white px-4 py-3 sm:px-6 lg:h-[72px] lg:px-8 lg:py-0">
+        <header className="print-hidden sticky top-0 z-sticky flex min-h-[64px] flex-wrap items-center gap-3 border-b border-[#DCEAF6] bg-white px-4 py-3 sm:flex-nowrap sm:gap-4 sm:px-6 lg:h-[72px] lg:px-8 lg:py-0">
           <button
             aria-expanded={isMobileNavOpen}
             aria-label="打开主导航"
@@ -204,12 +204,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <Menu className="size-5" />
           </button>
-          <div className="min-w-0 shrink-0">
+          <div className="min-w-0 flex-1 sm:shrink-0 sm:flex-none" data-testid="app-shell-route-heading">
             <h1 className="truncate text-lg font-semibold text-[#19324D] sm:text-xl">{routeMeta.title}</h1>
-            {routeMeta.subtitle ? <p className="mt-0.5 line-clamp-1 text-[13px] text-[#69829B]">{routeMeta.subtitle}</p> : null}
+            {routeMeta.subtitle ? <p className="mt-0.5 hidden text-[13px] text-[#69829B] sm:line-clamp-1 sm:block">{routeMeta.subtitle}</p> : null}
           </div>
 
-          {isCourseCreateRoute ? <div className="min-w-0 flex-1" id="course-create-progress-slot" /> : <div className="flex-1" />}
+          {isCourseCreateRoute ? <div className="order-last min-w-0 w-full sm:order-none sm:flex-1" id="course-create-progress-slot" /> : <div className="hidden flex-1 sm:block" />}
 
           <div className="relative w-11 shrink-0 sm:w-40" data-testid="account-menu-anchor" ref={accountMenuRef}>
             <button

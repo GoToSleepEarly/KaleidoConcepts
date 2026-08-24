@@ -28,6 +28,8 @@ describe("CoursesManager", () => {
     expect(screen.queryByText("课程工作台")).not.toBeInTheDocument();
     expect(screen.getByTestId("courses-list")).toBeInTheDocument();
     expect(await screen.findByText("海底图书馆")).toBeInTheDocument();
+    expect(screen.getByRole("search")).toHaveClass("max-sm:flex-col");
+    expect(screen.getByRole("button", { name: "搜索" })).toHaveClass("max-sm:w-full");
     expect(fetchMock).toHaveBeenCalledWith("/api/courses?page=1", expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(screen.getByText("第 1 / 2 页")).toBeInTheDocument();
     fireEvent.change(screen.getByRole("searchbox", { name: "搜索课程" }), { target: { value: "借书证" } });
@@ -39,14 +41,36 @@ describe("CoursesManager", () => {
     expect(screen.getByText("B1 · 45 分钟")).toBeInTheDocument();
     expect(screen.getByTitle("Ms. Lin")).toHaveTextContent("老师 · Ms. Lin");
     expect(screen.getByTitle("Summer")).toHaveTextContent("学生 · Summer");
+    expect(screen.getByTestId("course-row-actions-course-1")).toHaveClass("max-sm:grid", "max-sm:grid-cols-[1fr_1fr_44px]");
     expect(screen.getByRole("link", { name: "编辑" })).toHaveAttribute("href", "/courses/course-1/create/story-outline");
+    expect(screen.getByRole("link", { name: "编辑" })).toHaveClass("max-sm:min-h-11", "max-sm:w-full");
     expect(screen.getByRole("link", { name: "预览" })).toHaveAttribute("href", "/courses/course-1/create/preview");
+    expect(screen.getByRole("link", { name: "预览" })).toHaveClass("max-sm:min-h-11", "max-sm:w-full");
+    expect(screen.getByRole("button", { name: "删除课程 海底图书馆" })).toHaveClass("max-sm:h-11", "max-sm:w-11");
     fireEvent.click(screen.getByRole("button", { name: "删除课程 海底图书馆" }));
     expect(screen.getByText(/课程内容和已生成图片会保留/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "删除课程" }));
 
     await waitFor(() => expect(screen.queryByText("海底图书馆")).not.toBeInTheDocument());
     expect(fetchMock).toHaveBeenCalledWith("/api/courses/course-1", { method: "DELETE" });
+  });
+
+  test("wraps pagination controls on narrow screens instead of squeezing them", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      courses: [{ id: "course-1", title: "海底图书馆", durationMinutes: 45, englishLevel: "B1", storyTitle: "会发光的借书证", lessonDraftExists: true, lifecycleStatus: "draft", currentStage: "story_outline", teacherName: "Ms. Lin", studentNames: ["Summer"], nextEditPath: "/courses/course-1/create/story-outline", updatedAt: "2026-08-07T00:00:00.000Z" }],
+      page: 1,
+      pageSize: 5,
+      total: 12,
+      totalPages: 3,
+    })));
+
+    render(<CoursesManager />);
+
+    expect(await screen.findByText("海底图书馆")).toBeInTheDocument();
+    expect(screen.getByTestId("courses-pagination")).toHaveClass("flex-wrap", "gap-3", "max-sm:justify-center");
+    expect(screen.getByTestId("courses-pagination-controls")).toHaveClass("max-sm:w-full", "max-sm:justify-between");
+    expect(screen.getByRole("button", { name: "上一页" })).toHaveClass("max-sm:h-11", "max-sm:w-11");
+    expect(screen.getByRole("button", { name: "下一页" })).toHaveClass("max-sm:h-11", "max-sm:w-11");
   });
 
   test("opens teaching in a new page while published editing stays in the current page", async () => {

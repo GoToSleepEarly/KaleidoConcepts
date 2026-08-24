@@ -121,6 +121,55 @@ describe("Step 5 视觉资源工作区", () => {
     expect(screen.getByRole("button", { name: "生成全部未生成图片" })).toBeDisabled();
   });
 
+  test("mobile stage tabs keep Step 5 focused on the current visual task", () => {
+    render(<CourseVisualResourcesWorkspace initialState={plannedState} />);
+
+    expect(screen.getByTestId("visual-stage-tabs")).toBeInTheDocument();
+    expect(screen.getByTestId("visual-stage-tabs")).toHaveClass("overflow-x-auto");
+    expect(screen.getByRole("button", { name: "封面" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "章节图片" })).toHaveClass("whitespace-nowrap", "shrink-0");
+    expect(screen.getByTestId("visual-flow-section")).toHaveClass("hidden", "lg:block");
+    expect(screen.getByTestId("visual-plan-section")).toHaveClass("hidden", "lg:block");
+    expect(screen.getByTestId("visual-characters-section")).toHaveClass("hidden", "lg:block");
+    expect(screen.getByTestId("visual-cover-section")).not.toHaveClass("hidden");
+    expect(screen.getByTestId("visual-shots-section")).toHaveClass("hidden", "lg:block");
+
+    fireEvent.click(screen.getByRole("button", { name: "章节图片" }));
+
+    expect(screen.getByRole("button", { name: "章节图片" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("visual-shots-section")).not.toHaveClass("hidden");
+    expect(screen.getByTestId("visual-cover-section")).toHaveClass("hidden", "lg:block");
+  });
+
+  test("keeps unavailable mobile visual stages disabled before a plan exists", () => {
+    render(<CourseVisualResourcesWorkspace initialState={{
+      ...plannedState,
+      planReady: false,
+      planRevision: null,
+      confirmedCoverAssetId: null,
+      characters: [],
+      slots: [],
+    }} />);
+
+    expect(screen.getByRole("button", { name: "流程" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "角色" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "封面" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "章节图片" })).toBeDisabled();
+  });
+
+  test("keeps Step 5 action bars and chapter tabs compact on mobile and iPad", () => {
+    render(<CourseVisualResourcesWorkspace initialState={plannedState} />);
+
+    expect(screen.getByTestId("visual-stage-actions")).toHaveClass("hidden", "lg:flex");
+    expect(screen.getByTestId("visual-bottom-actions")).toHaveClass("max-xl:static", "xl:sticky");
+
+    fireEvent.click(screen.getByRole("button", { name: "章节图片" }));
+
+    const chapterTabs = screen.getByRole("tablist", { name: "章节图片导航" });
+    expect(chapterTabs).toHaveClass("overflow-x-auto", "whitespace-nowrap");
+    expect(screen.getByRole("tab", { name: /第 1 章/ })).toHaveClass("shrink-0", "whitespace-nowrap");
+  });
+
   test("生成视觉方案时显示真实等待时间和预计耗时，避免被误认为卡死", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
@@ -303,6 +352,40 @@ describe("Step 5 视觉资源工作区", () => {
     fireEvent.click(screen.getByRole("button", { name: "重新生成封面" }));
     await waitFor(() => expect(screen.getByAltText("当前查看的图片版本")).toHaveAttribute("src", expect.stringContaining("new-cover.webp")));
     expect(screen.queryByText("上次生成失败")).not.toBeInTheDocument();
+  });
+
+  test("renders image versions in older browsers without Array.prototype.findLast", () => {
+    const originalFindLast = Array.prototype.findLast;
+    Object.defineProperty(Array.prototype, "findLast", { configurable: true, value: undefined });
+    try {
+      const cover = asset({ id: "cover-asset", publicUrl: "/cover.webp" });
+      render(<CourseVisualResourcesWorkspace initialState={{
+        ...plannedState,
+        confirmedCoverAssetId: cover.id,
+        slots: plannedState.slots.map((item) => item.slotType === "visual_cover" ? { ...item, activeAssetId: cover.id, activeAsset: cover, versions: [cover] } : item),
+      }} />);
+
+      expect(screen.getByAltText("当前查看的图片版本")).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(Array.prototype, "findLast", { configurable: true, value: originalFindLast });
+    }
+  });
+
+  test("renders the asset workspace in older browsers without Array.prototype.at", () => {
+    const originalAt = Array.prototype.at;
+    Object.defineProperty(Array.prototype, "at", { configurable: true, value: undefined });
+    try {
+      const cover = asset({ id: "cover-asset", publicUrl: "/cover.webp" });
+      render(<CourseVisualResourcesWorkspace initialState={{
+        ...plannedState,
+        confirmedCoverAssetId: cover.id,
+        slots: plannedState.slots.map((item) => item.slotType === "visual_cover" ? { ...item, activeAssetId: cover.id, activeAsset: cover, versions: [cover] } : item),
+      }} />);
+
+      expect(screen.getByAltText("当前查看的图片版本")).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(Array.prototype, "at", { configurable: true, value: originalAt });
+    }
   });
 
   test("重新生成成功后历史失败不再影响章节状态和失败统计", () => {
