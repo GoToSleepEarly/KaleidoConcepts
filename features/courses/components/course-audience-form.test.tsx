@@ -183,7 +183,12 @@ describe("CourseAudienceForm basic information UI", () => {
       ] } });
       if (url.includes("/api/people?role=teacher")) return Response.json({ people: [{ id: "teacher-1", role: "teacher", chineseName: "林老师", englishName: "Linda", age: 32, gender: "female", activeVisual: { id: "v1", publicUrl: "/teacher.png", sourceMode: "description", createdAt: "" }, visualStatus: "ready", createdAt: "", updatedAt: "" }] });
       if (url.includes("/api/people?role=student")) return Response.json({ people: [{ id: "student-1", role: "student", chineseName: "夏天", englishName: "Summer", age: 9, gender: "female", activeVisual: { id: "v2", publicUrl: "/student.png", sourceMode: "description", createdAt: "" }, visualStatus: "ready", createdAt: "", updatedAt: "" }] });
-      if (url === "/api/courses/course-1/audience" && init?.method === "PUT") return Response.json({ message: "需要确认", requiresReset: true, affectedResources: ["故事大纲", "教学规划"] }, { status: 409 });
+      if (url === "/api/courses/course-1/audience" && init?.method === "PUT") {
+        const body = JSON.parse(String(init.body));
+        return body.preserveDownstream
+          ? Response.json({ course: { id: "course-1" } })
+          : Response.json({ message: "需要确认", requiresReset: true, affectedResources: ["故事大纲", "教学规划"] }, { status: 409 });
+      }
       return Response.json({});
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -193,10 +198,11 @@ describe("CourseAudienceForm basic information UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "30 分钟" }));
     fireEvent.click(screen.getByRole("button", { name: "下一步：故事大纲" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "本次修改可能影响后续内容" });
+    const dialog = await screen.findByRole("dialog", { name: "后续内容需要更新" });
     expect(within(dialog).getByText("故事大纲")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "保留后续成果，暂不应用" }));
-    await waitFor(() => expect(screen.queryByRole("heading", { name: "本次修改可能影响后续内容" })).not.toBeInTheDocument());
-    expect(fetchMock.mock.calls.filter((call) => String(call[0]) === "/api/courses/course-1/audience" && (call[1] as RequestInit | undefined)?.method === "PUT")).toHaveLength(1);
+    expect(within(dialog).getByText(/系统不会自动删除/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保存修改并继续" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "后续内容需要更新" })).not.toBeInTheDocument());
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]) === "/api/courses/course-1/audience" && (call[1] as RequestInit | undefined)?.method === "PUT")).toHaveLength(2);
   });
 });

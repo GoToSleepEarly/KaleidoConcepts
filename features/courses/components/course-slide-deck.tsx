@@ -139,7 +139,7 @@ export function PreviewSlide({ page, presentation, mode = "html", answerMode = m
   return frame(<VocabularyMatchingPage answerMode={answerMode} fontScale={fontScale} page={page} />);
 }
 
-export function CourseSlideDeck({ pages, presentation, showAllPages = false, selectedPageId, onSelectPage }: { pages: CoursePreviewPage[]; presentation: CoursePresentationConfig; showAllPages?: boolean; selectedPageId?: string; onSelectPage?: (id: string) => void }) {
+export function CourseSlideDeck({ pages, presentation, showAllPages = false, pdfBackgroundMode = "image", selectedPageId, onSelectPage }: { pages: CoursePreviewPage[]; presentation: CoursePresentationConfig; showAllPages?: boolean; pdfBackgroundMode?: PreviewSlideBackgroundMode; selectedPageId?: string; onSelectPage?: (id: string) => void }) {
   const [current, setCurrent] = useState(0);
   const goTo = useCallback((index: number) => setCurrent(Math.max(0, Math.min(pages.length - 1, index))), [pages.length]);
   useEffect(() => {
@@ -158,7 +158,7 @@ export function CourseSlideDeck({ pages, presentation, showAllPages = false, sel
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [pages.length, showAllPages]);
-  if (showAllPages) return <div className="preview-deck-pdf flex flex-col gap-4">{pages.map((page) => <div className="preview-slide-wrapper aspect-video overflow-hidden rounded-lg shadow" key={page.id}><PreviewSlide mode="pdf" page={page} presentation={presentation} /></div>)}</div>;
+  if (showAllPages) return <div className="preview-deck-pdf flex flex-col gap-4">{pages.map((page) => <div className="preview-slide-wrapper aspect-video overflow-hidden rounded-lg shadow" key={page.id}><PreviewSlide backgroundMode={pdfBackgroundMode} mode="pdf" page={page} presentation={presentation} /></div>)}</div>;
   const page = pages[current];
   const controlClass = "flex size-11 items-center justify-center rounded-full transition hover:bg-slate-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30";
   return <div className="relative flex h-full w-full items-center justify-center"><div className="aspect-video w-full overflow-hidden rounded-lg bg-black shadow-2xl">{page ? <PreviewSlide onSelect={() => onSelectPage?.(page.id)} page={page} presentation={presentation} selected={page.id === selectedPageId} /> : null}</div><div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border bg-white/95 p-1.5 text-sm text-slate-700 shadow-lg backdrop-blur"><button aria-label="回到开头" className={controlClass} disabled={current === 0} onClick={() => goTo(0)} type="button"><RotateCcw className="size-5" /></button><button aria-label="上一页" className={controlClass} disabled={current === 0} onClick={() => goTo(current - 1)} type="button"><ChevronLeft className="size-6" /></button><span className="min-w-20 px-2 text-center font-medium tabular-nums">{current + 1} / {pages.length}</span><button aria-label="下一页" className={controlClass} disabled={current >= pages.length - 1} onClick={() => goTo(current + 1)} type="button"><ChevronRight className="size-6" /></button></div></div>;

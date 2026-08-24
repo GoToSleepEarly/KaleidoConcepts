@@ -910,12 +910,12 @@ describe("CourseStoryOutlineWorkspace", () => {
     }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
-    expect(screen.getByRole("heading", { name: "重新生成会清除后续内容" })).toBeInTheDocument();
-    expect(screen.getByText(/教学规划、文案与练习、视觉资源、图片和预览发布设置/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "重新生成故事大纲？" })).toBeInTheDocument();
     expect(fetchBodyCallCount(fetchMock)).toBe(0);
-    fireEvent.click(screen.getByRole("button", { name: "确认并重新生成" }));
+    expect(screen.getByText(/不会自动更新，也不会被删除/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "继续重新生成" }));
 
-    await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({ action: "regenerate_outline", resetDownstream: true }));
+    await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({ action: "regenerate_outline", preserveDownstream: true }));
   });
 
   test("asks before revising a chapter that already has a teaching plan", async () => {
@@ -932,13 +932,13 @@ describe("CourseStoryOutlineWorkspace", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
-    expect(screen.getByRole("heading", { name: "修改故事大纲会清除后续内容" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "继续修改故事大纲？" })).toBeInTheDocument();
     expect(fetchBodyCallCount(fetchMock)).toBe(0);
-    fireEvent.click(screen.getByRole("button", { name: "清空后续内容并继续" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续修改" }));
 
     await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({
       action: "revise_chapter",
-      resetDownstream: true,
+      preserveDownstream: true,
       targetChapterOrder: 1,
     }));
   });
@@ -961,10 +961,10 @@ describe("CourseStoryOutlineWorkspace", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
-    await waitFor(() => expect(screen.getByRole("heading", { name: "修改故事大纲会清除后续内容" })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "清空后续内容并继续" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "继续修改故事大纲？" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "继续修改" }));
 
-    await waitFor(() => expect(fetchBody(fetchMock, 1)).toMatchObject({ action: "revise_chapter", resetDownstream: true }));
+    await waitFor(() => expect(fetchBody(fetchMock, 1)).toMatchObject({ action: "revise_chapter", preserveDownstream: true }));
   });
 
   test("lands on the outline when one response adds references and finishes the outline", async () => {
@@ -1325,8 +1325,9 @@ describe("CourseStoryOutlineWorkspace", () => {
     }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "重新开始本轮构思" }));
-    expect(screen.getByText(/将立即删除故事构思、教学规划、文案与练习、视觉资源、图片和预览发布设置/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "清空并重新开始" }));
+    expect(screen.getByText(/将删除当前故事构思并重新开始/)).toBeInTheDocument();
+    expect(screen.getByText(/教学规划及后续内容不会被删除/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "删除故事构思并重新开始" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       "/api/courses/course-1/story-outline/reset",

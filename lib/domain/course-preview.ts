@@ -10,6 +10,13 @@ import type {
 } from "@/lib/contracts/api";
 import { courseContentQuestionPageSize, courseContentVocabularyPageSize, paginateBalanced, vocabularyExerciseHint } from "@/lib/domain/course-content";
 
+export type CoursePdfMode = "all" | "content_and_exercises";
+
+export function pdfPagesForMode(pages: CoursePreviewPage[], mode: CoursePdfMode) {
+  if (mode === "all") return pages;
+  return pages.filter((page) => page.type === "shot_text" || page.type === "grammar_practice" || page.type === "main_idea" || page.type === "vocabulary_matching");
+}
+
 type PreviewSlot = {
   id: string;
   slotType: "visual_cover" | "lesson_shot" | "character_baseline";

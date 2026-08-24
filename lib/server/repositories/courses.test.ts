@@ -105,7 +105,7 @@ describe("course audience repository", () => {
       "create-course-key",
     );
 
-    expect(course).toEqual({ id: "course-1", lifecycleStatus: "draft", currentStage: "story_outline" });
+    expect(course).toEqual({ id: "course-1", lifecycleStatus: "draft", currentStage: "story_outline", staleFromStage: null });
   });
 
   test("rejects a course person without a current visual", async () => {

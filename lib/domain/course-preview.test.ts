@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CourseContentChapter } from "@/lib/contracts/api";
-import { compilePreviewPages, previewPageAnswerText } from "@/lib/domain/course-preview";
+import { compilePreviewPages, pdfPagesForMode, previewPageAnswerText } from "@/lib/domain/course-preview";
 
 const chapter: CourseContentChapter = {
   id: "chapter-1",
@@ -78,6 +78,16 @@ describe("compilePreviewPages", () => {
       ["chapter", "optionCloze"], ["chapter", "wordForm"],
       ["homework", "optionCloze"], ["homework", "wordForm"],
     ]);
+    expect(pdfPagesForMode(pages, "content_and_exercises").map((page) => page.type)).toEqual([
+      "shot_text",
+      "grammar_practice",
+      "grammar_practice",
+      "main_idea",
+      "grammar_practice",
+      "grammar_practice",
+      "vocabulary_matching",
+    ]);
+    expect(pdfPagesForMode(pages, "all")).toEqual(pages);
   });
 
   it("renders complete reading as plain text and uses the shared Step 4/Step 6 page limits", () => {

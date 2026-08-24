@@ -76,6 +76,7 @@ model Course {
   knowledgePointIds Json             @default("[]")
   lifecycleStatus CourseLifecycle @default(draft)
   currentStage    CourseStage     @default(audience)
+  staleFromStage  CourseStage?
   visualQuality   CourseImageQuality @default(medium)
   imageGenerationConcurrency Int     @default(3)
   idempotencyKey  String          @unique

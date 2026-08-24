@@ -395,7 +395,7 @@ describe("CourseContentWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "重新生成正文与课后阅读" }));
     fireEvent.click(screen.getByRole("button", { name: "重新开始" }));
-    fireEvent.click(screen.getByRole("button", { name: "确定" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除文案与练习并重新开始" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "生成正文与课后阅读" })).toBeInTheDocument());
 
     resolveGeneration(Response.json(initialState));
@@ -429,6 +429,19 @@ describe("CourseContentWorkspace", () => {
     );
     expect(screen.queryByText("本环节已确认，视觉资源可继续编辑")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "下一步：视觉资源" }));
+    expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/visual-resources");
+  });
+
+  test("keeps next step available when the current content is an older retained version", () => {
+    render(<CourseContentWorkspace initialState={{
+      ...initialState,
+      status: "confirmed",
+      course: { ...initialState.course, currentStage: "preview", staleFromStage: "content" },
+    }} />);
+
+    const nextButton = screen.getByRole("button", { name: "下一步：视觉资源" });
+    expect(nextButton).toBeEnabled();
+    fireEvent.click(nextButton);
     expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/visual-resources");
   });
 
@@ -480,7 +493,7 @@ describe("CourseContentWorkspace", () => {
     ));
   });
 
-  test("confirms immediate downstream deletion before regenerating completed content", async () => {
+  test("confirms preserving old downstream content before regenerating completed content", async () => {
     Object.assign(HTMLDialogElement.prototype, {
       showModal(this: HTMLDialogElement) { this.setAttribute("open", ""); },
       close(this: HTMLDialogElement) { this.removeAttribute("open"); },
@@ -493,18 +506,19 @@ describe("CourseContentWorkspace", () => {
     render(<CourseContentWorkspace initialState={completedState} />);
 
     fireEvent.click(screen.getByRole("button", { name: "重新生成正文与课后阅读" }));
-    await waitFor(() => expect(screen.getByRole("heading", { name: "重新生成会清除后续内容" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "继续重新生成？" })).toBeInTheDocument());
     expect(screen.getByText(/视觉资源、图片和预览发布设置/)).toBeInTheDocument();
     expect(screen.queryByText(/Step/)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "确认并重新生成" }));
+    expect(screen.getByText(/不会自动更新，也不会被删除/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "继续重新生成" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith(
-      "/api/courses/course-1/content/reading/generate?regenerate=true&resetDownstream=true",
+      "/api/courses/course-1/content/reading/generate?regenerate=true&preserveDownstream=true",
       expect.objectContaining({ method: "POST" }),
     ));
   });
 
-  test("clears all Step4 records and starts over after confirmation", async () => {
+  test("clears only Step4 records and keeps later stages after confirmation", async () => {
     Object.assign(HTMLDialogElement.prototype, {
       showModal(this: HTMLDialogElement) { this.setAttribute("open", ""); },
       close(this: HTMLDialogElement) { this.removeAttribute("open"); },
@@ -515,10 +529,11 @@ describe("CourseContentWorkspace", () => {
     render(<CourseContentWorkspace initialState={initialState} />);
     fireEvent.click(screen.getByRole("button", { name: "重新开始" }));
     expect(screen.getByRole("heading", { name: "重新开始" })).toBeInTheDocument();
-    expect(screen.getByText(/将立即删除文案与练习/)).toBeInTheDocument();
+    expect(screen.getByText(/将删除当前文案与练习并重新开始/)).toBeInTheDocument();
     expect(screen.getByText(/视觉资源、图片和预览发布设置/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "确定" }));
+    expect(screen.getByText(/不会被删除/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "删除文案与练习并重新开始" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/courses/course-1/content/reset", { method: "POST" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "生成正文与课后阅读" })).toBeInTheDocument());
   });

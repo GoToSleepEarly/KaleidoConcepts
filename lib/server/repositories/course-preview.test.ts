@@ -50,7 +50,7 @@ describe("course preview state transitions", () => {
     const update = vi.fn().mockResolvedValue({});
     const db = { course: { findUnique: vi.fn().mockResolvedValue({ id: "course-1", lessonContent: { id: "content-1" }, visualImageSlots: [] }), update } } as never;
     await confirmVisualResources(db, "course-1");
-    expect(update).toHaveBeenCalledWith({ where: { id: "course-1" }, data: { currentStage: "preview" } });
+    expect(update).toHaveBeenCalledWith({ where: { id: "course-1" }, data: { currentStage: "preview", staleFromStage: null } });
   });
 
   it("keeps a published course published when the saved presentation has no actual changes", async () => {
@@ -103,7 +103,29 @@ describe("course preview state transitions", () => {
       coursePresentation: { upsert: vi.fn() },
     } as never;
     await expect(publishCourse(db, "course-1")).resolves.toEqual({ redirectUrl: "/courses/course-1" });
-    expect(update).toHaveBeenCalledWith({ where: { id: "course-1" }, data: { lifecycleStatus: "published", currentStage: "preview" } });
+    expect(update).toHaveBeenCalledWith({ where: { id: "course-1" }, data: { lifecycleStatus: "published", currentStage: "preview", staleFromStage: null } });
+  });
+
+  it("blocks publishing while an earlier stage still contains an old version", async () => {
+    const update = vi.fn();
+    const db = {
+      course: { findUnique: vi.fn().mockResolvedValue({ id: "course-1", lifecycleStatus: "draft", staleFromStage: "content", lessonContent: { id: "content-1" }, visualImageSlots: [] }), update },
+      coursePresentation: { upsert: vi.fn() },
+    } as never;
+
+    await expect(publishCourse(db, "course-1")).rejects.toThrow("前序内容仍是旧版本");
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("treats publishing as confirmation of reviewed preview-only changes", async () => {
+    const update = vi.fn();
+    const db = {
+      course: { findUnique: vi.fn().mockResolvedValue({ id: "course-1", lifecycleStatus: "draft", staleFromStage: "preview", lessonContent: { id: "content-1" }, visualImageSlots: [] }), update },
+      coursePresentation: { upsert: vi.fn() },
+    } as never;
+
+    await expect(publishCourse(db, "course-1")).resolves.toEqual({ redirectUrl: "/courses/course-1" });
+    expect(update).toHaveBeenCalledWith({ where: { id: "course-1" }, data: { lifecycleStatus: "published", currentStage: "preview", staleFromStage: null } });
   });
 
   it("blocks publishing while any image task is running", async () => {

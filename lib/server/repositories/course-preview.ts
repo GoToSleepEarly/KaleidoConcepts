@@ -12,6 +12,7 @@ import type {
   PublishCourseResponse,
 } from "@/lib/contracts/api";
 import { compilePreviewPages, DEFAULT_COURSE_PRESENTATION } from "@/lib/domain/course-preview";
+import { furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
 
 export type CoursePreviewDb = Pick<PrismaClient, "$transaction" | "course" | "coursePresentation" | "presetOption">;
 
@@ -95,6 +96,7 @@ export async function getCoursePreview(db: CoursePreviewDb, courseId: string): P
       id: course.id,
       title: course.title,
       lifecycleStatus: course.lifecycleStatus,
+      staleFromStage: course.staleFromStage ?? null,
       teacherName: teacher?.englishNameSnapshot || teacher?.chineseNameSnapshot || null,
       studentNames: students.map((student) => student.englishNameSnapshot || student.chineseNameSnapshot),
     },
@@ -154,7 +156,13 @@ export async function confirmVisualResources(db: Pick<PrismaClient, "course">, c
   if (!course) throw new CoursePreviewNotFoundError("课程不存在");
   if (!course.lessonContent) throw new CoursePreviewPrerequisiteError("请先完成文案与练习");
   assertVisualResourcesReady(course.visualImageSlots);
-  if (course.currentStage !== "preview") await db.course.update({ where: { id: courseId }, data: { currentStage: "preview" } });
+  await db.course.update({
+    where: { id: courseId },
+    data: {
+      currentStage: furthestCourseStage(course.currentStage, "preview"),
+      staleFromStage: staleStageAfterConfirming(course.staleFromStage, "visual_resources", course.currentStage),
+    },
+  });
   return { redirectUrl: `/courses/${courseId}/create/preview` };
 }
 
@@ -162,8 +170,9 @@ export async function publishCourse(db: CoursePreviewDb, courseId: string, input
   const course = await db.course.findUnique({ where: { id: courseId }, include: { lessonContent: true, visualImageSlots: { include: { activeImage: { select: { status: true } }, images: { select: { status: true, leaseExpiresAt: true, updatedAt: true, startedAt: true } } } } } });
   if (!course) throw new CoursePreviewNotFoundError("课程不存在");
   if (!course.lessonContent) throw new CoursePreviewPrerequisiteError("请先完成文案与练习");
+  if (course.staleFromStage && course.staleFromStage !== "preview") throw new CoursePreviewPrerequisiteError("前序内容仍是旧版本，请先从提示阶段开始重置并重新确认");
   assertVisualResourcesReady(course.visualImageSlots);
   if (input) await savePresentation(db, courseId, input, { preservePublished: true });
-  if (course.lifecycleStatus !== "published") await db.course.update({ where: { id: courseId }, data: { lifecycleStatus: "published", currentStage: "preview" } });
+  if (course.lifecycleStatus !== "published" || course.staleFromStage) await db.course.update({ where: { id: courseId }, data: { lifecycleStatus: "published", currentStage: "preview", staleFromStage: null } });
   return { redirectUrl: `/courses/${courseId}` };
 }

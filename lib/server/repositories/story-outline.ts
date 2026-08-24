@@ -20,12 +20,14 @@ import type {
   StoryAlignmentQuestion,
   StoryAlignmentState,
 } from "@/lib/contracts/api";
+import { furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
 
 type DbCourse = {
   id: string;
   title: string;
   durationMinutes: number;
   currentStage: CourseStage;
+  staleFromStage?: CourseStage | null;
   people?: DbCoursePerson[];
   englishLevel?: EnglishLevel | null;
   knowledgePointIds?: unknown;
@@ -321,7 +323,7 @@ export class CourseStoryOutlineNotFoundError extends Error {
 }
 
 export class CourseStoryOutlineConflictError extends Error {
-  constructor(message = "修改故事大纲会重置后续内容") {
+  constructor(message = "修改故事大纲会使后续内容保留为旧版本") {
     super(message);
     this.name = "CourseStoryOutlineConflictError";
   }
@@ -556,6 +558,7 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
       title: course.title,
       durationMinutes: course.durationMinutes as 30 | 45 | 60,
       currentStage: course.currentStage,
+      staleFromStage: course.staleFromStage ?? null,
       englishLevel: course.englishLevel as EnglishLevel,
       knowledgePointIds: selectedIds,
     },
@@ -1462,10 +1465,10 @@ export async function saveStoryOutline(
   db: StoryOutlineDb,
   courseId: string,
   outline: StoryOutlineSaveInput,
-  resetDownstream: boolean,
+  preserveDownstream: boolean,
 ) {
   const course = await getCourse(db, courseId);
-  if (!["audience", "story_outline", "teaching_plan"].includes(course.currentStage) && !resetDownstream) {
+  if (!["audience", "story_outline", "teaching_plan"].includes(course.currentStage) && !preserveDownstream) {
     throw new CourseStoryOutlineConflictError();
   }
   await writeOutline(db, course, {
@@ -1497,7 +1500,6 @@ export async function saveStoryOutline(
       shouldAppearInImages: character.shouldAppearInImages,
     })),
   }, outline.writingProvider, outline.chapterCount);
-  if (resetDownstream) await db.course.update({ where: { id: courseId }, data: { currentStage: "story_outline" } });
   return getStoryOutlineState(db, courseId);
 }
 
@@ -1510,8 +1512,13 @@ export async function confirmStoryOutline(db: StoryOutlineDb, courseId: string) 
   if (allowedIds.size && state.outline.chapters.some((chapter) => !chapter.recommendedKnowledgePointIds?.length || chapter.recommendedKnowledgePointIds.some((id) => !allowedIds.has(id)))) {
     throw new CourseStoryOutlineValidationError("章节知识点推荐不完整，请重新生成大纲。");
   }
-  if (!["audience", "story_outline"].includes(state.course.currentStage)) return state.course;
-  return db.course.update({ where: { id: courseId }, data: { currentStage: "teaching_plan" } });
+  return db.course.update({
+    where: { id: courseId },
+    data: {
+      currentStage: furthestCourseStage(state.course.currentStage, "teaching_plan"),
+      staleFromStage: staleStageAfterConfirming(state.course.staleFromStage, "story_outline", state.course.currentStage),
+    },
+  });
 }
 
 export async function updateStoryOutlineSettings(

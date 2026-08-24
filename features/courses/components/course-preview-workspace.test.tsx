@@ -155,6 +155,8 @@ describe("CoursePreviewWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "打印预览" }));
     fireEvent.click(screen.getByRole("button", { name: "下载 PDF" }));
+    expect(exportSlidesToPDFMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /全部页面/ }));
 
     expect(await screen.findByRole("status", { name: "PDF 导出进度" })).toHaveTextContent("正在处理第 2/3 页");
     expect(screen.getByRole("progressbar", { name: "PDF 导出进度" })).toHaveAttribute("aria-valuenow", "33");
@@ -169,6 +171,47 @@ describe("CoursePreviewWorkspace", () => {
     expect(screen.getByRole("button", { name: "课件预览" })).not.toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "关闭 PDF 导出结果" }));
     expect(screen.queryByRole("status", { name: "PDF 导出进度" })).not.toBeInTheDocument();
+  });
+
+  it("offers a print-friendly PDF containing only reading and exercise pages", async () => {
+    render(<CoursePreviewWorkspace initialState={{
+      course: { id: "course-1", title: "Mystery", lifecycleStatus: "draft", teacherName: "Lin", studentNames: ["Summer"] },
+      presentation: { coverTheme: "dark", coverTitleFontSize: 1, chapterTheme: "blue-purple", slideOverrides: {} },
+      pages: [
+        { id: "cover", type: "cover_pure", image: { publicUrl: null } },
+        { id: "chapter", type: "chapter_divider", chapterOrder: 1, chapterTitleZh: "第一章", chapterTitleEn: "Chapter One" },
+        { id: "image", type: "shot_image", chapterId: "chapter", paragraphId: "paragraph", image: { publicUrl: null } },
+        { id: "reading", type: "shot_text", chapterId: "chapter", paragraphId: "paragraph", image: { publicUrl: null }, readingExerciseMode: "complete", knowledgePoints: [], parts: [{ type: "text", text: "Reading text" }], textBox: { opacity: 0.85, fontSize: 1 } },
+        { id: "chapter-practice", type: "grammar_practice", scope: "chapter", chapterTitleZh: "第一章", chapterTitleEn: "Chapter One", exerciseType: "wordForm", pageNumber: 1, questionStartNumber: 1, knowledgePoints: [], questions: [] },
+        { id: "homework-practice", type: "grammar_practice", scope: "homework", exerciseType: "wordForm", pageNumber: 1, questionStartNumber: 1, knowledgePoints: [], questions: [] },
+        { id: "main-idea", type: "main_idea", title: "Main idea", text: "Extra reading" },
+        { id: "vocabulary", type: "vocabulary_matching", pageNumber: 1, items: [] },
+      ],
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "打印预览" }));
+    fireEvent.click(screen.getByRole("button", { name: "下载 PDF" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /仅正文与习题/ }));
+
+    await waitFor(() => expect(exportSlidesToPDFMock).toHaveBeenCalledWith(
+      ".preview-deck-pdf",
+      "Mystery-正文与习题.pdf",
+      expect.any(Object),
+    ));
+    expect(screen.queryByLabelText("纯封面")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("章节标题")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("绘本图片")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("课后阅读")).toBeInTheDocument();
+    expect(screen.getByLabelText("正文阅读")).toBeInTheDocument();
+    expect(screen.getAllByLabelText("语法练习")).toHaveLength(2);
+    expect(screen.getByLabelText("词汇配对")).toBeInTheDocument();
+    expect(screen.getByLabelText("正文阅读").querySelector(".bg-\\[\\#fffdf8\\]")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "切换为完整打印预览" }));
+    expect(screen.getByLabelText("纯封面")).toBeInTheDocument();
+    expect(screen.getByLabelText("章节标题")).toBeInTheDocument();
+    expect(screen.getByLabelText("绘本图片")).toBeInTheDocument();
   });
 
   it("reports an interrupted browser-side PDF export after refresh", async () => {

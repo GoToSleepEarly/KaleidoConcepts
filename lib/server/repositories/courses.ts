@@ -40,6 +40,7 @@ type DbCourse = {
   knowledgePointIds: unknown;
   lifecycleStatus: CourseLifecycleStatus;
   currentStage: CourseStage;
+  staleFromStage?: CourseStage | null;
   idempotencyKey?: string;
   updatedAt?: Date;
   people?: DbCoursePerson[];
@@ -91,7 +92,7 @@ export class CoursePersonValidationError extends Error {
 }
 
 export class CourseAudienceConflictError extends Error {
-  constructor(message = "修改授课对象会重置后续内容") {
+  constructor(message = "修改授课对象会使后续内容保留为旧版本") {
     super(message);
     this.name = "CourseAudienceConflictError";
   }
@@ -127,7 +128,7 @@ async function snapshots(db: CoursesDb, input: CourseAudienceInput) {
 }
 
 function mutationResult(course: DbCourse) {
-  return { id: course.id, lifecycleStatus: course.lifecycleStatus, currentStage: course.currentStage };
+  return { id: course.id, lifecycleStatus: course.lifecycleStatus, currentStage: course.currentStage, staleFromStage: course.staleFromStage ?? null };
 }
 
 export async function createCourse(db: CoursesDb, input: CourseAudienceInput, idempotencyKey: string) {
@@ -162,7 +163,7 @@ export async function updateCourseAudience(
   db: CoursesDb,
   id: string,
   input: CourseAudienceInput,
-  resetDownstream: boolean,
+  preserveDownstream: boolean,
 ) {
   const current = await db.course.findUnique({ where: { id }, include: { people: true } });
   if (!current) throw new CourseNotFoundError();
@@ -177,7 +178,7 @@ export async function updateCourseAudience(
     || !sameIds(currentStudents, nextStudents);
   const hasDownstream = !["audience", "story_outline"].includes(current.currentStage);
 
-  if (keyInputsChanged && hasDownstream && !resetDownstream) throw new CourseAudienceConflictError();
+  if (keyInputsChanged && hasDownstream && !preserveDownstream) throw new CourseAudienceConflictError();
   if (!keyInputsChanged) {
     const course = await db.course.update({ where: { id }, data: { title: input.title.trim() } });
     return mutationResult(course);
@@ -192,7 +193,9 @@ export async function updateCourseAudience(
         durationMinutes: input.durationMinutes,
         englishLevel: input.englishLevel,
         knowledgePointIds: input.knowledgePointIds,
-        currentStage: "story_outline",
+        currentStage: hasDownstream ? current.currentStage : "story_outline",
+        staleFromStage: hasDownstream ? "story_outline" : null,
+        lifecycleStatus: "draft",
         people: { deleteMany: {}, create: people },
       },
     });

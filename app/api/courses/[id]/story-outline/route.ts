@@ -8,7 +8,7 @@ import {
   saveStoryOutline,
 } from "@/lib/server/repositories/story-outline";
 import { storyOutlineSaveSchema } from "@/lib/server/validation/story-outline";
-import { withCourseDownstreamReset, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
+import { markCourseDownstreamStale, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -27,9 +27,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const { id } = await params;
   try {
     const db = getDb();
-    const state = parsed.data.resetDownstream === true
-      ? await withCourseDownstreamReset(db as unknown as CourseDownstreamDb, id, "story_outline", (tx) => saveStoryOutline(tx as unknown as Parameters<typeof saveStoryOutline>[0], id, parsed.data.outline, true))
-      : await saveStoryOutline(db, id, parsed.data.outline, false);
+    const state = await saveStoryOutline(db, id, parsed.data.outline, parsed.data.preserveDownstream === true);
+    if (parsed.data.preserveDownstream === true) await markCourseDownstreamStale(db as unknown as CourseDownstreamDb, id, "story_outline");
     return NextResponse.json(state);
   } catch (error) {
     if (error instanceof CourseStoryOutlineNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });

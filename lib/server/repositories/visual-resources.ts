@@ -11,6 +11,7 @@ import type {
   CourseVisualResourcesState,
 } from "@/lib/contracts/api";
 import { buildCleanParagraphText } from "@/lib/domain/course-content";
+import { furthestCourseStage } from "@/lib/domain/course-stage";
 import { defaultCharacterVisualIntent, matchCoursePersonForCharacter } from "@/lib/domain/visual-resources";
 import { visualGenerationFingerprint } from "@/lib/domain/visual-resources";
 import { compileCourseImagePrompt, CourseVisualPlanResponseError, createCourseVisualPlanDeps, mergeOriginalizedVisualPlan, parseCourseVisualPlan, type CourseImagePromptCharacter, type CourseVisualPlan, type CourseVisualPlanDeps, type CourseVisualPlanDiagnostics, type CourseVisualPlanScene } from "@/lib/server/ai/course-visual-plan-deps";
@@ -185,7 +186,7 @@ function toAsset(asset: {
 }
 
 export async function getCourseVisualResources(db: VisualResourcesDb, courseId: string): Promise<CourseVisualResourcesState> {
-  const course = await db.course.findUnique({ where: { id: courseId }, select: { id: true, title: true, currentStage: true, visualQuality: true, imageGenerationConcurrency: true } });
+  const course = await db.course.findUnique({ where: { id: courseId }, select: { id: true, title: true, currentStage: true, staleFromStage: true, visualQuality: true, imageGenerationConcurrency: true } });
   if (!course) throw new VisualResourcesNotFoundError("课程不存在");
   await recoverStaleCourseImages(db, courseId);
   const [characters, visuals, plan, slots, people, content] = await Promise.all([
@@ -269,7 +270,7 @@ export async function getCourseVisualResources(db: VisualResourcesDb, courseId: 
     .filter((slot) => Boolean(visualPlan && slot.activeImage && hasUnsyncedCharacterAppearance(slot.activeImage.prompt, asStrings(slot.characterIds), visualPlan.characterDesigns)))
     .map((slot) => slot.id));
   return {
-    course: { id: course.id, title: course.title, currentStage: course.currentStage },
+    course: { id: course.id, title: course.title, currentStage: course.currentStage, staleFromStage: course.staleFromStage ?? null },
     quality: course.visualQuality,
     imageGenerationConcurrency: course.imageGenerationConcurrency,
     planReady: Boolean(visualPlan),
@@ -467,7 +468,7 @@ export async function generateCourseVisualPlan(
     throw new CourseVisualPlanResponseError(operation.errorMessage ?? undefined, diagnostics ?? undefined);
   }
   const [course, content, outline, characters, existingPlan] = await Promise.all([
-    db.course.findUnique({ where: { id: courseId }, select: { id: true } }),
+    db.course.findUnique({ where: { id: courseId }, select: { id: true, currentStage: true } }),
     db.courseLessonContent.findUnique({ where: { courseId } }),
     db.courseStoryOutline.findUnique({ where: { courseId } }),
     db.courseCharacter.findMany({ where: { courseId, shouldAppearInImages: true }, include: { sourceReference: true } }),
@@ -609,7 +610,7 @@ export async function generateCourseVisualPlan(
       });
     }
   }
-  await db.course.update({ where: { id: courseId }, data: { currentStage: "visual_resources" } });
+  await db.course.update({ where: { id: courseId }, data: { currentStage: furthestCourseStage(course.currentStage, "visual_resources") } });
   await db.aiGenerationLog.update({ where: { id: operation.id }, data: { status: "succeeded", errorMessage: null } });
   return getCourseVisualResources(db, courseId);
   } catch (error) {

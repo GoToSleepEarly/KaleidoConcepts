@@ -1,5 +1,5 @@
 import type { CourseStage } from "@/lib/contracts/api";
-import { removeCourseImageFiles } from "@/lib/server/storage/course-images";
+import { earliestCourseStage, nextCourseStage } from "@/lib/domain/course-stage";
 
 type DeleteDelegate = {
   deleteMany: (query: { where: { courseId: string } }) => Promise<{ count: number }>;
@@ -7,8 +7,8 @@ type DeleteDelegate = {
 };
 
 type CourseDelegate = {
-  findUnique: (query: { where: { id: string }; select: { currentStage: true } }) => Promise<{ currentStage: CourseStage } | null>;
-  update: (query: { where: { id: string }; data: { currentStage: CourseStage; lifecycleStatus: "draft" } }) => Promise<unknown>;
+  findUnique: (query: { where: { id: string }; select: Record<string, boolean> }) => Promise<{ currentStage: CourseStage; staleFromStage?: CourseStage | null; lifecycleStatus?: "draft" | "published" | "archived" } | null>;
+  update: (query: { where: { id: string }; data: { currentStage?: CourseStage; staleFromStage?: CourseStage | null; lifecycleStatus?: "draft" } }) => Promise<unknown>;
 };
 
 export type CourseDownstreamBoundary = "audience" | "story_outline" | "teaching_plan" | "content";
@@ -39,6 +39,27 @@ const stageByBoundary: Record<CourseDownstreamBoundary, CourseStage> = {
   teaching_plan: "teaching_plan",
   content: "content",
 };
+
+export async function markCourseDownstreamStale(
+  db: CourseDownstreamDb,
+  courseId: string,
+  boundary: CourseDownstreamBoundary,
+) {
+  const staleStage = nextCourseStage(stageByBoundary[boundary]);
+  if (!staleStage) return;
+  const course = await db.course.findUnique({
+    where: { id: courseId },
+    select: { currentStage: true, staleFromStage: true, lifecycleStatus: true },
+  });
+  if (!course) return;
+  await db.course.update({
+    where: { id: courseId },
+    data: {
+      staleFromStage: earliestCourseStage(course.staleFromStage, staleStage),
+      lifecycleStatus: "draft",
+    },
+  });
+}
 
 const stageOrder: Record<CourseStage, number> = {
   audience: 1,
@@ -89,75 +110,4 @@ export async function getCourseDownstreamImpact(db: CourseDownstreamDb, courseId
   if (visualPlan || visualSlot || image || characterVisual || stageOrder[course.currentStage] >= stageOrder.visual_resources) impact.push("视觉资源和图片");
   if (presentation || stageOrder[course.currentStage] >= stageOrder.preview) impact.push("预览发布设置");
   return impact;
-}
-
-async function deleteCourseDownstreamRecords(
-  tx: CourseDownstreamDb,
-  courseId: string,
-  boundary: CourseDownstreamBoundary,
-) {
-  await tx.coursePresentation.deleteMany({ where: { courseId } });
-  await tx.courseImage.deleteMany({ where: { courseId } });
-  await tx.courseVisualImageSlot.deleteMany({ where: { courseId } });
-  await tx.courseCharacterVisual.deleteMany({ where: { courseId } });
-  await tx.courseVisualResourcePlan.deleteMany({ where: { courseId } });
-
-  if (boundary !== "content") {
-    await tx.courseContentChatMessage.deleteMany({ where: { courseId } });
-    await tx.courseContentGeneration.deleteMany({ where: { courseId } });
-    await tx.courseLessonContent.deleteMany({ where: { courseId } });
-  }
-  if (boundary === "audience" || boundary === "story_outline") {
-    await tx.courseTeachingPlan.deleteMany({ where: { courseId } });
-  }
-  if (boundary === "audience") {
-    await tx.courseStoryChatMessage.deleteMany({ where: { courseId } });
-    await tx.courseStoryDirection.deleteMany({ where: { courseId } });
-    await tx.courseCharacter.deleteMany({ where: { courseId } });
-    await tx.courseSourceReference.deleteMany({ where: { courseId } });
-    await tx.courseStoryOutline.deleteMany({ where: { courseId } });
-    await tx.courseStorySetting.deleteMany({ where: { courseId } });
-  }
-
-  await tx.course.update({
-    where: { id: courseId },
-    data: { currentStage: stageByBoundary[boundary], lifecycleStatus: "draft" },
-  });
-}
-
-export async function withCourseDownstreamReset<T>(
-  db: CourseDownstreamDb,
-  courseId: string,
-  boundary: CourseDownstreamBoundary,
-  mutation: (tx: CourseDownstreamDb) => Promise<T>,
-  dependencies: { removeImages?: (courseId: string) => Promise<void> } = {},
-) {
-  const removeImages = dependencies.removeImages ?? removeCourseImageFiles;
-  const result = await db.$transaction(async (tx) => {
-    await deleteCourseDownstreamRecords(tx, courseId, boundary);
-    return mutation(tx);
-  });
-  await removeImages(courseId);
-  return result;
-}
-
-export async function clearCourseDownstream(
-  db: CourseDownstreamDb,
-  courseId: string,
-  boundary: CourseDownstreamBoundary,
-  dependencies: { removeImages?: (courseId: string) => Promise<void> } = {},
-) {
-  return withCourseDownstreamReset(db, courseId, boundary, async () => undefined, dependencies);
-}
-
-export async function runBeforeCourseDownstreamReset<T>(
-  db: CourseDownstreamDb,
-  courseId: string,
-  boundary: CourseDownstreamBoundary,
-  mutation: () => Promise<T>,
-  dependencies: { removeImages?: (courseId: string) => Promise<void> } = {},
-) {
-  const result = await mutation();
-  await clearCourseDownstream(db, courseId, boundary, dependencies);
-  return result;
 }

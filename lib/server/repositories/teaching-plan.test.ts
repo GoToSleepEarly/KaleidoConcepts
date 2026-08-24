@@ -162,7 +162,7 @@ describe("teaching plan repository", () => {
     expect(state.plan.status).toBe("draft");
     expect(state.plan.confirmedAt).toBeNull();
     expect(state.plan.chapters.map((chapter) => chapter.outlineChapterId)).toEqual(["outline-chapter-1", "outline-chapter-2"]);
-    expect(db.state.course.currentStage).toBe("teaching_plan");
+    expect(db.state.course.currentStage).toBe("content");
   });
 
   test("resets Step 3 to a fresh draft from the current outline recommendations", async () => {
@@ -180,7 +180,7 @@ describe("teaching plan repository", () => {
     expect(reset.status).toBe("draft");
     expect(reset.chapters[0]).toMatchObject({ targetWordCount: 180, knowledgePointIds: ["grammar-1"] });
     expect(reset.confirmedAt).toBeNull();
-    expect(db.state.course.currentStage).toBe("teaching_plan");
+    expect(db.state.course.currentStage).toBe("content");
     expect(db.state.contentExists).toBe(true);
   });
 
@@ -191,7 +191,7 @@ describe("teaching plan repository", () => {
     await expect(getTeachingPlanState(db, "course-1")).rejects.toBeInstanceOf(CourseTeachingPlanPrerequisiteError);
   });
 
-  test("saves a draft and returns the effective course stage to teaching plan", async () => {
+  test("saves a draft without moving a later course backwards", async () => {
     const db = createDb();
     const state = await getTeachingPlanState(db, "course-1");
     const plan = completePlan(state.plan);
@@ -203,7 +203,7 @@ describe("teaching plan repository", () => {
 
     expect(saved.englishLevel).toBe("B1");
     expect(saved.chapters[0].paragraphCount).not.toBe(6);
-    expect(db.state.course.currentStage).toBe("teaching_plan");
+    expect(db.state.course.currentStage).toBe("preview");
     expect(db.state.contentExists).toBe(true);
     expect(db.courseLessonContent?.deleteMany).not.toHaveBeenCalled();
   });
@@ -276,7 +276,7 @@ describe("teaching plan repository", () => {
     expect(result.plan.confirmedAt).toBeTruthy();
   });
 
-  test("requires confirmation and clears stale Step 4 content after an edited plan is reconfirmed", async () => {
+  test("requires confirmation and preserves stale Step 4 content after an edited plan is reconfirmed", async () => {
     const db = createDb();
     const state = await getTeachingPlanState(db, "course-1");
     await saveTeachingPlan(db, "course-1", completePlan(state.plan));
@@ -284,11 +284,12 @@ describe("teaching plan repository", () => {
     db.state.contentExists = true;
 
     await expect(confirmTeachingPlan(db, "course-1", "check")).rejects.toBeInstanceOf(CourseTeachingPlanConflictError);
-    await confirmTeachingPlan(db, "course-1", "clear");
+    const result = await confirmTeachingPlan(db, "course-1", "preserve");
 
-    expect(db.state.contentExists).toBe(false);
-    expect(db.courseContentChatMessage?.deleteMany).toHaveBeenCalledWith({ where: { courseId: "course-1" } });
-    expect(db.courseContentGeneration?.deleteMany).toHaveBeenCalledWith({ where: { courseId: "course-1" } });
+    expect(db.state.contentExists).toBe(true);
+    expect(result.course.staleFromStage).toBe("content");
+    expect(db.courseContentChatMessage?.deleteMany).not.toHaveBeenCalled();
+    expect(db.courseContentGeneration?.deleteMany).not.toHaveBeenCalled();
   });
 
   test("confirms the new plan while preserving existing downstream content when chosen", async () => {

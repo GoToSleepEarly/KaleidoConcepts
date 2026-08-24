@@ -8,20 +8,25 @@ import {
   CourseTeachingPlanPrerequisiteError,
 } from "@/lib/server/repositories/teaching-plan";
 import { TeachingPlanValidationError } from "@/lib/server/validation/teaching-plan";
-import { getCourseDownstreamImpact, withCourseDownstreamReset, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
+import { getCourseDownstreamImpact, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
+import { parseTeachingPlan } from "@/lib/server/validation/teaching-plan";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const body = await request.json().catch(() => ({})) as { downstreamAction?: "check" | "preserve" | "clear" };
+  const body = await request.json().catch(() => ({})) as { downstreamAction?: "check" | "preserve"; plan?: unknown };
   const downstreamAction = body.downstreamAction ?? "check";
-  if (!(["check", "preserve", "clear"] as const).includes(downstreamAction)) {
+  if (!(["check", "preserve"] as const).includes(downstreamAction)) {
     return NextResponse.json({ message: "请选择如何处理后续内容" }, { status: 400 });
+  }
+  let plan;
+  try {
+    plan = body.plan === undefined ? undefined : parseTeachingPlan(body.plan);
+  } catch (error) {
+    return NextResponse.json({ message: error instanceof Error ? error.message : "教学规划信息不完整" }, { status: 400 });
   }
   const { id } = await params;
   try {
     const db = getDb();
-    const result = downstreamAction === "clear"
-      ? await withCourseDownstreamReset(db as unknown as CourseDownstreamDb, id, "teaching_plan", (tx) => confirmTeachingPlan(tx as unknown as Parameters<typeof confirmTeachingPlan>[0], id, "clear"))
-      : await confirmTeachingPlan(db, id, downstreamAction);
+    const result = await confirmTeachingPlan(db, id, downstreamAction, plan);
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof CourseTeachingPlanNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });

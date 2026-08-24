@@ -1019,7 +1019,7 @@ describe("story outline repository", () => {
 
     await confirmStoryOutline(db, "course-1");
 
-    expect(db.state.updates.at(-1)).toEqual({ currentStage: "teaching_plan" });
+    expect(db.state.updates.at(-1)).toEqual({ currentStage: "teaching_plan", staleFromStage: null });
   });
 
   test("reconfirming a viewed outline does not move a later course backwards", async () => {

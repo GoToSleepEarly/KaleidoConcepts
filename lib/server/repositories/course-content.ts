@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { CourseContentChapter, CourseContentPart, CourseContentPhase, CourseContentState, CourseContentStatus, CourseGrammarQuestion, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
 import { buildCleanParagraphText, collectVocabularyMatching, courseContentQuestionPageSize, paginateBalanced, stableShuffle, validateGrammarCoverage, validateParagraphParts } from "@/lib/domain/course-content";
+import { furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
 import { readingPageCount } from "@/lib/domain/teaching-plan-policy";
 import { buildPromptParts, buildPromptQuestions, buildReadingTemplateRequirements, mainIdeaWordCountPolicy, readingWordCountPolicy, type CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
 import {
@@ -228,7 +229,7 @@ async function ensureContent(db: CourseContentDb, state: TeachingPlanState) {
 
 function toState(state: TeachingPlanState, content: ContentRecord, messages: MessageRecord[], operation: GenerationRecord | null): CourseContentState {
   return {
-    course: { id: state.course.id, title: state.course.title, currentStage: state.course.currentStage, englishLevel: state.course.englishLevel! },
+    course: { id: state.course.id, title: state.course.title, currentStage: state.course.currentStage, staleFromStage: state.course.staleFromStage ?? null, englishLevel: state.course.englishLevel! },
     storyTitle: state.outline.title,
     knowledgePoints: state.knowledgePoints.map(({ id, label }) => ({ id, label })),
     chapterKnowledgePointIds: Object.fromEntries(state.plan.chapters.map((chapter) => [chapter.outlineChapterId, chapter.knowledgePointIds])),
@@ -316,7 +317,7 @@ export async function updateCourseContentProvider(db: CourseContentDb, courseId:
 }
 
 export async function resetCourseContent(db: CourseContentDb, courseId: string) {
-  await prerequisite(db, courseId);
+  const state = await prerequisite(db, courseId);
   const reset = async (tx: CourseContentDb) => {
     if (!tx.courseContentChatMessage.deleteMany || !tx.courseContentGeneration.deleteMany || !tx.courseLessonContent.deleteMany) {
       throw new Error("当前数据库不支持重新开始文案与练习");
@@ -324,7 +325,7 @@ export async function resetCourseContent(db: CourseContentDb, courseId: string) 
     await tx.courseContentChatMessage.deleteMany({ where: { courseId } });
     await tx.courseContentGeneration.deleteMany({ where: { courseId } });
     await tx.courseLessonContent.deleteMany({ where: { courseId } });
-    await tx.course.update({ where: { id: courseId }, data: { currentStage: "content" } });
+    await tx.course.update({ where: { id: courseId }, data: { currentStage: state.course.currentStage } });
     return getCourseContentState(tx, courseId);
   };
   return db.$transaction ? db.$transaction((tx) => reset(tx as CourseContentDb)) : reset(db);
@@ -643,7 +644,13 @@ export async function confirmCourseContent(db: CourseContentDb, courseId: string
   if (content.activeGenerationId) throw new CourseContentConflictError("当前内容仍在处理，请等待完成后再确认");
   await inTransaction(db, async (tx) => {
     await tx.courseLessonContent.update!({ where: { courseId }, data: { status: "confirmed", confirmedAt: new Date() } });
-    await tx.course.update({ where: { id: courseId }, data: { currentStage: "visual_resources" } });
+    await tx.course.update({
+      where: { id: courseId },
+      data: {
+        currentStage: furthestCourseStage(state.course.currentStage, "visual_resources"),
+        staleFromStage: staleStageAfterConfirming(state.course.staleFromStage, "content", state.course.currentStage),
+      },
+    });
   });
   return getCourseContentState(db, courseId);
 }

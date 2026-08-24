@@ -76,6 +76,11 @@ export type PeopleListResponse = {
 export type CourseLifecycleStatus = "draft" | "published" | "archived";
 export type CourseStage = "audience" | "story_outline" | "teaching_plan" | "content" | "visual_resources" | "preview";
 
+export type CourseProgressState = {
+  currentStage: CourseStage;
+  staleFromStage: CourseStage | null;
+};
+
 export type CourseAudienceInput = {
   title: string;
   teacherId: string;
@@ -105,6 +110,7 @@ export type CourseAudienceDetail = {
   knowledgePointIds: string[];
   lifecycleStatus: CourseLifecycleStatus;
   currentStage: CourseStage;
+  staleFromStage?: CourseStage | null;
   people: CourseAudiencePerson[];
 };
 
@@ -117,6 +123,7 @@ export type CourseListItem = {
   lessonDraftExists: boolean;
   lifecycleStatus: CourseLifecycleStatus;
   currentStage: CourseStage;
+  staleFromStage?: CourseStage | null;
   teacherName: string | null;
   studentNames: string[];
   nextEditPath: string;
@@ -325,6 +332,7 @@ export type CourseStoryOutlineState = {
     title: string;
     durationMinutes: 30 | 45 | 60;
     currentStage: CourseStage;
+    staleFromStage?: CourseStage | null;
     englishLevel?: EnglishLevel;
     knowledgePointIds?: string[];
   };
@@ -362,7 +370,7 @@ export type CourseStoryMessageInput = {
   chapterCount?: number;
   writingProvider?: StoryWritingProvider;
   requestId?: string;
-  resetDownstream?: boolean;
+  preserveDownstream?: boolean;
 };
 
 export type PresetKind = "theme" | "story_type" | "story_tone" | "grammar";
@@ -456,6 +464,7 @@ export type TeachingPlanState = {
     title: string;
     durationMinutes: 30 | 45 | 60;
     currentStage: CourseStage;
+    staleFromStage?: CourseStage | null;
     englishLevel?: EnglishLevel;
     knowledgePointIds?: string[];
   };
@@ -541,7 +550,7 @@ export type CourseContentMessage = {
 };
 
 export type CourseContentState = {
-  course: { id: string; title: string; currentStage: CourseStage; englishLevel: EnglishLevel };
+  course: { id: string; title: string; currentStage: CourseStage; staleFromStage?: CourseStage | null; englishLevel: EnglishLevel };
   storyTitle: string;
   knowledgePoints: Array<{ id: string; label: string }>;
   chapterKnowledgePointIds: Record<string, string[]>;
@@ -637,7 +646,7 @@ export type CourseVisualImageSlot = {
 };
 
 export type CourseVisualResourcesState = {
-  course: { id: string; title: string; currentStage: CourseStage };
+  course: { id: string; title: string; currentStage: CourseStage; staleFromStage?: CourseStage | null };
   quality: CourseImageQuality;
   imageGenerationConcurrency: number;
   planReady: boolean;
@@ -676,7 +685,7 @@ export type CoursePresentationConfig = {
 };
 export type CoursePresentationUpdate = CoursePresentationConfig;
 export type CoursePreviewResponse = {
-  course: { id: string; title: string; lifecycleStatus: CourseLifecycleStatus; teacherName: string | null; studentNames: string[] };
+  course: { id: string; title: string; lifecycleStatus: CourseLifecycleStatus; staleFromStage?: CourseStage | null; teacherName: string | null; studentNames: string[] };
   pages: CoursePreviewPage[];
   presentation: CoursePresentationConfig;
 };

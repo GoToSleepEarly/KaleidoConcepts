@@ -58,7 +58,7 @@ export const storyOutlineMessageSchema = z.object({
   chapterCount: z.number().int().min(1).max(8).optional(),
   writingProvider: storyWritingProviderSchema.optional(),
   requestId: z.string().uuid().optional(),
-  resetDownstream: z.boolean().optional(),
+  preserveDownstream: z.boolean().optional(),
 });
 
 const sourceReferenceSchema = z.object({
@@ -135,7 +135,7 @@ export const storyOutlineSaveSchema = z.object({
     createdAt: z.string().optional(),
     updatedAt: z.string().optional(),
   }),
-  resetDownstream: z.boolean().optional(),
+  preserveDownstream: z.boolean().optional(),
 });
 
 export const referenceMaterialUpdateSchema = sourceReferenceSchema.pick({

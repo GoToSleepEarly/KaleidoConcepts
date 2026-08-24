@@ -14,7 +14,7 @@ import {
   publicStoryOutlineErrorMessage,
 } from "@/lib/server/repositories/story-outline";
 import { storyOutlineMessageSchema } from "@/lib/server/validation/story-outline";
-import { hasCourseDownstream, runBeforeCourseDownstreamReset, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
+import { hasCourseDownstream, markCourseDownstreamStale, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 
 const outlineMutationActions = new Set([
   "confirm_direction",
@@ -37,11 +37,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (parsed.data.action && outlineMutationActions.has(parsed.data.action)) {
       const downstreamDb = db as unknown as CourseDownstreamDb;
       const hasDownstream = await hasCourseDownstream(downstreamDb, id, "story_outline");
-      if (hasDownstream && parsed.data.resetDownstream !== true) {
-        return NextResponse.json({ message: "修改故事大纲会删除已有的教学规划、文案与练习、视觉资源、图片和预览发布设置", requiresReset: true }, { status: 409 });
+      if (hasDownstream && parsed.data.preserveDownstream !== true) {
+        return NextResponse.json({ message: "修改后，后续内容仍会保留修改前的版本", requiresReset: true }, { status: 409 });
       }
       if (hasDownstream) {
-        await runBeforeCourseDownstreamReset(downstreamDb, id, "story_outline", () => handleStoryOutlineMessage(db, id, parsed.data, createStoryOutlineGenerationDeps(aiGateway)));
+        await handleStoryOutlineMessage(db, id, parsed.data, createStoryOutlineGenerationDeps(aiGateway));
+        await markCourseDownstreamStale(downstreamDb, id, "story_outline");
         return NextResponse.json(await getStoryOutlineState(db, id));
       }
     }

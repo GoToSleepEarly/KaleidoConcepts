@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { clearCourseDownstream, getCourseDownstreamImpact, hasCourseDownstream, runBeforeCourseDownstreamReset, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
+import { getCourseDownstreamImpact, hasCourseDownstream, markCourseDownstreamStale, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 
 function delegate(name: string, calls: string[]) {
   return {
@@ -12,8 +12,13 @@ function delegate(name: string, calls: string[]) {
 function database(calls: string[]) {
   const db = {
     course: {
-      findUnique: vi.fn(async () => ({ currentStage: "preview" as const })),
-      update: vi.fn(async ({ data }) => { calls.push(`course:${data.currentStage}:${data.lifecycleStatus}`); return { id: "course-1" }; }),
+      findUnique: vi.fn(async () => ({ currentStage: "preview" as const, staleFromStage: null, lifecycleStatus: "published" as const })),
+      update: vi.fn(async ({ data }) => {
+        calls.push(data.currentStage
+          ? `course:${data.currentStage}:${data.lifecycleStatus}`
+          : `course:keep:${data.staleFromStage ?? "fresh"}:${data.lifecycleStatus}`);
+        return { id: "course-1" };
+      }),
     },
     courseStoryChatMessage: delegate("storyMessages", calls),
     courseStoryDirection: delegate("storyDirections", calls),
@@ -38,58 +43,17 @@ function database(calls: string[]) {
   } } as unknown as CourseDownstreamDb;
 }
 
-describe("course downstream cleanup", () => {
-  test("clears every result after story outline immediately and removes local images", async () => {
-    const calls: string[] = [];
-    const removeImages = vi.fn(async () => { calls.push("imageFiles"); });
-
-    await clearCourseDownstream(database(calls), "course-1", "story_outline", { removeImages });
-
-    expect(calls).toEqual([
-      "presentation", "images", "imageSlots", "characterVisuals", "visualPlan",
-      "contentMessages", "contentGenerations", "lessonContent", "teachingPlan",
-      "course:story_outline:draft", "transactionCommitted", "imageFiles",
-    ]);
-    expect(calls).not.toContain("outline");
-  });
-
-  test("does not remove image files when the database cleanup rolls back", async () => {
+describe("course downstream state", () => {
+  test("marks later stages stale without deleting any records or moving navigation backward", async () => {
     const calls: string[] = [];
     const db = database(calls);
-    db.$transaction = vi.fn(async () => {
-      throw new Error("database cleanup failed");
-    });
-    const removeImages = vi.fn(async () => undefined);
 
-    await expect(clearCourseDownstream(db, "course-1", "content", { removeImages })).rejects.toThrow("database cleanup failed");
+    await markCourseDownstreamStale(db, "course-1", "teaching_plan");
 
-    expect(removeImages).not.toHaveBeenCalled();
-  });
-
-  test("preserves downstream records when the replacement generation fails", async () => {
-    const calls: string[] = [];
-    const db = database(calls);
-    const removeImages = vi.fn(async () => undefined);
-
-    await expect(runBeforeCourseDownstreamReset(db, "course-1", "content", async () => {
-      throw new Error("generation failed");
-    }, { removeImages })).rejects.toThrow("generation failed");
-
-    expect(calls).toEqual([]);
-    expect(removeImages).not.toHaveBeenCalled();
-  });
-
-  test("clears the current content and all later results when restarting content", async () => {
-    const calls: string[] = [];
-
-    await clearCourseDownstream(database(calls), "course-1", "teaching_plan", { removeImages: vi.fn(async () => undefined) });
-
-    expect(calls).toContain("lessonContent");
-    expect(calls).toContain("images");
-    expect(calls).toContain("presentation");
-    expect(calls).toContain("course:teaching_plan:draft");
-    expect(calls).not.toContain("teachingPlan");
-    expect(calls.at(-1)).toBe("transactionCommitted");
+    expect(calls).toEqual(["course:keep:content:draft"]);
+    expect(db.courseLessonContent.deleteMany).not.toHaveBeenCalled();
+    expect(db.courseImage.deleteMany).not.toHaveBeenCalled();
+    expect(db.coursePresentation.deleteMany).not.toHaveBeenCalled();
   });
 
   test("detects real downstream records even when the stored stage is stale", async () => {

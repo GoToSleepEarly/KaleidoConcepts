@@ -3,7 +3,7 @@
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpen, Check, Clock3, GraduationCap, Loader2, Pencil, Plus, Search, Target, Trash2, UserRound, UsersRound, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, Clock3, GraduationCap, Loader2, Pencil, Plus, Search, Target, Trash2, UserRound, UsersRound, X } from "lucide-react";
 
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   const [furthestStep, setFurthestStep] = useState(1);
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(courseId ? null : "");
   const [downstreamChoice, setDownstreamChoice] = useState<{ targetPath?: string; affectedResources: string[] } | null>(null);
+  const [pendingNavigationHref, setPendingNavigationHref] = useState<string | null>(null);
   const [missingPeopleRoles, setMissingPeopleRoles] = useState<PersonRole[]>([]);
   const [personNotice, setPersonNotice] = useState("");
 
@@ -135,7 +136,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
     setPersonNotice(`${saved.chineseName}的人物资料已更新`);
   }
 
-  async function submitRequest(resetDownstream = false) {
+  async function submitRequest(preserveDownstream = false) {
     const payload = {
       title: title.trim(),
       teacherId: teacher!.id,
@@ -143,7 +144,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
       durationMinutes: duration,
       englishLevel,
       knowledgePointIds: selectedKnowledgePointIds,
-      ...(resetDownstream ? { resetDownstream: true } : {}),
+      ...(preserveDownstream ? { preserveDownstream: true } : {}),
     };
     return fetch(courseId ? `/api/courses/${courseId}/audience` : "/api/courses", {
       method: courseId ? "PUT" : "POST",
@@ -152,12 +153,12 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
     });
   }
 
-  async function saveAndNavigate(targetPath?: string, resetDownstream = false) {
+  async function saveAndNavigate(targetPath?: string, preserveDownstream = false) {
     if (disabledReason) { setError(`还需：${disabledReason}，当前修改尚未保存。`); return; }
     setSaving(true);
     setError("");
     try {
-      const response = await submitRequest(resetDownstream);
+      const response = await submitRequest(preserveDownstream);
       const data = await readJsonResponse<{ course?: { id: string }; message?: string; requiresReset?: boolean; affectedResources?: string[] }>(response);
       if (response.status === 409 && data.requiresReset) {
         setDownstreamChoice({ targetPath, affectedResources: data.affectedResources ?? ["故事大纲", "教学规划", "文案与练习", "视觉资源和图片", "预览发布设置"] });
@@ -182,7 +183,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
-      <CourseCreateSteps courseId={courseId} currentStep={1} furthestStep={disabledReason ? 1 : furthestStep} onNavigate={(href) => { if (hasUnsavedChanges) void saveAndNavigate(href); else router.push(href); }} />
+      <CourseCreateSteps courseId={courseId} currentStep={1} furthestStep={furthestStep} onNavigate={(href) => { if (hasUnsavedChanges) setPendingNavigationHref(href); else router.push(href); }} />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-foreground">基础信息</h2>
@@ -252,7 +253,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
         {error ? <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div> : null}
 
         <div className="sticky bottom-4 flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-md sm:px-5">
-          <p aria-live="polite" className={cn("text-sm font-medium", disabledReason ? "text-red-600" : "text-muted-foreground")}>{disabledReason ? `还需：${disabledReason}` : saving ? "正在保存…" : hasUnsavedChanges ? "有未保存修改，跳转时将先保存" : courseId ? "已保存" : `已选择 1 位老师、${students.length} 位学生`}</p>
+          <p aria-live="polite" className={cn("text-sm font-medium", disabledReason ? "text-red-600" : "text-muted-foreground")}>{disabledReason ? `还需：${disabledReason}` : saving ? "正在保存…" : hasUnsavedChanges ? "有未确认修改" : courseId ? "当前信息已确认" : `已选择 1 位老师、${students.length} 位学生`}</p>
           <Button disabled={Boolean(disabledReason) || saving} type="submit">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{saving ? "保存中" : "下一步：故事大纲"}</Button>
         </div>
       </form>
@@ -271,19 +272,19 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
         />
       ) : null}
       {knowledgePickerOpen ? <KnowledgePointPickerDialog description="按类别选择本课教学目标。AI 只会在已选知识点中进行章节匹配。" knowledgePoints={knowledgePoints} onClose={() => setKnowledgePickerOpen(false)} onConfirm={(ids) => { setSelectedKnowledgePointIds(ids); setKnowledgePickerOpen(false); }} selectedIds={selectedKnowledgePointIds} title="选择全课知识点" /> : null}
-      {downstreamChoice ? <Dialog onClose={() => setDownstreamChoice(null)} open size="compact" title="本次修改可能影响后续内容">
+      {downstreamChoice ? <Dialog description="本次修改尚未保存" onClose={() => setDownstreamChoice(null)} open size="compact" title="后续内容需要更新">
         <div className="space-y-5 p-5 sm:p-6">
-          <div className="space-y-2 text-pretty text-sm leading-6 text-muted-foreground">
-            <p>如果应用新的授课人物、时长、英语难度或知识点，以下旧成果将不再匹配：</p>
+          <div className="space-y-2 text-pretty text-sm leading-6">
+            <p className="text-muted-foreground">保存后，以下内容仍会保留修改前的版本：</p>
             <ul className="list-disc pl-5 text-foreground">{downstreamChoice.affectedResources.map((item) => <li key={item}>{item}</li>)}</ul>
-            <p>选择保留时，本次修改不会保存，你可以继续调整后再决定。</p>
           </div>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button disabled={saving} onClick={() => setDownstreamChoice(null)} type="button" variant="outline">保留后续成果，暂不应用</Button>
-            <Button disabled={saving} onClick={() => { const choice = downstreamChoice; setDownstreamChoice(null); void saveAndNavigate(choice.targetPath, true); }} type="button" variant="destructive">应用修改并清理以上内容</Button>
+          <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-amber-950"><AlertTriangle aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-amber-600" /><div className="text-sm leading-6"><p className="font-semibold">系统不会自动删除这些内容</p><p className="text-amber-900">进入下一步后，请到对应阶段手动重置。</p></div></div>
+          <div className="flex justify-end">
+            <Button disabled={saving} onClick={() => { const choice = downstreamChoice; setDownstreamChoice(null); void saveAndNavigate(choice.targetPath, true); }} type="button">保存修改并继续</Button>
           </div>
         </div>
       </Dialog> : null}
+      <Dialog onClose={() => setPendingNavigationHref(null)} open={Boolean(pendingNavigationHref)} size="compact" title="放弃未保存的修改？"><div className="space-y-5 p-5 sm:p-6"><p className="text-sm leading-6 text-muted-foreground">离开后，本页尚未确认的修改不会保留。</p><div className="flex justify-end gap-2"><Button onClick={() => setPendingNavigationHref(null)} type="button" variant="outline">继续编辑</Button><Button onClick={() => { const href = pendingNavigationHref; setPendingNavigationHref(null); if (href) router.push(href); }} type="button" variant="destructive">放弃修改并离开</Button></div></div></Dialog>
       <PersonEditorDialog defaultRole={editing?.role ?? "student"} key={editing?.id ?? "closed-course-person-form"} onClose={() => { setEditing(null); if (returnToPickerRole) setPickerRole(returnToPickerRole); setReturnToPickerRole(null); }} onSaved={replacePerson} open={Boolean(editing)} person={editing} />
     </div>
   );

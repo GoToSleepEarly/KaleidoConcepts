@@ -7,12 +7,15 @@ import type {
 } from "@/lib/contracts/api";
 import { buildTeachingPlanDraft, TeachingPlanValidationError, validateTeachingPlanForConfirm } from "@/lib/server/validation/teaching-plan";
 import { defaultPracticeConfig, defaultReadingExerciseConfig, MIN_CHAPTER_TARGET_WORD_COUNT, minimumReadingParagraphCount } from "@/lib/domain/teaching-plan-policy";
+import { earliestCourseStage, furthestCourseStage, nextCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
 
 type DbCourse = {
   id: string;
   title: string;
   durationMinutes: number;
   currentStage: CourseStage;
+  staleFromStage?: CourseStage | null;
+  lifecycleStatus?: "draft" | "published" | "archived";
   englishLevel?: EnglishLevel | null;
   knowledgePointIds?: unknown;
 };
@@ -91,7 +94,7 @@ export class CourseTeachingPlanPrerequisiteError extends Error {
 }
 
 export class CourseTeachingPlanConflictError extends Error {
-  constructor(message = "当前教学规划已变更，请选择保留或清空后续已有内容") {
+  constructor(message = "当前教学规划已变更，请确认后保留后续旧版本内容") {
     super(message);
     this.name = "CourseTeachingPlanConflictError";
   }
@@ -282,7 +285,7 @@ async function ensureTeachingPlan(db: TeachingPlanDb, course: DbCourse, outline:
         create: { courseId: course.id, status: "draft", ...planWriteData(replacement) },
         update: { status: "draft", confirmedAt: null, ...planWriteData(replacement) },
       });
-      await db.course.update({ where: { id: course.id }, data: { currentStage: "teaching_plan" } });
+      await db.course.update({ where: { id: course.id }, data: { currentStage: furthestCourseStage(course.currentStage, "teaching_plan") } });
       return toTeachingPlan(updated);
     }
     if (savedPlan.status !== "draft" || savedPlan.chapters.every((chapter) => chapter.targetWordCount === null || chapter.targetWordCount >= MIN_CHAPTER_TARGET_WORD_COUNT)) return savedPlan;
@@ -323,7 +326,7 @@ export async function resetTeachingPlan(db: TeachingPlanDb, courseId: string) {
       create: { courseId, status: "draft", ...planWriteData(draft) },
       update: { status: "draft", confirmedAt: null, ...planWriteData(draft) },
     });
-    await tx.course.update({ where: { id: courseId }, data: { currentStage: "teaching_plan" } });
+    await tx.course.update({ where: { id: courseId }, data: { currentStage: course.currentStage, lifecycleStatus: "draft" } });
     return toTeachingPlan(saved);
   };
   return db.$transaction ? db.$transaction(reset) : reset(db);
@@ -351,6 +354,7 @@ export async function getTeachingPlanState(db: TeachingPlanDb, courseId: string)
       title: course.title,
       durationMinutes: course.durationMinutes as 30 | 45 | 60,
       currentStage: course.currentStage,
+      staleFromStage: course.staleFromStage ?? null,
       englishLevel: course.englishLevel as EnglishLevel,
       knowledgePointIds: Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [],
     },
@@ -360,7 +364,7 @@ export async function getTeachingPlanState(db: TeachingPlanDb, courseId: string)
   };
 }
 
-export async function saveTeachingPlan(db: TeachingPlanDb, courseId: string, plan: TeachingPlan) {
+export async function saveTeachingPlan(db: TeachingPlanDb, courseId: string, plan: TeachingPlan, options: { preserveProgress?: boolean } = {}) {
   const course = await getCourse(db, courseId);
   const outline = await getConfirmedOutline(db, course);
   const outlineChapterIds = toOutlineState(outline).chapters.map((chapter) => chapter.id);
@@ -398,51 +402,61 @@ export async function saveTeachingPlan(db: TeachingPlanDb, courseId: string, pla
         ...planWriteData(parsedPlan),
       },
     });
-    await tx.course.update({ where: { id: courseId }, data: { currentStage: "teaching_plan" } });
+    if (!options.preserveProgress) await tx.course.update({ where: { id: courseId }, data: { currentStage: furthestCourseStage(course.currentStage, "teaching_plan") } });
     return toTeachingPlan(saved);
   };
   return db.$transaction ? db.$transaction(save) : save(db);
 }
 
-export type TeachingPlanDownstreamAction = "check" | "preserve" | "clear";
+export type TeachingPlanDownstreamAction = "check" | "preserve";
 
-export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, downstreamAction: TeachingPlanDownstreamAction) {
+export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, downstreamAction: TeachingPlanDownstreamAction, inputPlan?: TeachingPlan) {
   const confirm = async (tx: TeachingPlanDb) => {
-    const course = await getCourse(tx, courseId);
+    let course = await getCourse(tx, courseId);
     const outline = await getConfirmedOutline(tx, course);
-    const existing = await tx.courseTeachingPlan.findUnique({ where: { courseId } });
+    let existing = await tx.courseTeachingPlan.findUnique({ where: { courseId } });
     if (!existing) throw new TeachingPlanValidationError("教学规划信息不完整");
-    const plan = toTeachingPlan(existing);
-    if (plan.status === "confirmed") return { plan, course: { id: course.id, currentStage: course.currentStage } };
+    let plan = toTeachingPlan(existing);
+    if (!inputPlan && plan.status === "confirmed") return { plan, course: { id: course.id, currentStage: course.currentStage, staleFromStage: course.staleFromStage ?? null } };
     const outlineChapterIds = toOutlineState(outline).chapters.map((chapter) => chapter.id);
-    validateTeachingPlanForConfirm(plan, outlineChapterIds);
 
     const content = tx.courseLessonContent?.findUnique ? await tx.courseLessonContent.findUnique({ where: { courseId } }) : null;
     const hasDownstream = Boolean(content) || !["teaching_plan", "content"].includes(course.currentStage);
     if (hasDownstream && downstreamAction === "check") throw new CourseTeachingPlanConflictError();
 
-    if (downstreamAction === "clear" && content) {
-      if (!tx.courseContentChatMessage?.deleteMany || !tx.courseContentGeneration?.deleteMany || !tx.courseLessonContent?.deleteMany) {
-        throw new Error("当前数据库不支持重置文案与练习");
-      }
-      await tx.courseContentChatMessage.deleteMany({ where: { courseId } });
-      await tx.courseContentGeneration.deleteMany({ where: { courseId } });
-      await tx.courseLessonContent.deleteMany({ where: { courseId } });
+    if (inputPlan) {
+      plan = await saveTeachingPlan(tx, courseId, inputPlan, { preserveProgress: true });
+      existing = await tx.courseTeachingPlan.findUnique({ where: { courseId } });
+      if (!existing) throw new TeachingPlanValidationError("教学规划信息不完整");
+      course = await getCourse(tx, courseId);
     }
+    validateTeachingPlanForConfirm(plan, outlineChapterIds);
 
     const confirmedAt = new Date();
+    const confirmedStaleStage = staleStageAfterConfirming(course.staleFromStage, "teaching_plan", course.currentStage);
+    const nextStaleStage = hasDownstream
+      ? earliestCourseStage(confirmedStaleStage, nextCourseStage("teaching_plan")!)
+      : confirmedStaleStage;
     const [saved, updatedCourse] = await Promise.all([
       tx.courseTeachingPlan.update({
         where: { courseId },
         data: { status: "confirmed", confirmedAt },
       }),
-      tx.course.update({ where: { id: courseId }, data: { currentStage: "content" } }),
+      tx.course.update({
+        where: { id: courseId },
+        data: {
+          currentStage: furthestCourseStage(course.currentStage, "content"),
+          staleFromStage: nextStaleStage,
+          ...(hasDownstream ? { lifecycleStatus: "draft" } : {}),
+        },
+      }),
     ]);
     return {
       plan: toTeachingPlan(saved),
       course: {
         id: updatedCourse.id,
         currentStage: updatedCourse.currentStage,
+        staleFromStage: updatedCourse.staleFromStage ?? null,
       },
     };
   };

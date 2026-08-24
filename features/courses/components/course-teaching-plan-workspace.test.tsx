@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { CourseTeachingPlanWorkspace } from "@/features/courses/components/course-teaching-plan-workspace";
@@ -151,7 +151,7 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.getByRole("button", { name: "练习" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByTestId("teaching-plan-bottom-summary")).toHaveClass("flex", "flex-wrap");
     expect(screen.getByTestId("teaching-plan-bottom-summary")).toHaveTextContent("章节 2/2 · 课后练习不生成");
-    expect(screen.getByTestId("teaching-plan-bottom-summary")).toHaveTextContent("已自动保存");
+    expect(screen.getByTestId("teaching-plan-bottom-summary")).toHaveTextContent("当前规划已确认");
 
     fireEvent.click(screen.getByRole("button", { name: "第 1/2 章 · 发光地图" }));
     expect(screen.getByRole("button", { name: "第 1/2 章 · 发光地图" })).toHaveAttribute("aria-controls", "mobile-chapter-list");
@@ -196,47 +196,30 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.queryByRole("listbox", { name: "移动端章节列表" })).not.toBeInTheDocument();
   });
 
-  test("auto-saves edits and shows saved status without navigating", async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi.fn(async () => Response.json({ plan: { ...state().plan, chapters: [{ ...state().plan.chapters[0], targetWordCount: 120 }, state().plan.chapters[1]] } }));
+  test("keeps edits local until the teacher confirms", () => {
+    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     render(<CourseTeachingPlanWorkspace initialState={state()} />);
 
     fireEvent.click(screen.getByRole("tab", { name: /章节/ }));
     fireEvent.change(screen.getByLabelText("第 1 章目标词数"), { target: { value: "120" } });
 
-    expect(screen.getAllByText("未保存").length).toBeGreaterThan(0);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(900);
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/courses/course-1/teaching-plan",
-      expect.objectContaining({ method: "PUT" }),
-    );
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(screen.getAllByText("已自动保存").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("已自动保存")[0]).toHaveClass("whitespace-nowrap");
+    expect(screen.getAllByText("有未确认修改").length).toBeGreaterThan(0);
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(pushMock).not.toHaveBeenCalled();
-    vi.useRealTimers();
   });
 
-  test("turns an empty save response into a recoverable business error", async () => {
-    vi.useFakeTimers();
+  test("turns an empty confirm response into a recoverable business error", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 500 })));
     render(<CourseTeachingPlanWorkspace initialState={state()} />);
 
     fireEvent.change(screen.getByLabelText("第 1 章目标词数"), { target: { value: "120" } });
-    await act(async () => void await vi.advanceTimersByTimeAsync(900));
+    fireEvent.click(screen.getByRole("button", { name: "确认并进入文案与练习" }));
 
-    const alert = screen.getByRole("alert");
-    expect(alert).toHaveTextContent("保存失败，请重试");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("教学规划确认失败");
     expect(alert.closest(".sticky")).toBeInTheDocument();
     expect(screen.queryByText(/Unexpected end of JSON input/)).not.toBeInTheDocument();
-    vi.useRealTimers();
   });
 
   test("resets the teaching plan from the current outline after confirmation", async () => {
@@ -255,7 +238,7 @@ describe("CourseTeachingPlanWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "重置教学规划" }));
     expect(screen.getByRole("dialog", { name: "重置教学规划？" })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "确认重置" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除并重置教学规划" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       "/api/courses/course-1/teaching-plan/reset",
@@ -265,22 +248,19 @@ describe("CourseTeachingPlanWorkspace", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "重置教学规划？" })).not.toBeInTheDocument());
   });
 
-  test("deletes and restores optional正文 exercise types", async () => {
-    vi.useFakeTimers();
+  test("deletes and restores optional正文 exercise types without saving early", async () => {
     const fetchMock = vi.fn(async (_url, options: RequestInit) => Response.json({ plan: JSON.parse(String(options.body)).plan }));
     vi.stubGlobal("fetch", fetchMock);
     render(<CourseTeachingPlanWorkspace initialState={state()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "第 1 章正文删除题型 中文提示写词" }));
     expect(screen.queryByLabelText("第 1 章正文中文提示写词数量")).not.toBeInTheDocument();
-    await act(async () => void await vi.advanceTimersByTimeAsync(900));
-    expect(fetchMock).toHaveBeenCalledWith("/api/courses/course-1/teaching-plan", expect.objectContaining({ method: "PUT" }));
+    expect(fetchMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "添加正文题型" }));
     expect(screen.getByRole("button", { name: "添加中文提示写词" })).toHaveTextContent("The map showed a secret");
     fireEvent.click(screen.getByRole("button", { name: "添加中文提示写词" }));
     expect(screen.getByLabelText("第 1 章正文中文提示写词数量")).toHaveValue(3);
-    vi.useRealTimers();
   });
 
   test("selects knowledge points from grammar library and warns after more than three", () => {
@@ -424,7 +404,7 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.getByRole("button", { name: "语法习题已开启" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("locks forward step navigation after an upstream style edit until the plan is reconfirmed", () => {
+  test("keeps forward navigation available but warns before discarding local edits", () => {
     const returnedState = state();
     returnedState.plan.status = "confirmed";
     returnedState.course.currentStage = "visual_resources";
@@ -433,7 +413,8 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.getByRole("link", { name: "文案与练习" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: /章节/ }));
     fireEvent.click(screen.getByRole("radio", { name: /边读边练/ }));
-    expect(screen.queryByRole("link", { name: "文案与练习" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("link", { name: "文案与练习" }));
+    expect(screen.getByRole("dialog", { name: "放弃未保存的修改？" })).toBeInTheDocument();
   });
 
   test("defaults to inline questions without chapter or after-class practice", () => {
@@ -480,17 +461,10 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/content");
   });
 
-  test("uses one click to save and confirm while automatic saving is still running", async () => {
-    vi.useFakeTimers();
-    let finishFirstSave: ((response: Response) => void) | undefined;
+  test("saves the current plan only when confirming", async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith("/teaching-plan") && init?.method === "PUT") {
-        if (fetchMock.mock.calls.filter((call) => String(call[0]).endsWith("/teaching-plan")).length === 1) {
-          return new Promise<Response>((resolve) => { finishFirstSave = resolve; });
-        }
-        return Promise.resolve(Response.json({ plan: { ...state().plan, mainIdeaTargetWordCount: 130 } }));
-      }
+      void input;
+      void init;
       return Promise.resolve(Response.json({
         plan: { ...state().plan, status: "confirmed", confirmedAt: "2026-08-07T00:10:00.000Z" },
         course: { id: "course-1", currentStage: "content" },
@@ -501,27 +475,21 @@ describe("CourseTeachingPlanWorkspace", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: /课后/ }));
     fireEvent.change(screen.getByLabelText("课后阅读目标词数"), { target: { value: "130" } });
-    await act(async () => { await vi.advanceTimersByTimeAsync(900); });
-
     const confirmButton = screen.getByRole("button", { name: "确认并进入文案与练习" });
     expect(confirmButton).toBeEnabled();
     fireEvent.click(confirmButton);
-    expect(fetchMock.mock.calls.some((call) => String(call[0]).endsWith("/teaching-plan/confirm"))).toBe(false);
-    finishFirstSave?.(Response.json({ plan: { ...state().plan, mainIdeaTargetWordCount: 130 } }));
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
 
-    expect(fetchMock).toHaveBeenCalledWith(
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       "/api/courses/course-1/teaching-plan/confirm",
       expect.objectContaining({ method: "POST" }),
-    );
+    ));
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
+    expect(body).toMatchObject({ downstreamAction: "check", plan: { mainIdeaTargetWordCount: 130 } });
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).endsWith("/teaching-plan"))).toBe(false);
     expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/content");
   });
 
-  test("uses an in-app confirmation before immediately deleting later results", async () => {
+  test("only preserves later results when confirming a changed teaching plan", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(Response.json({ message: "需要确认", requiresReset: true, affectedResources: ["视觉资源和图片"] }, { status: 409 }))
       .mockResolvedValueOnce(Response.json({ plan: { ...state().plan, status: "confirmed" }, course: { id: "course-1", currentStage: "content" } }));
@@ -529,17 +497,21 @@ describe("CourseTeachingPlanWorkspace", () => {
     render(<CourseTeachingPlanWorkspace initialState={{ ...state(), course: { ...state().course, currentStage: "preview" } }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "确认并进入文案与练习" }));
-    await waitFor(() => expect(screen.getByRole("heading", { name: "当前配置已变更" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "后续内容需要更新" })).toBeInTheDocument());
     expect(screen.getByText("视觉资源和图片")).toBeInTheDocument();
     expect(screen.queryByText("预览发布设置")).not.toBeInTheDocument();
-    expect(screen.getByText(/两种选择都会应用当前教学规划/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "保留后续内容并继续" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "清空后续内容并继续" }));
+    expect(screen.getByText("保存后，以下内容仍会保留修改前的版本：")).toBeInTheDocument();
+    expect(screen.getByText(/系统不会自动删除/)).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "后续内容需要更新" });
+    expect(within(dialog).queryByRole("button", { name: /清空|删除/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/系统不会自动删除/).closest(".bg-amber-50")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保存修改并继续" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/courses/course-1/teaching-plan/confirm",
-      expect.objectContaining({ body: JSON.stringify({ downstreamAction: "clear" }) }),
+      expect.objectContaining({ method: "POST" }),
     ));
+    expect(JSON.parse(String((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body))).toMatchObject({ downstreamAction: "preserve", plan: state().plan });
   });
 
   test("applies the changed plan and continues when preserving downstream content", async () => {
@@ -550,12 +522,13 @@ describe("CourseTeachingPlanWorkspace", () => {
     render(<CourseTeachingPlanWorkspace initialState={state()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "确认并进入文案与练习" }));
-    fireEvent.click(await screen.findByRole("button", { name: "保留后续内容并继续" }));
+    fireEvent.click(await screen.findByRole("button", { name: "保存修改并继续" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/courses/course-1/teaching-plan/confirm",
-      expect.objectContaining({ body: JSON.stringify({ downstreamAction: "preserve" }) }),
+      expect.objectContaining({ method: "POST" }),
     ));
+    expect(JSON.parse(String((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body))).toMatchObject({ downstreamAction: "preserve" });
     expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/content");
   });
 
