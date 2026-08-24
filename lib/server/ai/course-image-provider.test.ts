@@ -36,7 +36,11 @@ describe("course image provider", () => {
     vi.stubGlobal("fetch", request);
     const provider = createCourseImageProvider({ apiKey: "test", model: "gpt-image-2", timeoutMs: 1_000 });
 
-    await provider.edit({ prompt: "scene", imageDataUrl: "data:image/webp;base64,aGVsbG8=", quality: "medium" });
+    await provider.edit({
+      prompt: "scene",
+      imageDataUrls: ["data:image/webp;base64,aGVsbG8=", "data:image/png;base64,d29ybGQ="],
+      quality: "medium",
+    });
 
     const options = request.mock.calls[0]?.[1];
     const body = options?.body as FormData;
@@ -45,7 +49,9 @@ describe("course image provider", () => {
     expect(body.get("n")).toBe("1");
     expect(body.get("size")).toBe("1536x1024");
     expect(body.get("quality")).toBe("medium");
-    expect(body.get("image")).toBeInstanceOf(Blob);
+    expect(body.getAll("image[]")).toHaveLength(2);
+    expect(body.getAll("image[]").every((image) => image instanceof Blob)).toBe(true);
+    expect(body.has("image")).toBe(false);
     expect(body.has("format")).toBe(false);
     expect(new Headers(options?.headers).has("Content-Type")).toBe(false);
   });
@@ -58,7 +64,7 @@ describe("course image provider", () => {
     vi.stubGlobal("fetch", request);
     const provider = createCourseImageProvider({ apiKey: "test", model: "gpt-image-2", timeoutMs: 1_000, retryDelaysMs: [0, 0] });
 
-    await expect(provider.edit({ prompt: "scene", imageDataUrl: "data:image/webp;base64,aGVsbG8=", quality: "medium" })).resolves.toEqual({ imageUrl: "https://example.com/recovered.webp", model: "gpt-image-2-c", quality: "high" });
+    await expect(provider.edit({ prompt: "scene", imageDataUrls: ["data:image/webp;base64,aGVsbG8="], quality: "medium" })).resolves.toEqual({ imageUrl: "https://example.com/recovered.webp", model: "gpt-image-2-c", quality: "high" });
 
     expect(request).toHaveBeenCalledTimes(2);
     expect(((request.mock.calls[0]?.[1]?.body as FormData).get("model"))).toBe("gpt-image-2");
@@ -88,7 +94,7 @@ describe("course image provider", () => {
 
     await createCourseImageProvider(undefined, "crazyrouter").edit({
       prompt: "change the object to green",
-      imageDataUrl: "data:image/png;base64,aGVsbG8=",
+      imageDataUrls: ["data:image/png;base64,aGVsbG8=", "data:image/png;base64,d29ybGQ="],
       quality: "low",
     });
 
@@ -99,7 +105,7 @@ describe("course image provider", () => {
     expect(body.get("size")).toBe("1536x1024");
     expect(body.get("quality")).toBe("low");
     expect(body.get("output_format")).toBe("webp");
-    expect(body.get("image")).toBeInstanceOf(Blob);
+    expect(body.getAll("image[]")).toHaveLength(2);
   });
 
   test("参数错误不重试", async () => {
@@ -107,7 +113,7 @@ describe("course image provider", () => {
     vi.stubGlobal("fetch", request);
     const provider = createCourseImageProvider({ apiKey: "test", model: "gpt-image-2", timeoutMs: 1_000, retryDelaysMs: [0, 0] });
 
-    await expect(provider.edit({ prompt: "scene", imageDataUrl: "data:image/webp;base64,aGVsbG8=", quality: "medium" })).rejects.toThrow("Unknown parameter: 'format'.");
+    await expect(provider.edit({ prompt: "scene", imageDataUrls: ["data:image/webp;base64,aGVsbG8="], quality: "medium" })).rejects.toThrow("Unknown parameter: 'format'.");
     expect(request).toHaveBeenCalledTimes(1);
   });
 
@@ -116,7 +122,7 @@ describe("course image provider", () => {
     vi.stubGlobal("fetch", request);
     const provider = createCourseImageProvider({ apiKey: "test", model: "gpt-image-2", timeoutMs: 1_000, retryDelaysMs: [0, 0] });
 
-    await expect(provider.edit({ prompt: "scene", imageDataUrl: "data:image/webp;base64,aGVsbG8=", quality: "medium" })).rejects.toThrow("图片生成服务繁忙，请稍后重试（request id: final-id）");
+    await expect(provider.edit({ prompt: "scene", imageDataUrls: ["data:image/webp;base64,aGVsbG8="], quality: "medium" })).rejects.toThrow("图片生成服务繁忙，请稍后重试（request id: final-id）");
     expect(request).toHaveBeenCalledTimes(2);
   });
 
@@ -157,7 +163,7 @@ describe("course image provider", () => {
     const provider = createCourseImageProvider({ apiKey: "test", model: "gpt-image-2-c", timeoutMs: 1_000 });
 
     await provider.generate({ prompt: "scene", quality: "low" });
-    await provider.edit({ prompt: "edit", imageDataUrl: "data:image/webp;base64,aGVsbG8=", quality: "medium" });
+    await provider.edit({ prompt: "edit", imageDataUrls: ["data:image/webp;base64,aGVsbG8="], quality: "medium" });
 
     expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({ model: "gpt-image-2-c", quality: "high" });
     expect((request.mock.calls[1]?.[1]?.body as FormData).get("quality")).toBe("high");

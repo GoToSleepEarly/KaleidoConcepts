@@ -410,7 +410,7 @@ export function buildCourseVisualPlanPrompt(input: CourseVisualPlanPromptInput) 
     input.mode === "faithful"
       ? "Keep focus and sceneDescription as complete, natural English. Refer to people and roles by their supplied englishName, never by C01/C02 internal keys. Keep sceneDescription about action, environment, mood, and composition. Carry explicit age, period clothing, costume changes, or transformations from cleanReading into that scene, but do not repeat full stable character descriptions."
       : "Keep focus and sceneDescription as complete, natural English and never expose C01/C02 internal keys. Use supplied englishName for unchanged people and original characters, but use only the new visualLabel for originalized referenced characters. Keep the baseline scene meaning and composition unchanged.",
-    "Compose wide enough that every named character can remain fully inside the frame; never plan cropped heads, faces, or half bodies.",
+    "Plan enough room for every named character to appear once with a visible face and recognizable identity. Avoid accidental edge crops of heads or faces; natural medium-shot body crops are allowed when they keep ensemble faces readable.",
     "Do not request readable text, logos, speech bubbles, borders, or watermarks.",
     "Keep visualStyle <= 80 words, storyWorld <= 80 words, each characterAppearance <= 60 Chinese characters, each courseAppearance <= 90 Chinese characters, each focus <= 30 words, and each sceneDescription <= 90 words. Do not repeat the lesson text.",
     "Return {visualStyle,storyWorld,characterDesigns:[{characterKey,visualLabel,characterAppearance,courseAppearance}],cover:{focus,characterKeys,sceneDescription},shots:[{paragraphKey,focus,characterKeys,sceneDescription}]}",
@@ -427,7 +427,7 @@ function promptCharacterLine(design: CourseVisualPlan["characterDesigns"][number
   const appearance = design.appearanceDescription ? ` 角色形象：${design.appearanceDescription}` : "";
   const courseAppearance = ` 本课造型：${design.courseAppearance}`;
   if (context.referenceIndex) {
-    return `- ${heading}: use reference image ${context.referenceIndex} for identity only—body build, face shape, facial features, hairstyle, hair color, glasses, distinctive traits, and age impression. Ignore reference clothing, pose, background, and framing.${appearance}${courseAppearance}`;
+    return `- ${heading}: reference image ${context.referenceIndex} belongs exclusively to ${context.characterKey} — ${context.englishName}; use reference image ${context.referenceIndex} for identity only—body build, face shape, facial features, hairstyle, hair color, glasses, distinctive traits, and age impression. Ignore reference clothing, pose, background, and framing.${appearance}${courseAppearance}`;
   }
   if (design.visualAnchor.mode === "semantic") {
     return `- ${heading}: known identity ${design.visualAnchor.label} (${design.visualAnchor.context}); preserve the recognizable named identity and do not merge it with another person or character.${appearance}${courseAppearance}`;
@@ -470,6 +470,7 @@ export function compileCourseImagePrompt(
     if (!design) throw new Error(`视觉方案缺少角色 ${context.characterId}`);
     return promptCharacterLine(design, context);
   });
+  const referencedCharacterCount = characters.filter((character) => character.referenceIndex).length;
   return [
     kind === "cover"
       ? "Wide 16:9 children's picture-book cover illustration for a PPT lesson. Use the full canvas for one strong key visual; do not reserve blank title space."
@@ -480,10 +481,13 @@ export function compileCourseImagePrompt(
     characterLines.length
       ? "Character continuity lock: Treat every 本课造型 above as an exact, immutable course-wide specification. Keep garment types, exact colors, materials, patterns, footwear, and portable props identical across the cover and every lesson illustration. Scene text must not override this specification unless it explicitly describes a costume change; then change only the stated item."
       : null,
+    referencedCharacterCount >= 2
+      ? "Identity separation lock: Each input reference image belongs only to its mapped character. Never merge, duplicate, or exchange identity traits between referenced characters."
+      : null,
     `Scene: ${scene.sceneDescription}`,
     `Focus: ${scene.focus}`,
     characters.length >= 5
-      ? `Framing: Use an ensemble long shot for all ${characters.length} visible characters. Keep every character recognizable and clearly separated, with complete heads and bodies inside the canvas; avoid a rigid lineup.`
+      ? "Framing: Use a layered ensemble composition rather than a lineup. Show every named character exactly once. Give the character or characters identified in Focus the strongest visual emphasis and enough facial scale to remain recognizable. Arrange the others naturally across the foreground and middle ground with clear visual separation. Choose a medium-wide or wide shot according to the action; do not force full bodies when that would make faces too small. Natural body overlap is allowed, but keep every named character's face and identity-defining features visible. Do not duplicate, merge, or exchange characters, faces, hairstyles, costumes, or personal props."
       : "Framing: Compose naturally for the action and emotion. Keep every named character fully inside the canvas and never crop a head or face at the image edge. Use full bodies when the action or composition calls for them; avoid character sheets, lineups, and head collages.",
     "Pure image: no readable text, logos, letters, numbers, speech bubbles, borders, or watermarks.",
   ].filter((line): line is string => Boolean(line)).join("\n");

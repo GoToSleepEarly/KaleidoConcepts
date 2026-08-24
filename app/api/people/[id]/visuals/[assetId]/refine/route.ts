@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createPersonVisualGenerationDeps } from "@/lib/server/ai/person-visual-deps";
 import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
 import { getDb } from "@/lib/server/db";
+import { authenticationErrorResponse } from "@/lib/server/http/authentication";
 import { PersonVisualInvalidStateError, refinePersonVisual } from "@/lib/server/repositories/person-visuals";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string; assetId: string }> }) {
@@ -16,6 +17,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const visual = await refinePersonVisual(getDb(), id, assetId, payload.data.instruction, idempotencyKey, createPersonVisualGenerationDeps(await aiGatewayFromRequest(request)));
     return NextResponse.json({ visual }, { status: visual.status === "succeeded" ? 201 : 502 });
   } catch (error) {
+    const authenticationResponse = authenticationErrorResponse(error);
+    if (authenticationResponse) return authenticationResponse;
     if (error instanceof PersonVisualInvalidStateError) return NextResponse.json({ message: error.message }, { status: 409 });
     return NextResponse.json({ message: error instanceof Error ? error.message : "人物形象修改失败" }, { status: 500 });
   }

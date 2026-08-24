@@ -1,4 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
+
+import { CourseImageSourceError } from "@/lib/server/storage/course-images";
 import { CourseVisualPlanResponseError } from "@/lib/server/ai/course-visual-plan-deps";
 import { adoptLatestPersonVisual, buildCourseImageEditPrompt, generateCourseVisualPlan, generateVisualSlot, getCourseVisualResources, hasUnsyncedCharacterAppearance, recoverStaleCourseImages, refineCourseVisualAsset, saveUploadedCharacterReference, selectCourseVisualAsset, updateCourseVisualSettings, updateCharacterVisualIntent, updateVisualCharacterAppearance } from "./visual-resources";
 
@@ -264,7 +266,7 @@ describe("视觉资源仓储", () => {
       edit,
       generate: vi.fn(),
       persist: vi.fn(),
-      composeReferences: vi.fn(),
+      loadReferences: vi.fn(),
       removeTemporarySource: vi.fn(),
     });
 
@@ -300,7 +302,7 @@ describe("视觉资源仓储", () => {
       generate,
       edit,
       persist: vi.fn(async () => ({ storagePath: "scene.webp", publicUrl: "/scene.webp" })),
-      composeReferences: vi.fn(),
+      loadReferences: vi.fn(),
       removeTemporarySource: vi.fn(),
     });
 
@@ -350,7 +352,7 @@ describe("视觉资源仓储", () => {
       generate,
       edit,
       persist,
-      composeReferences: vi.fn(),
+      loadReferences: vi.fn(),
       removeTemporarySource: vi.fn(),
     });
 
@@ -381,7 +383,7 @@ describe("视觉资源仓储", () => {
       generate,
       edit: vi.fn(),
       persist: vi.fn(async () => ({ storagePath: "new.webp", publicUrl: "/new.webp" })),
-      composeReferences: vi.fn(),
+      loadReferences: vi.fn(),
       removeTemporarySource: vi.fn(),
     });
 
@@ -408,7 +410,7 @@ describe("视觉资源仓储", () => {
       generate: vi.fn(async () => ({ imageUrl: "https://media.example.com/generated.png", quality: "medium" as const })),
       edit: vi.fn(),
       persist: vi.fn(async () => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); }),
-      composeReferences: vi.fn(),
+      loadReferences: vi.fn(),
       removeTemporarySource: vi.fn(),
     })).rejects.toThrow("图片已生成，但下载或保存失败：下载远端图片超时");
 
@@ -419,6 +421,104 @@ describe("视觉资源仓储", () => {
         failureReason: "图片已生成，但下载或保存失败：下载远端图片超时",
       }),
     }));
+  });
+
+  test("AI 返回的远端图片永久无效时退出重新保存循环", async () => {
+    const pending = { id: "asset-invalid-remote", courseId: "course-1", slotId: "slot-1", characterVisualId: null, prompt: "", quality: "medium", referenceAssetIds: [], planRevision: 1, status: "pending", providerImageUrl: null, temporarySourcePath: null };
+    const failedUpdate = vi.fn(async () => ({ count: 1 }));
+    const db = {
+      course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
+      courseVisualImageSlot: { findFirst: vi.fn(async () => ({ id: "slot-1", courseId: "course-1", slotType: "visual_cover", paragraphId: null, characterIds: [] })), update: vi.fn() },
+      courseVisualResourcePlan: { findUnique: vi.fn(async () => currentPlan), update: vi.fn() },
+      courseImage: {
+        findFirst: vi.fn(async () => null),
+        findUnique: vi.fn(async () => null),
+        upsert: vi.fn(async ({ create }) => ({ ...pending, ...create })),
+        updateMany: failedUpdate,
+      },
+    };
+
+    await expect(generateVisualSlot(db as never, "course-1", "slot-1", "invalid-remote", {
+      generate: vi.fn(async () => ({ imageUrl: "https://media.example.com/expired.png", quality: "medium" as const })),
+      edit: vi.fn(),
+      persist: vi.fn(async () => { throw new CourseImageSourceError("课程图片下载失败：404", false); }),
+      loadReferences: vi.fn(),
+      removeTemporarySource: vi.fn(),
+    })).rejects.toThrow("图片生成服务返回的地址或图片内容无效，请重新生成图片");
+
+    expect(failedUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        providerImageUrl: "https://media.example.com/expired.png",
+        failureCode: "provider_result_invalid",
+      }),
+    }));
+  });
+
+  test("强制重新生成会跳过不可保存的旧 URL，成功后才切换当前版本", async () => {
+    const failed = {
+      id: "asset-old-failed", courseId: "course-1", slotId: "slot-1", characterVisualId: null, prompt: "old",
+      quality: "medium", referenceAssetIds: [], planRevision: 1, status: "failed", failureCode: "storage_recoverable",
+      providerImageUrl: "https://media.example.com/broken.png", temporarySourcePath: null,
+    };
+    const pending = { ...failed, id: "asset-new", status: "pending", failureCode: null, providerImageUrl: null };
+    const generate = vi.fn(async () => ({ imageUrl: "data:image/png;base64,aGVsbG8=", quality: "medium" as const }));
+    const persist = vi.fn(async () => ({ storagePath: "new.webp", publicUrl: "/new.webp" }));
+    const slotUpdate = vi.fn(async () => ({ slotType: "visual_cover" }));
+    const db = {
+      course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
+      courseVisualImageSlot: { findFirst: vi.fn(async () => ({ id: "slot-1", courseId: "course-1", slotType: "visual_cover", paragraphId: null, characterIds: [] })), update: slotUpdate },
+      courseVisualResourcePlan: { findUnique: vi.fn(async () => currentPlan), update: vi.fn() },
+      courseImage: {
+        findFirst: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(failed),
+        findUnique: vi.fn(async () => ({ ...pending, status: "succeeded", storagePath: "new.webp", publicUrl: "/new.webp" })),
+        upsert: vi.fn(async ({ create }) => ({ ...pending, ...create })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+    };
+
+    await generateVisualSlot(db as never, "course-1", "slot-1", "forced-new-version", {
+      generate,
+      edit: vi.fn(),
+      persist,
+      loadReferences: vi.fn(),
+      removeTemporarySource: vi.fn(),
+    }, { forceRegenerate: true });
+
+    expect(generate).toHaveBeenCalledOnce();
+    expect(persist).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: "data:image/png;base64,aGVsbG8=" }));
+    expect(db.courseImage.upsert).toHaveBeenCalledOnce();
+    expect(slotUpdate).toHaveBeenCalledWith({ where: { id: "slot-1" }, data: { activeImageId: "asset-new" } });
+  });
+
+  test("强制重新生成保存失败时保留原当前版本", async () => {
+    const failed = {
+      id: "asset-old-failed", courseId: "course-1", slotId: "slot-1", characterVisualId: null, prompt: "old",
+      quality: "medium", referenceAssetIds: [], planRevision: 1, status: "failed", failureCode: "storage_recoverable",
+      providerImageUrl: "https://media.example.com/broken.png", temporarySourcePath: null,
+    };
+    const pending = { ...failed, id: "asset-new-failed", status: "pending", failureCode: null, providerImageUrl: null };
+    const slotUpdate = vi.fn();
+    const db = {
+      course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
+      courseVisualImageSlot: { findFirst: vi.fn(async () => ({ id: "slot-1", courseId: "course-1", slotType: "visual_cover", paragraphId: null, characterIds: [] })), update: slotUpdate },
+      courseVisualResourcePlan: { findUnique: vi.fn(async () => currentPlan), update: vi.fn() },
+      courseImage: {
+        findFirst: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(failed),
+        findUnique: vi.fn(async () => null),
+        upsert: vi.fn(async ({ create }) => ({ ...pending, ...create })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+    };
+
+    await expect(generateVisualSlot(db as never, "course-1", "slot-1", "forced-failure", {
+      generate: vi.fn(async () => ({ imageUrl: "https://media.example.com/new.png", quality: "medium" as const })),
+      edit: vi.fn(),
+      persist: vi.fn(async () => { throw new CourseImageSourceError("课程图片下载失败：404", false); }),
+      loadReferences: vi.fn(),
+      removeTemporarySource: vi.fn(),
+    }, { forceRegenerate: true })).rejects.toThrow("请重新生成图片");
+
+    expect(slotUpdate).not.toHaveBeenCalled();
   });
 
   test("原创化引用角色不再向图片模型传入旧 IP 参考图或原作名称", async () => {
@@ -437,7 +537,7 @@ describe("视觉资源仓储", () => {
       return { imageUrl: "data:image/png;base64,aGVsbG8=", quality: "high" as const };
     });
     const edit = vi.fn();
-    const composeReferences = vi.fn();
+    const loadReferences = vi.fn();
     const db = {
       course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
       courseVisualImageSlot: { findFirst: vi.fn(async () => ({ id: "slot-1", courseId: "course-1", slotType: "lesson_shot", paragraphId: "p1", characterIds: ["character-1"] })), update: vi.fn(async () => ({})) },
@@ -456,13 +556,13 @@ describe("视觉资源仓储", () => {
       generate,
       edit,
       persist: vi.fn(async () => ({ storagePath: "originalized.webp", publicUrl: "/originalized.webp" })),
-      composeReferences,
+      loadReferences,
       removeTemporarySource: vi.fn(),
     });
 
     expect(generate).toHaveBeenCalledOnce();
     expect(edit).not.toHaveBeenCalled();
-    expect(composeReferences).not.toHaveBeenCalled();
+    expect(loadReferences).not.toHaveBeenCalled();
     expect(generate.mock.calls[0]?.[0].prompt).toContain("C01 — Sky Runner");
     expect(generate.mock.calls[0]?.[0].prompt).not.toContain("Jett");
     expect(generate.mock.calls[0]?.[0].prompt).not.toContain("捷特");
@@ -505,7 +605,7 @@ describe("视觉资源仓储", () => {
       courseVisualResourcePlan: { findUnique: vi.fn(async () => ({ ...currentPlan, confirmedCoverAssetId: null })) },
     };
     await expect(generateVisualSlot(db as never, "course-1", "slot-1", "key", {
-      generate: vi.fn(), edit: vi.fn(), persist: vi.fn(), composeReferences: vi.fn(), removeTemporarySource: vi.fn(),
+      generate: vi.fn(), edit: vi.fn(), persist: vi.fn(), loadReferences: vi.fn(), removeTemporarySource: vi.fn(),
     })).rejects.toThrow("请先确认视觉封面");
   });
 
@@ -523,7 +623,7 @@ describe("视觉资源仓储", () => {
       },
     };
     await expect(generateVisualSlot(db as never, "course-1", "cover-slot", "key", {
-      generate: vi.fn(async () => { throw new Error("blocked by content policy"); }), edit: vi.fn(), persist: vi.fn(), composeReferences: vi.fn(), removeTemporarySource: vi.fn(),
+      generate: vi.fn(async () => { throw new Error("blocked by content policy"); }), edit: vi.fn(), persist: vi.fn(), loadReferences: vi.fn(), removeTemporarySource: vi.fn(),
     })).rejects.toThrow("blocked by content policy");
     expect(failedUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ failureCode: "policy_blocked", status: "failed" }) }));
   });
@@ -561,7 +661,7 @@ describe("视觉资源仓储", () => {
   test("人物外形版本修改固定使用 low，不读取课程画面质量", async () => {
     const parent = { id: "person-shape", courseId: "course-1", slotId: null, characterVisualId: "visual-1", prompt: "character prompt", quality: "low", planRevision: 1, status: "succeeded", storagePath: "person.webp", providerImageUrl: null, temporarySourcePath: null };
     const revision = { ...parent, id: "person-revision", parentAssetId: parent.id, status: "pending" };
-    const edit = vi.fn(async (input: { prompt: string; quality: "low" | "medium" | "high"; imageDataUrl: string; portrait?: boolean }) => {
+    const edit = vi.fn(async (input: { prompt: string; quality: "low" | "medium" | "high"; imageDataUrls: string[]; portrait?: boolean }) => {
       void input;
       return { imageUrl: "data:image/png;base64,aGVsbG8=" };
     });
@@ -577,7 +677,7 @@ describe("视觉资源仓储", () => {
     await refineCourseVisualAsset(db as never, "course-1", parent.id, "change hairstyle", "key-person-refine", {
       generate: vi.fn(), edit,
       persist: vi.fn(async () => ({ storagePath: "person-new.webp", publicUrl: "/person-new.webp" })),
-      composeReferences: vi.fn(async () => "data:image/webp;base64,aGVsbG8=",
+      loadReferences: vi.fn(async () => ["data:image/webp;base64,aGVsbG8="],
       ),
       removeTemporarySource: vi.fn(),
     });
@@ -589,11 +689,11 @@ describe("视觉资源仓储", () => {
   test("编辑图片只提交原图和本次修改要求，不混入完整旧 Prompt 或角色参考图", async () => {
     const parent = { id: "old-cover", courseId: "course-1", slotId: "slot-1", characterVisualId: null, prompt: "旧中文提示词", quality: "medium", planRevision: 1, status: "succeeded", storagePath: "old.webp", providerImageUrl: null, temporarySourcePath: null };
     const revision = { ...parent, id: "revision-1", parentAssetId: parent.id, prompt: "new prompt", status: "pending" };
-    const edit = vi.fn(async (input: { prompt: string; quality: "low" | "medium" | "high"; imageDataUrl: string; portrait?: boolean }) => {
+    const edit = vi.fn(async (input: { prompt: string; quality: "low" | "medium" | "high"; imageDataUrls: string[]; portrait?: boolean }) => {
       void input;
       return { imageUrl: "data:image/png;base64,aGVsbG8=" };
     });
-    const composeReferences = vi.fn(async () => "data:image/webp;base64,aGVsbG8=");
+    const loadReferences = vi.fn(async () => ["data:image/webp;base64,aGVsbG8="]);
     const imageUpsert = vi.fn(async ({ create }) => ({ ...revision, ...create }));
     const db = {
       course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
@@ -606,7 +706,7 @@ describe("视觉资源仓储", () => {
     await refineCourseVisualAsset(db as never, "course-1", parent.id, "make the scene brighter", "key-refine", {
       generate: vi.fn(), edit,
       persist: vi.fn(async () => ({ storagePath: "new.webp", publicUrl: "/new.webp" })),
-      composeReferences,
+      loadReferences,
       removeTemporarySource: vi.fn(),
     });
 
@@ -615,7 +715,7 @@ describe("视觉资源仓储", () => {
     expect(submittedPrompt).toContain("除本次要求必然影响的内容外");
     expect(submittedPrompt).not.toContain("Bright picture-book art");
     expect(submittedPrompt).not.toContain("旧中文提示词");
-    expect(composeReferences).toHaveBeenCalledWith(["old.webp"]);
+    expect(loadReferences).toHaveBeenCalledWith(["old.webp"]);
     expect(imageUpsert.mock.calls[0]?.[0].create.referenceAssetIds).toEqual(["old-cover"]);
   });
 
@@ -634,7 +734,7 @@ describe("视觉资源仓储", () => {
     const edit = vi.fn();
 
     await refineCourseVisualAsset(db as never, "course-1", parent.id, "make it brighter", "same-success-key", {
-      generate: vi.fn(), edit, persist: vi.fn(), composeReferences: vi.fn(), removeTemporarySource: vi.fn(),
+      generate: vi.fn(), edit, persist: vi.fn(), loadReferences: vi.fn(), removeTemporarySource: vi.fn(),
     });
 
     expect(edit).not.toHaveBeenCalled();

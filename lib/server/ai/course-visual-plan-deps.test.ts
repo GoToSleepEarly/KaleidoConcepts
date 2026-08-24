@@ -121,10 +121,23 @@ describe("Step 5 视觉资源方案", () => {
     expect(prompt).toContain("C01 — 林老师 / Ms. Lin");
     expect(prompt).toContain("use reference image 1 for identity only");
     expect(prompt).toContain("body build, face shape, facial features, hairstyle, hair color, glasses");
+    expect(prompt).toContain("belongs exclusively to C01");
     expect(prompt).toContain("C02 — 捷特 / Jett");
     expect(prompt).toContain("C03 — 贤者 / Sage");
     expect(prompt).toContain("角色形象：白色短发");
     expect(prompt).not.toContain("invent a long physical description");
+  });
+
+  test("多名参考人物增加身份隔离约束", () => {
+    const plan = parseCourseVisualPlan(rawPlan, input);
+    const prompt = compileCourseImagePrompt(plan, plan.cover, "cover", [
+      { characterId: "teacher", characterKey: "C01", chineseName: "林老师", englishName: "Ms. Lin", referenceIndex: 1 },
+      { characterId: "jett", characterKey: "C02", chineseName: "捷特", englishName: "Jett", referenceIndex: 2 },
+    ]);
+
+    expect(prompt).toContain("reference image 1 belongs exclusively to C01 — Ms. Lin");
+    expect(prompt).toContain("reference image 2 belongs exclusively to C02 — Jett");
+    expect(prompt).toContain("Never merge, duplicate, or exchange identity traits between referenced characters");
   });
 
   test("视觉方案刚返回且人物参考尚未加载时也能先保存场景 Prompt", () => {
@@ -366,7 +379,7 @@ describe("Step 5 视觉资源方案", () => {
     expect(prompt).not.toContain("COURSE VISUAL STYLE LOCK");
   });
 
-  test("五名及以上角色自动使用远景群像构图", () => {
+  test("五名及以上角色使用分层群像且不强制全身远景", () => {
     const plan = parseCourseVisualPlan(rawPlan, input);
     const characters = Array.from({ length: 5 }, (_, index) => ({
       characterId: input.characters[index % input.characters.length]!.id,
@@ -375,8 +388,11 @@ describe("Step 5 视觉资源方案", () => {
       englishName: `Character ${index + 1}`,
     }));
     const prompt = compileCourseImagePrompt(plan, { ...plan.cover, characterIds: characters.map((item) => item.characterId) }, "cover", characters);
-    expect(prompt).toContain("ensemble long shot");
-    expect(prompt).toContain("all 5 visible characters");
+    expect(prompt).toContain("layered ensemble composition");
+    expect(prompt).toContain("Show every named character exactly once");
+    expect(prompt).toContain("do not force full bodies when that would make faces too small");
+    expect(prompt).toContain("character or characters identified in Focus");
+    expect(prompt).not.toContain("ensemble long shot");
   });
 
   test("拒绝遗漏正文、遗漏角色设定或使用未知角色", () => {

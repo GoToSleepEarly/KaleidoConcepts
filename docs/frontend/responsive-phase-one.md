@@ -182,4 +182,21 @@ pnpm build
 
 结果：68 个测试文件、554 个测试全部通过；TypeScript、目标 ESLint 和生产构建通过。浏览器只读检查覆盖 `390x844`、`768x1024`、`1024x768`、`1440x900`；可加载页面未发现主流程横向溢出，手机与 iPad 竖屏显示折叠步骤导航，iPad 横屏与 PC 保留桌面侧栏和六步导航。
 
-集成阻断：本分支落后当前 `master` 8 个提交，合并预演在 AppShell、Step 2、Step 5、Step 6 和故事大纲服务端等 8 个文件产生内容冲突。当前数据库已包含 `master` 的新图片 provider 枚举，而本分支 schema 尚未包含，因此 Step 5 在未合并 `master` 前会进入错误边界。必须先完成与最新 `master` 的语义合并，再重复全量测试、生产构建和全部设备浏览器验收；不得直接将本分支快进或强制覆盖 `master`。
+### 与 master 集成结果
+
+已完成与 `origin/master` 的语义合并：鉴权、Step 4 固定槽位生成、图片失败恢复、PDF 导出与故事大纲状态恢复以 master 为准；移动分支保留响应式布局、触控尺寸和小屏导航行为。
+
+合并后验证：
+
+```bash
+pnpm prisma:generate
+pnpm exec prisma migrate status
+pnpm test
+pnpm exec tsc --noEmit
+pnpm lint
+pnpm build
+```
+
+结果：数据库 schema 已是最新状态；74 个测试文件、593 个测试全部通过；TypeScript、ESLint 与生产构建通过。浏览器回归覆盖课程列表、Step 2、Step 3、Step 5、Step 6，并在 `390x844`、`768x1024`、`1024x768`、`1440x900` 四种视口下验证：没有页面崩溃或主文档横向溢出，桌面端布局保持原有断点行为。
+
+本地开发库曾残留实验分支写入的 `haoai_gpt_image_2` / `easy88ai_gpt_image_2` 图片 provider，正式 schema 不接受这些值，导致 Step 5 服务端读取失败。已在本地库的 `local_recovery.course_image_provider_20260824` 备份 4 条原值，再按当前账号的 `crazyrouter` 网关映射为 `crazyrouter_gpt_image_2`；该修复仅作用于本地数据，不修改正式 schema 或生产迁移。

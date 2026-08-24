@@ -37,10 +37,10 @@ describe("PDF export", () => {
     expect(globalStyles).not.toMatch(/\b(?:oklch|oklab|lab|lch|color)\s*\(/i);
   });
 
-  test("limits capture pixels on small-memory device layouts", () => {
-    expect(pdfCaptureScale({ width: 1600, height: 900 }, 3)).toBeLessThan(2);
-    expect(pdfCaptureScale({ width: 800, height: 450 }, 2)).toBe(2);
-    expect(pdfCaptureScale({ width: 400, height: 225 }, 2)).toBe(4);
+  test("captures at the fixed 1600x900 export resolution instead of scaling with device pixels", () => {
+    expect(pdfCaptureScale({ width: 1600, height: 900 })).toBe(1);
+    expect(pdfCaptureScale({ width: 800, height: 450 })).toBe(2);
+    expect(pdfCaptureScale({ width: 400, height: 225 })).toBe(4);
   });
 
   test("keeps the rendered HTML layout size and only isolates it for export", () => {
@@ -76,9 +76,10 @@ describe("PDF export", () => {
     const canvas = document.createElement("canvas");
     canvas.width = 1600;
     canvas.height = 900;
-    canvas.toDataURL = vi.fn(() => "data:image/png;base64,test");
+    canvas.toBlob = vi.fn((callback: BlobCallback) => callback(new Blob(["jpeg"], { type: "image/jpeg" })));
     html2canvas.mockResolvedValue(canvas);
-    await exportSlidesToPDF(".deck", "lesson.pdf");
+    const onProgress = vi.fn();
+    await exportSlidesToPDF(".deck", "lesson.pdf", { onProgress });
 
     const [capturedElement, captureOptions] = html2canvas.mock.calls[0];
     const capturedSlide = capturedElement as HTMLElement;
@@ -93,10 +94,28 @@ describe("PDF export", () => {
     expect(slide.querySelector<HTMLElement>(".slide-text-box-inner")?.style.boxShadow).toBe("");
     expect(slide.querySelector<HTMLElement>(".slide-text-box-inner")?.style.overflow).toBe("");
     expect(captureOptions).toEqual(expect.objectContaining({ useCORS: true, allowTaint: false, onclone: expect.any(Function) }));
-    expect(addImage).toHaveBeenCalledWith(expect.any(String), "PNG", 0, 0, 297, 167.0625, undefined, "FAST");
+    expect(addImage).toHaveBeenCalledWith(expect.any(Uint8Array), "JPEG", 0, 0, 297, 167.0625, undefined, "FAST");
     expect(canvas.width).toBe(0);
     expect(canvas.height).toBe(0);
-    expect(output).toHaveBeenCalledWith("blob");
+    expect(output).not.toHaveBeenCalled();
     expect(save).toHaveBeenCalledWith("lesson.pdf");
+    expect(onProgress).toHaveBeenCalledWith({ phase: "preparing", completedPages: 0, totalPages: 1 });
+    expect(onProgress).toHaveBeenCalledWith({ phase: "rendering", currentPage: 1, completedPages: 1, totalPages: 1 });
+    expect(onProgress).toHaveBeenLastCalledWith({ phase: "complete", completedPages: 1, totalPages: 1 });
+  });
+
+  test("cancels before rendering and never downloads a partial PDF", async () => {
+    const deck = document.createElement("div");
+    deck.className = "deck";
+    const slide = document.createElement("div");
+    slide.className = "preview-slide-wrapper";
+    deck.append(slide);
+    document.body.append(deck);
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(exportSlidesToPDF(".deck", "lesson.pdf", { signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+    expect(html2canvas).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
   });
 });

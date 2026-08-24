@@ -275,12 +275,13 @@ function ImageLoadingPreview({ startedAt, title }: { startedAt?: string | null; 
   return <div className="aspect-video overflow-hidden rounded-xl border border-primary/20 bg-muted" data-testid="asset-image-frame"><TimedOperationStatus description="图片生成通常需要 1–3 分钟，复杂画面可能更久；系统仍在处理中，无需重复点击。" embedded startedAt={startedAt} title={title} /></div>;
 }
 
-function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, onChanged, onRegenerate, pending, planRevision, regenerateLabel, run, versions }: {
+function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, onChanged, onForceRegenerate, onRegenerate, pending, planRevision, regenerateLabel, run, versions }: {
   activeAssetId: string | null;
   courseId: string;
   disabled: boolean;
   generationPending: boolean;
   onChanged: () => Promise<void>;
+  onForceRegenerate: () => void;
   onRegenerate: () => void;
   pending: string | null;
   planRevision: number | null;
@@ -291,6 +292,10 @@ function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, 
   const [manualSelection, setManualSelection] = useState<{ id: string; anchor: string } | null>(null);
   const [instruction, setInstruction] = useState("");
   const [editing, setEditing] = useState(false);
+  const [recoveryMenuOpen, setRecoveryMenuOpen] = useState(false);
+  const recoveryMenuRef = useRef<HTMLDivElement>(null);
+  const recoveryMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const recoveryMenuItemRef = useRef<HTMLButtonElement>(null);
   const latest = versions.length ? versions[versions.length - 1]! : null;
   const latestCurrent = latestVersionForRevision(versions, planRevision);
   const selectionAnchor = `${activeAssetId ?? ""}:${latest?.id ?? ""}:${latest?.status ?? ""}`;
@@ -299,6 +304,27 @@ function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, 
   const selectVersion = (id: string) => setManualSelection({ id, anchor: selectionAnchor });
   const selected = versions.find((asset) => asset.id === selectedId) ?? versions.find((asset) => asset.id === activeAssetId) ?? latest;
   const succeeded = versions.filter((asset) => asset.status === "succeeded" && asset.publicUrl);
+
+  useEffect(() => {
+    if (!recoveryMenuOpen) return;
+    recoveryMenuItemRef.current?.focus();
+    const closeWithoutFocus = (event: PointerEvent) => {
+      if (!recoveryMenuRef.current?.contains(event.target as Node)) setRecoveryMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setRecoveryMenuOpen(false);
+      recoveryMenuTriggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeWithoutFocus);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeWithoutFocus);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [recoveryMenuOpen]);
+
   if (!selected) return null;
   const current = selected;
   const selectedMatchesPlan = planRevision === null || selected.planRevision === planRevision;
@@ -340,7 +366,48 @@ function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, 
         </div>
         <div className="flex flex-wrap gap-2">
           {selected.status === "succeeded" ? <Button disabled={disabled} onClick={() => setEditing((value) => !value)} size="sm" variant="ghost"><Pencil />编辑图片</Button> : null}
-          <Button disabled={disabled || generating} onClick={onRegenerate} size="sm" variant="outline"><RefreshCw className={cn(generating && "animate-spin")} />{generating ? "生成中" : restoringStoredImage ? "重新保存图片" : regenerateLabel}</Button>
+          {restoringStoredImage ? (
+            <div className="relative inline-flex" ref={recoveryMenuRef}>
+              <Button className="rounded-r-none" disabled={disabled || generating} onClick={onRegenerate} size="sm" variant="outline"><RefreshCw className={cn(generating && "animate-spin")} />{generating ? "生成中" : "重新保存图片"}</Button>
+              <Button
+                aria-expanded={recoveryMenuOpen}
+                aria-haspopup="menu"
+                aria-label="更多图片恢复操作"
+                className="-ml-px rounded-l-none px-2"
+                disabled={disabled || generating}
+                onClick={() => setRecoveryMenuOpen((value) => !value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "ArrowDown") return;
+                  event.preventDefault();
+                  setRecoveryMenuOpen(true);
+                }}
+                ref={recoveryMenuTriggerRef}
+                size="sm"
+                variant="outline"
+              >
+                <ChevronDown aria-hidden="true" />
+              </Button>
+              {recoveryMenuOpen ? (
+                <div className="absolute right-0 top-full z-dropdown mt-1 w-56 rounded-lg border bg-card p-1 shadow-lg" role="menu">
+                  <button
+                    aria-label="重新生成图片"
+                    className="w-full rounded-md px-3 py-2 text-left text-sm outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => {
+                      setRecoveryMenuOpen(false);
+                      recoveryMenuTriggerRef.current?.focus();
+                      onForceRegenerate();
+                    }}
+                    ref={recoveryMenuItemRef}
+                    role="menuitem"
+                    type="button"
+                  >
+                    <span className="block font-medium text-foreground">重新生成图片</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">放弃旧地址并创建新的图片版本</span>
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : <Button disabled={disabled || generating} onClick={onRegenerate} size="sm" variant="outline"><RefreshCw className={cn(generating && "animate-spin")} />{generating ? "生成中" : regenerateLabel}</Button>}
         </div>
       </div>
       {selected.failureReason && selectedMatchesPlan && !generating && !replacingPlan ? <div className="space-y-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert"><p>{selected.failureReason}</p><p className="font-medium">{restoringStoredImage ? "图片内容已经生成，可以重新保存，不会再次调用 AI" : selected.operation === "revision" ? "编辑图片失败，可以修改要求后重试" : "图片生成失败，可以重新生成"}</p>{selected.operation === "revision" && selected.parentAssetId && !restoringStoredImage ? <Button onClick={() => { selectVersion(selected.parentAssetId!); setEditing(true); }} size="sm" variant="outline">修改要求后重试</Button> : null}</div> : null}
@@ -544,7 +611,13 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
     }
   }
 
-  function generateSlot(slotId: string) { void jsonAction(`slot:${slotId}`, `/api/courses/${state.course.id}/visual-resources/images/generate`, { scope: "slot", slotId }); }
+  function generateSlot(slotId: string, recoveryMode: "auto" | "regenerate" = "auto") {
+    void jsonAction(`slot:${slotId}`, `/api/courses/${state.course.id}/visual-resources/images/generate`, {
+      scope: "slot",
+      slotId,
+      ...(recoveryMode === "regenerate" ? { recoveryMode } : {}),
+    });
+  }
 
   function updateVisualSettings(key: string, body: { quality?: CourseImageQuality; imageGenerationConcurrency?: number }) {
     void run(key, async () => {
@@ -648,7 +721,7 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
           <div className="space-y-3">
             <PromptDisclosure prompt={coverSlot.prompt} />
             {coverSlot.hasUnsyncedChanges ? <p className="rounded-lg bg-muted/45 px-3 py-2 text-sm text-muted-foreground">角色设定已更新，现有图片不会自动变化；如有需要，请重新生成。</p> : null}
-            {coverSlot.versions.length ? <AssetWorkspace activeAssetId={coverSlot.activeAssetId} courseId={state.course.id} disabled={disabled} generationPending={pending === `slot:${coverSlot.id}`} onChanged={async () => { await refresh(); }} onRegenerate={() => generateSlot(coverSlot.id)} pending={pending} planRevision={state.planRevision} regenerateLabel="重新生成封面" run={run} versions={coverSlot.versions} /> : <>{pending === `slot:${coverSlot.id}` ? <ImageLoadingPreview title="正在生成视觉封面" /> : <EmptyImagePreview generating={false} label="尚未生成视觉封面" />}{missingPeople.length ? <p className="text-sm text-destructive">人物档案缺少可用形象：{missingPeople.map((item) => item.chineseName ?? item.displayName).join("、")}</p> : null}<Button disabled={disabled || Boolean(missingPeople.length)} loading={pending === `slot:${coverSlot.id}`} onClick={() => generateSlot(coverSlot.id)}><ImageIcon />生成视觉封面</Button></>}
+            {coverSlot.versions.length ? <AssetWorkspace activeAssetId={coverSlot.activeAssetId} courseId={state.course.id} disabled={disabled} generationPending={pending === `slot:${coverSlot.id}`} onChanged={async () => { await refresh(); }} onForceRegenerate={() => generateSlot(coverSlot.id, "regenerate")} onRegenerate={() => generateSlot(coverSlot.id)} pending={pending} planRevision={state.planRevision} regenerateLabel="重新生成封面" run={run} versions={coverSlot.versions} /> : <>{pending === `slot:${coverSlot.id}` ? <ImageLoadingPreview title="正在生成视觉封面" /> : <EmptyImagePreview generating={false} label="尚未生成视觉封面" />}{missingPeople.length ? <p className="text-sm text-destructive">人物档案缺少可用形象：{missingPeople.map((item) => item.chineseName ?? item.displayName).join("、")}</p> : null}<Button disabled={disabled || Boolean(missingPeople.length)} loading={pending === `slot:${coverSlot.id}`} onClick={() => generateSlot(coverSlot.id)}><ImageIcon />生成视觉封面</Button></>}
             {coverSlot.activeAssetId && !coverConfirmed ? <div className="flex justify-end border-t pt-4"><Button disabled={disabled} loading={pending === "confirm-cover"} onClick={() => void confirmCover()}><Check />确认视觉封面</Button></div> : null}
           </div>
         </VisualSection> : null}
@@ -666,7 +739,7 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
             const itemGenerating = directPending || serverGenerating;
             const itemQueued = batchPending && needsInitialVisualGeneration(item, state.planRevision) && !itemGenerating;
             const itemStatus = itemQueued ? "等待生成" : slotStatusLabel(item, state.planRevision);
-            return <article className="min-w-0 space-y-3 rounded-xl border p-4" key={item.id}><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold">第 {index + 1} 段插图</p><p className="mt-2 line-clamp-4 text-pretty text-sm leading-6 text-muted-foreground">{item.sourceText}</p></div><Badge variant={item.activeAssetId ? "success" : "secondary"}>{itemStatus}</Badge></div><PromptDisclosure prompt={item.prompt} />{item.hasUnsyncedChanges ? <p className="rounded-lg bg-muted/45 px-3 py-2 text-sm text-muted-foreground">角色设定已更新，现有图片不会自动变化；如有需要，请重新生成。</p> : null}{item.versions.length ? <AssetWorkspace activeAssetId={item.activeAssetId} courseId={state.course.id} disabled={disabled} generationPending={itemGenerating} onChanged={async () => { await refresh(); }} onRegenerate={() => generateSlot(item.id)} pending={pending} planRevision={state.planRevision} regenerateLabel="重新生成" run={run} versions={item.versions} /> : <>{itemGenerating ? <ImageLoadingPreview title="正在生成本段插图" /> : <EmptyImagePreview generating={false} label={itemQueued ? "等待生成" : "图片待生成"} />}<Button disabled={disabled || !coverConfirmed} loading={directPending} onClick={() => generateSlot(item.id)} size="sm"><ImageIcon />生成本张</Button></>}</article>;
+            return <article className="min-w-0 space-y-3 rounded-xl border p-4" key={item.id}><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold">第 {index + 1} 段插图</p><p className="mt-2 line-clamp-4 text-pretty text-sm leading-6 text-muted-foreground">{item.sourceText}</p></div><Badge variant={item.activeAssetId ? "success" : "secondary"}>{itemStatus}</Badge></div><PromptDisclosure prompt={item.prompt} />{item.hasUnsyncedChanges ? <p className="rounded-lg bg-muted/45 px-3 py-2 text-sm text-muted-foreground">角色设定已更新，现有图片不会自动变化；如有需要，请重新生成。</p> : null}{item.versions.length ? <AssetWorkspace activeAssetId={item.activeAssetId} courseId={state.course.id} disabled={disabled} generationPending={itemGenerating} onChanged={async () => { await refresh(); }} onForceRegenerate={() => generateSlot(item.id, "regenerate")} onRegenerate={() => generateSlot(item.id)} pending={pending} planRevision={state.planRevision} regenerateLabel="重新生成" run={run} versions={item.versions} /> : <>{itemGenerating ? <ImageLoadingPreview title="正在生成本段插图" /> : <EmptyImagePreview generating={false} label={itemQueued ? "等待生成" : "图片待生成"} />}<Button disabled={disabled || !coverConfirmed} loading={directPending} onClick={() => generateSlot(item.id)} size="sm"><ImageIcon />生成本张</Button></>}</article>;
           })}</div></section> : null}
           </div>
         </VisualSection> : null}

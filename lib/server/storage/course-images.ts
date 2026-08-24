@@ -24,19 +24,25 @@ function wait(delayMs: number) {
   return delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve();
 }
 
-class CourseImageDownloadError extends Error {
+export class CourseImageSourceError extends Error {
   constructor(message: string, readonly retryable: boolean) {
     super(message);
-    this.name = "CourseImageDownloadError";
+    this.name = "CourseImageSourceError";
   }
 }
 
 function downloadOnce(sourceUrl: string, timeoutMs: number, redirectsLeft = maxRedirects): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const url = new URL(sourceUrl);
+    let url: URL;
+    try {
+      url = new URL(sourceUrl);
+    } catch {
+      reject(new CourseImageSourceError("课程图片下载地址无效", false));
+      return;
+    }
     const transport = url.protocol === "https:" ? https : url.protocol === "http:" ? http : null;
     if (!transport) {
-      reject(new CourseImageDownloadError("课程图片下载地址无效", false));
+      reject(new CourseImageSourceError("课程图片下载地址无效", false));
       return;
     }
     const request = transport.get(url, {
@@ -48,7 +54,7 @@ function downloadOnce(sourceUrl: string, timeoutMs: number, redirectsLeft = maxR
       if (status >= 300 && status < 400 && location) {
         response.resume();
         if (redirectsLeft <= 0) {
-          reject(new CourseImageDownloadError("课程图片下载重定向次数过多", false));
+          reject(new CourseImageSourceError("课程图片下载重定向次数过多", false));
           return;
         }
         downloadOnce(new URL(location, url).toString(), timeoutMs, redirectsLeft - 1).then(resolve, reject);
@@ -56,7 +62,7 @@ function downloadOnce(sourceUrl: string, timeoutMs: number, redirectsLeft = maxR
       }
       if (status < 200 || status >= 300) {
         response.resume();
-        reject(new CourseImageDownloadError(`课程图片下载失败：${status}`, status === 408 || status === 429 || status >= 500));
+        reject(new CourseImageSourceError(`课程图片下载失败：${status}`, status === 408 || status === 429 || status >= 500));
         return;
       }
       const chunks: Buffer[] = [];
@@ -64,7 +70,7 @@ function downloadOnce(sourceUrl: string, timeoutMs: number, redirectsLeft = maxR
       response.on("data", (chunk: Buffer) => {
         totalBytes += chunk.length;
         if (totalBytes > maxGeneratedImageBytes) {
-          request.destroy(new CourseImageDownloadError("课程图片超过 25 MB，无法保存", false));
+          request.destroy(new CourseImageSourceError("课程图片超过 25 MB，无法保存", false));
           return;
         }
         chunks.push(chunk);
@@ -72,10 +78,10 @@ function downloadOnce(sourceUrl: string, timeoutMs: number, redirectsLeft = maxR
       response.on("end", () => resolve(Buffer.concat(chunks)));
       response.on("error", reject);
     });
-    request.setTimeout(timeoutMs, () => request.destroy(new CourseImageDownloadError("下载远端图片超时", true)));
-    request.on("error", (error) => reject(error instanceof CourseImageDownloadError
+    request.setTimeout(timeoutMs, () => request.destroy(new CourseImageSourceError("下载远端图片超时", true)));
+    request.on("error", (error) => reject(error instanceof CourseImageSourceError
       ? error
-      : new CourseImageDownloadError(error.message, true)));
+      : new CourseImageSourceError(error.message, true)));
   });
 }
 
@@ -88,7 +94,7 @@ export async function downloadCourseImageSource(sourceUrl: string, options: { re
       return await downloadOnce(sourceUrl, options.timeoutMs ?? downloadTimeoutMs);
     } catch (error) {
       lastError = error;
-      if (error instanceof CourseImageDownloadError && !error.retryable) throw error;
+      if (error instanceof CourseImageSourceError && !error.retryable) throw error;
     }
   }
   throw lastError instanceof Error ? lastError : new Error("课程图片下载失败");
@@ -116,9 +122,14 @@ export async function persistCourseImage(input: { sourceUrl: string; courseId: s
   const buffer = await sourceBuffer(input.sourceUrl);
   const width = input.portrait ? 1024 : 1536;
   const height = input.portrait ? 1536 : 864;
-  const encoded = await sharp(buffer).rotate().resize(width, height, input.portrait
-    ? { fit: "contain", background: { r: 248, g: 250, b: 252, alpha: 1 } }
-    : { fit: "cover", position: "attention" }).webp({ quality: 86 }).toBuffer();
+  let encoded: Buffer;
+  try {
+    encoded = await sharp(buffer).rotate().resize(width, height, input.portrait
+      ? { fit: "contain", background: { r: 248, g: 250, b: 252, alpha: 1 } }
+      : { fit: "cover", position: "attention" }).webp({ quality: 86 }).toBuffer();
+  } catch {
+    throw new CourseImageSourceError("图片生成服务返回的内容不是有效图片", false);
+  }
   const storagePath = createStorageKey("course-images", input.courseId, `${input.assetId}.webp`);
   const absolutePath = resolveStorageKey(storagePath);
   await mkdir(path.dirname(absolutePath), { recursive: true });
@@ -126,21 +137,12 @@ export async function persistCourseImage(input: { sourceUrl: string; courseId: s
   return { storagePath, publicUrl: `/api/course-images/${input.courseId}/${input.assetId}.webp` };
 }
 
-export async function composeCourseImageReferences(storagePaths: string[]) {
+export async function loadCourseImageReferences(storagePaths: string[]) {
   if (storagePaths.length === 0) throw new Error("缺少可用的视觉参考图");
-  const canvasWidth = 1536;
-  const canvasHeight = 864;
-  const columns = storagePaths.length <= 2 ? storagePaths.length : Math.min(4, Math.ceil(Math.sqrt(storagePaths.length * 16 / 9)));
-  const rows = Math.ceil(storagePaths.length / columns);
-  const width = Math.floor(canvasWidth / columns);
-  const height = Math.floor(canvasHeight / rows);
-  const cells = await Promise.all(storagePaths.map(async (storagePath, index) => ({
-    input: await sharp(await readFile(resolveStorageKey(storagePath))).resize(width, height, { fit: "contain", background: "#f8fafc" }).webp().toBuffer(),
-    left: (index % columns) * width,
-    top: Math.floor(index / columns) * height,
-  })));
-  const sheet = await sharp({ create: { width: canvasWidth, height: canvasHeight, channels: 4, background: "#f8fafc" } }).composite(cells).webp({ quality: 88 }).toBuffer();
-  return `data:image/webp;base64,${sheet.toString("base64")}`;
+  return Promise.all(storagePaths.map(async (storagePath) => {
+    const image = await readFile(resolveStorageKey(storagePath));
+    return `data:image/webp;base64,${image.toString("base64")}`;
+  }));
 }
 
 export async function removeTemporaryCourseImage(storagePath: string) {

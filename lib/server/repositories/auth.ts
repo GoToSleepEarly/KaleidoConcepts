@@ -25,5 +25,5 @@ export async function verifyTeacherLogin(db: AuthDb, input: LoginInput) {
     return null;
   }
 
-  return { id: user.id, displayName: user.displayName, aiGateway: user.aiGateway };
+  return { id: user.id, displayName: user.displayName };
 }

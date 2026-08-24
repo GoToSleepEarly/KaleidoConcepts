@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createCourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
 import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
 import { getDb } from "@/lib/server/db";
+import { authenticationErrorResponse } from "@/lib/server/http/authentication";
 import { CourseContentConflictError, CourseContentSupersededError, modifyCourseContent } from "@/lib/server/repositories/course-content";
 import { contentModifySchema } from "@/lib/server/validation/course-content";
 
@@ -12,6 +13,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   try { return NextResponse.json(await modifyCourseContent(getDb(), id, parsed.data, key, createCourseContentGenerationDeps(await aiGatewayFromRequest(request)))); }
   catch (error) {
+    const authenticationResponse = authenticationErrorResponse(error);
+    if (authenticationResponse) return authenticationResponse;
     const status = error instanceof CourseContentConflictError || error instanceof CourseContentSupersededError ? 409 : 422;
     return NextResponse.json({ message: error instanceof Error ? error.message : "内容修改失败；原内容已保留" }, { status });
   }

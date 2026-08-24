@@ -614,6 +614,7 @@ enum VisualPlanMode {
 enum CourseImageFailureCode {
   retryable
   storage_recoverable
+  provider_result_invalid
   invalid_request
   policy_blocked
   unknown

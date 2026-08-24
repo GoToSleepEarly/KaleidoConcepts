@@ -2,9 +2,6 @@ export const AI_GATEWAYS = ["quickrouter", "crazyrouter"] as const;
 
 export type AiGateway = (typeof AI_GATEWAYS)[number];
 
-export const AI_GATEWAY_COOKIE = "kaleido.ai-gateway";
-export const AUTH_USER_COOKIE = "kaleido.user-id";
-
 export function parseAiGateway(value: unknown): AiGateway {
   return value === "crazyrouter" ? value : "quickrouter";
 }

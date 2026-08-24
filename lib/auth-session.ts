@@ -1,4 +1,5 @@
 import { parseAiGateway } from "@/lib/ai-gateway";
+import { REMEMBERED_AUTH_MAX_AGE_MS } from "@/lib/auth-cookie";
 
 export type MockSession = {
   user: {
@@ -22,15 +23,10 @@ function notifyAuthSessionChanged() {
   window.dispatchEvent(new Event(sessionChangeEvent));
 }
 
-export function updateStoredAiGateway(aiGateway: "quickrouter" | "crazyrouter") {
-  const session = getStoredSession();
-  if (!session) return;
-  const updated = JSON.stringify({ ...session, user: { ...session.user, aiGateway } });
-  sessionStorage.setItem(sessionKey, updated);
-  if (localStorage.getItem(sessionKey)) localStorage.setItem(sessionKey, updated);
-  cachedStoredSession = updated;
-  cachedSession = JSON.parse(updated) as MockSession;
-  notifyAuthSessionChanged();
+function rememberedSessionExpired(session: MockSession | null) {
+  if (!session) return true;
+  const createdAt = Date.parse(session.createdAt);
+  return !Number.isFinite(createdAt) || Date.now() - createdAt >= REMEMBERED_AUTH_MAX_AGE_MS;
 }
 
 export function getAuthSessionChangeEventName() {
@@ -65,13 +61,22 @@ export function getStoredSession(): MockSession | null {
     return null;
   }
 
+  const isRemembered = localStorage.getItem(sessionKey) === stored;
   if (stored === cachedStoredSession) {
+    if (isRemembered && rememberedSessionExpired(cachedSession)) {
+      clearAuthSession();
+      return null;
+    }
     return cachedSession;
   }
 
   try {
     cachedStoredSession = stored;
     const parsed = JSON.parse(stored) as MockSession;
+    if (isRemembered && rememberedSessionExpired(parsed)) {
+      clearAuthSession();
+      return null;
+    }
     cachedSession = {
       ...parsed,
       user: { ...parsed.user, aiGateway: parseAiGateway(parsed.user.aiGateway) },

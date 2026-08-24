@@ -344,43 +344,79 @@ function array(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
 
-function text(value: unknown): string {
+function proseText(value: unknown) {
   if (typeof value === "string") return value.trim();
-  return array(value).map((item) => item.trim()).filter(Boolean).join(" ");
+  if (!Array.isArray(value)) return "";
+  const parts = value.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean);
+  return parts.length === value.length ? parts.join(" ") : "";
 }
 
-function nameArray(value: unknown): string[] {
+function normalizedPersonName(value: string) {
+  return value.normalize("NFKC").trim().toLocaleLowerCase().replace(/[\s._'’·-]+/gu, "");
+}
+
+function storedDirectionName(value: unknown) {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  const source = value as Record<string, unknown>;
+  for (const key of ["englishName", "displayName", "chineseName", "name", "label"]) {
+    if (typeof source[key] === "string" && source[key].trim()) return source[key].trim();
+  }
+  return "";
+}
+
+function canonicalizeStoredClassroomText(value: string, people: CourseAudiencePerson[]) {
+  return people
+    .flatMap((person) => [person.chineseName, person.englishName]
+      .filter((name) => name && name !== person.englishName)
+      .map((name) => ({ name, replacement: person.englishName })))
+    .sort((left, right) => right.name.length - left.name.length)
+    .reduce((text, entry) => text.split(entry.name).join(entry.replacement), value);
+}
+
+function storedDirectionCharacters(value: unknown, people: CourseAudiencePerson[]) {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    if (typeof item === "string") return item.trim() ? [item.trim()] : [];
-    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
-    const record = item as Record<string, unknown>;
-    const name = text(record.displayName) || text(record.chineseName) || text(record.name) || text(record.englishName);
-    return name ? [name] : [];
+  const names = value.map(storedDirectionName).filter(Boolean).map((name) => {
+    const normalized = normalizedPersonName(name);
+    const matches = people.filter((person) => [person.chineseName, person.englishName]
+      .some((candidate) => normalizedPersonName(candidate) === normalized));
+    return matches.length === 1 ? matches[0].englishName : name;
   });
+  const hasClassroomPerson = names.some((name) => people.some((person) => normalizedPersonName(person.englishName) === normalizedPersonName(name)));
+  return [...new Map(names
+    .filter((name) => !(hasClassroomPerson && (/^(?:学生|师生|课堂|超级英雄).*(?:队|团队|战队|小组)$/u.test(name)
+      || /^(?:the\s+)?(?:class|classroom|student|teacher.?student|hero|superhero).*(?:team|group|squad)$/iu.test(name))))
+    .map((name) => [normalizedPersonName(name), name])).values()];
+}
+
+function isInternalStoryOutlineDiagnostic(message: string) {
+  return /(?:prisma|invalid\s+`?\w+\.|invocation|expected\s+\w+,\s*provided|unexpected token|json\.parse|\n\s*at\s+)/iu.test(message);
 }
 
 function toMessage(message: DbMessage): CourseStoryChatMessage {
+  const content = message.role === "assistant" && isInternalStoryOutlineDiagnostic(message.content)
+    ? "故事大纲生成失败，请重试本步。你可以重试本步，或修改要求后重新提交。"
+    : message.content;
   return {
     id: message.id,
     courseId: message.courseId,
     role: message.role,
-    content: message.content,
+    content,
     actions: Array.isArray(message.actions) ? message.actions as CourseStoryChatAction[] : [],
     createdAt: message.createdAt.toISOString(),
   };
 }
 
-function toDirection(direction: DbDirection): CourseStoryDirection {
+function toDirection(direction: DbDirection, people: CourseAudiencePerson[]): CourseStoryDirection {
   return {
     id: direction.id,
     courseId: direction.courseId,
-    title: direction.title,
-    hook: direction.hook,
-    whyFits: direction.whyFits,
-    mainCharacters: nameArray(direction.mainCharacters),
-    storyHighlight: direction.storyHighlight ?? "",
-    growthCore: direction.growthCore ?? "",
+    title: canonicalizeStoredClassroomText(direction.title, people),
+    hook: canonicalizeStoredClassroomText(direction.hook, people),
+    whyFits: canonicalizeStoredClassroomText(direction.whyFits, people),
+    mainCharacters: storedDirectionCharacters(direction.mainCharacters, people),
+    storyHighlight: canonicalizeStoredClassroomText(direction.storyHighlight ?? "", people),
+    growthCore: canonicalizeStoredClassroomText(direction.growthCore ?? "", people),
     classroomValue: direction.classroomValue,
     seedPrompt: direction.seedPrompt,
     selectedAt: direction.selectedAt?.toISOString() ?? null,
@@ -487,6 +523,13 @@ export class CourseStoryOutlineOperationConflictError extends Error {
   }
 }
 
+export function publicStoryOutlineErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) return "故事大纲生成失败，请重试本步";
+  const message = error.message.trim();
+  if (!message || message.length > 300 || isInternalStoryOutlineDiagnostic(message)) return "故事大纲生成失败，请重试本步";
+  return message;
+}
+
 async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<CourseStoryOutlineState> {
   const [messages, directions, references, characters, outline, setting] = await Promise.all([
     db.courseStoryChatMessage.findMany({ where: { courseId: course.id }, orderBy: { createdAt: "asc" } }),
@@ -502,6 +545,7 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
   const presets = db.presetOption ? await db.presetOption.findMany({ where: { id: { in: selectedIds }, kind: "grammar", archivedAt: null } }) : [];
   const selectedKnowledgePoints = presets.map((item) => ({ id: item.id, label: item.label, labelZh: item.labelZh ?? undefined, category: item.category ?? undefined }));
   const mappedOutline = toOutline(outline, mappedReferences, mappedCharacters);
+  const coursePeople = toCoursePeople(course);
   const alignmentDetails = typeof setting?.alignmentDetails === "object" && setting.alignmentDetails !== null
     ? setting.alignmentDetails as Partial<StoryAlignmentState>
     : {};
@@ -541,14 +585,14 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
       action: setting.operationAction ?? "story_operation",
       phase: setting.operationPhase as NonNullable<CourseStoryOutlineState["operation"]>["phase"],
       status: setting.operationStatus,
-      errorMessage: setting.operationError ?? null,
+      errorMessage: setting.operationError ? publicStoryOutlineErrorMessage(new Error(setting.operationError)) : null,
       startedAt: setting.operationStartedAt.toISOString(),
       updatedAt: setting.updatedAt.toISOString(),
     } : null,
-    directions: directions.map(toDirection),
+    directions: directions.map((direction) => toDirection(direction, coursePeople)),
     referenceMaterials: mappedReferences,
     outline: mappedOutline,
-    coursePeople: toCoursePeople(course),
+    coursePeople,
   };
 }
 
@@ -627,7 +671,7 @@ async function writeOutline(db: StoryOutlineDb, course: DbCourse, outline: Gener
       outlineId: saved.id,
       order: chapter.order,
       title: chapter.title,
-      storyGoal: text(chapter.whatHappens) || text(chapter.storyGoal),
+      storyGoal: proseText(chapter.whatHappens) || proseText(chapter.storyGoal),
       keyEvents: [
         chapter.characterActions,
         chapter.mainlineProgress,
@@ -688,6 +732,7 @@ async function storyAiContext(
   ]);
   const mappedReferences = references.map(toReference);
   const mappedCharacters = characters.map(toCharacter);
+  const coursePeople = toCoursePeople(course);
   const selectedIds = Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [];
   const presets = db.presetOption ? await db.presetOption.findMany({ where: { id: { in: selectedIds }, kind: "grammar", archivedAt: null } }) : [];
   const alignmentDetails = typeof storySetting?.alignmentDetails === "object" && storySetting.alignmentDetails !== null
@@ -695,14 +740,14 @@ async function storyAiContext(
     : {};
   return {
     chapterCount,
-    coursePeople: toCoursePeople(course),
+    coursePeople,
     conversationHistory: messages
       .filter((message) => message.role !== "system")
       .map((message) => ({ role: message.role, content: message.content })),
     references: mappedReferences.filter((reference) => Boolean(reference.confirmedAt)),
-    currentDirections: directions.map(toDirection).filter((direction) => !direction.selectedAt),
+    currentDirections: directions.map((direction) => toDirection(direction, coursePeople)).filter((direction) => !direction.selectedAt),
     selectedDirection: selectedDirectionOverride === undefined
-      ? directions.map(toDirection).find((direction) => direction.selectedAt) ?? null
+      ? directions.map((direction) => toDirection(direction, coursePeople)).find((direction) => direction.selectedAt) ?? null
       : selectedDirectionOverride,
     currentOutline: toOutline(existingOutline, mappedReferences, mappedCharacters),
     englishLevel: course.englishLevel ?? undefined,
@@ -1102,7 +1147,7 @@ async function executeStoryOutlineMessage(
     const rerouted = await rerouteRequirementChange("direction");
     if (rerouted) return rerouted;
     const direction = (await db.courseStoryDirection.findMany({ where: { courseId }, orderBy: { createdAt: "asc" } }))
-      .map(toDirection)
+      .map((direction) => toDirection(direction, toCoursePeople(course)))
       .find((item) => item.id === input.targetId);
     if (!direction) throw new CourseStoryOutlineValidationError("请选择要调整的故事方向");
     if (!input.message.trim()) throw new CourseStoryOutlineValidationError("请说明希望怎样调整这个方向");
@@ -1119,7 +1164,7 @@ async function executeStoryOutlineMessage(
 
   if (input.action === "confirm_direction") {
     const storedDirections = await db.courseStoryDirection.findMany({ where: { courseId }, orderBy: { createdAt: "asc" } });
-    const direction = storedDirections.map(toDirection).find((item) => item.id === input.targetId);
+    const direction = storedDirections.map((item) => toDirection(item, toCoursePeople(course))).find((item) => item.id === input.targetId);
     if (!direction) throw new CourseStoryOutlineValidationError("请选择一个故事方向");
     const selectedAt = direction.selectedAt ? new Date(direction.selectedAt) : new Date();
     for (const storedDirection of storedDirections) {
@@ -1251,7 +1296,7 @@ async function executeStoryOutlineMessage(
 
   if (input.action === "choose_direction") {
     const storedDirections = await db.courseStoryDirection.findMany({ where: { courseId }, orderBy: { createdAt: "asc" } });
-    const direction = storedDirections.map(toDirection)
+    const direction = storedDirections.map((item) => toDirection(item, toCoursePeople(course)))
       .find((item) => item.id === input.targetId);
     if (!direction) throw new CourseStoryOutlineValidationError("请选择一个故事方向");
     for (const storedDirection of storedDirections) {
@@ -1359,7 +1404,7 @@ export async function handleStoryOutlineMessage(
     });
     return getStoryOutlineState(db, courseId);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "故事大纲生成失败";
+    const message = publicStoryOutlineErrorMessage(error);
     const updated = await db.courseStorySetting.updateMany({
       where: { courseId, operationRequestId: requestId, operationStatus: "running" },
       data: { operationStatus: "failed", operationError: message },
@@ -1429,7 +1474,7 @@ export async function saveStoryOutline(
     chapters: outline.chapters.map((chapter) => ({
       order: chapter.order,
       title: chapter.title,
-      storyGoal: text(chapter.whatHappens) || text(chapter.storyGoal),
+      storyGoal: proseText(chapter.whatHappens) || proseText(chapter.storyGoal),
       keyEvents: [
         chapter.characterActions,
         chapter.mainlineProgress,

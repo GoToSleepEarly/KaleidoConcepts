@@ -575,7 +575,7 @@ export type CourseImageStatus = "pending" | "submitting" | "generating" | "succe
 export type CourseImageSlotType = "character_baseline" | "visual_cover" | "lesson_shot";
 export type VisualPlanMode = "faithful" | "originalized";
 export type CharacterVisualAnchorMode = "reference" | "semantic" | "description";
-export type CourseImageFailureCode = "retryable" | "storage_recoverable" | "invalid_request" | "policy_blocked" | "unknown";
+export type CourseImageFailureCode = "retryable" | "storage_recoverable" | "provider_result_invalid" | "invalid_request" | "policy_blocked" | "unknown";
 
 export type CourseVisualAsset = {
   id: string;

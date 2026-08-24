@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
 
-import { createStoryOutlineGenerationDeps, StoryAlignmentResponseError } from "@/lib/server/ai/story-outline-deps";
+import { createStoryOutlineGenerationDeps, StoryAlignmentResponseError, StoryOutlineResponseError } from "@/lib/server/ai/story-outline-deps";
 import { devAiLog } from "@/lib/server/ai/dev-ai-log";
 import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
 import type { AiGateway } from "@/lib/ai-gateway";
 import { getDb } from "@/lib/server/db";
+import { authenticationErrorResponse } from "@/lib/server/http/authentication";
 import {
   CourseStoryOutlineNotFoundError,
   CourseStoryOutlineOperationConflictError,
   getStoryOutlineState,
   handleStoryOutlineMessage,
+  publicStoryOutlineErrorMessage,
 } from "@/lib/server/repositories/story-outline";
 import { storyOutlineMessageSchema } from "@/lib/server/validation/story-outline";
 import { hasCourseDownstream, runBeforeCourseDownstreamReset, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
@@ -45,6 +47,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
     return NextResponse.json(await handleStoryOutlineMessage(db, id, parsed.data, createStoryOutlineGenerationDeps(aiGateway)));
   } catch (error) {
+    const authenticationResponse = authenticationErrorResponse(error);
+    if (authenticationResponse) return authenticationResponse;
     if (error instanceof CourseStoryOutlineNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });
     if (error instanceof CourseStoryOutlineOperationConflictError) return NextResponse.json({ message: error.message }, { status: 409 });
     devAiLog({
@@ -60,8 +64,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (error instanceof StoryAlignmentResponseError) {
       return NextResponse.json({ message: error.message, errorCode: error.code, requestId: parsed.data.requestId }, { status: error.status });
     }
+    if (error instanceof StoryOutlineResponseError) {
+      return NextResponse.json({ message: error.message, requestId: parsed.data.requestId }, { status: error.status });
+    }
     return NextResponse.json({
-      message: error instanceof Error ? error.message : "故事大纲生成失败",
+      message: publicStoryOutlineErrorMessage(error),
       requestId: parsed.data.requestId,
     }, { status: 500 });
   }

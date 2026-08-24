@@ -45,6 +45,14 @@ STORAGE_DIR=/data/pbl-images
 
 开发环境可以使用项目内 `.local/postgres` 和 `.env`，但 `.local`、`.env` 不进入 Git。
 
+本地完整预览统一使用：
+
+```bash
+pnpm dev:preview
+```
+
+该命令启动项目内嵌 PostgreSQL、执行 migration 与 seed，再启动 Next.js。仅针对曾使用 2026-08-19 以前 migration 历史的本地库，启动脚本会处理一次已知的 squashed baseline 对账：只有失败日志为 `AiGateway already exists`、旧 migration 已完成到 `20260819030000_replace_ai_gateways_with_crazyrouter`，且五个关键字段结构均存在时，才通过 Prisma `migrate resolve --applied` 将 `20260820000000_baseline` 标记为已应用；校验不完整或失败原因不同时立即停止，不修改 migration 历史。该兼容逻辑不进入 `prisma:deploy`、生产部署脚本或服务器流程。
+
 ## 数据库迁移规范
 
 所有数据库结构变更必须通过 Prisma migration 固化。

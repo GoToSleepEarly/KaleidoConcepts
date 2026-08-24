@@ -23,7 +23,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const deps = createCourseImageGenerationDeps(await aiGatewayFromRequest(request));
     const results = await runBoundedBatches(targets, state.imageGenerationConcurrency, async (slot) => {
       try {
-        const asset = await generateVisualSlot(getDb(), id, slot.id, `${key}:${slot.id}`, deps);
+        const asset = await generateVisualSlot(getDb(), id, slot.id, `${key}:${slot.id}`, deps, {
+          forceRegenerate: input.scope === "slot" && input.recoveryMode === "regenerate",
+        });
         return { slotId: slot.id, assetId: asset?.id, policyBlocked: false };
       } catch (error) {
         return {

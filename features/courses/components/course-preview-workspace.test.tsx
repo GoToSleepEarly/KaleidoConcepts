@@ -1,6 +1,10 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { exportSlidesToPDFMock } = vi.hoisted(() => ({ exportSlidesToPDFMock: vi.fn() }));
+
+vi.mock("@/lib/utils/pdf-export", () => ({ exportSlidesToPDF: exportSlidesToPDFMock }));
 
 import { CoursePreviewWorkspace } from "@/features/courses/components/course-preview-workspace";
 import { PreviewSlide } from "@/features/courses/components/course-slide-deck";
@@ -8,6 +12,12 @@ import { PreviewSlide } from "@/features/courses/components/course-slide-deck";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 describe("CoursePreviewWorkspace", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.sessionStorage.clear();
+    exportSlidesToPDFMock.mockResolvedValue({ pageCount: 1 });
+  });
+
   it("renders bilingual titles without repeating a generic chapter label", () => {
     const presentation = { coverTheme: "dark", coverTitleFontSize: 1, chapterTheme: "blue-purple", slideOverrides: {} } as const;
     const { rerender } = render(<PreviewSlide page={{ id: "cover", type: "cover_title", image: { publicUrl: null }, title: "海底图书馆 / The Ocean Library", teacherName: null, studentNames: [] }} presentation={presentation} />);
@@ -127,5 +137,49 @@ describe("CoursePreviewWorkspace", () => {
     expect(vocabularyMeaning.parentElement).toHaveTextContent("clue（线索）");
     expect(screen.queryByText("（go）")).not.toBeInTheDocument();
     expect(container.querySelector<HTMLElement>(".slide-text-content")?.style.getPropertyValue("--auto-fit-scale")).toBe("1.55");
+  });
+
+  it("shows a non-blocking real PDF progress card and disables view switching during export", async () => {
+    let finishExport!: (value: { pageCount: number }) => void;
+    exportSlidesToPDFMock.mockImplementation(async (...args: unknown[]) => {
+      const options = args[2] as { onProgress: (progress: object) => void };
+      options.onProgress({ phase: "preparing", completedPages: 0, totalPages: 3 });
+      options.onProgress({ phase: "rendering", currentPage: 2, completedPages: 1, totalPages: 3 });
+      return await new Promise<{ pageCount: number }>((resolve) => { finishExport = resolve; });
+    });
+    render(<CoursePreviewWorkspace initialState={{
+      course: { id: "course-1", title: "Mystery", lifecycleStatus: "draft", teacherName: "Lin", studentNames: ["Summer"] },
+      presentation: { coverTheme: "dark", coverTitleFontSize: 1, chapterTheme: "blue-purple", slideOverrides: {} },
+      pages: [{ id: "cover", type: "cover_title", image: { publicUrl: null }, title: "Mystery", teacherName: "Lin", studentNames: ["Summer"] }],
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "打印预览" }));
+    fireEvent.click(screen.getByRole("button", { name: "下载 PDF" }));
+
+    expect(await screen.findByRole("status", { name: "PDF 导出进度" })).toHaveTextContent("正在处理第 2/3 页");
+    expect(screen.getByRole("progressbar", { name: "PDF 导出进度" })).toHaveAttribute("aria-valuenow", "33");
+    expect(screen.getByRole("button", { name: "取消导出" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "课件预览" })).toBeDisabled();
+    expect(JSON.parse(window.sessionStorage.getItem("course-pdf-export:course-1") ?? "null")).toMatchObject({ completedPages: 1, totalPages: 3 });
+
+    finishExport({ pageCount: 3 });
+    await waitFor(() => expect(screen.getByRole("status", { name: "PDF 导出进度" })).toHaveTextContent("导出完成"));
+    expect(screen.getByRole("status", { name: "PDF 导出进度" })).toHaveTextContent(/PDF 已下载/);
+    expect(screen.getByRole("button", { name: "关闭 PDF 导出结果" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "课件预览" })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "关闭 PDF 导出结果" }));
+    expect(screen.queryByRole("status", { name: "PDF 导出进度" })).not.toBeInTheDocument();
+  });
+
+  it("reports an interrupted browser-side PDF export after refresh", async () => {
+    window.sessionStorage.setItem("course-pdf-export:course-1", JSON.stringify({ completedPages: 4, totalPages: 10, startedAt: Date.now() - 5_000 }));
+    render(<CoursePreviewWorkspace initialState={{
+      course: { id: "course-1", title: "Mystery", lifecycleStatus: "draft", teacherName: "Lin", studentNames: ["Summer"] },
+      presentation: { coverTheme: "dark", coverTitleFontSize: 1, chapterTheme: "blue-purple", slideOverrides: {} },
+      pages: [{ id: "cover", type: "cover_title", image: { publicUrl: null }, title: "Mystery", teacherName: "Lin", studentNames: ["Summer"] }],
+    }} />);
+
+    expect(await screen.findByText("上次 PDF 导出在第 4/10 页后中断，未生成下载文件。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "前往打印预览" })).toBeInTheDocument();
   });
 });

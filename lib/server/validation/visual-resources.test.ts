@@ -31,8 +31,10 @@ describe("视觉资源输入校验", () => {
 
   test("生成范围要求对应 id", () => {
     expect(visualGenerateSchema.parse({ scope: "slot", slotId: "slot-1" })).toEqual({ scope: "slot", slotId: "slot-1" });
+    expect(visualGenerateSchema.parse({ scope: "slot", slotId: "slot-1", recoveryMode: "regenerate" })).toEqual({ scope: "slot", slotId: "slot-1", recoveryMode: "regenerate" });
     expect(() => visualGenerateSchema.parse({ scope: "slot" })).toThrow();
     expect(() => visualGenerateSchema.parse({ scope: "chapter" })).toThrow();
     expect(visualGenerateSchema.parse({ scope: "all" })).toEqual({ scope: "all" });
+    expect(() => visualGenerateSchema.parse({ scope: "all", recoveryMode: "regenerate" })).toThrow();
   });
 });
