@@ -7,6 +7,8 @@ import {
   buildPromptParts,
   buildPromptQuestions,
   buildReadingPromptContext,
+  buildReadingTemplatePromptContext,
+  buildReadingTemplateRequirements,
   buildReadingRepairRequirements,
   buildReadingRepairPromptContext,
   cefrWritingProfile,
@@ -128,11 +130,29 @@ describe("course content prompt contexts", () => {
     expect(serialized).toContain("已经完成的开门动作");
   });
 
+  test("builds deterministic typed slot requirements while leaving knowledge-point assignment to AI", () => {
+    const requirements = buildReadingTemplateRequirements(input);
+    const context = buildReadingTemplatePromptContext(input);
+
+    expect(requirements).toEqual([{
+      outlineChapterId: "ch1",
+      paragraphCount: 2,
+      targetWordCount: 90,
+      optionClozeCount: 2,
+      wordFormCount: 1,
+      vocabularyCount: 2,
+      grammarPoints: [{ key: "KP1", label: "一般过去时" }],
+    }]);
+    expect(context.chapters[0]?.requirements).toEqual(requirements[0]);
+    expect(context.chapters[0]?.knowledgePointUsagePlan).toBe("一般过去时：用于描述Milo已经完成的开门动作。");
+    expect(context.cefrWritingProfile).toBe(cefrWritingProfile("A2"));
+  });
+
   test("omits a stale Step 2 usage plan after the teacher changes chapter knowledge points", () => {
     const changedInput = structuredClone(input);
     changedInput.plan.chapters[0].knowledgePointIds = [];
 
-    const context = buildReadingPromptContext(changedInput);
+    const context = buildReadingTemplatePromptContext(changedInput);
 
     expect(context.chapters[0]).not.toHaveProperty("knowledgePointUsagePlan");
   });

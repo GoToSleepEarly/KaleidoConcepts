@@ -3,9 +3,19 @@ import { createHash } from "node:crypto";
 import type { CourseContentChapter, CourseContentPart, CourseContentPhase, CourseContentState, CourseContentStatus, CourseGrammarQuestion, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
 import { buildCleanParagraphText, collectVocabularyMatching, courseContentQuestionPageSize, paginateBalanced, stableShuffle, validateGrammarCoverage, validateParagraphParts } from "@/lib/domain/course-content";
 import { readingPageCount } from "@/lib/domain/teaching-plan-policy";
-import { buildPromptParts, buildPromptQuestions, mainIdeaWordCountPolicy, readingWordCountPolicy, type CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
+import { buildPromptParts, buildPromptQuestions, buildReadingTemplateRequirements, mainIdeaWordCountPolicy, readingWordCountPolicy, type CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
+import {
+  STEP4_CONTENT_CONTRACT_VERSION,
+  applyChapterTemplateRepairs,
+  compileChapterTemplate,
+  decompileChapterTemplate,
+  repairFullyResolvesChapter,
+  type ChapterTemplateIssue,
+  type ChapterTemplateRequirements,
+  type GeneratedChapterTemplate,
+} from "@/lib/server/ai/course-content-template";
 import { getTeachingPlanState, type TeachingPlanDb } from "@/lib/server/repositories/teaching-plan";
-import type { GeneratedModification, GeneratedQuestion, GeneratedReading } from "@/lib/server/validation/course-content";
+import type { GeneratedModification, GeneratedQuestion } from "@/lib/server/validation/course-content";
 
 type ContentRecord = {
   id: string; courseId: string; status: CourseContentStatus; phase: CourseContentPhase; writingProvider: StoryWritingProvider;
@@ -36,6 +46,7 @@ export type CourseContentDb = Omit<TeachingPlanDb, "courseLessonContent" | "cour
   courseContentChatMessage: Delegate<MessageRecord>;
   coursePerson?: Required<Pick<Delegate<PromptPersonRecord>, "findMany">>;
   courseCharacter?: Required<Pick<Delegate<PromptCharacterRecord>, "findMany">>;
+  aiGenerationLog?: Required<Pick<Delegate<Record<string, unknown>>, "create">>;
 };
 
 export class CourseContentNotFoundError extends Error { constructor(message = "课程不存在") { super(message); this.name = "CourseContentNotFoundError"; } }
@@ -54,7 +65,7 @@ function inTransaction<T>(db: CourseContentDb, callback: (tx: CourseContentDb) =
 }
 
 function sourceRevision(input: TeachingPlanState) {
-  return createHash("sha256").update(JSON.stringify({ outline: input.outline, plan: input.plan })).digest("hex");
+  return createHash("sha256").update(JSON.stringify({ contractVersion: STEP4_CONTENT_CONTRACT_VERSION, outline: input.outline, plan: input.plan })).digest("hex");
 }
 
 function wordCount(text: string) { return (text.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) ?? []).length; }
@@ -89,32 +100,62 @@ function knowledgePointLabels(knowledgePoints: Array<{ id: string; label: string
   return [...known, ...(unknownCount ? [`未识别知识点 ${unknownCount} 个`] : [])];
 }
 
-function normalizeReading(state: TeachingPlanState, generated: GeneratedReading): CourseContentChapter[] {
+function normalizeTemplateChapter(
+  state: TeachingPlanState,
+  generated: GeneratedChapterTemplate | null,
+  requirements: ChapterTemplateRequirements,
+  parseError?: string | null,
+): { chapter: CourseContentChapter; draft: GeneratedChapterTemplate | null; structuredIssues: ChapterTemplateIssue[] } {
   const keyMap = pointKeyMap(state);
-  return state.outline.chapters.map((outlineChapter, chapterIndex) => {
-    const generatedChapter = generated.chapters.find((chapter) => chapter.outlineChapterId === outlineChapter.id) ?? generated.chapters[chapterIndex];
-    const planChapter = state.plan.chapters.find((chapter) => chapter.outlineChapterId === outlineChapter.id)!;
-    return {
-      id: `chapter-${outlineChapter.id}`,
-      outlineChapterId: outlineChapter.id,
-      order: outlineChapter.order,
-      title: outlineChapter.title,
-      targetWordCount: planChapter.targetWordCount ?? 90,
-      readingExerciseMode: planChapter.readingExerciseMode,
-      paragraphs: (generatedChapter?.paragraphs ?? []).map((paragraph, paragraphIndex) => ({
-        id: `paragraph-${outlineChapter.id}-${paragraphIndex + 1}`,
-        parts: paragraph.parts.map((part, partIndex): CourseContentPart => {
-          if (part.type === "text") return part;
-          const id = `${part.type}-${outlineChapter.id}-${paragraphIndex + 1}-${partIndex + 1}`;
-          if (part.type === "vocabulary") return { ...part, id };
-          if (part.exerciseType === "optionCloze") return { type: "grammar", id, exerciseType: part.exerciseType, knowledgePointId: keyMap.get(part.knowledgePointKey) ?? part.knowledgePointKey, answer: part.answer, options: stableShuffle([part.answer, ...part.distractors], id) };
-          return { type: "grammar", id, exerciseType: part.exerciseType, knowledgePointId: keyMap.get(part.knowledgePointKey) ?? part.knowledgePointKey, answer: part.answer, baseForm: part.baseForm };
-        }),
-      })),
-      chapterPractice: [],
-      validationIssues: [],
-    };
-  });
+  const outlineChapter = state.outline.chapters.find((chapter) => chapter.id === requirements.outlineChapterId)!;
+  const planChapter = state.plan.chapters.find((chapter) => chapter.outlineChapterId === requirements.outlineChapterId)!;
+  const compiled = generated ? compileChapterTemplate(generated, requirements) : null;
+  const structuredIssues = compiled?.issues ?? [{ code: "part_structure" as const, message: parseError ?? "章节缺失" }];
+  const paragraphs = (compiled?.paragraphs ?? []).map((paragraph) => ({
+    ...paragraph,
+    parts: paragraph.parts.map((part): CourseContentPart => part.type === "grammar"
+      ? { ...part, knowledgePointId: keyMap.get(part.knowledgePointId) ?? part.knowledgePointId }
+      : part),
+  }));
+  const chapter: CourseContentChapter = {
+    id: `chapter-${outlineChapter.id}`,
+    outlineChapterId: outlineChapter.id,
+    order: outlineChapter.order,
+    title: outlineChapter.title,
+    targetWordCount: planChapter.targetWordCount ?? 90,
+    readingExerciseMode: planChapter.readingExerciseMode,
+    paragraphs,
+    chapterPractice: [],
+    validationIssues: structuredIssues.map((issue) => issue.message),
+  };
+  return { chapter, draft: generated, structuredIssues };
+}
+
+function normalizeModifiedChapter(state: TeachingPlanState, generated: NonNullable<GeneratedModification["chapter"]>): CourseContentChapter {
+  const outlineChapter = state.outline.chapters.find((chapter) => chapter.id === generated.outlineChapterId);
+  const planChapter = state.plan.chapters.find((chapter) => chapter.outlineChapterId === generated.outlineChapterId);
+  if (!outlineChapter || !planChapter) throw new Error("章节修改返回了非目标章节");
+  const keyMap = pointKeyMap(state);
+  return {
+    id: `chapter-${outlineChapter.id}`,
+    outlineChapterId: outlineChapter.id,
+    order: outlineChapter.order,
+    title: outlineChapter.title,
+    targetWordCount: planChapter.targetWordCount ?? 90,
+    readingExerciseMode: planChapter.readingExerciseMode,
+    paragraphs: generated.paragraphs.map((paragraph, paragraphIndex) => ({
+      id: `paragraph-${outlineChapter.id}-${paragraphIndex + 1}`,
+      parts: paragraph.parts.map((part, partIndex): CourseContentPart => {
+        if (part.type === "text") return part;
+        const id = `${part.type}-${outlineChapter.id}-${paragraphIndex + 1}-${partIndex + 1}`;
+        if (part.type === "vocabulary") return { ...part, id };
+        if (part.exerciseType === "optionCloze") return { type: "grammar", id, exerciseType: part.exerciseType, knowledgePointId: keyMap.get(part.knowledgePointKey) ?? part.knowledgePointKey, answer: part.answer, options: stableShuffle([part.answer, ...part.distractors], id) };
+        return { type: "grammar", id, exerciseType: part.exerciseType, knowledgePointId: keyMap.get(part.knowledgePointKey) ?? part.knowledgePointKey, answer: part.answer, baseForm: part.baseForm };
+      }),
+    })),
+    chapterPractice: [],
+    validationIssues: [],
+  };
 }
 
 function validateChapter(state: TeachingPlanState, chapter: CourseContentChapter) {
@@ -386,6 +427,30 @@ async function failOperation(db: CourseContentDb, courseId: string, operation: C
   }
 }
 
+async function recordContentAiUsage(
+  db: CourseContentDb,
+  courseId: string,
+  operation: ClaimedOperation,
+  writingProvider: StoryWritingProvider,
+  idempotencyKey: string,
+  callType: "initial" | "repair",
+  usage: unknown,
+  targetCount: number,
+  diagnostics: Record<string, unknown> = {},
+) {
+  if (!db.aiGenerationLog?.create || !usage) return;
+  await db.aiGenerationLog.create({ data: {
+    requestId: `${operation.id}:${idempotencyKey}:step4-reading:${callType}`,
+    courseId,
+    stage: "content",
+    operation: `reading_v2_${callType}`,
+    status: "succeeded",
+    writingProvider,
+    inputSnapshot: { contractVersion: STEP4_CONTENT_CONTRACT_VERSION, targetCount },
+    outputSnapshot: { tokenUsage: usage, ...diagnostics },
+  } }).catch(() => undefined);
+}
+
 export async function generateCourseReading(db: CourseContentDb, courseId: string, idempotencyKey: string, deps: CourseContentGenerationDeps, options: { regenerate?: boolean } = {}) {
   const state = await prerequisite(db, courseId);
   const current = await ensureContent(db, state);
@@ -395,35 +460,94 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
   if (!operation.claimed) return getCourseContentState(db, courseId);
   return withLease(db, operation.id, async () => {
   try {
+    const requirements = buildReadingTemplateRequirements(state);
+    const requirementById = new Map(requirements.map((requirement) => [requirement.outlineChapterId, requirement]));
     const reusableChapters = !options.regenerate && current.status === "failed" && Array.isArray(current.chapters) && current.chapters.length
       ? structuredClone(current.chapters as CourseContentChapter[])
       : null;
     const reusableMainIdea = !options.regenerate && current.status === "failed" && current.mainIdea
       ? structuredClone(current.mainIdea as { title: string; text: string })
       : null;
-    const generatedReading = reusableChapters && reusableMainIdea ? null : await deps.generateReading(state, current.writingProvider);
+    const generatedReading = reusableChapters ? null : await deps.generateReading(state, current.writingProvider);
     await updateOwnedContent(db, courseId, operation, { phase: "validating_chapters" });
-    let chapters = reusableChapters ?? normalizeReading(state, generatedReading!);
-    let mainIdeaRaw = reusableMainIdea ?? generatedReading!.mainIdea;
+    const knowledgePointKeyById = new Map(state.knowledgePoints.map((point, index) => [point.id, `KP${index + 1}`]));
+    let chapterResults = reusableChapters
+      ? reusableChapters.map((chapter) => {
+          const requirement = requirementById.get(chapter.outlineChapterId)!;
+          const messages = validateChapter(state, chapter);
+          return {
+            chapter: { ...chapter, validationIssues: messages },
+            draft: decompileChapterTemplate(chapter, knowledgePointKeyById),
+            structuredIssues: messages.map((message) => ({ code: "part_structure" as const, message })),
+            parseError: messages.length ? "历史失败章节需要重新校验" : null,
+            requirement,
+          };
+        })
+      : requirements.map((requirement) => {
+          const parsed = generatedReading!.chapters.find((chapter) => chapter.outlineChapterId === requirement.outlineChapterId);
+          const normalized = normalizeTemplateChapter(state, parsed?.generated ?? null, requirement, parsed?.parseError);
+          return { ...normalized, parseError: parsed?.parseError ?? null, requirement };
+        });
+    let chapters = chapterResults.map((result) => result.chapter);
+    let mainIdeaRaw = reusableMainIdea ?? generatedReading?.mainIdea ?? { text: "" };
+    if (generatedReading) {
+      const firstPassValidChapterCount = chapterResults.filter((result) => !result.structuredIssues.length && !validateChapter(state, result.chapter).length).length;
+      const mainIdeaPolicy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? 120);
+      const firstPassMainIdeaCount = wordCount(mainIdeaRaw.text);
+      const firstPassMainIdeaValid = firstPassMainIdeaCount >= mainIdeaPolicy.acceptedRange[0] && firstPassMainIdeaCount <= mainIdeaPolicy.acceptedRange[1];
+      await recordContentAiUsage(db, courseId, operation, current.writingProvider, idempotencyKey, "initial", generatedReading.usage, requirements.length, {
+        validChapterCount: firstPassValidChapterCount,
+        mainIdeaValid: firstPassMainIdeaValid,
+        firstPassReady: firstPassValidChapterCount === requirements.length && firstPassMainIdeaValid,
+      });
+    }
     await updateOwnedContent(db, courseId, operation, { chapters, mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle } });
-    for (let round = 0; round < 2; round += 1) {
-      const failed = chapters.map((chapter) => ({ chapter, issues: validateChapter(state, chapter) })).filter((item) => item.issues.length);
-      if (!failed.length) break;
+
+    const failed = chapterResults.filter((result) => result.structuredIssues.length || validateChapter(state, result.chapter).length);
+    if (failed.length) {
       await updateOwnedContent(db, courseId, operation, { phase: "repairing_chapters", chapters: chapters.map((chapter) => ({ ...chapter, validationIssues: validateChapter(state, chapter) })) });
-      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${failed.length} 个章节需要修复：${failed.map((item) => `第 ${item.chapter.order} 章（${item.issues.join("；")}）`).join("；")}。正在统一修复。` });
-      const repaired = normalizeReading(state, await deps.repairReading(state, current.writingProvider, failed.map((item) => item.chapter), failed.map((item) => item.issues)));
+      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${failed.length} 个章节需要修复：${failed.map((item) => `第 ${item.chapter.order} 章（${[...item.structuredIssues.map((issue) => issue.message), ...validateChapter(state, item.chapter)].filter((message, index, all) => all.indexOf(message) === index).join("；")}）`).join("；")}。正在统一修复失败位置。` });
+      const repairBundle = await deps.repairReading(state, current.writingProvider, failed.map((item) => ({
+        current: item.draft,
+        requirements: item.requirement,
+        issues: item.structuredIssues.length ? item.structuredIssues : validateChapter(state, item.chapter).map((message) => ({ code: "part_structure" as const, message })),
+        parseError: item.parseError,
+      })));
       await updateOwnedContent(db, courseId, operation, { phase: "validating_chapters" });
-      const repairedById = new Map(repaired.filter((chapter) => failed.some((item) => item.chapter.outlineChapterId === chapter.outlineChapterId)).map((chapter) => [chapter.outlineChapterId, chapter]));
-      chapters = chapters.map((chapter) => repairedById.get(chapter.outlineChapterId) ?? chapter);
+      chapterResults = chapterResults.map((result) => {
+        if (!failed.some((item) => item.chapter.outlineChapterId === result.chapter.outlineChapterId)) return result;
+        const repairs = repairBundle.repairs.filter((repair) => repair.outlineChapterId === result.chapter.outlineChapterId);
+        let candidateDraft: GeneratedChapterTemplate | null;
+        try {
+          const chapterRepair = repairs.find((repair) => repair.kind === "chapter");
+          candidateDraft = result.draft
+            ? applyChapterTemplateRepairs(result.draft, repairs)
+            : chapterRepair?.kind === "chapter" ? chapterRepair.chapter : null;
+        } catch {
+          candidateDraft = null;
+        }
+        if (!candidateDraft) return result;
+        const candidate = normalizeTemplateChapter(state, candidateDraft, result.requirement);
+        const domainIssues = validateChapter(state, candidate.chapter);
+        if (!repairFullyResolvesChapter(result.structuredIssues.length ? result.structuredIssues : [{ code: "part_structure", message: "章节未通过" }], candidate.structuredIssues) || domainIssues.length) return result;
+        return { ...candidate, parseError: null, requirement: result.requirement };
+      });
+      const resolvedChapterCount = failed.filter((failedItem) => {
+        const result = chapterResults.find((item) => item.chapter.outlineChapterId === failedItem.chapter.outlineChapterId);
+        return result && !result.structuredIssues.length && !validateChapter(state, result.chapter).length;
+      }).length;
+      await recordContentAiUsage(db, courseId, operation, current.writingProvider, idempotencyKey, "repair", repairBundle.usage, failed.length, { resolvedChapterCount });
+      chapters = chapterResults.map((result) => result.chapter);
       await updateOwnedContent(db, courseId, operation, { chapters });
     }
-    const remaining = chapters.map((chapter) => ({ ...chapter, validationIssues: validateChapter(state, chapter) }));
+
+    const remaining = chapterResults.map((result) => ({ ...result.chapter, validationIssues: [...new Set([...result.structuredIssues.map((issue) => issue.message), ...validateChapter(state, result.chapter)])] }));
     await updateOwnedContent(db, courseId, operation, { chapters: remaining });
-    if (remaining.some((chapter) => chapter.validationIssues.length)) throw new Error("部分章节连续两次修复后仍未通过校验，请重试失败章节");
+    if (remaining.some((chapter) => chapter.validationIssues.length)) throw new Error("部分章节一次最小修复后仍未通过校验，请重试失败章节");
     await updateOwnedContent(db, courseId, operation, { phase: "validating_main_idea" });
     const mainIdeaPolicy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? 120);
     let mainIdeaCount = wordCount(mainIdeaRaw.text);
-    for (let round = 0; (mainIdeaCount < mainIdeaPolicy.acceptedRange[0] || mainIdeaCount > mainIdeaPolicy.acceptedRange[1]) && round < 2; round += 1) {
+    if (mainIdeaCount < mainIdeaPolicy.acceptedRange[0] || mainIdeaCount > mainIdeaPolicy.acceptedRange[1]) {
       const issue = `Main Idea 词数应为 ${mainIdeaPolicy.acceptedRange[0]}–${mainIdeaPolicy.acceptedRange[1]}，实际 ${mainIdeaCount}`;
       await updateOwnedContent(db, courseId, operation, { phase: "repairing_main_idea" });
       await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检查发现课后阅读需要修复：${issue.replaceAll("Main Idea", "课后阅读")}。正在单独修复课后阅读。` });
@@ -431,7 +555,7 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
       mainIdeaCount = wordCount(mainIdeaRaw.text);
       await updateOwnedContent(db, courseId, operation, { phase: "validating_main_idea", mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle } });
     }
-    if (mainIdeaCount < mainIdeaPolicy.acceptedRange[0] || mainIdeaCount > mainIdeaPolicy.acceptedRange[1]) throw new Error(`课后阅读连续两次修复后词数仍应为 ${mainIdeaPolicy.acceptedRange[0]}–${mainIdeaPolicy.acceptedRange[1]}，实际 ${mainIdeaCount}`);
+    if (mainIdeaCount < mainIdeaPolicy.acceptedRange[0] || mainIdeaCount > mainIdeaPolicy.acceptedRange[1]) throw new Error(`课后阅读一次修复后词数仍应为 ${mainIdeaPolicy.acceptedRange[0]}–${mainIdeaPolicy.acceptedRange[1]}，实际 ${mainIdeaCount}`);
     const needsExerciseAi = requiresExerciseAi(state.plan);
     const localExercises = needsExerciseAi ? { chapters: remaining, homework: null } : locallyAssembledExercises(state, remaining);
     await finishOperation(db, courseId, operation, { status: needsExerciseAi ? "reading_ready" : "ready", phase: null, chapters: localExercises.chapters, mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle }, homework: localExercises.homework, exercisesStale: false, contentVersion: { increment: 1 }, errorMessage: null }, { status: "succeeded" });
@@ -612,7 +736,7 @@ export async function modifyCourseContent(db: CourseContentDb, courseId: string,
     if (issues.length) throw new Error(`段落修改未通过校验：${issues.join("；")}`);
     chapter.paragraphs = chapter.paragraphs.map((item) => item.id === paragraph.id ? next : item);
   } else if (input.targetType === "chapter" && chapter && result.chapter) {
-    const normalized = normalizeReading(state, { chapters: [result.chapter] }).find((item) => item.outlineChapterId === chapter.outlineChapterId)!;
+    const normalized = normalizeModifiedChapter(state, result.chapter);
     const issues = validateChapter(state, normalized);
     if (issues.length) throw new Error(`章节修改未通过校验：${issues.join("；")}`);
     chapters.splice(chapters.indexOf(chapter), 1, { ...normalized, chapterPractice: chapter.chapterPractice });

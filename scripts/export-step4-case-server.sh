@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-COURSE_ID="${1:-cmt2pyilp000fggwms0fpthv3}"
+COURSE_ID="${1:-}"
+if [[ -z "$COURSE_ID" ]]; then
+  echo "Usage: $0 <course-id> [output-file]" >&2
+  exit 1
+fi
 OUTPUT_FILE="${2:-/tmp/pbl-step4-case-${COURSE_ID}.json}"
 
 if [[ ! "$COURSE_ID" =~ ^[A-Za-z0-9_-]+$ ]]; then

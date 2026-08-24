@@ -229,12 +229,15 @@ describe("course content repository", () => {
     } as unknown as CourseContentDb;
     const generatedText = `${Array.from({ length: 48 }, (_, index) => `word${index + 1}`).join(" ")} `;
     const generateReading = vi.fn(async () => ({
-      chapters: [{ outlineChapterId: "chapter-1", title: "Chapter 1", paragraphs: [{ parts: [{ type: "text" as const, text: generatedText }, { type: "grammar" as const, exerciseType: "wordForm" as const, knowledgePointKey: "KP1", answer: "found", baseForm: "find" }] }] }],
+      envelopeError: null,
+      chapters: [{ outlineChapterId: "chapter-1", generated: { outlineChapterId: "chapter-1", paragraphs: [{ template: `${generatedText}{{WF1}}` }], slots: [{ id: "WF1", kind: "wordForm" as const, knowledgePointKey: "KP1", answer: "found", cue: "find" }] }, parseError: null }],
       mainIdea: { title: "Main Idea", text: Array(178).fill("summary").join(" ") },
+      mainIdeaError: null,
     }));
+    const repairReading = vi.fn();
     const repairMainIdea = vi.fn(async () => ({ title: "Main Idea", text: Array(120).fill("summary").join(" ") }));
     const generateExercises = vi.fn();
-    const deps = { generateReading, repairMainIdea, generateExercises } as unknown as CourseContentGenerationDeps;
+    const deps = { generateReading, repairReading, repairMainIdea, generateExercises } as unknown as CourseContentGenerationDeps;
 
     const result = await generateCourseReading(db, "course-1", "request-1", deps);
     const exerciseResult = await generateCourseExercises(db, "course-1", "request-2", deps);
@@ -244,11 +247,59 @@ describe("course content repository", () => {
     expect(exerciseResult.status).toBe("ready");
     expect(generateReading).toHaveBeenCalledTimes(1);
     expect(generateExercises).not.toHaveBeenCalled();
+    expect(repairReading).not.toHaveBeenCalled();
     expect(repairMainIdea).toHaveBeenCalledTimes(1);
     expect((repairMainIdea.mock.calls as unknown[][])[0]?.[1]).toBe("A2");
     expect(result.mainIdea?.title).toBe("Main Idea Reading Practice");
     expect(messages.some((message) => message.content.includes("正在单独修复课后阅读"))).toBe(true);
     expect(messages.map((message) => message.content)).toContain("我确认正文与课后阅读，请生成章节与课后练习。");
     expect(exerciseResult.messages.map((message) => message.content)).toEqual(messages.map((message) => message.content));
+  });
+
+  test("repairs one failed fixed-slot chapter once without replacing a successful chapter", async () => {
+    const now = new Date("2026-08-24T00:00:00.000Z");
+    const course = { id: "course-1", title: "Hidden Door", durationMinutes: 30, currentStage: "content", englishLevel: "A2", knowledgePointIds: ["kp-1"] };
+    const outlineChapters = [1, 2].map((order) => ({ id: `chapter-${order}`, order, title: `Chapter ${order}`, summary: `Story event ${order}`, storyGoal: `Goal ${order}`, keyEvents: [`Event ${order}`], recommendedKnowledgePointIds: ["kp-1"], knowledgePointRecommendationSummary: "" }));
+    const outline = { id: "outline-1", title: "Hidden Door", summary: "A team finds the door.", chapters: outlineChapters };
+    const planChapters = outlineChapters.map((chapter) => ({ outlineChapterId: chapter.id, targetWordCount: 50, paragraphCount: 1, knowledgePointIds: ["kp-1"], readingExerciseMode: "complete", readingExercises: { enabled: true, grammar: { optionCloze: 0, wordForm: 1 }, vocabulary: { chineseHint: 0 } }, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: {} }));
+    const plan = { id: "plan-1", courseId: "course-1", status: "confirmed", englishLevel: "A2", mainIdeaTargetWordCount: 120, chapters: planChapters, afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: {} }, updatedAt: now, confirmedAt: now };
+    let content = { id: "content-1", courseId: "course-1", status: "empty", phase: null, writingProvider: "quickrouter_gpt", sourceRevision: "", contentVersion: 0, chapters: [] as unknown[], mainIdea: null as unknown, homework: null, exercisesStale: false, errorMessage: null as string | null, updatedAt: now };
+    let generation: Record<string, unknown> | null = null;
+    const applyData = (current: Record<string, unknown>, data: Record<string, unknown>) => Object.fromEntries(Object.entries({ ...current, ...data }).map(([key, value]) => [key, typeof value === "object" && value && "increment" in value ? Number(current[key] ?? 0) + Number(Reflect.get(value, "increment")) : value]));
+    const db = {
+      course: { findUnique: vi.fn(async () => course), update: vi.fn(async () => course) },
+      courseStoryOutline: { findUnique: vi.fn(async () => outline) },
+      courseTeachingPlan: { findUnique: vi.fn(async () => plan) },
+      presetOption: { findMany: vi.fn(async () => [{ id: "kp-1", kind: "grammar", label: "Past Simple", category: "时态", archivedAt: null }]) },
+      courseLessonContent: { findUnique: vi.fn(async () => content), upsert: vi.fn(async () => content), update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { content = applyData(content, data) as typeof content; return content; }) },
+      courseContentGeneration: {
+        findUnique: vi.fn(async ({ where }: { where: Record<string, unknown> }) => "id" in where ? generation : null),
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { generation = { id: "generation-1", status: "running", ...data }; return generation; }),
+        update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { generation = { ...generation, ...data }; return generation; }),
+      },
+      courseContentChatMessage: { findUnique: vi.fn(async () => null), findMany: vi.fn(async () => []), create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "message-1", createdAt: now, ...data })) },
+      aiGenerationLog: { create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "ai-log", ...data })) },
+    } as unknown as CourseContentDb;
+    const words = Array.from({ length: 48 }, (_, index) => `word${index + 1}`).join(" ");
+    const generatedChapter = (id: string, template: string) => ({ outlineChapterId: id, paragraphs: [{ template }], slots: [{ id: "WF1", kind: "wordForm" as const, knowledgePointKey: "KP1", answer: "found", cue: "find" }] });
+    const chapter1 = generatedChapter("chapter-1", `${words} {{WF1}}`);
+    const chapter2 = generatedChapter("chapter-2", `${words} stayed`);
+    const generateReading = vi.fn(async () => ({ envelopeError: null, chapters: [
+      { outlineChapterId: "chapter-1", generated: chapter1, parseError: null },
+      { outlineChapterId: "chapter-2", generated: chapter2, parseError: null },
+    ], mainIdea: { text: Array(120).fill("summary").join(" ") }, mainIdeaError: null, usage: { inputTokens: 100, outputTokens: 80, visibleOutputTokens: 60, reasoningTokens: 20, totalTokens: 180 } }));
+    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v2" as const, repairs: [{ kind: "paragraph" as const, outlineChapterId: "chapter-2", paragraphIndex: 0, template: `${words} {{WF1}}`, slots: [] }], usage: { inputTokens: 40, outputTokens: 20, visibleOutputTokens: 15, reasoningTokens: 5, totalTokens: 60 } }));
+    const deps = { generateReading, repairReading, repairMainIdea: vi.fn() } as unknown as CourseContentGenerationDeps;
+
+    const result = await generateCourseReading(db, "course-1", "request-1", deps);
+
+    expect(result.status).toBe("ready");
+    expect(repairReading).toHaveBeenCalledTimes(1);
+    expect((repairReading.mock.calls as unknown[][])[0]?.[2]).toHaveLength(1);
+    expect(Reflect.get((repairReading.mock.calls as unknown[][])[0]?.[2] as object, "0")).toMatchObject({ requirements: { outlineChapterId: "chapter-2" } });
+    expect(result.chapters[0]?.paragraphs.flatMap((paragraph) => paragraph.parts).some((part) => part.type === "grammar" && part.answer === "found")).toBe(true);
+    expect(result.chapters[1]?.validationIssues).toEqual([]);
+    expect(db.aiGenerationLog?.create).toHaveBeenCalledTimes(2);
+    expect(db.aiGenerationLog?.create).toHaveBeenCalledWith({ data: expect.objectContaining({ operation: "reading_v2_repair", outputSnapshot: expect.objectContaining({ tokenUsage: expect.objectContaining({ totalTokens: 60 }), resolvedChapterCount: 1 }) }) });
   });
 });
