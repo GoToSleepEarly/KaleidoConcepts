@@ -35,7 +35,7 @@ describe("CourseCreateSteps", () => {
     fireEvent.click(mobileSummary);
 
     const mobileList = screen.getByRole("list", { name: "移动端课程步骤列表" });
-    expect(mobileList).toHaveClass("absolute", "lg:hidden", "z-dropdown", "bg-white", "shadow-xl");
+    expect(mobileList).toHaveClass("absolute", "lg:hidden", "z-dropdown", "bg-white", "shadow-xl", "max-h-[min(60dvh,24rem)]", "overflow-y-auto");
     expect(mobileList).not.toHaveClass("bg-primary-50/95");
     expect(within(mobileList).getByRole("link", { name: "基础信息" })).toHaveAttribute("href", "/courses/course-1/create/audience");
     expect(within(mobileList).getAllByText("预览发布").find((node) => node.closest("[aria-disabled='true']"))?.closest("[aria-disabled='true']")).toHaveAttribute("aria-disabled", "true");
@@ -48,6 +48,15 @@ describe("CourseCreateSteps", () => {
     expect(screen.getByRole("list", { name: "移动端课程步骤列表" })).toBeInTheDocument();
 
     fireEvent.mouseDown(document.body);
+
+    expect(screen.queryByRole("list", { name: "移动端课程步骤列表" })).not.toBeInTheDocument();
+  });
+
+  test("closes the floating mobile step list with Escape", () => {
+    render(<CourseCreateSteps courseId="course-1" currentStep={3} furthestStep={4} />);
+    fireEvent.click(screen.getByRole("button", { name: "展开课程步骤导航" }));
+
+    fireEvent.keyDown(document, { key: "Escape" });
 
     expect(screen.queryByRole("list", { name: "移动端课程步骤列表" })).not.toBeInTheDocument();
   });

@@ -169,7 +169,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByTestId("story-mobile-view-tabs")).toHaveClass("shrink-0", "lg:hidden");
     expect(screen.getByTestId("story-chat-pane")).toHaveClass("min-h-0", "overflow-hidden", "lg:h-full");
     expect(screen.getByTestId("story-chat-scroll")).toHaveClass("overflow-y-auto", "overscroll-contain", "touch-pan-y");
-    expect(screen.getByTestId("story-result-scroll")).toHaveClass("lg:h-full", "lg:overflow-y-auto", "overscroll-contain");
+    expect(screen.getByTestId("story-result-scroll")).toHaveClass("lg:h-full", "overflow-y-auto", "overscroll-contain");
     expect(screen.getByTestId("story-mobile-view-tabs")).toHaveClass("lg:hidden");
     expect(screen.queryByTestId("story-step-mobile-actions")).not.toBeInTheDocument();
     expect(screen.getByTestId("story-chat-settings")).toHaveClass("grid-cols-2");
@@ -190,12 +190,14 @@ describe("CourseStoryOutlineWorkspace", () => {
 
     expect(screen.getByTestId("story-outline-shell")).toHaveClass("flex", "max-lg:h-[calc(100dvh-7.25rem)]", "max-lg:overflow-hidden");
     expect(screen.getByTestId("story-outline-layout")).toHaveClass("min-h-0", "max-lg:flex-1", "max-lg:overflow-hidden");
+    expect(screen.getByTestId("story-outline-layout")).toHaveClass("max-lg:grid-rows-[auto_minmax(0,1fr)]");
     expect(screen.getByTestId("story-chat-pane")).toHaveClass("min-h-0", "overflow-hidden");
     expect(screen.getByTestId("story-chat-scroll")).toHaveClass("min-h-0", "flex-1", "overflow-y-auto", "touch-pan-y");
     expect(screen.getByTestId("story-chat-composer")).toHaveClass("shrink-0");
     expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
     expect(screen.queryByTestId("story-step-mobile-actions")).not.toBeInTheDocument();
     expect(screen.getByTestId("story-step-footer")).toHaveClass("hidden", "lg:flex");
+    expect(screen.getByTestId("story-result-scroll")).toHaveClass("min-h-0", "overflow-y-auto");
   });
 
   test("lets compact Step 2 settings share one row with clear labels", () => {

@@ -42,11 +42,19 @@ export function CourseCreateSteps({ currentStep, courseId, furthestStep = curren
 
   useEffect(() => {
     if (!mobileOpen) return;
-    function closeOnOutsidePress(event: MouseEvent) {
+    function closePopover(event: KeyboardEvent | MouseEvent) {
+      if (event instanceof KeyboardEvent) {
+        if (event.key === "Escape") setMobileOpen(false);
+        return;
+      }
       if (event.target instanceof Node && !mobilePopoverRef.current?.contains(event.target)) setMobileOpen(false);
     }
-    document.addEventListener("mousedown", closeOnOutsidePress);
-    return () => document.removeEventListener("mousedown", closeOnOutsidePress);
+    document.addEventListener("keydown", closePopover);
+    document.addEventListener("mousedown", closePopover);
+    return () => {
+      document.removeEventListener("keydown", closePopover);
+      document.removeEventListener("mousedown", closePopover);
+    };
   }, [mobileOpen]);
 
   function stepHref(path: string) {
@@ -78,7 +86,7 @@ export function CourseCreateSteps({ currentStep, courseId, furthestStep = curren
         </button>
 
         {mobileOpen ? (
-          <ol aria-label="移动端课程步骤列表" className="absolute inset-x-0 top-full z-dropdown mt-2 grid gap-1 rounded-lg border border-border bg-white p-1 shadow-xl lg:hidden">
+          <ol aria-label="移动端课程步骤列表" className="absolute inset-x-0 top-full z-dropdown mt-2 grid max-h-[min(60dvh,24rem)] gap-1 overflow-y-auto overscroll-contain rounded-lg border border-border bg-white p-1 shadow-xl lg:hidden">
             {steps.map((label, index) => {
               const step = index + 1;
               const active = step === currentStep;

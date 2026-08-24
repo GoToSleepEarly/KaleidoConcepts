@@ -64,8 +64,8 @@ describe("createStoryOutlineGenerationDeps", () => {
       selectedKnowledgePoints: [{ id: "knowledge-1", label: "Present Continuous", category: "时态" }],
     });
 
-    expect(outline.chapters[0].storyGoal).toBe("回声巨兽吸走广场上的声音。学生们发现城市陷入寂静。");
-    expect(outline.chapters[0].whatHappens).toBe("回声巨兽吸走广场上的声音。学生们发现城市陷入寂静。");
+    expect(outline.chapters[0].storyGoal).toBe("回声巨兽吸走广场上的声音。 学生们发现城市陷入寂静。");
+    expect(outline.chapters[0].whatHappens).toBe("回声巨兽吸走广场上的声音。 学生们发现城市陷入寂静。");
   });
 
   test("converts response-only KP keys to knowledge point labels in the saved recommendation summary", async () => {

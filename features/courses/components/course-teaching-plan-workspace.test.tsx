@@ -157,6 +157,7 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.getByRole("button", { name: "第 1/2 章 · 发光地图" })).toHaveAttribute("aria-controls", "mobile-chapter-list");
     expect(screen.getByRole("listbox", { name: "移动端章节列表" })).toHaveAttribute("id", "mobile-chapter-list");
     expect(screen.getByRole("listbox", { name: "移动端章节列表" })).toHaveClass("max-h-[40dvh]", "overflow-y-auto");
+    expect(screen.getByRole("option", { name: "第 2/2 章 · 蓝色书页" })).toHaveClass("min-h-11");
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("listbox", { name: "移动端章节列表" })).not.toBeInTheDocument();
 

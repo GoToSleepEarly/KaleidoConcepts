@@ -322,7 +322,7 @@ function stringValue(value: unknown) {
 function textValue(value: unknown) {
   if (typeof value === "string") return value.trim();
   if (!Array.isArray(value)) return "";
-  return value.map(stringValue).filter(Boolean).join("");
+  return value.map(stringValue).filter(Boolean).join(" ");
 }
 
 function stringArray(value: unknown) {

@@ -346,7 +346,7 @@ function array(value: unknown): string[] {
 
 function text(value: unknown): string {
   if (typeof value === "string") return value.trim();
-  return array(value).map((item) => item.trim()).filter(Boolean).join("");
+  return array(value).map((item) => item.trim()).filter(Boolean).join(" ");
 }
 
 function nameArray(value: unknown): string[] {

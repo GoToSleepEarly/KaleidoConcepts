@@ -128,6 +128,7 @@ describe("Step 5 视觉资源工作区", () => {
     expect(screen.getByTestId("visual-stage-tabs")).toHaveClass("overflow-x-auto");
     expect(screen.getByRole("button", { name: "封面" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "章节图片" })).toHaveClass("whitespace-nowrap", "shrink-0");
+    expect(screen.getByRole("button", { name: "章节图片" })).toHaveClass("min-h-11");
     expect(screen.getByTestId("visual-flow-section")).toHaveClass("hidden", "lg:block");
     expect(screen.getByTestId("visual-plan-section")).toHaveClass("hidden", "lg:block");
     expect(screen.getByTestId("visual-characters-section")).toHaveClass("hidden", "lg:block");

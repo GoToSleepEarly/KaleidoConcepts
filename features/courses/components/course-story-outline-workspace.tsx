@@ -437,7 +437,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
 
       <div
         className={cn(
-          "grid min-h-0 gap-4 transition-[max-width,grid-template-columns] duration-300 max-lg:flex-1 max-lg:overflow-hidden lg:gap-5",
+          "grid min-h-0 gap-4 transition-[max-width,grid-template-columns] duration-300 max-lg:flex-1 max-lg:grid-rows-[auto_minmax(0,1fr)] max-lg:overflow-hidden lg:gap-5 lg:grid-rows-none",
           hasResultContent
             ? "lg:h-[calc(100dvh-13.5rem)] lg:min-h-[680px] lg:grid-cols-[minmax(300px,0.85fr)_minmax(360px,1.15fr)] xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)]"
             : "mx-auto w-full max-w-5xl",
@@ -599,7 +599,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
           </form> : null}
         </section>
 
-        {hasResultContent ? <div className={cn("min-w-0 overscroll-contain scroll-pb-24 lg:h-full lg:min-h-0 lg:overflow-y-auto", mobileView === "chat" && "hidden lg:block")} data-testid="story-result-scroll"><ResultPanel
+        {hasResultContent ? <div className={cn("min-h-0 min-w-0 overflow-y-auto overscroll-contain scroll-pb-24 lg:h-full", mobileView === "chat" && "hidden lg:block")} data-testid="story-result-scroll"><ResultPanel
           onDescribeDirection={() => continueModify("我希望的故事方向：")}
           onConfirmDirection={(direction) => postMessage(
             { message: "", mode: "idea", action: "confirm_direction", targetId: direction.id },

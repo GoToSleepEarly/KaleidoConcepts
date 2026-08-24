@@ -348,7 +348,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
                       return (
                         <button
                           aria-selected={active}
-                          className={cn("flex min-h-10 w-full items-center justify-between gap-2 rounded-md px-3 text-left text-sm transition-colors", active ? "bg-primary-50 font-semibold text-primary-700" : "text-foreground hover:bg-muted")}
+                          className={cn("flex min-h-11 w-full items-center justify-between gap-2 rounded-md px-3 text-left text-sm transition-colors", active ? "bg-primary-50 font-semibold text-primary-700" : "text-foreground hover:bg-muted")}
                           key={chapter.outlineChapterId}
                           onClick={() => {
                             setSelectedChapterIndex(index);

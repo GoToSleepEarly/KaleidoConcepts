@@ -479,7 +479,7 @@ function ChatAction({ title, children }: { title: string; children: React.ReactN
 
 function mobileModeClass(active: boolean) {
   return cn(
-    "min-h-10 shrink-0 whitespace-nowrap rounded-md px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    "min-h-11 shrink-0 whitespace-nowrap rounded-md px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
   );
 }

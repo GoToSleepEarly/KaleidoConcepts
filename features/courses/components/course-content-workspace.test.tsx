@@ -216,6 +216,7 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByTestId("content-mobile-view-tabs")).toHaveClass("overflow-x-auto");
     expect(screen.getByRole("button", { name: "预览" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "预览" })).toHaveClass("whitespace-nowrap");
+    expect(screen.getByRole("button", { name: "预览" })).toHaveClass("min-h-11");
     expect(screen.getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByTestId("content-chat-pane")).toHaveClass("hidden", "lg:flex");
     expect(screen.getByTestId("content-preview-pane")).not.toHaveClass("hidden");

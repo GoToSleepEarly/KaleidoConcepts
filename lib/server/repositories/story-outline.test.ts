@@ -1033,7 +1033,7 @@ describe("story outline repository", () => {
     }, false);
 
     expect(db.state.chapters[0]).toMatchObject({
-      storyGoal: "回声巨兽吸走广场上的声音。学生们发现城市陷入寂静。",
+      storyGoal: "回声巨兽吸走广场上的声音。 学生们发现城市陷入寂静。",
     });
   });
 

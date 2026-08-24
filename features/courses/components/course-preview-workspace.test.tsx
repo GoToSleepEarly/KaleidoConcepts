@@ -61,6 +61,7 @@ describe("CoursePreviewWorkspace", () => {
     expect(screen.getByTestId("preview-slide-region")).toHaveClass("p-3", "sm:p-6");
     expect(screen.getByTestId("preview-slide-frame")).toHaveClass("min-h-[280px]", "sm:min-h-[440px]");
     expect(screen.getByTestId("preview-style-panel")).toHaveClass("w-full", "lg:w-80", "lg:border-l");
+    expect(screen.getByRole("button", { name: "课件预览" })).toHaveClass("min-h-11");
   });
 
   it("auto-saves a per-page font size change", async () => {
