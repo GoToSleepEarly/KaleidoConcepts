@@ -4,6 +4,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { CourseAudienceForm } from "./course-audience-form";
 
+const grammarCatalog = {
+  books: [
+    { id: "essential-grammar-in-use-4", title: "Essential Grammar in Use", edition: "4th Edition", officialLevel: "A1–B1", sections: [{ id: "essential-present", officialTitle: "Present", points: [{ id: "essential-present-simple", title: "Present simple", unitStart: 5, unitEnd: 6, units: [{ unitNumber: 5, officialTitle: "I do/work/like etc." }, { unitNumber: 6, officialTitle: "I don't ..." }] }] }] },
+    { id: "english-grammar-in-use-5", title: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2", sections: [{ id: "english-present", officialTitle: "Present and past", points: [{ id: "grammar-1", title: "Past simple", unitStart: 5, unitEnd: 5, units: [{ unitNumber: 5, officialTitle: "Past simple" }] }, { id: "grammar-2", title: "Present perfect and past", unitStart: 13, unitEnd: 14, units: [{ unitNumber: 13, officialTitle: "Present perfect and past 1" }, { unitNumber: 14, officialTitle: "Present perfect and past 2" }] }] }] },
+    { id: "advanced-grammar-in-use-4", title: "Advanced Grammar in Use", edition: "4th Edition", officialLevel: "C1–C2", sections: [] },
+  ],
+};
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
@@ -36,23 +44,18 @@ describe("CourseAudienceForm basic information UI", () => {
     expect(screen.getByRole("link", { name: "前往人物档案" })).toHaveAttribute("href", "/people");
   });
 
-  test("organizes Step1 knowledge points by grammar category", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ presets: [
-      { id: "grammar-1", kind: "grammar", label: "Past Simple", labelZh: "一般过去时", category: "时态", sortOrder: 0, createdAt: "", updatedAt: "" },
-      { id: "grammar-2", kind: "grammar", label: "Wh- Questions", labelZh: "特殊疑问句", category: "句型", sortOrder: 1, createdAt: "", updatedAt: "" },
-    ] })));
+  test("lands on the level-matched book and selects merged official knowledge points", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(grammarCatalog)));
     render(<CourseAudienceForm />);
 
+    fireEvent.click(screen.getByRole("button", { name: "B1" }));
     fireEvent.click(screen.getByRole("button", { name: "选择知识点" }));
-    expect(await screen.findByRole("tab", { name: "时态" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "句型" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "句型" }));
-    expect(screen.getByRole("button", { name: /特殊疑问句.*Wh- Questions/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /一般过去时.*Past Simple/ })).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByRole("searchbox", { name: "搜索语法点" }), { target: { value: "过去时" } });
-    expect(screen.getByRole("button", { name: /一般过去时.*Past Simple/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /特殊疑问句.*Wh- Questions/ })).not.toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: /English Grammar in Use/ })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("button", { name: /Units 13–14.*Present perfect and past/ }));
+    fireEvent.click(screen.getByRole("button", { name: "确认选择" }));
+    expect(screen.getByText("Present perfect and past")).toBeInTheDocument();
+    expect(screen.getByText("Units 13–14")).toBeInTheDocument();
+    expect(screen.getByText(/5th Edition.*B1–B2/)).toBeInTheDocument();
   });
 
   test("presents Step1 as basic information without internal explanations", () => {
@@ -67,13 +70,23 @@ describe("CourseAudienceForm basic information UI", () => {
     expect(screen.getByRole("heading", { name: "学生" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "添加老师" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "添加学生" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "30 分钟" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "45 分钟" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "60 分钟" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "60 分钟" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("heading", { name: "课程时长" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /分钟/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Starter" })).toBeInTheDocument();
-    expect(screen.getAllByText("*")).toHaveLength(6);
-    expect(screen.getAllByTestId("audience-section-header")).toHaveLength(6);
+    expect(screen.getByText("参考 Pre-A1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "A2" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("选择等级后查看对应的语言能力描述")).not.toBeInTheDocument();
+    expect(screen.getByText("综合能力")).toBeInTheDocument();
+    expect(screen.getByText("语法表现")).toBeInTheDocument();
+    expect(screen.getByText(/能理解个人信息、购物、居住地等日常表达/)).toBeInTheDocument();
+    expect(screen.getByText(/仍会反复出现时态、主谓一致等错误/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "CEFR 官方标准" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "B1" }));
+    expect(screen.getAllByText("独立使用者")).toHaveLength(3);
+    expect(screen.getByText(/能理解工作、学习、旅行等熟悉话题的主要内容/)).toBeInTheDocument();
+    expect(screen.getByText(/复杂表达中仍会犯错，但意思通常清楚/)).toBeInTheDocument();
+    expect(screen.getAllByText("*")).toHaveLength(5);
+    expect(screen.getAllByTestId("audience-section-header")).toHaveLength(5);
     expect(screen.getAllByTestId("audience-section-header")[0]).toHaveClass("bg-[#E9EEFF]");
     expect(screen.queryByText("未选择")).not.toBeInTheDocument();
     expect(screen.getByText("还需：填写课程名称")).toBeInTheDocument();
@@ -134,6 +147,9 @@ describe("CourseAudienceForm basic information UI", () => {
             id: "course-1",
             title: "海底图书馆",
             durationMinutes: 45,
+            englishLevel: "B1",
+            grammarBookEditionId: "english-grammar-in-use-5",
+            knowledgePointIds: ["grammar-1"],
             lifecycleStatus: "draft",
             currentStage: "story_outline",
             people: [
@@ -173,11 +189,49 @@ describe("CourseAudienceForm basic information UI", () => {
     expect(screen.queryByRole("button", { name: "更换" })).not.toBeInTheDocument();
   });
 
+  test("shows every Step1 field for legacy courses while keeping the page read-only", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/api/grammar/catalog") return Response.json(grammarCatalog);
+      if (url.includes("/api/courses/legacy-course/audience")) return Response.json({
+        audience: {
+          id: "legacy-course",
+          title: "旧版海底课程",
+          durationMinutes: 45,
+          englishLevel: "A2",
+          grammarBookEditionId: null,
+          knowledgePointIds: ["legacy-grammar-1"],
+          legacyKnowledgePoints: [{ id: "legacy-grammar-1", label: "Past Simple", labelZh: "一般过去时", category: "时态" }],
+          lifecycleStatus: "draft",
+          currentStage: "preview",
+          people: [
+            { personId: "teacher-1", role: "teacher", chineseName: "林老师", englishName: "Ms. Lin", age: 32, gender: "female", visualAssetId: "v1", visualUrl: "/teacher.png", profileChanged: false },
+            { personId: "student-1", role: "student", chineseName: "夏天", englishName: "Summer", age: 9, gender: "female", visualAssetId: "v2", visualUrl: "/student.png", profileChanged: false },
+          ],
+        },
+      });
+      return Response.json({ people: [], page: 1, pageSize: 100, total: 0, totalPages: 1 });
+    });
+
+    render(<CourseAudienceForm courseId="legacy-course" />);
+
+    expect(await screen.findByDisplayValue("旧版海底课程")).toHaveAttribute("readonly");
+    expect(screen.getByText("林老师")).toBeInTheDocument();
+    expect(screen.getByText("夏天")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "A2" })).toBeDisabled();
+    expect(screen.getByText("一般过去时 · Past Simple")).toBeInTheDocument();
+    expect(screen.getByText("时态")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "选择知识点" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /编辑|移除/ })).not.toBeInTheDocument();
+    expect(screen.getByText("旧课程基础信息仅供查看，不能修改")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "返回课程详情" })).toHaveAttribute("href", "/courses/legacy-course");
+  });
+
   test("uses the app dialog and lets the teacher preserve downstream results", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url === "/api/presets?kind=grammar") return Response.json({ presets: [{ id: "grammar-1", kind: "grammar", label: "Past Simple", labelZh: "一般过去时", category: "时态", sortOrder: 0, createdAt: "", updatedAt: "" }] });
-      if (url === "/api/courses/course-1/audience" && !init?.method) return Response.json({ audience: { id: "course-1", title: "海底图书馆", durationMinutes: 45, englishLevel: "B1", knowledgePointIds: ["grammar-1"], lifecycleStatus: "draft", currentStage: "preview", people: [
+      if (url === "/api/grammar/catalog") return Response.json(grammarCatalog);
+      if (url === "/api/courses/course-1/audience" && !init?.method) return Response.json({ audience: { id: "course-1", title: "海底图书馆", durationMinutes: 45, englishLevel: "B1", grammarBookEditionId: "english-grammar-in-use-5", knowledgePointIds: ["grammar-1"], lifecycleStatus: "draft", currentStage: "preview", people: [
         { personId: "teacher-1", role: "teacher", chineseName: "林老师", englishName: "Linda", age: 32, gender: "female", visualAssetId: "v1", visualUrl: "/teacher.png", profileChanged: false },
         { personId: "student-1", role: "student", chineseName: "夏天", englishName: "Summer", age: 9, gender: "female", visualAssetId: "v2", visualUrl: "/student.png", profileChanged: false },
       ] } });
@@ -195,7 +249,7 @@ describe("CourseAudienceForm basic information UI", () => {
     render(<CourseAudienceForm courseId="course-1" />);
 
     await screen.findByText("林老师");
-    fireEvent.click(screen.getByRole("button", { name: "30 分钟" }));
+    fireEvent.click(screen.getByRole("button", { name: "A2" }));
     fireEvent.click(screen.getByRole("button", { name: "下一步：故事大纲" }));
 
     const dialog = await screen.findByRole("dialog", { name: "后续内容需要更新" });

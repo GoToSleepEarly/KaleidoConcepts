@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { CourseSourceReferenceType, StoryWritingProvider } from "@/lib/contracts/api";
 import { devAiLog } from "@/lib/server/ai/dev-ai-log";
 import { createStoryOutlineProvider, StoryOutlineIncompleteResponseError } from "@/lib/server/ai/story-outline-provider";
-import type { AiGateway } from "@/lib/ai-gateway";
+import type { AiProviderSettingsInput } from "@/lib/ai-gateway";
 import { parseAiJson } from "@/lib/server/validation/course-content";
 
 const nonEmpty = z.string().trim().min(1);
@@ -493,8 +493,8 @@ export function compileCourseImagePrompt(
   ].filter((line): line is string => Boolean(line)).join("\n");
 }
 
-export function createCourseVisualPlanDeps(aiGateway: AiGateway = "quickrouter") {
-  const provider = createStoryOutlineProvider(undefined, aiGateway);
+export function createCourseVisualPlanDeps(settings: AiProviderSettingsInput = "quickrouter") {
+  const provider = createStoryOutlineProvider(undefined, settings);
   return {
     async generate(
       input: CourseVisualPlanPromptInput,

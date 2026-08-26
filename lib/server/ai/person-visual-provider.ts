@@ -1,5 +1,5 @@
 import type { CourseImageQuality } from "@/lib/contracts/api";
-import type { AiGateway } from "@/lib/ai-gateway";
+import { aiProviderBaseUrl, normalizeAiProviderSettings, type AiGateway, type AiProviderSettingsInput } from "@/lib/ai-gateway";
 import { devAiLog } from "./dev-ai-log";
 import { imageQualityForModel } from "./image-model-capabilities";
 
@@ -27,7 +27,9 @@ export class PersonVisualProviderConfigError extends Error {
   }
 }
 
-function configFromEnvironment(gateway: AiGateway): ProviderConfig {
+function configFromEnvironment(input: AiProviderSettingsInput): ProviderConfig {
+  const settings = normalizeAiProviderSettings(input);
+  const gateway = settings.aiGateway;
   const isCrazyrouter = gateway === "crazyrouter";
   const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_API_KEY : process.env.QUICKROUTER_IMAGE_API_KEY;
   if (!apiKey) throw new PersonVisualProviderConfigError();
@@ -35,7 +37,7 @@ function configFromEnvironment(gateway: AiGateway): ProviderConfig {
   return {
     apiKey,
     gateway,
-    baseUrl: isCrazyrouter ? "https://api.crazyrouter.com" : "https://api.quickrouter.ai",
+    baseUrl: aiProviderBaseUrl(settings),
     model: isCrazyrouter ? process.env.CRAZYROUTER_IMAGE_MODEL || "gpt-image-2" : process.env.QUICKROUTER_IMAGE_MODEL || "gpt-image-2",
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };
@@ -54,8 +56,8 @@ function imageBlob(dataUrl: string) {
   return new Blob([Buffer.from(match[2], "base64")], { type: match[1] });
 }
 
-export function createPersonVisualProvider(config?: ProviderConfig, selectedGateway: AiGateway = "quickrouter") {
-  const resolved = { gateway: "quickrouter" as AiGateway, baseUrl: "https://api.quickrouter.ai", ...(config ?? configFromEnvironment(selectedGateway)) };
+export function createPersonVisualProvider(config?: ProviderConfig, selectedSettings: AiProviderSettingsInput = "quickrouter") {
+  const resolved = { gateway: "quickrouter" as AiGateway, baseUrl: "https://api.quickrouter.ai", ...(config ?? configFromEnvironment(selectedSettings)) };
   async function readResponse(response: Response, operation: string, startedAt: number) {
     let data: ProviderResponse;
     try {

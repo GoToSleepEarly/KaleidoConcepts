@@ -14,7 +14,7 @@ import type {
 import { compilePreviewPages, DEFAULT_COURSE_PRESENTATION } from "@/lib/domain/course-preview";
 import { furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
 
-export type CoursePreviewDb = Pick<PrismaClient, "$transaction" | "course" | "coursePresentation" | "presetOption">;
+export type CoursePreviewDb = Pick<PrismaClient, "$transaction" | "course" | "coursePresentation" | "presetOption" | "knowledgePoint">;
 
 export class CoursePreviewNotFoundError extends Error {}
 export class CoursePreviewPrerequisiteError extends Error {}
@@ -50,7 +50,7 @@ function normalizedPresentation(input?: Partial<CoursePresentationUpdate> | null
 }
 
 export async function getCoursePreview(db: CoursePreviewDb, courseId: string): Promise<CoursePreviewResponse> {
-  const [course, knowledgePoints] = await Promise.all([db.course.findUnique({
+  const course = await db.course.findUnique({
     where: { id: courseId },
     include: {
       people: true,
@@ -60,10 +60,14 @@ export async function getCoursePreview(db: CoursePreviewDb, courseId: string): P
       presentation: true,
       teachingPlan: true,
     },
-  }), db.presetOption.findMany({ where: { kind: "grammar", archivedAt: null }, orderBy: [{ sortOrder: "asc" }, { label: "asc" }], select: { id: true, label: true } })]);
+  });
   if (!course) throw new CoursePreviewNotFoundError("课程不存在");
   if (!course.lessonContent) throw new CoursePreviewPrerequisiteError("请先完成文案与练习");
   assertVisualResourcesReady(course.visualImageSlots);
+  const selectedIds = Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [];
+  const knowledgePoints = course.grammarBookEditionId
+    ? await db.knowledgePoint.findMany({ where: { id: { in: selectedIds }, bookEditionId: course.grammarBookEditionId, source: "grammar_in_use" }, orderBy: { sortOrder: "asc" }, select: { id: true, title: true } }).then((points) => points.map((point) => ({ id: point.id, label: point.title })))
+    : await db.presetOption.findMany({ where: { id: { in: selectedIds }, kind: "grammar" }, orderBy: [{ sortOrder: "asc" }, { label: "asc" }], select: { id: true, label: true } });
 
   const teacher = course.people.find((person) => person.role === "teacher");
   const students = course.people.filter((person) => person.role === "student");

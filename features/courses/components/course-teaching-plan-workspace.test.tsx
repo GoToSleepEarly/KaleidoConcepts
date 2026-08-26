@@ -264,13 +264,15 @@ describe("CourseTeachingPlanWorkspace", () => {
   });
 
   test("selects knowledge points from grammar library and warns after more than three", () => {
-    render(<CourseTeachingPlanWorkspace initialState={state()} />);
+    const input = state();
+    input.course.knowledgePointIds = ["grammar-1", "grammar-2", "grammar-3", "grammar-4"];
+    render(<CourseTeachingPlanWorkspace initialState={input} />);
 
     fireEvent.click(screen.getByRole("tab", { name: /章节/ }));
     expect(screen.queryByLabelText("第 1 章知识点Past Simple")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "从语法库选择" }));
     expect(screen.getByRole("heading", { name: "选择本章知识点" })).toBeInTheDocument();
-    expect(screen.getByText("按类别选择本章教学目标；可使用完整语法库，不受 Step 1 预选范围限制。")).toBeInTheDocument();
+    expect(screen.getByText("按 Section 选择本章教学目标；范围仅限第一步已选知识点。")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "时态" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "句型" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /现在完成时.*Present Perfect/ }));

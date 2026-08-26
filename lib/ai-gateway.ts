@@ -2,6 +2,39 @@ export const AI_GATEWAYS = ["quickrouter", "crazyrouter"] as const;
 
 export type AiGateway = (typeof AI_GATEWAYS)[number];
 
+export const QUICKROUTER_ENDPOINTS = ["main", "direct"] as const;
+export type QuickRouterEndpoint = (typeof QUICKROUTER_ENDPOINTS)[number];
+
+export type AiProviderSettings = {
+  aiGateway: AiGateway;
+  quickRouterEndpoint: QuickRouterEndpoint;
+};
+
+export type AiProviderSettingsInput = AiGateway | AiProviderSettings;
+
+export const quickRouterEndpointLabels: Record<QuickRouterEndpoint, string> = {
+  main: "主站",
+  direct: "直连",
+};
+
+export const quickRouterEndpointUrls: Record<QuickRouterEndpoint, string> = {
+  main: "https://api.quickrouter.ai",
+  direct: "https://api.quickrouter.us",
+};
+
+export function normalizeAiProviderSettings(input: AiProviderSettingsInput = "quickrouter"): AiProviderSettings {
+  return typeof input === "string"
+    ? { aiGateway: input, quickRouterEndpoint: "main" }
+    : input;
+}
+
+export function aiProviderBaseUrl(input: AiProviderSettingsInput) {
+  const settings = normalizeAiProviderSettings(input);
+  return settings.aiGateway === "crazyrouter"
+    ? "https://api.crazyrouter.com"
+    : quickRouterEndpointUrls[settings.quickRouterEndpoint];
+}
+
 export function parseAiGateway(value: unknown): AiGateway {
   return value === "crazyrouter" ? value : "quickrouter";
 }

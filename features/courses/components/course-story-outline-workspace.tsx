@@ -10,6 +10,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { AiOperationStatusCard, AiWorkspaceGuide, CourseAiWorkspaceFrame, type AiOperationPresentation } from "@/features/courses/components/course-ai-workspace";
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
+import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
 import type { CourseSourceReference, CourseStoryChatAction, CourseStoryMessageInput, CourseStoryOutline, CourseStoryOutlineState, CourseStoryDirection, PresetOption, StoryWritingProvider } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 import { createRequestId } from "@/lib/utils/request-id";
@@ -451,6 +452,10 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
       <div className="flex shrink-0 items-end justify-between gap-4" data-testid="story-stage-heading-row">
         <div>
           <h2 className="text-2xl font-semibold text-foreground">故事大纲</h2>
+          {state.selectedKnowledgePoints?.find((point) => point.bookTitle) ? (() => {
+            const source = state.selectedKnowledgePoints!.find((point) => point.bookTitle)!;
+            return <p className="mt-1 text-xs text-muted-foreground">《{source.bookTitle}》 · {source.edition} · {source.officialLevel}</p>;
+          })() : null}
         </div>
         <div className="flex items-center gap-2">
           {hasStepContent ? (
@@ -1461,12 +1466,17 @@ function OutlineSummary({ outline, state, pending, onReviseOutline, onReviseChap
                   <div className="flex flex-wrap items-center gap-2">
                     {(chapter.recommendedKnowledgePointIds ?? []).map((id) => {
                       const point = state.selectedKnowledgePoints?.find((item) => item.id === id);
+                      const unit = point?.unitStart
+                        ? point.unitStart === point.unitEnd ? `Unit ${point.unitStart}` : `Units ${point.unitStart}–${point.unitEnd}`
+                        : "";
                       return (
-                        <span className="rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700" key={id}>
-                          {point?.label ?? id}
+                        <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700" key={id}>
+                          <OverflowingKnowledgePointTitle title={point?.label ?? id} />
+                          {unit ? <span className="shrink-0 text-primary-600">{unit}</span> : null}
                         </span>
                       );
                     })}
+                    {!chapter.recommendedKnowledgePointIds?.length ? <span className="text-xs text-muted-foreground">本章暂无自然适配的知识点</span> : null}
                   </div>
                   {chapter.knowledgePointRecommendationSummary ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{chapter.knowledgePointRecommendationSummary}</p> : null}
                 </div>

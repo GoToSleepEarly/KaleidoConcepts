@@ -266,9 +266,11 @@ There is no second account area in the sidebar.
 
 ## 账户高级设置
 
-账户菜单提供“高级设置”，当前只配置国外 GPT 系列调用使用的中转站：`QuickRouter` 或 `Crazyrouter`。选择同时作用于 GPT 文本生成、联网研究、人物形象、课程图片生成和图片编辑；DeepSeek 继续使用原有 `DEEPSEEK_BASE_URL` 官方直连路径，不经过任何中转站，也不受该设置影响。
+账户菜单提供“高级设置”，配置国外 GPT 系列调用使用的中转站：`QuickRouter` 或 `Crazyrouter`。选择 QuickRouter 时可进一步选择固定 Base URL：主站 `https://api.quickrouter.ai` 或直连 `https://api.quickrouter.us`。选择同时作用于 GPT 文本生成、联网研究、人物形象、课程图片生成和图片编辑；DeepSeek 继续使用原有 `DEEPSEEK_BASE_URL` 官方直连路径，不经过任何中转站，也不受该设置影响。
 
-设置只保存在 `User.aiGateway`，它是 AI 中转站选择的唯一真实来源。系统不再把中转站写入 Cookie 或新的浏览器登录状态，也不把旧登录状态中的历史值作为设置来源。每次打开高级设置时，`GET /api/account/ai-gateway` 都按 HTTP-only 身份 Cookie 标识的登录用户读取数据库；`PATCH /api/account/ai-gateway` 只接收 `{ aiGateway: "quickrouter" | "crazyrouter" }` 并更新数据库。所有 AI 写请求也按同一身份实时读取 `User.aiGateway`，因此保存后的下一次请求立即使用新中转站，不要求退出或重新登录。身份缺失或账户不存在时统一返回 401，不得静默回退 QuickRouter。密钥只从服务端环境变量读取，浏览器、接口响应和数据库都不保存 API Key。
+设置保存在 `User.aiGateway` 与 `User.quickRouterEndpoint`，是 AI 路由的唯一真实来源。Base URL 不允许自由输入，数据库只保存 `main / direct` 枚举，服务端集中映射到白名单 URL，避免错误地址和 SSRF 风险。每次打开高级设置时，`GET /api/account/ai-gateway` 都按 HTTP-only 身份 Cookie 读取两项设置；`PATCH` 接收 `{ aiGateway, quickRouterEndpoint }`。为兼容缓存中的旧前端，缺少 `quickRouterEndpoint` 时保留数据库原值。所有 AI 写请求实时读取这两项设置，因此保存后的下一次 GPT 文本、研究或图片请求立即生效，无需重新登录。
+
+主站与直连是显式手动切换，不在网络错误后自动向另一个地址重放生成请求。原因是上游可能已经接收第一次请求，自动重放会带来重复生成和重复费用。Crazyrouter 被选中时 QuickRouter Base URL 选项隐藏但保留，切回 QuickRouter 后恢复上次选择。
 
 QuickRouter 图片继续支持其专属 `gpt-image-2-c` 备用模型。Crazyrouter 使用 `https://api.crazyrouter.com/v1/responses`、`/v1/images/generations` 和 `/v1/images/edits`，文本、联网研究与图片共用 `CRAZYROUTER_API_KEY`；默认模型为 `gpt-5.6-sol` 和 `gpt-image-2`，图片使用标准 `output_format` 参数，不继承 QuickRouter 的 `-c` 回退。修改中转站只影响后续新请求，不重写已生成成果。
 
@@ -283,6 +285,8 @@ QuickRouter 图片继续支持其专属 `gpt-image-2-c` 备用模型。Crazyrout
 2026-08-20：修复账户已切换 Crazyrouter、旧 Cookie 仍令 AI 请求发往 QuickRouter 的问题。AI 路由改为每次按登录用户读取 `User.aiGateway`，配置保存后下一次请求立即生效，无需重新登录；中转站 Cookie 降级为未认证兼容值。验证通过全量 66 个文件 / 510 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm build`、乱码扫描和 `git diff --check`。
 
 2026-08-21：移除中转站 Cookie 及未认证默认回退，修复浏览器“记住我”仍有效但服务端会话 Cookie 在浏览器重启后消失、导致修改中转站必须重新登录的问题。登录请求同步提交 `remember`，身份 Cookie 与浏览器本地状态统一为会话级或 30 天；退出登录同时清除服务端 Cookie。高级设置每次打开都从数据库加载当前值，所有依赖中转站的 AI 接口在身份失效时统一返回可恢复的 401。旧版本已经丢失身份 Cookie 的浏览器无法在不重新验证密码的情况下安全恢复，升级后首次会要求重新登录一次，此后按统一生命周期保持。验证通过全量 72 个文件 / 547 项测试、定向 ESLint、`pnpm exec tsc --noEmit`、`pnpm build`、乱码扫描和 `git diff --check`。
+
+2026-08-26：QuickRouter 增加主站与直连两个账号级 Base URL 选项；新增 `User.quickRouterEndpoint` 枚举字段与 migration。文本、联网研究、人物形象、课程生图和图片编辑统一使用该设置；不自动重放失败请求。
 
 ## Verification
 

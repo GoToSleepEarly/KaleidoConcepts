@@ -87,6 +87,7 @@ export type CourseAudienceInput = {
   studentIds: string[];
   durationMinutes: 30 | 45 | 60;
   englishLevel: EnglishLevel;
+  grammarBookEditionId: string;
   knowledgePointIds: string[];
 };
 
@@ -107,7 +108,14 @@ export type CourseAudienceDetail = {
   title: string;
   durationMinutes: 30 | 45 | 60;
   englishLevel: EnglishLevel | null;
+  grammarBookEditionId: string | null;
   knowledgePointIds: string[];
+  legacyKnowledgePoints?: Array<{
+    id: string;
+    label: string;
+    labelZh?: string;
+    category?: string;
+  }>;
   lifecycleStatus: CourseLifecycleStatus;
   currentStage: CourseStage;
   staleFromStage?: CourseStage | null;
@@ -394,6 +402,37 @@ export type PresetOptionInput = {
 };
 
 export type EnglishLevel = "Starter" | "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
+
+export type GrammarSourceUnit = {
+  unitNumber: number;
+  officialTitle: string;
+};
+
+export type GrammarCatalogPoint = {
+  id: string;
+  title: string;
+  unitStart: number;
+  unitEnd: number;
+  units: GrammarSourceUnit[];
+};
+
+export type GrammarCatalogSection = {
+  id: string;
+  officialTitle: string;
+  points: GrammarCatalogPoint[];
+};
+
+export type GrammarBookCatalog = {
+  id: string;
+  title: string;
+  edition: string;
+  officialLevel: string;
+  sections: GrammarCatalogSection[];
+};
+
+export type GrammarCatalogResponse = {
+  books: GrammarBookCatalog[];
+};
 export type TeachingPlanStatus = "draft" | "confirmed";
 export type GrammarExerciseType = "optionCloze" | "wordForm";
 export type ReadingExerciseMode = "complete" | "interactive";
@@ -454,8 +493,15 @@ export type TeachingPlan = {
 export type TeachingPlanKnowledgePoint = {
   id: string;
   label: string;
+  /** Legacy compatibility only; Grammar in Use catalog entries never populate this field. */
   labelZh?: string;
   category?: string;
+  bookTitle?: string;
+  edition?: string;
+  officialLevel?: string;
+  unitStart?: number;
+  unitEnd?: number;
+  units?: GrammarSourceUnit[];
 };
 
 export type TeachingPlanState = {
@@ -554,7 +600,7 @@ export type CourseContentMessage = {
 export type CourseContentState = {
   course: { id: string; title: string; currentStage: CourseStage; staleFromStage?: CourseStage | null; englishLevel: EnglishLevel };
   storyTitle: string;
-  knowledgePoints: Array<{ id: string; label: string }>;
+  knowledgePoints: TeachingPlanKnowledgePoint[];
   chapterKnowledgePointIds: Record<string, string[]>;
   homeworkKnowledgePointIds: string[];
   status: CourseContentStatus;

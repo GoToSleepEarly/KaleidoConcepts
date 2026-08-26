@@ -46,7 +46,7 @@ function createDb() {
     outline: Record<string, unknown> | null;
     chapters: Record<string, unknown>[];
     plan: Record<string, unknown> | null;
-    presets: Record<string, unknown>[];
+    knowledgePoints: Record<string, unknown>[];
     contentExists: boolean;
   } = {
     course: record({
@@ -68,10 +68,10 @@ function createDb() {
       record({ id: "outline-chapter-2", order: 2, title: "蓝色书页", storyGoal: "找到书页", keyEvents: ["打开门"], recommendedKnowledgePointIds: ["grammar-2"], knowledgePointRecommendationSummary: "适合行动表达。" }),
     ],
     plan: null,
-    presets: [
-      record({ id: "grammar-1", kind: "grammar", label: "Past Simple", category: "时态", sortOrder: 0, archivedAt: null }),
-      record({ id: "grammar-2", kind: "grammar", label: "Wh- Questions", category: "句型", sortOrder: 1, archivedAt: null }),
-      record({ id: "grammar-3", kind: "grammar", label: "Present Perfect", category: "时态", sortOrder: 2, archivedAt: null }),
+    knowledgePoints: [
+      record({ id: "grammar-1", title: "Past Simple", sortOrder: 0, section: { officialTitle: "Present and past" }, bookEdition: { title: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2" }, units: [{ unitNumber: 5, officialTitle: "Past simple" }] }),
+      record({ id: "grammar-2", title: "Wh- Questions", sortOrder: 1, section: { officialTitle: "Questions" }, bookEdition: { title: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2" }, units: [{ unitNumber: 49, officialTitle: "Questions 1" }] }),
+      record({ id: "grammar-3", title: "Present Perfect", sortOrder: 2, section: { officialTitle: "Present perfect and past" }, bookEdition: { title: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2" }, units: [{ unitNumber: 7, officialTitle: "Present perfect 1" }] }),
     ],
     contentExists: false,
   };
@@ -101,8 +101,8 @@ function createDb() {
         return state.plan;
       }),
     },
-    presetOption: {
-      findMany: vi.fn(async () => state.presets),
+    knowledgePoint: {
+      findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => state.knowledgePoints.filter((point) => where.id.in.includes(String(point.id)))),
     },
     courseLessonContent: {
       findUnique: vi.fn(async () => state.contentExists ? { courseId: "course-1" } : null),
@@ -123,7 +123,8 @@ describe("teaching plan repository", () => {
 
     expect(state.course.currentStage).toBe("teaching_plan");
     expect(state.outline.chapters.map((chapter) => chapter.title)).toEqual(["发光地图", "蓝色书页"]);
-    expect(state.knowledgePoints.map((point) => point.label)).toEqual(["Past Simple", "Wh- Questions", "Present Perfect"]);
+    expect(state.knowledgePoints.map((point) => point.label)).toEqual(["Past Simple", "Wh- Questions"]);
+    expect(state.knowledgePoints[0]).toMatchObject({ bookTitle: "English Grammar in Use", edition: "5th Edition", unitStart: 5, unitEnd: 5 });
     expect(state.plan.status).toBe("draft");
     expect(state.plan.mainIdeaTargetWordCount).toBe(120);
     expect(state.plan.englishLevel).toBe("B1");
@@ -170,7 +171,7 @@ describe("teaching plan repository", () => {
     const initial = await getTeachingPlanState(db, "course-1");
     const edited = completePlan(initial.plan);
     edited.chapters[0].targetWordCount = 200;
-    edited.chapters[0].knowledgePointIds = ["grammar-3"];
+    edited.chapters[0].knowledgePointIds = ["grammar-2"];
     await saveTeachingPlan(db, "course-1", edited);
     db.state.course = { ...db.state.course, currentStage: "content" };
     db.state.contentExists = true;
@@ -208,15 +209,13 @@ describe("teaching plan repository", () => {
     expect(db.courseLessonContent?.deleteMany).not.toHaveBeenCalled();
   });
 
-  test("allows teachers to add an active grammar point outside the Step 1 AI scope", async () => {
+  test("rejects knowledge points outside the Step 1 selection", async () => {
     const db = createDb();
     const state = await getTeachingPlanState(db, "course-1");
     const plan = completePlan(state.plan);
     plan.chapters[0].knowledgePointIds.push("grammar-3");
 
-    const saved = await saveTeachingPlan(db, "course-1", plan);
-
-    expect(saved.chapters[0].knowledgePointIds).toContain("grammar-3");
+    await expect(saveTeachingPlan(db, "course-1", plan)).rejects.toThrow("知识点只能从第一步已选范围中分配。");
   });
 
   test("fills missing exercise fields with the current defaults when reading a saved plan", async () => {

@@ -37,6 +37,7 @@ type DbCourse = {
   title: string;
   durationMinutes: number;
   englishLevel: CourseAudienceInput["englishLevel"] | null;
+  grammarBookEditionId: string | null;
   knowledgePointIds: unknown;
   lifecycleStatus: CourseLifecycleStatus;
   currentStage: CourseStage;
@@ -52,6 +53,7 @@ type CourseCreateData = {
   title: string;
   durationMinutes: number;
   englishLevel: CourseAudienceInput["englishLevel"];
+  grammarBookEditionId: string;
   knowledgePointIds: string[];
   lifecycleStatus: "draft";
   currentStage: "story_outline";
@@ -74,6 +76,9 @@ type CoursePersonLookup = {
 export type CoursesDb = {
   course: CourseDelegate;
   person: CoursePersonLookup;
+  grammarBookEdition: { findUnique: (query: { where: { id: string }; select?: unknown }) => Promise<{ id: string } | null> };
+  knowledgePoint: { findMany: (query: { where: unknown; select?: unknown }) => Promise<Array<{ id: string }>> };
+  presetOption?: { findMany: (query: { where: { id: { in: string[] } }; select: unknown }) => Promise<Array<{ id: string; label: string; labelZh: string | null; category: string | null }>> };
   $transaction?: <T>(callback: (tx: CoursesDb) => Promise<T>) => Promise<T>;
 };
 
@@ -95,6 +100,20 @@ export class CourseAudienceConflictError extends Error {
   constructor(message = "修改授课对象会使后续内容保留为旧版本") {
     super(message);
     this.name = "CourseAudienceConflictError";
+  }
+}
+
+export class CourseGrammarSelectionError extends Error {
+  constructor(message = "所选知识点不属于当前 Grammar in Use 书籍") {
+    super(message);
+    this.name = "CourseGrammarSelectionError";
+  }
+}
+
+export class CourseLegacyReadOnlyError extends Error {
+  constructor(message = "旧课程仅支持查看、预览和发布") {
+    super(message);
+    this.name = "CourseLegacyReadOnlyError";
   }
 }
 
@@ -127,6 +146,22 @@ async function snapshots(db: CoursesDb, input: CourseAudienceInput) {
   }));
 }
 
+async function validateGrammarSelection(db: CoursesDb, input: CourseAudienceInput) {
+  const [book, points] = await Promise.all([
+    db.grammarBookEdition.findUnique({ where: { id: input.grammarBookEditionId }, select: { id: true } }),
+    db.knowledgePoint.findMany({
+      where: {
+        id: { in: input.knowledgePointIds },
+        source: "grammar_in_use",
+        bookEditionId: input.grammarBookEditionId,
+      },
+      select: { id: true },
+    }),
+  ]);
+  if (!book) throw new CourseGrammarSelectionError("所选 Grammar in Use 书籍不存在");
+  if (points.length !== input.knowledgePointIds.length) throw new CourseGrammarSelectionError();
+}
+
 function mutationResult(course: DbCourse) {
   return { id: course.id, lifecycleStatus: course.lifecycleStatus, currentStage: course.currentStage, staleFromStage: course.staleFromStage ?? null };
 }
@@ -136,12 +171,14 @@ export async function createCourse(db: CoursesDb, input: CourseAudienceInput, id
   if (existing) return mutationResult(existing);
 
   const create = async (tx: CoursesDb) => {
+    await validateGrammarSelection(tx, input);
     const people = await snapshots(tx, input);
     const course = await tx.course.create({
       data: {
         title: input.title.trim(),
         durationMinutes: input.durationMinutes,
         englishLevel: input.englishLevel,
+        grammarBookEditionId: input.grammarBookEditionId,
         knowledgePointIds: input.knowledgePointIds,
         lifecycleStatus: "draft",
         currentStage: "story_outline",
@@ -167,12 +204,14 @@ export async function updateCourseAudience(
 ) {
   const current = await db.course.findUnique({ where: { id }, include: { people: true } });
   if (!current) throw new CourseNotFoundError();
+  if (!current.grammarBookEditionId) throw new CourseLegacyReadOnlyError();
   const currentPeople = current.people ?? [];
   const currentTeacher = currentPeople.find((person) => person.role === "teacher")?.personId;
   const currentStudents = currentPeople.filter((person) => person.role === "student").map((person) => person.personId).sort();
   const nextStudents = uniqueIds(input.studentIds).sort();
   const keyInputsChanged = current.durationMinutes !== input.durationMinutes
     || current.englishLevel !== input.englishLevel
+    || current.grammarBookEditionId !== input.grammarBookEditionId
     || !sameIds(Array.isArray(current.knowledgePointIds) ? current.knowledgePointIds.filter((id): id is string => typeof id === "string").sort() : [], [...input.knowledgePointIds].sort())
     || currentTeacher !== input.teacherId
     || !sameIds(currentStudents, nextStudents);
@@ -185,6 +224,7 @@ export async function updateCourseAudience(
   }
 
   const update = async (tx: CoursesDb) => {
+    await validateGrammarSelection(tx, input);
     const people = await snapshots(tx, input);
     const course = await tx.course.update({
       where: { id },
@@ -192,6 +232,7 @@ export async function updateCourseAudience(
         title: input.title.trim(),
         durationMinutes: input.durationMinutes,
         englishLevel: input.englishLevel,
+        grammarBookEditionId: input.grammarBookEditionId,
         knowledgePointIds: input.knowledgePointIds,
         currentStage: hasDownstream ? current.currentStage : "story_outline",
         staleFromStage: hasDownstream ? "story_outline" : null,
@@ -258,12 +299,34 @@ export async function getCourseAudience(db: CoursesDb, id: string): Promise<Cour
   });
   if (!course) throw new CourseNotFoundError();
 
+  const knowledgePointIds = Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((pointId): pointId is string => typeof pointId === "string") : [];
+  const legacyRows = !course.grammarBookEditionId && knowledgePointIds.length && db.presetOption
+    ? await db.presetOption.findMany({
+        where: { id: { in: knowledgePointIds } },
+        select: { id: true, label: true, labelZh: true, category: true },
+      })
+    : [];
+  const legacyById = new Map(legacyRows.map((point) => [point.id, point]));
+  const legacyKnowledgePoints = !course.grammarBookEditionId
+    ? knowledgePointIds.map((pointId) => {
+        const point = legacyById.get(pointId);
+        return point ? {
+          id: point.id,
+          label: point.label,
+          ...(point.labelZh ? { labelZh: point.labelZh } : {}),
+          ...(point.category ? { category: point.category } : {}),
+        } : { id: pointId, label: pointId };
+      })
+    : undefined;
+
   return {
     id: course.id,
     title: course.title,
     durationMinutes: course.durationMinutes as 30 | 45 | 60,
     englishLevel: course.englishLevel,
-    knowledgePointIds: Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [],
+    grammarBookEditionId: course.grammarBookEditionId ?? null,
+    knowledgePointIds,
+    ...(legacyKnowledgePoints ? { legacyKnowledgePoints } : {}),
     lifecycleStatus: course.lifecycleStatus,
     currentStage: course.currentStage,
     people: (course.people ?? []).map((snapshot) => {

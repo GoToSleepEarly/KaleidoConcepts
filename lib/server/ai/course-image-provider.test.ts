@@ -22,6 +22,16 @@ describe("course image provider", () => {
     expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer image-key");
   });
 
+  test("QuickRouter 图片请求使用账号选择的直连地址", async () => {
+    process.env.QUICKROUTER_IMAGE_API_KEY = "image-key";
+    const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/image.webp" }] }));
+    vi.stubGlobal("fetch", request);
+
+    await createCourseImageProvider(undefined, { aiGateway: "quickrouter", quickRouterEndpoint: "direct" }).generate({ prompt: "scene", quality: "low" });
+
+    expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.quickrouter.us/v1/images/generations");
+  });
+
   test("缺少独立生图 token 时返回配置错误", () => {
     delete process.env.QUICKROUTER_IMAGE_API_KEY;
 

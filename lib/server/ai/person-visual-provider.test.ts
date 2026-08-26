@@ -24,6 +24,16 @@ describe("person visual provider", () => {
     expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer image-key");
   });
 
+  test("QuickRouter 人物形象请求使用账号选择的直连地址", async () => {
+    process.env.QUICKROUTER_IMAGE_API_KEY = "image-key";
+    const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/person.webp" }] }));
+    vi.stubGlobal("fetch", request);
+
+    await createPersonVisualProvider(undefined, { aiGateway: "quickrouter", quickRouterEndpoint: "direct" }).generate({ prompt: "full body" });
+
+    expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.quickrouter.us/v1/images/generations");
+  });
+
   test("非固定按张收费模型的人物造型保持 low", async () => {
     process.env.QUICKROUTER_IMAGE_API_KEY = "image-key";
     process.env.QUICKROUTER_IMAGE_QUALITY = "high";

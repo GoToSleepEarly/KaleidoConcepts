@@ -70,7 +70,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(generateOutlineMock.mock.calls.at(-1)?.[0].prompt).toContain("引用对应 KP 短键");
   });
 
-  test("uses a soft two-per-chapter baseline instead of defaulting to one knowledge point per chapter", async () => {
+  test("uses a soft chapter capacity and permits naturally empty recommendations", async () => {
     await createStoryOutlineGenerationDeps().generateOutline({
       task: "生成三章故事大纲。",
       references: [],
@@ -86,7 +86,8 @@ describe("createStoryOutlineGenerationDeps", () => {
     });
 
     const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(prompt).toContain("通常每章推荐 2 个知识点，每章最多 3 个");
+    expect(prompt).toContain("有自然语境的章节通常推荐 1–2 个知识点，每章最多 3 个");
+    expect(prompt).toContain("某章没有自然语境时允许返回空数组");
     expect(prompt).toContain("知识点覆盖软基准：全课优先覆盖 6 个不同知识点");
     expect(prompt).toContain("不是必须凑满的硬校验");
   });

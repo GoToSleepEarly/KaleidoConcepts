@@ -12,6 +12,7 @@ model User {
   password    String
   displayName String
   aiGateway   AiGateway @default(quickrouter)
+  quickRouterEndpoint QuickRouterEndpoint @default(main)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -73,6 +74,7 @@ model Course {
   title           String
   durationMinutes Int
   englishLevel    EnglishLevel?
+  grammarBookEditionId String?
   knowledgePointIds Json             @default("[]")
   lifecycleStatus CourseLifecycle @default(draft)
   currentStage    CourseStage     @default(audience)
@@ -99,8 +101,59 @@ model Course {
   visualImageSlots CourseVisualImageSlot[]
   images CourseImage[]
   presentation CoursePresentation?
+  grammarBookEdition GrammarBookEdition? @relation(fields: [grammarBookEditionId], references: [id], onDelete: Restrict)
 
   @@index([lifecycleStatus, updatedAt])
+}
+
+model GrammarBookEdition {
+  id            String             @id
+  title         String
+  edition       String
+  officialLevel String
+  sortOrder     Int
+  sections      GrammarSection[]
+  knowledgePoints KnowledgePoint[]
+  courses       Course[]
+
+  @@index([sortOrder])
+}
+
+model GrammarSection {
+  id            String             @id
+  bookEditionId String
+  officialTitle String
+  sortOrder     Int
+  bookEdition   GrammarBookEdition @relation(fields: [bookEditionId], references: [id], onDelete: Cascade)
+  knowledgePoints KnowledgePoint[]
+
+  @@unique([bookEditionId, sortOrder])
+  @@index([bookEditionId, sortOrder])
+}
+
+model KnowledgePoint {
+  id            String               @id
+  source        KnowledgePointSource
+  bookEditionId String?
+  sectionId     String?
+  title         String
+  sortOrder     Int
+  bookEdition   GrammarBookEdition?  @relation(fields: [bookEditionId], references: [id], onDelete: Restrict)
+  section       GrammarSection?      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  units         GrammarKnowledgePointUnit[]
+
+  @@index([source, bookEditionId, sortOrder])
+  @@index([sectionId, sortOrder])
+}
+
+model GrammarKnowledgePointUnit {
+  knowledgePointId String
+  unitNumber       Int
+  officialTitle    String
+  knowledgePoint   KnowledgePoint @relation(fields: [knowledgePointId], references: [id], onDelete: Cascade)
+
+  @@id([knowledgePointId, unitNumber])
+  @@index([unitNumber])
 }
 
 model CoursePerson {
@@ -471,6 +524,11 @@ enum AiGateway {
   crazyrouter
 }
 
+enum QuickRouterEndpoint {
+  main
+  direct
+}
+
 enum PersonRole {
   student
   teacher
@@ -519,6 +577,11 @@ enum PresetOptionKind {
   story_type
   story_tone
   grammar
+}
+
+enum KnowledgePointSource {
+  legacy
+  grammar_in_use
 }
 
 enum StoryWritingProvider {

@@ -53,6 +53,13 @@ export class PresetNotFoundError extends Error {
   }
 }
 
+export class PresetReadOnlyError extends Error {
+  constructor(message = "语法知识点为系统内置数据，不支持修改") {
+    super(message);
+    this.name = "PresetReadOnlyError";
+  }
+}
+
 function normalizeOptionalText(value: string | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
@@ -84,6 +91,7 @@ export async function listPresets(db: PresetsDb, options: { kind?: PresetKind } 
 }
 
 export async function createPreset(db: PresetsDb, input: PresetOptionInput) {
+  if (input.kind === "grammar") throw new PresetReadOnlyError();
   const label = input.label.trim();
 
   const existing = await db.presetOption.findFirst({
@@ -127,6 +135,7 @@ export async function updatePreset(db: PresetsDb, id: string, input: PresetOptio
   if (!current || current.archivedAt) {
     throw new PresetNotFoundError();
   }
+  if (current.kind === "grammar") throw new PresetReadOnlyError();
 
   const label = input.label.trim();
 
@@ -156,6 +165,7 @@ export async function archivePreset(db: PresetsDb, id: string) {
   if (!current || current.archivedAt) {
     throw new PresetNotFoundError();
   }
+  if (current.kind === "grammar") throw new PresetReadOnlyError();
 
   await db.presetOption.update({
     where: { id },

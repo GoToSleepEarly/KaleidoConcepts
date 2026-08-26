@@ -90,8 +90,8 @@ function pointKeyMap(state: TeachingPlanState) {
 }
 
 function promptPoints(state: TeachingPlanState, ids: string[]) {
-  const keys = new Map(state.knowledgePoints.map((point, index) => [point.id, { key: `KP${index + 1}`, label: point.label }]));
-  return ids.map((id) => keys.get(id)).filter((point): point is { key: string; label: string } => Boolean(point));
+  const keys = new Map(state.knowledgePoints.map((point, index) => [point.id, { key: `KP${index + 1}`, label: point.label, category: point.category, bookTitle: point.bookTitle, edition: point.edition, officialLevel: point.officialLevel, unitStart: point.unitStart, unitEnd: point.unitEnd, sourceUnits: point.units }]));
+  return ids.map((id) => keys.get(id)).filter((point): point is NonNullable<ReturnType<typeof keys.get>> => Boolean(point));
 }
 
 function knowledgePointLabels(knowledgePoints: Array<{ id: string; label: string }>, ids: string[]) {
@@ -231,7 +231,7 @@ function toState(state: TeachingPlanState, content: ContentRecord, messages: Mes
   return {
     course: { id: state.course.id, title: state.course.title, currentStage: state.course.currentStage, staleFromStage: state.course.staleFromStage ?? null, englishLevel: state.course.englishLevel! },
     storyTitle: state.outline.title,
-    knowledgePoints: state.knowledgePoints.map(({ id, label }) => ({ id, label })),
+    knowledgePoints: state.knowledgePoints,
     chapterKnowledgePointIds: Object.fromEntries(state.plan.chapters.map((chapter) => [chapter.outlineChapterId, chapter.knowledgePointIds])),
     homeworkKnowledgePointIds: state.plan.afterClassPractice.knowledgePointIds,
     status: content.status,

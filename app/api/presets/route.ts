@@ -6,21 +6,17 @@ import { createPreset, listPresets, PresetConflictError } from "@/lib/server/rep
 import type { PresetKind } from "@/lib/contracts/api";
 
 const presetInputSchema = z.object({
-  kind: z.enum(["theme", "story_type", "story_tone", "grammar"]),
+  kind: z.enum(["theme", "story_type", "story_tone"]),
   label: z.string().trim().min(1),
   labelZh: z.string().trim().optional(),
   category: z.string().trim().min(1),
-}).superRefine((value, context) => {
-  if (value.kind === "grammar" && !value.labelZh) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["labelZh"], message: "请填写语法点中文名称" });
-  }
 });
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const kindParam = searchParams.get("kind");
 
-  if (kindParam && !["theme", "story_type", "story_tone", "grammar"].includes(kindParam)) {
+  if (kindParam && !["theme", "story_type", "story_tone"].includes(kindParam)) {
     return NextResponse.json({ message: "预设类型无效" }, { status: 400 });
   }
 

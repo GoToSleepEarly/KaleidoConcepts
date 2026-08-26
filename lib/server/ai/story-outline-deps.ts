@@ -8,7 +8,7 @@ import type {
 
 import { devAiLog } from "./dev-ai-log";
 import { createStoryOutlineProvider } from "./story-outline-provider";
-import type { AiGateway } from "@/lib/ai-gateway";
+import type { AiProviderSettingsInput } from "@/lib/ai-gateway";
 
 export class StoryAlignmentResponseError extends Error {
   readonly status = 502;
@@ -92,7 +92,7 @@ type StoryPromptContext = {
   currentOutline: unknown;
   englishLevel?: string;
   durationMinutes?: 30 | 45 | 60;
-  selectedKnowledgePoints?: Array<{ id: string; label: string; category?: string }>;
+  selectedKnowledgePoints?: Array<{ id: string; label: string; category?: string; bookTitle?: string; edition?: string; officialLevel?: string; unitStart?: number; unitEnd?: number; units?: Array<{ unitNumber: number; officialTitle: string }> }>;
   confirmedRequirement?: string;
   storyMode?: "faithful" | "new_story";
   classroomPresence?: "observer" | "participant" | "absent";
@@ -152,6 +152,12 @@ function knowledgePointOptions(input: Pick<StoryPromptContext, "selectedKnowledg
     key: `KP${index + 1}`,
     label: point.label,
     category: point.category,
+    bookTitle: point.bookTitle,
+    edition: point.edition,
+    officialLevel: point.officialLevel,
+    unitStart: point.unitStart,
+    unitEnd: point.unitEnd,
+    sourceUnits: point.units,
     id: point.id,
   }));
 }
@@ -711,9 +717,9 @@ function parseAlignmentDecision(
   return result;
 }
 
-export function createStoryOutlineGenerationDeps(aiGateway: AiGateway = "quickrouter") {
+export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInput = "quickrouter") {
   let provider: ReturnType<typeof createStoryOutlineProvider> | null = null;
-  const client = () => (provider ??= createStoryOutlineProvider(undefined, aiGateway));
+  const client = () => (provider ??= createStoryOutlineProvider(undefined, settings));
   return {
     alignRequirements: async (input: StoryPromptContext & { task: string; replyContext?: "initial" | "requirement_change"; needsBackgroundRefresh?: boolean }): Promise<AlignmentDecision> => {
       let { text } = await client().generateOutline({
@@ -1027,7 +1033,7 @@ export function createStoryOutlineGenerationDeps(aiGateway: AiGateway = "quickro
       requiredNamedCharacters?: string[];
       englishLevel?: string;
       durationMinutes?: 30 | 45 | 60;
-      selectedKnowledgePoints?: Array<{ id: string; label: string; category?: string }>;
+      selectedKnowledgePoints?: StoryPromptContext["selectedKnowledgePoints"];
     }) => {
       const referenceOptions = storyReferenceOptions(input.references);
       const referenceByKey = new Map(referenceOptions.map((reference) => [reference.key, reference]));
@@ -1062,8 +1068,8 @@ export function createStoryOutlineGenerationDeps(aiGateway: AiGateway = "quickro
           "引用角色只保留已选故事方向实际使用的引用角色；参考资料中的其他候选角色不得自动进入 characters。老师明确点名且要求出场的引用角色仍须全部保留。",
           "chapters 每项字段为 order, title:{zh,en}, whatHappens, characterKeys, recommendedKnowledgePointKeys, knowledgePointRecommendationSummary；characterKeys 只能引用 characters 中的 key。章节数量必须等于指定章节数。",
           ...outlineStoryQualityRules(input),
-          "全部章节剧情完成后再从全课视角统一规划知识点分布。每章至少推荐 1 个知识点；recommendedKnowledgePointKeys 只能逐字复制“全课可选知识点”中的 key（例如 KP1），不要返回数据库 id、知识点名称或自行创造 key。",
-          "推荐数量使用软容量基准：通常每章推荐 2 个知识点，每章最多 3 个；只有本章确实找不到两个能够自然共存的表达语境时才保留 1 个，不要默认每章只选 1 个。",
+          "全部章节剧情完成后再从全课视角统一规划知识点分布。recommendedKnowledgePointKeys 只能逐字复制“全课可选知识点”中的 key（例如 KP1），不要返回数据库 id、知识点名称或自行创造 key。某章没有自然语境时允许返回空数组，并把 knowledgePointRecommendationSummary 留空；不得为覆盖知识点改写剧情。",
+          "有自然语境的章节通常推荐 1–2 个知识点，每章最多 3 个；书籍、版本、官方难度、Section 与 Unit 来源用于理解语法范围和相邻 Unit 差异，不得作为必须出现的硬约束。",
           ...(knowledgePointCoverageTarget ? [`知识点覆盖软基准：全课优先覆盖 ${knowledgePointCoverageTarget} 个不同知识点。这是自然适配后的选择目标，不是必须凑满的硬校验；无法自然使用时允许少于该数量，也不得为达到数量改写剧情。`] : []),
           "知识点分布优先考虑本章表达适配性、同章知识点能否在同一语境中自然共存、英语难度与课程时长承载能力，再覆盖老师选择的多样知识点；不得为了平均分配强行组合。同一知识点可以在多章复用，但复用不应挤占其他同样自然适配的知识点。knowledgePointRecommendationSummary 用一条精简中文逐个引用对应 KP 短键并说明使用语境；多个知识点还要说明如何自然配合，无法说明时不要同时推荐。不要生成词数、题型或题量。",
           input.storyMode === "faithful"

@@ -1,5 +1,5 @@
 import { authenticatedUserId } from "@/lib/auth-cookie";
-import type { AiGateway } from "@/lib/ai-gateway";
+import type { AiProviderSettings } from "@/lib/ai-gateway";
 import { getDb } from "@/lib/server/db";
 import type { AuthDb } from "@/lib/server/repositories/auth";
 
@@ -13,11 +13,14 @@ export class AiGatewayAuthenticationError extends Error {
 export async function aiGatewayFromRequest(
   request: Request,
   db: { user: Pick<AuthDb["user"], "findUnique"> } = getDb(),
-): Promise<AiGateway> {
+): Promise<AiProviderSettings> {
   const userId = authenticatedUserId(request);
   if (!userId) throw new AiGatewayAuthenticationError();
 
   const user = await db.user.findUnique({ where: { id: userId } });
   if (!user) throw new AiGatewayAuthenticationError();
-  return user.aiGateway;
+  return {
+    aiGateway: user.aiGateway,
+    quickRouterEndpoint: user.quickRouterEndpoint,
+  };
 }

@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/server/db";
 import {
   CourseAudienceConflictError,
+  CourseGrammarSelectionError,
+  CourseLegacyReadOnlyError,
   CourseNotFoundError,
   CoursePersonValidationError,
   getCourseAudience,
@@ -38,6 +40,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ message: error.message, requiresReset: true, affectedResources }, { status: 409 });
     }
     if (error instanceof CoursePersonValidationError) return NextResponse.json({ message: error.message }, { status: 409 });
+    if (error instanceof CourseGrammarSelectionError) return NextResponse.json({ message: error.message }, { status: 400 });
+    if (error instanceof CourseLegacyReadOnlyError) return NextResponse.json({ message: error.message }, { status: 403 });
     return NextResponse.json({ message: "授课对象保存失败" }, { status: 500 });
   }
 }

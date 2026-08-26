@@ -103,6 +103,24 @@ describe("teaching plan validation", () => {
     expect(() => validateTeachingPlanForConfirm(completePlan(), outlineChapters.map((chapter) => chapter.id))).not.toThrow();
   });
 
+  test("allows a chapter without grammar points but requires at least one point in the course", () => {
+    const chapters = [outlineChapters[0], { ...outlineChapters[1], recommendedKnowledgePointIds: [] }];
+    const draft = buildTeachingPlanDraft({ courseId: "course-1", englishLevel: "B1", durationMinutes: 45, chapters, updatedAt: "2026-08-26T00:00:00.000Z" });
+    const plan = completePlan({
+      chapters: draft.chapters.map((chapter, index) => index === 0
+        ? { ...chapter, targetWordCount: 120 }
+        : { ...chapter, targetWordCount: 120, knowledgePointIds: [] }),
+      afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { knowledgePointIds: false, practice: false } },
+    });
+
+    expect(draft.chapters[1].readingExercises).toEqual({ enabled: true, grammar: { optionCloze: 0, wordForm: 0 }, vocabulary: { chineseHint: 3 } });
+    expect(() => validateTeachingPlanForConfirm(plan, chapters.map((chapter) => chapter.id))).not.toThrow();
+
+    plan.chapters[0] = { ...plan.chapters[0], knowledgePointIds: [], readingExercises: draft.chapters[1].readingExercises, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } } };
+    expect(() => validateTeachingPlanForConfirm(plan, chapters.map((chapter) => chapter.id)))
+      .toThrow(new TeachingPlanValidationError("整门课程至少需要分配 1 个知识点。"));
+  });
+
   test("requires English level before confirmation", () => {
     expect(() => validateTeachingPlanForConfirm(completePlan({ englishLevel: null }), outlineChapters.map((chapter) => chapter.id)))
       .toThrow(new TeachingPlanValidationError("请选择英语难度。"));

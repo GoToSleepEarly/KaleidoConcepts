@@ -31,12 +31,14 @@ describe("Dialog", () => {
     );
 
     expect(screen.getByRole("dialog")).toHaveClass(
+      "z-modal",
       "left-1/2",
       "top-1/2",
       "-translate-x-1/2",
       "-translate-y-1/2",
       "w-[min(92vw,560px)]",
     );
+    expect(screen.getByRole("dialog").parentElement).toHaveClass("z-modal");
   });
 
   test("keeps modal dialogs inside phone safe areas with a sheet layout", () => {

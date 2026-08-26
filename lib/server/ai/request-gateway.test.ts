@@ -10,12 +10,13 @@ describe("aiGatewayFromRequest", () => {
       password: "secret",
       displayName: "Teacher",
       aiGateway: "crazyrouter",
+      quickRouterEndpoint: "direct",
     });
     const request = new Request("http://localhost/api/test", {
       headers: { cookie: "kaleido.user-id=teacher-1; theme=dark" },
     });
 
-    await expect(aiGatewayFromRequest(request, { user: { findUnique } })).resolves.toBe("crazyrouter");
+    await expect(aiGatewayFromRequest(request, { user: { findUnique } })).resolves.toEqual({ aiGateway: "crazyrouter", quickRouterEndpoint: "direct" });
     expect(findUnique).toHaveBeenCalledWith({ where: { id: "teacher-1" } });
   });
 
@@ -27,13 +28,14 @@ describe("aiGatewayFromRequest", () => {
       password: "secret",
       displayName: "Teacher",
       aiGateway,
+      quickRouterEndpoint: "main",
     }));
     const db = { user: { findUnique } };
     const request = new Request("http://localhost/api/test", { headers: { cookie: "kaleido.user-id=teacher-1" } });
 
-    await expect(aiGatewayFromRequest(request, db)).resolves.toBe("quickrouter");
+    await expect(aiGatewayFromRequest(request, db)).resolves.toEqual({ aiGateway: "quickrouter", quickRouterEndpoint: "main" });
     aiGateway = "crazyrouter";
-    await expect(aiGatewayFromRequest(request, db)).resolves.toBe("crazyrouter");
+    await expect(aiGatewayFromRequest(request, db)).resolves.toEqual({ aiGateway: "crazyrouter", quickRouterEndpoint: "main" });
     expect(findUnique).toHaveBeenCalledTimes(2);
   });
 

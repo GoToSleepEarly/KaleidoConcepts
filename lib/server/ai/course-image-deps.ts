@@ -1,11 +1,13 @@
 import { createCourseImageProvider } from "@/lib/server/ai/course-image-provider";
 import { imageQualityForModel } from "@/lib/server/ai/image-model-capabilities";
-import type { AiGateway } from "@/lib/ai-gateway";
+import { normalizeAiProviderSettings, type AiProviderSettingsInput } from "@/lib/ai-gateway";
 import { loadCourseImageReferences, persistCourseImage, removeTemporaryCourseImage } from "@/lib/server/storage/course-images";
 
-export function createCourseImageGenerationDeps(aiGateway: AiGateway = "quickrouter") {
+export function createCourseImageGenerationDeps(input: AiProviderSettingsInput = "quickrouter") {
+  const settings = normalizeAiProviderSettings(input);
+  const aiGateway = settings.aiGateway;
   let provider: ReturnType<typeof createCourseImageProvider> | null = null;
-  const client = () => (provider ??= createCourseImageProvider(undefined, aiGateway));
+  const client = () => (provider ??= createCourseImageProvider(undefined, settings));
   const model = aiGateway === "crazyrouter"
     ? process.env.CRAZYROUTER_IMAGE_MODEL || "gpt-image-2"
     : process.env.QUICKROUTER_IMAGE_MODEL || "gpt-image-2";

@@ -2,17 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getDb } from "@/lib/server/db";
-import { archivePreset, PresetConflictError, PresetNotFoundError, updatePreset } from "@/lib/server/repositories/presets";
+import { archivePreset, PresetConflictError, PresetNotFoundError, PresetReadOnlyError, updatePreset } from "@/lib/server/repositories/presets";
 
 const presetInputSchema = z.object({
-  kind: z.enum(["theme", "story_type", "story_tone", "grammar"]),
+  kind: z.enum(["theme", "story_type", "story_tone"]),
   label: z.string().trim().min(1),
   labelZh: z.string().trim().optional(),
   category: z.string().trim().min(1),
-}).superRefine((value, context) => {
-  if (value.kind === "grammar" && !value.labelZh) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["labelZh"], message: "请填写语法点中文名称" });
-  }
 });
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -35,6 +31,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ message: error.message }, { status: 409 });
     }
 
+    if (error instanceof PresetReadOnlyError) return NextResponse.json({ message: error.message }, { status: 403 });
+
     return NextResponse.json({ message: "预设保存失败" }, { status: 500 });
   }
 }
@@ -49,6 +47,8 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     if (error instanceof PresetNotFoundError) {
       return NextResponse.json({ message: error.message }, { status: 404 });
     }
+
+    if (error instanceof PresetReadOnlyError) return NextResponse.json({ message: error.message }, { status: 403 });
 
     return NextResponse.json({ message: "预设删除失败" }, { status: 500 });
   }

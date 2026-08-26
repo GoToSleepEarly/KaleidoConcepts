@@ -1,5 +1,5 @@
 import type { CourseImageQuality } from "@/lib/contracts/api";
-import type { AiGateway } from "@/lib/ai-gateway";
+import { aiProviderBaseUrl, normalizeAiProviderSettings, type AiGateway, type AiProviderSettingsInput } from "@/lib/ai-gateway";
 import { devAiLog } from "./dev-ai-log";
 import { imageQualityForModel } from "./image-model-capabilities";
 
@@ -13,7 +13,9 @@ type ProviderConfig = { apiKey: string; model: string; timeoutMs: number; retryD
 
 const FALLBACK_MODEL = "gpt-image-2-c";
 
-function configFromEnvironment(gateway: AiGateway): ProviderConfig {
+function configFromEnvironment(input: AiProviderSettingsInput): ProviderConfig {
+  const settings = normalizeAiProviderSettings(input);
+  const gateway = settings.aiGateway;
   const isCrazyrouter = gateway === "crazyrouter";
   const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_API_KEY : process.env.QUICKROUTER_IMAGE_API_KEY;
   if (!apiKey) throw new Error("图片生成服务尚未配置");
@@ -21,7 +23,7 @@ function configFromEnvironment(gateway: AiGateway): ProviderConfig {
   return {
     apiKey,
     gateway,
-    baseUrl: isCrazyrouter ? "https://api.crazyrouter.com" : "https://api.quickrouter.ai",
+    baseUrl: aiProviderBaseUrl(settings),
     model: isCrazyrouter ? process.env.CRAZYROUTER_IMAGE_MODEL || "gpt-image-2" : process.env.QUICKROUTER_IMAGE_MODEL || "gpt-image-2",
     timeoutMs: Number.isFinite(timeoutValue) && timeoutValue > 0 ? timeoutValue : 600_000,
   };
@@ -46,8 +48,8 @@ function resultImage(data: ProviderResponse) {
   return null;
 }
 
-export function createCourseImageProvider(config?: ProviderConfig, selectedGateway: AiGateway = "quickrouter") {
-  const resolved = { gateway: "quickrouter" as AiGateway, baseUrl: "https://api.quickrouter.ai", ...(config ?? configFromEnvironment(selectedGateway)) };
+export function createCourseImageProvider(config?: ProviderConfig, selectedSettings: AiProviderSettingsInput = "quickrouter") {
+  const resolved = { gateway: "quickrouter" as AiGateway, baseUrl: "https://api.quickrouter.ai", ...(config ?? configFromEnvironment(selectedSettings)) };
   const { apiKey, model, timeoutMs, gateway, baseUrl } = resolved;
 
   function isUpstreamSaturated(response: Response, data: ProviderResponse) {

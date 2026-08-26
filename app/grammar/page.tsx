@@ -1,10 +1,10 @@
 import { ProtectedLayout } from "@/components/protected-layout";
-import { PresetLibrary } from "@/features/presets/components/preset-library";
+import { GrammarKnowledgeLibrary } from "@/features/grammar/components/grammar-knowledge-library";
 
 export default function GrammarPage() {
   return (
     <ProtectedLayout>
-      <PresetLibrary kind="grammar" />
+      <GrammarKnowledgeLibrary />
     </ProtectedLayout>
   );
 }

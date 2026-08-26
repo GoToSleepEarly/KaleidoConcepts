@@ -1,5 +1,5 @@
 import type { StoryWritingProvider } from "@/lib/contracts/api";
-import type { AiGateway } from "@/lib/ai-gateway";
+import { aiProviderBaseUrl, normalizeAiProviderSettings, type AiGateway, type AiProviderSettingsInput } from "@/lib/ai-gateway";
 
 import { devAiLog } from "./dev-ai-log";
 
@@ -66,7 +66,9 @@ export class StoryOutlineProviderConfigError extends Error {
   }
 }
 
-function configFromEnvironment(gateway: AiGateway): ProviderConfig {
+function configFromEnvironment(input: AiProviderSettingsInput): ProviderConfig {
+  const settings = normalizeAiProviderSettings(input);
+  const gateway = settings.aiGateway;
   const isCrazyrouter = gateway === "crazyrouter";
   const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_API_KEY : process.env.QUICKROUTER_TEXT_API_KEY;
   if (!apiKey) throw new StoryOutlineProviderConfigError();
@@ -74,7 +76,7 @@ function configFromEnvironment(gateway: AiGateway): ProviderConfig {
   return {
     apiKey,
     gateway,
-    baseUrl: isCrazyrouter ? "https://api.crazyrouter.com" : "https://api.quickrouter.ai",
+    baseUrl: aiProviderBaseUrl(settings),
     gptModel: isCrazyrouter
       ? process.env.CRAZYROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol"
       : process.env.QUICKROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol",
@@ -167,10 +169,10 @@ function canRetryBeforeConnection(error: unknown) {
   return code !== null && RETRYABLE_CONNECT_CODES.has(code);
 }
 
-export function createStoryOutlineProvider(config?: ProviderConfig, selectedGateway: AiGateway = "quickrouter") {
+export function createStoryOutlineProvider(config?: ProviderConfig, selectedSettings: AiProviderSettingsInput = "quickrouter") {
   function resolvedConfig() {
     if (config) return { baseUrl: "https://api.quickrouter.ai", gateway: "quickrouter" as const, ...config };
-    return configFromEnvironment(selectedGateway);
+    return configFromEnvironment(selectedSettings);
   }
 
   async function request(operation: string, body: Record<string, unknown>, activeConfig: ProviderConfig, timeoutMs = activeConfig.timeoutMs) {

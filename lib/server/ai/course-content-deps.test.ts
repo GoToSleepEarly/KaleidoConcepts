@@ -52,6 +52,20 @@ describe("course content prompt contexts", () => {
     expect(cefrWritingQualityRules.join("\n")).toContain("禁止用互不衔接的电报式短句");
   });
 
+  test("passes Grammar in Use source metadata to reading generation without replacing existing constraints", () => {
+    const withSource = structuredClone(input);
+    withSource.knowledgePoints[0] = { id: "kp1", label: "Present perfect and past", category: "Present perfect and past", bookTitle: "English Grammar in Use", edition: "Fifth Edition", officialLevel: "B1–B2", unitStart: 13, unitEnd: 14, units: [{ unitNumber: 13, officialTitle: "Present perfect and past 1" }, { unitNumber: 14, officialTitle: "Present perfect and past 2" }] };
+
+    expect(buildReadingPromptContext(withSource).chapters[0].grammarPoints[0]).toMatchObject({
+      label: "Present perfect and past",
+      bookTitle: "English Grammar in Use",
+      edition: "Fifth Edition",
+      officialLevel: "B1–B2",
+      unitStart: 13,
+      unitEnd: 14,
+    });
+  });
+
   test("provides minimal unambiguous examples for every generated exercise shape", () => {
     expect(courseContentPromptExamples.reading).toContain('"exerciseType":"optionCloze"');
     expect(courseContentPromptExamples.reading).toContain('"exerciseType":"wordForm"');

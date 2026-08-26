@@ -21,6 +21,7 @@ import type {
   StoryAlignmentState,
 } from "@/lib/contracts/api";
 import { furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
+import { resolveGrammarKnowledgePoints, type GrammarContextDb } from "@/lib/server/repositories/grammar-context";
 
 type DbCourse = {
   id: string;
@@ -171,6 +172,7 @@ export type StoryOutlineDb = {
   courseCharacter: Required<Pick<Delegate<DbCharacter>, "findMany" | "deleteMany" | "createMany">>;
   aiGenerationLog: Required<Pick<Delegate<Record<string, unknown>>, "create">>;
   presetOption?: { findMany: (query: Record<string, unknown>) => Promise<Array<{ id: string; label: string; labelZh?: string | null; category: string | null }>> };
+  knowledgePoint?: GrammarContextDb["knowledgePoint"];
   $transaction?: <T>(callback: (tx: StoryOutlineDb) => Promise<T>) => Promise<T>;
 };
 
@@ -544,8 +546,7 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
   const mappedReferences = references.map(toReference);
   const mappedCharacters = characters.map(toCharacter);
   const selectedIds = Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [];
-  const presets = db.presetOption ? await db.presetOption.findMany({ where: { id: { in: selectedIds }, kind: "grammar", archivedAt: null } }) : [];
-  const selectedKnowledgePoints = presets.map((item) => ({ id: item.id, label: item.label, labelZh: item.labelZh ?? undefined, category: item.category ?? undefined }));
+  const selectedKnowledgePoints = await resolveGrammarKnowledgePoints(db, selectedIds);
   const mappedOutline = toOutline(outline, mappedReferences, mappedCharacters);
   const coursePeople = toCoursePeople(course);
   const alignmentDetails = typeof setting?.alignmentDetails === "object" && setting.alignmentDetails !== null
@@ -737,7 +738,7 @@ async function storyAiContext(
   const mappedCharacters = characters.map(toCharacter);
   const coursePeople = toCoursePeople(course);
   const selectedIds = Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [];
-  const presets = db.presetOption ? await db.presetOption.findMany({ where: { id: { in: selectedIds }, kind: "grammar", archivedAt: null } }) : [];
+  const selectedKnowledgePoints = await resolveGrammarKnowledgePoints(db, selectedIds);
   const alignmentDetails = typeof storySetting?.alignmentDetails === "object" && storySetting.alignmentDetails !== null
     ? storySetting.alignmentDetails as Partial<StoryAlignmentState>
     : {};
@@ -755,7 +756,7 @@ async function storyAiContext(
     currentOutline: toOutline(existingOutline, mappedReferences, mappedCharacters),
     englishLevel: course.englishLevel ?? undefined,
     durationMinutes: course.durationMinutes as 30 | 45 | 60,
-    selectedKnowledgePoints: presets.map((item) => ({ id: item.id, label: item.label, labelZh: item.labelZh ?? undefined, category: item.category ?? undefined })),
+    selectedKnowledgePoints,
     confirmedRequirement: storySetting?.alignmentSummary ?? undefined,
     storyMode: alignmentDetails.storyMode,
     classroomPresence: alignmentDetails.classroomPresence,
@@ -788,7 +789,7 @@ async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task
       writingProvider: resolved.writingProvider,
     });
     const allowedIds = new Set(context.selectedKnowledgePoints?.map((item) => item.id) ?? []);
-    if (allowedIds.size && outline.chapters.some((chapter) => !chapter.recommendedKnowledgePointIds?.length || chapter.recommendedKnowledgePointIds.some((id) => !allowedIds.has(id)) || !chapter.knowledgePointRecommendationSummary?.trim())) {
+    if (allowedIds.size && outline.chapters.some((chapter) => chapter.recommendedKnowledgePointIds?.some((id) => !allowedIds.has(id)) || (chapter.recommendedKnowledgePointIds?.length && !chapter.knowledgePointRecommendationSummary?.trim()))) {
       throw new CourseStoryOutlineValidationError("章节知识点推荐没有完整生成，请重试本次大纲。");
     }
     const persistOutline = async (tx: StoryOutlineDb) => {
@@ -1509,7 +1510,7 @@ export async function confirmStoryOutline(db: StoryOutlineDb, courseId: string) 
     throw new CourseStoryOutlineValidationError();
   }
   const allowedIds = new Set(state.course.knowledgePointIds ?? []);
-  if (allowedIds.size && state.outline.chapters.some((chapter) => !chapter.recommendedKnowledgePointIds?.length || chapter.recommendedKnowledgePointIds.some((id) => !allowedIds.has(id)))) {
+  if (allowedIds.size && state.outline.chapters.some((chapter) => chapter.recommendedKnowledgePointIds?.some((id) => !allowedIds.has(id)))) {
     throw new CourseStoryOutlineValidationError("章节知识点推荐不完整，请重新生成大纲。");
   }
   return db.course.update({

@@ -8,7 +8,7 @@ import { BookOpen, ChevronDown, ListChecks, LogOut, Menu, Settings2, Sparkles, T
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { AI_GATEWAYS, aiGatewayDescriptions, aiGatewayLabels, type AiGateway } from "@/lib/ai-gateway";
+import { AI_GATEWAYS, QUICKROUTER_ENDPOINTS, aiGatewayDescriptions, aiGatewayLabels, quickRouterEndpointLabels, quickRouterEndpointUrls, type AiGateway, type QuickRouterEndpoint } from "@/lib/ai-gateway";
 import { clearAuthSession, getStoredSession } from "@/lib/auth-session";
 import { cn } from "@/lib/utils";
 
@@ -37,7 +37,6 @@ const routeInfo: Record<string, { title: string; subtitle?: string; activeKey: s
   },
   grammar: {
     title: "语法库",
-    subtitle: "沉淀可复用的语法点",
     activeKey: "grammar",
   },
 };
@@ -89,6 +88,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [aiGateway, setAiGateway] = useState<AiGateway>("quickrouter");
+  const [quickRouterEndpoint, setQuickRouterEndpoint] = useState<QuickRouterEndpoint>("main");
   const [isLoadingGateway, setIsLoadingGateway] = useState(false);
   const [hasLoadedGateway, setHasLoadedGateway] = useState(false);
   const [isSavingGateway, setIsSavingGateway] = useState(false);
@@ -145,9 +145,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setHasLoadedGateway(false);
     try {
       const response = await fetch("/api/account/ai-gateway", { method: "GET", cache: "no-store" });
-      const result = await response.json() as { aiGateway?: AiGateway; message?: string };
+      const result = await response.json() as { aiGateway?: AiGateway; quickRouterEndpoint?: QuickRouterEndpoint; message?: string };
       if (!response.ok || !result.aiGateway) throw new Error(result.message || "中转站设置加载失败");
       setAiGateway(result.aiGateway);
+      setQuickRouterEndpoint(result.quickRouterEndpoint ?? "main");
       setHasLoadedGateway(true);
     } catch (error) {
       setGatewayError(error instanceof Error ? error.message : "中转站设置加载失败");
@@ -163,11 +164,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const response = await fetch("/api/account/ai-gateway", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ aiGateway }),
+        body: JSON.stringify({ aiGateway, quickRouterEndpoint }),
       });
-      const result = await response.json() as { aiGateway?: AiGateway; message?: string };
+      const result = await response.json() as { aiGateway?: AiGateway; quickRouterEndpoint?: QuickRouterEndpoint; message?: string };
       if (!response.ok || !result.aiGateway) throw new Error(result.message || "中转站设置保存失败");
       setAiGateway(result.aiGateway);
+      setQuickRouterEndpoint(result.quickRouterEndpoint ?? quickRouterEndpoint);
       setIsAdvancedOpen(false);
     } catch (error) {
       setGatewayError(error instanceof Error ? error.message : "中转站设置保存失败");
@@ -354,6 +356,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 ))}
               </div>
             </fieldset>
+            {aiGateway === "quickrouter" ? (
+              <fieldset disabled={isLoadingGateway || isSavingGateway}>
+                <legend className="text-sm font-semibold text-foreground">QuickRouter Base URL</legend>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {QUICKROUTER_ENDPOINTS.map((endpoint) => (
+                    <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", quickRouterEndpoint === endpoint ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={endpoint}>
+                      <span className="flex items-center gap-2">
+                        <input checked={quickRouterEndpoint === endpoint} className="size-4" name="quickrouter-endpoint" onChange={() => setQuickRouterEndpoint(endpoint)} type="radio" value={endpoint} />
+                        <span className="text-sm font-semibold text-foreground">{quickRouterEndpointLabels[endpoint]}</span>
+                      </span>
+                      <span className="mt-2 block break-all text-xs leading-5 text-muted-foreground">{quickRouterEndpointUrls[endpoint]}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            ) : null}
             {gatewayError ? <p className="text-sm text-destructive" role="alert">{gatewayError}</p> : null}
             <div className="flex justify-end gap-3 border-t border-border pt-4">
               <Button disabled={isSavingGateway} onClick={() => setIsAdvancedOpen(false)} type="button" variant="outline">取消</Button>

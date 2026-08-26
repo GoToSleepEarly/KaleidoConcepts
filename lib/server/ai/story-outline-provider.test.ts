@@ -41,6 +41,19 @@ describe("createStoryOutlineProvider", () => {
     expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer text-key");
   });
 
+  test("routes QuickRouter text and research requests through the selected direct endpoint", async () => {
+    process.env.QUICKROUTER_TEXT_API_KEY = "text-key";
+    const fetchMock = mockTextResponse();
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createStoryOutlineProvider(undefined, { aiGateway: "quickrouter", quickRouterEndpoint: "direct" });
+
+    await provider.generateOutline({ writingProvider: "quickrouter_gpt", prompt: "生成大纲" });
+    await provider.searchReference({ prompt: "整理资料" });
+
+    expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.quickrouter.us/v1/responses");
+    expect((fetchMock.mock.calls[1] as unknown[] | undefined)?.[0]).toBe("https://api.quickrouter.us/v1/responses");
+  });
+
   test("uses the configured GPT model for GPT writing", async () => {
     process.env.QUICKROUTER_TEXT_API_KEY = "key";
     process.env.QUICKROUTER_GPT_TEXT_MODEL = "gpt-model";

@@ -87,7 +87,9 @@ export function buildTeachingPlanDraft(input: {
     mainIdeaTargetWordCount: 120,
     chapters: input.chapters.map((chapter) => {
       const targetWordCount = recommendedChapterWordCount(input.englishLevel, input.durationMinutes, input.chapters.length);
-      const readingExercises = defaultReadingExerciseConfig();
+      const readingExercises = chapter.recommendedKnowledgePointIds.length
+        ? defaultReadingExerciseConfig()
+        : { ...defaultReadingExerciseConfig(), grammar: { optionCloze: 0, wordForm: 0 } };
       return {
         outlineChapterId: chapter.id,
         targetWordCount,
@@ -95,7 +97,9 @@ export function buildTeachingPlanDraft(input: {
         knowledgePointIds: chapter.recommendedKnowledgePointIds,
         readingExerciseMode: "interactive",
         readingExercises,
-        chapterPractice: defaultPracticeConfig(false),
+        chapterPractice: chapter.recommendedKnowledgePointIds.length
+          ? defaultPracticeConfig(false)
+          : { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } },
         touched: {
           targetWordCount: false,
           paragraphCount: false,
@@ -143,7 +147,11 @@ export function validateTeachingPlanForConfirm(plan: TeachingPlan, outlineChapte
     if (chapter.targetWordCount === null || chapter.targetWordCount < MIN_CHAPTER_TARGET_WORD_COUNT || chapter.targetWordCount > MAX_CHAPTER_TARGET_WORD_COUNT) {
       throw new TeachingPlanValidationError(`${label}目标词数需在 ${MIN_CHAPTER_TARGET_WORD_COUNT}-${MAX_CHAPTER_TARGET_WORD_COUNT} 之间。`);
     }
-    if (!chapter.knowledgePointIds.length) throw new TeachingPlanValidationError(`${label}还没有选择知识点。`);
+    if (!chapter.knowledgePointIds.length) {
+      if (grammarExerciseTotal(chapter.readingExercises.grammar) !== 0) throw new TeachingPlanValidationError(`${label}没有知识点，正文语法题应为 0。`);
+      if (chapter.chapterPractice.enabled || grammarExerciseTotal(chapter.chapterPractice.grammar) !== 0) throw new TeachingPlanValidationError(`${label}没有知识点，不能开启章节语法练习。`);
+      continue;
+    }
     if (!chapter.readingExercises.enabled || grammarExerciseTotal(chapter.readingExercises.grammar) < 1) {
       throw new TeachingPlanValidationError(`${label}至少保留 1 道正文语法题。`);
     }
@@ -154,6 +162,10 @@ export function validateTeachingPlanForConfirm(plan: TeachingPlan, outlineChapte
     if (chapter.chapterPractice.enabled && grammarExerciseTotal(chapter.chapterPractice.grammar) < chapter.knowledgePointIds.length) {
       throw new TeachingPlanValidationError(`${label}章节练习语法题数量不能少于知识点数量。`);
     }
+  }
+
+  if (!plan.chapters.some((chapter) => chapter.knowledgePointIds.length)) {
+    throw new TeachingPlanValidationError("整门课程至少需要分配 1 个知识点。");
   }
 
   if (plan.afterClassPractice.enabled) {

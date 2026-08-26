@@ -80,6 +80,7 @@ describe("AppShell account menu", () => {
   test("saves the account GPT gateway from advanced settings", async () => {
     const request = vi.fn(async (_url: string, init?: RequestInit) => Response.json({
       aiGateway: init?.method === "PATCH" ? "crazyrouter" : "quickrouter",
+      quickRouterEndpoint: "direct",
     }));
     vi.stubGlobal("fetch", request);
     render(<AppShell><div>课程内容</div></AppShell>);
@@ -95,18 +96,38 @@ describe("AppShell account menu", () => {
 
     await waitFor(() => expect(request).toHaveBeenCalledWith("/api/account/ai-gateway", expect.objectContaining({
       method: "PATCH",
-      body: JSON.stringify({ aiGateway: "crazyrouter" }),
+      body: JSON.stringify({ aiGateway: "crazyrouter", quickRouterEndpoint: "direct" }),
     })));
   });
 
   test("loads the current gateway from the database whenever advanced settings opens", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ aiGateway: "crazyrouter" })));
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ aiGateway: "crazyrouter", quickRouterEndpoint: "main" })));
     render(<AppShell><div>课程内容</div></AppShell>);
 
     fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
     fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
 
     await waitFor(() => expect(screen.getByRole("radio", { name: /Crazyrouter/ })).toBeChecked());
+  });
+
+  test("loads and saves the QuickRouter base URL option", async () => {
+    const request = vi.fn(async (_url: string, init?: RequestInit) => Response.json({
+      aiGateway: "quickrouter",
+      quickRouterEndpoint: init?.method === "PATCH" ? "direct" : "main",
+    }));
+    vi.stubGlobal("fetch", request);
+    render(<AppShell><div>课程内容</div></AppShell>);
+
+    fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
+    await waitFor(() => expect(screen.getByRole("radio", { name: /主站/ })).toBeChecked());
+    fireEvent.click(screen.getByRole("radio", { name: /直连/ }));
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith("/api/account/ai-gateway", expect.objectContaining({
+      method: "PATCH",
+      body: JSON.stringify({ aiGateway: "quickrouter", quickRouterEndpoint: "direct" }),
+    })));
   });
 
   test("clears both the server cookie and browser session on logout", async () => {

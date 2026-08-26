@@ -2,12 +2,12 @@ import type {
   CourseStage,
   EnglishLevel,
   TeachingPlan,
-  TeachingPlanKnowledgePoint,
   TeachingPlanState,
 } from "@/lib/contracts/api";
 import { buildTeachingPlanDraft, TeachingPlanValidationError, validateTeachingPlanForConfirm } from "@/lib/server/validation/teaching-plan";
 import { defaultPracticeConfig, defaultReadingExerciseConfig, MIN_CHAPTER_TARGET_WORD_COUNT, minimumReadingParagraphCount } from "@/lib/domain/teaching-plan-policy";
 import { earliestCourseStage, furthestCourseStage, nextCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
+import { resolveGrammarKnowledgePoints, type GrammarContextDb } from "@/lib/server/repositories/grammar-context";
 
 type DbCourse = {
   id: string;
@@ -50,16 +50,6 @@ type DbTeachingPlan = {
   updatedAt: Date;
 };
 
-type DbPreset = {
-  id: string;
-  kind: "theme" | "grammar";
-  label: string;
-  labelZh?: string | null;
-  category: string | null;
-  sortOrder: number;
-  archivedAt: Date | null;
-};
-
 type Delegate<T> = {
   findUnique?: (query: Record<string, unknown>) => Promise<T | null>;
   findMany?: (query: Record<string, unknown>) => Promise<T[]>;
@@ -72,7 +62,8 @@ export type TeachingPlanDb = {
   course: Required<Pick<Delegate<DbCourse>, "findUnique" | "update">>;
   courseStoryOutline: Required<Pick<Delegate<DbOutline>, "findUnique">>;
   courseTeachingPlan: Required<Pick<Delegate<DbTeachingPlan>, "findUnique" | "upsert" | "update">>;
-  presetOption: Required<Pick<Delegate<DbPreset>, "findMany">>;
+  knowledgePoint?: GrammarContextDb["knowledgePoint"];
+  presetOption?: GrammarContextDb["presetOption"];
   courseLessonContent?: Pick<Delegate<{ courseId: string }>, "findUnique" | "deleteMany">;
   courseContentGeneration?: Pick<Delegate<{ courseId: string }>, "deleteMany">;
   courseContentChatMessage?: Pick<Delegate<{ courseId: string }>, "deleteMany">;
@@ -224,15 +215,6 @@ function planWriteData(plan: TeachingPlan) {
   };
 }
 
-function toKnowledgePoint(preset: DbPreset): TeachingPlanKnowledgePoint {
-  return {
-    id: preset.id,
-    label: preset.label,
-    labelZh: preset.labelZh ?? undefined,
-    category: preset.category ?? undefined,
-  };
-}
-
 async function getCourse(db: TeachingPlanDb, courseId: string) {
   const course = await db.course.findUnique({ where: { id: courseId } });
   if (!course) throw new CourseTeachingPlanNotFoundError();
@@ -251,12 +233,8 @@ async function getConfirmedOutline(db: TeachingPlanDb, course: DbCourse) {
   return outline;
 }
 
-async function listKnowledgePoints(db: TeachingPlanDb) {
-  const presets = await db.presetOption.findMany({
-    where: { kind: "grammar", archivedAt: null },
-    orderBy: [{ category: "asc" }, { sortOrder: "asc" }, { label: "asc" }],
-  });
-  return presets.map(toKnowledgePoint);
+async function listKnowledgePoints(db: TeachingPlanDb, ids: string[]) {
+  return resolveGrammarKnowledgePoints(db, ids);
 }
 
 function buildFreshTeachingPlan(course: DbCourse, outline: DbOutline) {
@@ -337,7 +315,7 @@ export async function getTeachingPlanState(db: TeachingPlanDb, courseId: string)
   const outline = await getConfirmedOutline(db, course);
   const [savedPlan, knowledgePoints] = await Promise.all([
     ensureTeachingPlan(db, course, outline),
-    listKnowledgePoints(db),
+    listKnowledgePoints(db, Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : []),
   ]);
   const plan = savedPlan.afterClassPractice.touched.knowledgePointIds && savedPlan.afterClassPractice.knowledgePointIds.length
     ? savedPlan
@@ -370,9 +348,10 @@ export async function saveTeachingPlan(db: TeachingPlanDb, courseId: string, pla
   const outlineChapterIds = toOutlineState(outline).chapters.map((chapter) => chapter.id);
   if (plan.courseId !== courseId) throw new TeachingPlanValidationError();
   if (!course.englishLevel || plan.englishLevel !== course.englishLevel) throw new TeachingPlanValidationError("英语难度以第一步设置为准。");
-  const allowedKnowledgePointIds = new Set((await listKnowledgePoints(db)).map((point) => point.id));
-  if (plan.chapters.some((chapter) => chapter.knowledgePointIds.some((id) => !allowedKnowledgePointIds.has(id)))) {
-    throw new TeachingPlanValidationError("章节知识点只能从当前语法库中选择。");
+  const allowedKnowledgePointIds = new Set(Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : []);
+  if (plan.chapters.some((chapter) => chapter.knowledgePointIds.some((id) => !allowedKnowledgePointIds.has(id)))
+    || plan.afterClassPractice.knowledgePointIds.some((id) => !allowedKnowledgePointIds.has(id))) {
+    throw new TeachingPlanValidationError("知识点只能从第一步已选范围中分配。");
   }
   const parsedPlan = {
     ...plan,

@@ -9,6 +9,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
 import { KnowledgePointPickerDialog } from "@/features/courses/components/knowledge-point-picker-dialog";
+import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
 import type { GrammarExerciseType, GrammarPracticeConfig, ReadingExerciseMode, TeachingPlan, TeachingPlanChapter, TeachingPlanState } from "@/lib/contracts/api";
 import { grammarExerciseTotal, MAX_CHAPTER_TARGET_WORD_COUNT, MIN_CHAPTER_TARGET_WORD_COUNT, minimumReadingParagraphCount, practicePageCount, readingExerciseTotal, readingPageCount } from "@/lib/domain/teaching-plan-policy";
 import { cn } from "@/lib/utils";
@@ -32,7 +33,7 @@ type ActivePanel = "chapters" | "afterClass";
 type MobileChapterSection = "goals" | "reading" | "practice";
 
 function chapterReady(chapter: TeachingPlanChapter) {
-  return Boolean(chapter.targetWordCount && chapter.knowledgePointIds.length);
+  return Boolean(chapter.targetWordCount);
 }
 
 function compactTabClass(active: boolean) {
@@ -43,9 +44,10 @@ function hasValidExercisePlan(plan: TeachingPlan) {
   const chaptersValid = plan.chapters.every((chapter) => {
     const readingCount = grammarExerciseTotal(chapter.readingExercises.grammar);
     const practiceCount = grammarExerciseTotal(chapter.chapterPractice.grammar);
-    return chapter.readingExercises.enabled && readingCount >= Math.max(1, chapter.knowledgePointIds.length) && (!chapter.chapterPractice.enabled || practiceCount >= Math.max(1, chapter.knowledgePointIds.length));
+    if (!chapter.knowledgePointIds.length) return chapter.readingExercises.enabled && readingCount === 0 && !chapter.chapterPractice.enabled && practiceCount === 0;
+    return chapter.readingExercises.enabled && readingCount >= chapter.knowledgePointIds.length && (!chapter.chapterPractice.enabled || practiceCount >= chapter.knowledgePointIds.length);
   });
-  if (!chaptersValid) return false;
+  if (!chaptersValid || !plan.chapters.some((chapter) => chapter.knowledgePointIds.length)) return false;
   if (!plan.afterClassPractice.enabled) return true;
   if (!plan.afterClassPractice.practice.enabled) return plan.afterClassPractice.vocabularyReviewEnabled;
   return grammarExerciseTotal(plan.afterClassPractice.practice.grammar) >= Math.max(1, plan.afterClassPractice.knowledgePointIds.length);
@@ -75,6 +77,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
   const selectedOutlineChapter = initialState.outline.chapters[selectedChapterIndex];
   const readyChapterCount = plan.chapters.filter(chapterReady).length;
   const courseKnowledgePointCount = unionKnowledgePointIds(plan.chapters).length;
+  const grammarSource = initialState.knowledgePoints.find((point) => point.bookTitle);
   const exercisePlanValid = hasValidExercisePlan(plan);
   const confirmHint = plan.englishLevel ? `章节 ${readyChapterCount}/${plan.chapters.length} · ${plan.afterClassPractice.enabled ? "课后练习已开启" : "课后练习不生成"}` : "还需选择英语难度";
   const afterClassNeedsReview = useMemo(() => {
@@ -269,6 +272,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
             <div className="min-w-0">
               <p className="text-sm font-medium text-muted-foreground">教学规划</p>
               <h2 className="mt-1 truncate text-xl font-semibold text-foreground sm:text-2xl">{initialState.outline.title}</h2>
+              {grammarSource ? <p className="mt-1 text-xs text-muted-foreground">《{grammarSource.bookTitle}》 · {grammarSource.edition} · {grammarSource.officialLevel}</p> : null}
             </div>
             <Button className="shrink-0 lg:hidden" disabled={confirming || resetting} onClick={() => setResetConfirmOpen(true)} size="sm" type="button" variant="outline">
               <RotateCcw className="size-4" />
@@ -640,8 +644,8 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, unrecommended
                   const point = knowledgePoints.find((item) => item.id === id);
                   const label = point ? knowledgePointName(point) : id;
                   return (
-                    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm", recommendedIds.includes(id) ? "bg-primary-50 text-primary-700" : "bg-amber-50 text-amber-800")} key={id}>
-                      {label}
+                    <span className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full py-1 pl-3 pr-1.5 text-sm", recommendedIds.includes(id) ? "bg-primary-50 text-primary-700" : "bg-amber-50 text-amber-800")} key={id}>
+                      <OverflowingKnowledgePointTitle title={label} />
                       <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-semibold", recommendedIds.includes(id) ? "bg-primary-100 text-primary-700" : "bg-amber-100 text-amber-800")}>{recommendedIds.includes(id) ? "AI 推荐" : "手动添加"}</span>
                       <button
                         aria-label={`删除知识点 ${label}`}
@@ -650,6 +654,10 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, unrecommended
                           onChange((current) => ({
                             ...current,
                             knowledgePointIds: current.knowledgePointIds.filter((pointId) => pointId !== id),
+                            ...(current.knowledgePointIds.length === 1 ? {
+                              readingExercises: { ...current.readingExercises, grammar: { optionCloze: 0, wordForm: 0 } },
+                              chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } },
+                            } : {}),
                             touched: {
                               ...current.touched,
                               knowledgePointIds: true,
@@ -664,21 +672,27 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, unrecommended
                   );
                 })
               ) : (
-                <span className="text-sm text-muted-foreground">未选择</span>
+                <span className="text-sm text-muted-foreground">本章不分配语法知识点，仅生成阅读与词汇内容</span>
               )}
             </div>
-            {outline.knowledgePointRecommendationSummary ? <p className="mt-3 rounded-md bg-primary-50 px-3 py-2 text-sm leading-6 text-primary-700">AI 推荐：{outline.knowledgePointRecommendationSummary} 如需调整，可从完整语法库中修改。</p> : null}
+            {outline.knowledgePointRecommendationSummary ? <p className="mt-3 rounded-md bg-primary-50 px-3 py-2 text-sm leading-6 text-primary-700">AI 推荐：{outline.knowledgePointRecommendationSummary} 如需调整，可从第一步已选知识点中修改。</p> : null}
             {chapter.knowledgePointIds.length > 3 ? <p className="mt-2 text-sm text-amber-700">建议一章不超过 3 个知识点。</p> : null}
           </div>
           {pickerOpen ? (
             <KnowledgePointPickerDialog
-              description="按类别选择本章教学目标；可使用完整语法库，不受 Step 1 预选范围限制。"
+              description="按 Section 选择本章教学目标；范围仅限第一步已选知识点。"
               highlightedIds={unrecommendedSelectedKnowledgePointIds}
               knowledgePoints={knowledgePoints}
               onConfirm={(ids) => {
                 onChange((current) => ({
                   ...current,
                   knowledgePointIds: ids,
+                  ...(!ids.length ? {
+                    readingExercises: { ...current.readingExercises, grammar: { optionCloze: 0, wordForm: 0 } },
+                    chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } },
+                  } : current.knowledgePointIds.length ? {} : {
+                    readingExercises: { ...current.readingExercises, grammar: { optionCloze: 4, wordForm: 3 } },
+                  }),
                   touched: {
                     ...current.touched,
                     knowledgePointIds: !sameIdSet(ids, recommendedIds),
@@ -739,6 +753,7 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, unrecommended
           <ReadingExerciseEditor
             ariaPrefix={`${chapterLabel}正文`}
             config={chapter.readingExercises}
+            grammarDisabled={!chapter.knowledgePointIds.length}
             onChange={(readingExercises) =>
               onChange((current) => ({
                 ...current,
@@ -753,6 +768,7 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, unrecommended
         <div className={cn("rounded-lg bg-card p-5 shadow-sm", mobileSectionClass("practice"))} data-testid="teaching-plan-practice-section">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <ToggleHeader
+              disabled={!chapter.knowledgePointIds.length}
               enabled={chapter.chapterPractice.enabled}
               label="章节练习"
               onChange={(enabled) =>
@@ -809,14 +825,17 @@ function ReadingModeOption({ checked, title, description, answerState, name, val
 }
 
 function knowledgePointName(point: TeachingPlanState["knowledgePoints"][number]) {
-  return point.labelZh ? `${point.labelZh} · ${point.label}` : point.label;
+  const title = point.labelZh ? `${point.labelZh} · ${point.label}` : point.label;
+  if (!point.unitStart) return title;
+  const units = point.unitStart === point.unitEnd ? `Unit ${point.unitStart}` : `Units ${point.unitStart}–${point.unitEnd}`;
+  return `${title} · ${units}`;
 }
 
-function ToggleHeader({ enabled, label, onChange }: { enabled: boolean; label: string; onChange: (enabled: boolean) => void }) {
+function ToggleHeader({ disabled = false, enabled, label, onChange }: { disabled?: boolean; enabled: boolean; label: string; onChange: (enabled: boolean) => void }) {
   return (
     <div className="flex items-center gap-3">
       <h4 className="text-sm font-semibold text-foreground">{label}</h4>
-      <button aria-label={`${label}${enabled ? "已开启" : "已关闭"}`} aria-pressed={enabled} className={cn("inline-flex min-h-9 items-center gap-2 rounded-full border px-2.5 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", enabled ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:border-primary-300 hover:text-foreground")} onClick={() => onChange(!enabled)} type="button">
+      <button aria-label={`${label}${enabled ? "已开启" : "已关闭"}`} aria-pressed={enabled} className={cn("inline-flex min-h-9 items-center gap-2 rounded-full border px-2.5 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", enabled ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:border-primary-300 hover:text-foreground", disabled && "cursor-not-allowed opacity-50")} disabled={disabled} onClick={() => onChange(!enabled)} type="button">
         <span aria-hidden="true" className={cn("relative h-5 w-9 rounded-full transition-colors", enabled ? "bg-white/30" : "bg-muted")}>
           <span className={cn("absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform", enabled ? "translate-x-4" : "translate-x-0")} />
         </span>
@@ -826,9 +845,9 @@ function ToggleHeader({ enabled, label, onChange }: { enabled: boolean; label: s
   );
 }
 
-function ReadingExerciseEditor({ config, ariaPrefix, onChange }: { config: TeachingPlanChapter["readingExercises"]; ariaPrefix: string; onChange: (config: TeachingPlanChapter["readingExercises"]) => void }) {
+function ReadingExerciseEditor({ config, ariaPrefix, grammarDisabled = false, onChange }: { config: TeachingPlanChapter["readingExercises"]; ariaPrefix: string; grammarDisabled?: boolean; onChange: (config: TeachingPlanChapter["readingExercises"]) => void }) {
   const [adding, setAdding] = useState(false);
-  const invalid = grammarExerciseTotal(config.grammar) < 1;
+  const invalid = !grammarDisabled && grammarExerciseTotal(config.grammar) < 1;
   const grammarRow = (type: GrammarExerciseType) => (
     <div className="grid gap-3 rounded-md border border-border bg-background p-3 sm:grid-cols-[minmax(0,1fr)_220px]" key={type}>
       <div className="min-w-0">
@@ -857,15 +876,16 @@ function ReadingExerciseEditor({ config, ariaPrefix, onChange }: { config: Teach
   );
   const missingGrammar = (["optionCloze", "wordForm"] as GrammarExerciseType[]).filter((type) => config.grammar[type] === 0);
   const vocabularyEnabled = config.vocabulary.chineseHint > 0;
-  const hasMissing = missingGrammar.length > 0 || !vocabularyEnabled;
+  const hasMissing = (!grammarDisabled && missingGrammar.length > 0) || !vocabularyEnabled;
   return (
     <div className="mt-5 space-y-4">
       <div>
         <div className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground">语法</div>
         <div className="space-y-2">
-          {config.grammar.optionCloze > 0 ? grammarRow("optionCloze") : null}
-          {config.grammar.wordForm > 0 ? grammarRow("wordForm") : null}
-          {!grammarExerciseTotal(config.grammar) ? <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 px-3 py-3 text-sm text-amber-800">至少添加一种语法题型，才能覆盖本章知识点。</div> : null}
+          {grammarDisabled ? <div className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-3 text-sm text-muted-foreground">本章未分配知识点，不生成语法题。</div> : null}
+          {!grammarDisabled && config.grammar.optionCloze > 0 ? grammarRow("optionCloze") : null}
+          {!grammarDisabled && config.grammar.wordForm > 0 ? grammarRow("wordForm") : null}
+          {!grammarDisabled && !grammarExerciseTotal(config.grammar) ? <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 px-3 py-3 text-sm text-amber-800">至少添加一种语法题型，才能覆盖本章知识点。</div> : null}
         </div>
       </div>
       <div>
@@ -907,7 +927,7 @@ function ReadingExerciseEditor({ config, ariaPrefix, onChange }: { config: Teach
           </Button>
           {adding ? (
             <div className="mt-2 grid gap-2 rounded-md border border-border bg-muted/30 p-2 sm:grid-cols-2">
-              {missingGrammar.map((type) => (
+              {!grammarDisabled ? missingGrammar.map((type) => (
                 <AddExerciseTypeCard
                   example={grammarExamples[type]}
                   key={type}
@@ -924,7 +944,7 @@ function ReadingExerciseEditor({ config, ariaPrefix, onChange }: { config: Teach
                     setAdding(false);
                   }}
                 />
-              ))}
+              )) : null}
               {!vocabularyEnabled ? (
                 <AddExerciseTypeCard
                   example={vocabularyExample}
@@ -943,7 +963,7 @@ function ReadingExerciseEditor({ config, ariaPrefix, onChange }: { config: Teach
           ) : null}
         </div>
       ) : null}
-      {invalid ? <p className="text-sm font-medium text-amber-700">至少保留一种语法题型</p> : <p className="text-xs text-muted-foreground">题型可按章节增删；词汇题不参与语法知识点覆盖。</p>}
+      {invalid ? <p className="text-sm font-medium text-amber-700">至少保留一种语法题型</p> : <p className="text-xs text-muted-foreground">{grammarDisabled ? "本章仅保留阅读与词汇内容。" : "题型可按章节增删；词汇题不参与语法知识点覆盖。"}</p>}
     </div>
   );
 }

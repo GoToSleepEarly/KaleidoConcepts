@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 
 import {
   CourseAudienceConflictError,
+  CourseGrammarSelectionError,
+  CourseLegacyReadOnlyError,
   CoursePersonValidationError,
   archiveCourse,
   createCourse,
@@ -39,7 +41,13 @@ const input = {
   studentIds: ["student-1"],
   durationMinutes: 45 as const,
   englishLevel: "B1" as const,
+  grammarBookEditionId: "english-grammar-in-use-5",
   knowledgePointIds: ["grammar-1", "grammar-2"],
+};
+
+const validGrammarSelection = {
+  grammarBookEdition: { findUnique: async () => ({ id: "english-grammar-in-use-5" }) },
+  knowledgePoint: { findMany: async () => [{ id: "grammar-1" }, { id: "grammar-2" }] },
 };
 
 describe("course audience repository", () => {
@@ -62,6 +70,7 @@ describe("course audience repository", () => {
 
   test("creates a course atomically with identity and visual snapshots", async () => {
     const db = {
+      ...validGrammarSelection,
       person: { findMany: async () => [teacher, student] },
       course: {
         findUnique: async () => null,
@@ -70,6 +79,7 @@ describe("course audience repository", () => {
             title: "海底图书馆",
             durationMinutes: 45,
             englishLevel: "B1",
+            grammarBookEditionId: "english-grammar-in-use-5",
             knowledgePointIds: ["grammar-1", "grammar-2"],
             lifecycleStatus: "draft",
             currentStage: "story_outline",
@@ -110,9 +120,19 @@ describe("course audience repository", () => {
 
   test("rejects a course person without a current visual", async () => {
     await expect(createCourse({
+      ...validGrammarSelection,
       person: { findMany: async () => [teacher, { ...student, activeVisualAssetId: null }] },
       course: { findUnique: async () => null },
     } as unknown as CoursesDb, input, "missing-visual-key")).rejects.toBeInstanceOf(CoursePersonValidationError);
+  });
+
+  test("rejects knowledge points from another Grammar in Use book", async () => {
+    await expect(createCourse({
+      grammarBookEdition: { findUnique: async () => ({ id: "english-grammar-in-use-5" }) },
+      knowledgePoint: { findMany: async () => [{ id: "grammar-1" }] },
+      person: { findMany: async () => [teacher, student] },
+      course: { findUnique: async () => null },
+    } as unknown as CoursesDb, input, "cross-book-key")).rejects.toBeInstanceOf(CourseGrammarSelectionError);
   });
 
   test("returns the original course for an idempotent retry", async () => {
@@ -144,6 +164,7 @@ describe("course audience repository", () => {
               id: "course-1",
               title: "旧名称",
               durationMinutes: 30,
+              grammarBookEditionId: "english-grammar-in-use-5",
               currentStage: "content",
               people: [
                 { personId: "teacher-1", role: "teacher" },
@@ -159,6 +180,12 @@ describe("course audience repository", () => {
     ).rejects.toBeInstanceOf(CourseAudienceConflictError);
   });
 
+  test("keeps pre-migration courses read-only", async () => {
+    await expect(updateCourseAudience({
+      course: { findUnique: async () => ({ id: "legacy-course", title: "旧课程", durationMinutes: 45, englishLevel: "B1", grammarBookEditionId: null, knowledgePointIds: ["legacy-1"], lifecycleStatus: "draft", currentStage: "preview", people: [] }) },
+    } as unknown as CoursesDb, "legacy-course", input, true)).rejects.toBeInstanceOf(CourseLegacyReadOnlyError);
+  });
+
   test("updates title without resetting downstream content", async () => {
     const updates: unknown[] = [];
     await updateCourseAudience(
@@ -169,6 +196,7 @@ describe("course audience repository", () => {
             title: "旧名称",
               durationMinutes: 45,
               englishLevel: "B1",
+              grammarBookEditionId: "english-grammar-in-use-5",
               knowledgePointIds: ["grammar-1", "grammar-2"],
             currentStage: "content",
             people: [
@@ -273,5 +301,33 @@ describe("course audience repository", () => {
     );
 
     expect(audience.people[0]?.profileChanged).toBe(true);
+  });
+
+  test("returns legacy knowledge point labels for read-only courses", async () => {
+    const audience = await getCourseAudience(
+      {
+        course: {
+          findUnique: async () => ({
+            id: "legacy-course",
+            title: "旧课程",
+            durationMinutes: 45,
+            englishLevel: "A2",
+            grammarBookEditionId: null,
+            knowledgePointIds: ["legacy-grammar-1"],
+            lifecycleStatus: "draft",
+            currentStage: "preview",
+            people: [],
+          }),
+        },
+        presetOption: {
+          findMany: async () => [{ id: "legacy-grammar-1", label: "Past Simple", labelZh: "一般过去时", category: "时态" }],
+        },
+      } as unknown as CoursesDb,
+      "legacy-course",
+    );
+
+    expect(audience.legacyKnowledgePoints).toEqual([
+      { id: "legacy-grammar-1", label: "Past Simple", labelZh: "一般过去时", category: "时态" },
+    ]);
   });
 });

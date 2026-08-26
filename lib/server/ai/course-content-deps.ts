@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { CourseContentChapter, CourseContentPart, CourseGrammarQuestion, EnglishLevel, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
 import { buildCleanParagraphText } from "@/lib/domain/course-content";
 import { createStoryOutlineProvider } from "@/lib/server/ai/story-outline-provider";
-import type { AiGateway } from "@/lib/ai-gateway";
+import type { AiProviderSettingsInput } from "@/lib/ai-gateway";
 import { devAiLog } from "@/lib/server/ai/dev-ai-log";
 import {
   buildReadingTemplatePrompt,
@@ -45,11 +45,21 @@ function replaceStoryCharacterNames(value: string, characters: CourseContentProm
 }
 
 function pointMap(input: CourseContentPromptInput) {
-  return new Map(input.knowledgePoints.map((point, index) => [point.id, { key: `KP${index + 1}`, label: point.label }]));
+  return new Map(input.knowledgePoints.map((point, index) => [point.id, {
+    key: `KP${index + 1}`,
+    label: point.label,
+    category: point.category,
+    bookTitle: point.bookTitle,
+    edition: point.edition,
+    officialLevel: point.officialLevel,
+    unitStart: point.unitStart,
+    unitEnd: point.unitEnd,
+    sourceUnits: point.units,
+  }]));
 }
 
 function selectedPoints(ids: string[], points: ReturnType<typeof pointMap>) {
-  return ids.map((id) => points.get(id)).filter((point): point is { key: string; label: string } => Boolean(point));
+  return ids.map((id) => points.get(id)).filter((point): point is NonNullable<ReturnType<typeof pointMap> extends Map<string, infer T> ? T : never> => Boolean(point));
 }
 
 function englishWordCount(text: string) {
@@ -339,8 +349,8 @@ export function contentReadingTimeoutMs(value = process.env.COURSE_CONTENT_GENER
 
 export const courseContentFormatRepairAttempts = 1;
 
-export function createCourseContentGenerationDeps(aiGateway: AiGateway = "quickrouter") {
-  const provider = createStoryOutlineProvider(undefined, aiGateway);
+export function createCourseContentGenerationDeps(settings: AiProviderSettingsInput = "quickrouter") {
+  const provider = createStoryOutlineProvider(undefined, settings);
   const callWithUsage = async (
     writingProvider: StoryWritingProvider,
     operation: string,

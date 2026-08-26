@@ -9,12 +9,13 @@ type DbUser = {
   password: string;
   displayName: string;
   aiGateway: "quickrouter" | "crazyrouter";
+  quickRouterEndpoint: "main" | "direct";
 };
 
 export type AuthDb = {
   user: {
     findUnique: (query: { where: { username: string } | { id: string } }) => Promise<DbUser | null>;
-    update: (query: { where: { id: string }; data: { aiGateway: "quickrouter" | "crazyrouter" } }) => Promise<DbUser>;
+    update: (query: { where: { id: string }; data: { aiGateway: "quickrouter" | "crazyrouter"; quickRouterEndpoint: "main" | "direct" } }) => Promise<DbUser>;
   };
 };
 

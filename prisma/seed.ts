@@ -1,8 +1,9 @@
 import "dotenv/config";
 
 import { PrismaPg } from "@prisma/adapter-pg";
-import { AiGateway, PresetOptionKind, Prisma, PrismaClient } from "@prisma/client";
+import { AiGateway, KnowledgePointSource, PresetOptionKind, Prisma, PrismaClient } from "@prisma/client";
 
+import { grammarCatalogBooks } from "./grammar-catalog-data";
 import presetData from "./preset-data.json";
 
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
@@ -42,6 +43,42 @@ async function main() {
       update: data,
       create: { id: option.id, ...data, createdAt: new Date(option.createdAt) },
     });
+    if (option.kind === "grammar") {
+      await prisma.knowledgePoint.upsert({
+        where: { id: option.id },
+        update: { source: KnowledgePointSource.legacy, bookEditionId: null, sectionId: null, title: option.label, sortOrder: option.sortOrder },
+        create: { id: option.id, source: KnowledgePointSource.legacy, title: option.label, sortOrder: option.sortOrder },
+      });
+    }
+  }
+
+  for (const [bookIndex, book] of grammarCatalogBooks.entries()) {
+    await prisma.grammarBookEdition.upsert({
+      where: { id: book.id },
+      update: { title: book.title, edition: book.edition, officialLevel: book.officialLevel, sortOrder: bookIndex + 1 },
+      create: { id: book.id, title: book.title, edition: book.edition, officialLevel: book.officialLevel, sortOrder: bookIndex + 1 },
+    });
+    for (const [sectionIndex, section] of book.sections.entries()) {
+      await prisma.grammarSection.upsert({
+        where: { id: section.id },
+        update: { bookEditionId: book.id, officialTitle: section.officialTitle, sortOrder: sectionIndex + 1 },
+        create: { id: section.id, bookEditionId: book.id, officialTitle: section.officialTitle, sortOrder: sectionIndex + 1 },
+      });
+      for (const point of section.points) {
+        await prisma.knowledgePoint.upsert({
+          where: { id: point.id },
+          update: { source: KnowledgePointSource.grammar_in_use, bookEditionId: book.id, sectionId: section.id, title: point.title, sortOrder: point.unitStart },
+          create: { id: point.id, source: KnowledgePointSource.grammar_in_use, bookEditionId: book.id, sectionId: section.id, title: point.title, sortOrder: point.unitStart },
+        });
+        for (const unit of point.units) {
+          await prisma.grammarKnowledgePointUnit.upsert({
+            where: { knowledgePointId_unitNumber: { knowledgePointId: point.id, unitNumber: unit.unitNumber } },
+            update: { officialTitle: unit.officialTitle },
+            create: { knowledgePointId: point.id, unitNumber: unit.unitNumber, officialTitle: unit.officialTitle },
+          });
+        }
+      }
+    }
   }
 }
 

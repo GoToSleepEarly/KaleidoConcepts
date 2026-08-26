@@ -11,8 +11,9 @@ import type { TeachingPlanDb } from "@/lib/server/repositories/teaching-plan";
 import type { CourseContentDb } from "@/lib/server/repositories/course-content";
 import type { VisualResourcesDb } from "@/lib/server/repositories/visual-resources";
 import type { CoursePreviewDb } from "@/lib/server/repositories/course-preview";
+import type { GrammarCatalogDb } from "@/lib/server/repositories/grammar-catalog";
 
-export type AppDb = AuthDb & PeopleDb & PersonVisualsDb & PresetsDb & CoursesDb & StoryOutlineDb & TeachingPlanDb & CourseContentDb & VisualResourcesDb & CoursePreviewDb;
+export type AppDb = AuthDb & PeopleDb & PersonVisualsDb & PresetsDb & CoursesDb & StoryOutlineDb & TeachingPlanDb & CourseContentDb & VisualResourcesDb & CoursePreviewDb & GrammarCatalogDb;
 
 let prisma: AppDb | null = null;
 

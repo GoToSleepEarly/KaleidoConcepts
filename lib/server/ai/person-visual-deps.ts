@@ -1,14 +1,16 @@
 import { createPersonVisualProvider } from "@/lib/server/ai/person-visual-provider";
-import type { AiGateway } from "@/lib/ai-gateway";
+import { normalizeAiProviderSettings, type AiProviderSettingsInput } from "@/lib/ai-gateway";
 import {
   persistPersonVisual,
   readPersonVisualAsDataUrl,
   removeTemporaryPersonPhoto,
 } from "@/lib/server/storage/person-visuals";
 
-export function createPersonVisualGenerationDeps(aiGateway: AiGateway = "quickrouter") {
+export function createPersonVisualGenerationDeps(input: AiProviderSettingsInput = "quickrouter") {
+  const settings = normalizeAiProviderSettings(input);
+  const aiGateway = settings.aiGateway;
   let provider: ReturnType<typeof createPersonVisualProvider> | null = null;
-  const client = () => (provider ??= createPersonVisualProvider(undefined, aiGateway));
+  const client = () => (provider ??= createPersonVisualProvider(undefined, settings));
   return {
     provider: aiGateway === "crazyrouter" ? "crazyrouter_gpt_image_2" as const : "quickrouter_gpt_image_2" as const,
     generate: (input: { prompt: string }) => client().generate(input),

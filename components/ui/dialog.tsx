@@ -84,7 +84,7 @@ export function Dialog({
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-modal">
       <button
         aria-hidden="true"
         tabIndex={-1}
@@ -97,7 +97,7 @@ export function Dialog({
         aria-labelledby={`${title}-title`}
         aria-modal="true"
         className={cn(
-          "z-50 max-h-[calc(100dvh-2rem)] w-[min(94vw,760px)] overflow-hidden rounded-lg bg-card p-0 text-foreground shadow-lg animate-dialog-fade max-sm:inset-x-2 max-sm:bottom-2 max-sm:top-auto max-sm:max-h-[calc(100dvh-1rem)] max-sm:w-auto max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-xl",
+          "z-modal max-h-[calc(100dvh-2rem)] w-[min(94vw,760px)] overflow-hidden rounded-lg bg-card p-0 text-foreground shadow-lg animate-dialog-fade max-sm:inset-x-2 max-sm:bottom-2 max-sm:top-auto max-sm:max-h-[calc(100dvh-1rem)] max-sm:w-auto max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-xl",
           variant === "modal" && "fixed left-1/2 top-1/2 m-0 -translate-x-1/2 -translate-y-1/2",
           variant === "drawer" &&
             "fixed inset-y-0 right-0 m-0 h-dvh max-h-dvh w-[min(94vw,520px)] max-w-none rounded-none border-l border-border max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-0 max-sm:h-dvh max-sm:max-h-dvh",

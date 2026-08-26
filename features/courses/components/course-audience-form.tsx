@@ -3,22 +3,34 @@
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BookOpen, Check, Clock3, GraduationCap, Loader2, Pencil, Plus, Search, Target, Trash2, UserRound, UsersRound, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, GraduationCap, Loader2, Pencil, Plus, Search, Target, Trash2, UserRound, UsersRound, X } from "lucide-react";
 
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
-import { KnowledgePointPickerDialog } from "@/features/courses/components/knowledge-point-picker-dialog";
+import { GrammarKnowledgePointPickerDialog } from "@/features/courses/components/grammar-knowledge-point-picker-dialog";
+import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
 import { PersonEditorDialog } from "@/features/people/components/person-form-drawer";
-import type { CourseAudienceDetail, EnglishLevel, PeopleListResponse, PersonProfile, PersonRole, PresetOption } from "@/lib/contracts/api";
+import type { CourseAudienceDetail, EnglishLevel, GrammarCatalogPoint, GrammarCatalogResponse, PeopleListResponse, PersonProfile, PersonRole } from "@/lib/contracts/api";
+import { defaultGrammarBookId, unitRangeLabel } from "@/lib/domain/grammar-catalog";
 import { cn } from "@/lib/utils";
 import { createRequestId } from "@/lib/utils/request-id";
 import { readJsonResponse } from "@/lib/utils/response-json";
 
 type AudiencePerson = PersonProfile & { profileChanged?: boolean };
 
-function audienceSnapshot(values: { title: string; duration: 30 | 45 | 60 | null; englishLevel: EnglishLevel | null; teacherId: string | null; studentIds: string[]; knowledgePointIds: string[] }) {
+const englishLevelOptions: Array<{ level: EnglishLevel; band: string; communicationDescription: string; grammarDescription: string }> = [
+  { level: "Starter", band: "产品起步级 · 参考 Pre-A1", communicationDescription: "能借助图片、手势和非常缓慢清晰的表达，识别并使用问候、数字、时间和个人基本信息。", grammarDescription: "主要依靠记忆的词语和固定表达，尚未形成稳定运用完整句型的能力。" },
+  { level: "A1", band: "基础使用者", communicationDescription: "能理解并使用满足具体需要的熟悉日常表达，介绍自己，并在对方配合时进行简单互动。", grammarDescription: "只能有限控制少量简单结构和句型，表达主要来自已经学过的固定模式。" },
+  { level: "A2", band: "基础使用者", communicationDescription: "能理解个人信息、购物、居住地等日常表达，并在熟悉任务中进行简单直接的交流。", grammarDescription: "能正确使用部分简单句和基础结构，但仍会反复出现时态、主谓一致等错误，通常不影响理解。" },
+  { level: "B1", band: "独立使用者", communicationDescription: "能理解工作、学习、旅行等熟悉话题的主要内容，并连贯描述经历、计划和观点。", grammarDescription: "能较准确地使用常见句型和熟悉结构；复杂表达中仍会犯错，但意思通常清楚。" },
+  { level: "B2", band: "独立使用者", communicationDescription: "能理解较复杂内容，并就广泛话题清晰、详细地表达和讨论不同观点。", grammarDescription: "语法控制程度较高，能使用一些复杂句式；偶尔出现不系统的错误，但通常不会造成误解。" },
+  { level: "C1", band: "熟练使用者", communicationDescription: "能理解长篇和隐含信息，并在学术、专业及社交场景中流利、灵活地表达。", grammarDescription: "能稳定控制复杂结构，错误较少且不明显，通常可以自行修正。" },
+  { level: "C2", band: "熟练使用者", communicationDescription: "几乎能轻松理解所听所读的一切，并准确、自然地区分和表达细微含义。", grammarDescription: "即使表达复杂内容或同时规划后续表达，也能持续、稳定地控制复杂语法。" },
+];
+
+function audienceSnapshot(values: { title: string; duration: 30 | 45 | 60; englishLevel: EnglishLevel | null; teacherId: string | null; studentIds: string[]; grammarBookEditionId: string; knowledgePointIds: string[] }) {
   return JSON.stringify({ ...values, studentIds: [...values.studentIds].sort(), knowledgePointIds: [...values.knowledgePointIds].sort() });
 }
 
@@ -26,9 +38,10 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   const router = useRouter();
   const createKey = useRef(createRequestId());
   const [title, setTitle] = useState("");
-  const [duration, setDuration] = useState<30 | 45 | 60 | null>(60);
-  const [englishLevel, setEnglishLevel] = useState<EnglishLevel | null>(null);
-  const [knowledgePoints, setKnowledgePoints] = useState<PresetOption[]>([]);
+  const [duration, setDuration] = useState<30 | 45 | 60>(60);
+  const [englishLevel, setEnglishLevel] = useState<EnglishLevel | null>(courseId ? null : "A2");
+  const [grammarCatalog, setGrammarCatalog] = useState<GrammarCatalogResponse>({ books: [] });
+  const [grammarBookEditionId, setGrammarBookEditionId] = useState(courseId ? "" : defaultGrammarBookId("A2"));
   const [selectedKnowledgePointIds, setSelectedKnowledgePointIds] = useState<string[]>([]);
   const [knowledgePickerOpen, setKnowledgePickerOpen] = useState(false);
   const [teacher, setTeacher] = useState<AudiencePerson | null>(null);
@@ -45,8 +58,10 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   const [pendingNavigationHref, setPendingNavigationHref] = useState<string | null>(null);
   const [missingPeopleRoles, setMissingPeopleRoles] = useState<PersonRole[]>([]);
   const [personNotice, setPersonNotice] = useState("");
+  const [legacyReadOnly, setLegacyReadOnly] = useState(false);
+  const [legacyKnowledgePoints, setLegacyKnowledgePoints] = useState<NonNullable<CourseAudienceDetail["legacyKnowledgePoints"]>>([]);
 
-  const currentSnapshot = audienceSnapshot({ title, duration, englishLevel, teacherId: teacher?.id ?? null, studentIds: students.map((student) => student.id), knowledgePointIds: selectedKnowledgePointIds });
+  const currentSnapshot = audienceSnapshot({ title, duration, englishLevel, teacherId: teacher?.id ?? null, studentIds: students.map((student) => student.id), grammarBookEditionId, knowledgePointIds: selectedKnowledgePointIds });
   const hasUnsavedChanges = Boolean(courseId && savedSnapshot !== null && currentSnapshot !== savedSnapshot);
 
   async function fetchPerson(id: string, role: PersonRole) {
@@ -56,7 +71,10 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   }
 
   useEffect(() => {
-    void fetch("/api/presets?kind=grammar").then((response) => response.json()).then((data: { presets?: PresetOption[] }) => setKnowledgePoints(data.presets ?? [])).catch(() => undefined);
+    void fetch("/api/grammar/catalog")
+      .then((response) => response.json())
+      .then((data: Partial<GrammarCatalogResponse>) => { if (Array.isArray(data.books)) setGrammarCatalog({ books: data.books }); })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -107,11 +125,14 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
         setTitle(audience.title);
         setDuration(audience.durationMinutes);
         setEnglishLevel(audience.englishLevel);
+        setGrammarBookEditionId(audience.grammarBookEditionId ?? "");
+        setLegacyReadOnly(!audience.grammarBookEditionId);
+        setLegacyKnowledgePoints(audience.legacyKnowledgePoints ?? []);
         setSelectedKnowledgePointIds(audience.knowledgePointIds ?? []);
         setTeacher(mapped.find((person) => person.role === "teacher") ?? null);
         setStudents(mapped.filter((person) => person.role === "student"));
         setFurthestStep(courseStageStep(audience.currentStage));
-        setSavedSnapshot(audienceSnapshot({ title: audience.title, duration: audience.durationMinutes, englishLevel: audience.englishLevel, teacherId: mapped.find((person) => person.role === "teacher")?.id ?? null, studentIds: mapped.filter((person) => person.role === "student").map((person) => person.id), knowledgePointIds: audience.knowledgePointIds ?? [] }));
+        setSavedSnapshot(audienceSnapshot({ title: audience.title, duration: audience.durationMinutes, englishLevel: audience.englishLevel, teacherId: mapped.find((person) => person.role === "teacher")?.id ?? null, studentIds: mapped.filter((person) => person.role === "student").map((person) => person.id), grammarBookEditionId: audience.grammarBookEditionId ?? "", knowledgePointIds: audience.knowledgePointIds ?? [] }));
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "授课对象加载失败");
       } finally {
@@ -122,7 +143,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
     return () => { active = false; };
   }, [courseId]);
 
-  const disabledReason = !title.trim() ? "填写课程名称" : !teacher ? "添加老师" : !teacher.activeVisual ? "完善老师形象" : !students.length ? "添加学生" : students.some((student) => !student.activeVisual) ? "完善学生形象" : !duration ? "选择时长" : !englishLevel ? "选择英语难度" : !selectedKnowledgePointIds.length ? "选择知识点" : null;
+  const disabledReason = legacyReadOnly ? null : !title.trim() ? "填写课程名称" : !teacher ? "添加老师" : !teacher.activeVisual ? "完善老师形象" : !students.length ? "添加学生" : students.some((student) => !student.activeVisual) ? "完善学生形象" : !englishLevel ? "选择英语难度" : !grammarBookEditionId ? "选择 Grammar in Use 书籍" : !selectedKnowledgePointIds.length ? "选择知识点" : null;
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => { if (hasUnsavedChanges) event.preventDefault(); };
@@ -143,6 +164,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
       studentIds: students.map((student) => student.id),
       durationMinutes: duration,
       englishLevel,
+      grammarBookEditionId,
       knowledgePointIds: selectedKnowledgePointIds,
       ...(preserveDownstream ? { preserveDownstream: true } : {}),
     };
@@ -176,11 +198,17 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (legacyReadOnly) return;
     await saveAndNavigate();
   }
 
-  if (loading) return <div className="mx-auto max-w-5xl space-y-5"><div className="skeleton h-12 rounded-md" /><div className="skeleton h-80 rounded-lg" /></div>;
+  const selectedBook = grammarCatalog.books.find((book) => book.id === grammarBookEditionId);
+  const selectedLevelOption = englishLevelOptions.find((option) => option.level === englishLevel);
+  const selectedPointMap = new Map<string, GrammarCatalogPoint>(
+    selectedBook?.sections.flatMap((section) => section.points).map((point) => [point.id, point]) ?? [],
+  );
 
+  if (loading) return <div className="mx-auto max-w-5xl space-y-5"><div className="skeleton h-12 rounded-md" /><div className="skeleton h-80 rounded-lg" /></div>;
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <CourseCreateSteps courseId={courseId} currentStep={1} furthestStep={furthestStep} onNavigate={(href) => { if (hasUnsavedChanges) setPendingNavigationHref(href); else router.push(href); }} />
@@ -189,6 +217,8 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
           <h2 className="text-2xl font-semibold text-foreground">基础信息</h2>
         </div>
       </div>
+
+      {legacyReadOnly ? <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900" role="status"><span className="font-semibold">旧课程基础信息仅供查看，不能修改</span><span className="ml-1">系统会保留原人物、难度和知识点，不自动转换为 Grammar in Use。</span></div> : null}
 
       {missingPeopleRoles.length ? (
         <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between" role="status">
@@ -217,6 +247,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
               maxLength={120}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="例如：海底图书馆"
+              readOnly={legacyReadOnly}
               value={title}
             />
           </label>
@@ -224,38 +255,35 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
 
         <AudienceSection icon={<UserRound className="size-4" />} title="老师">
           <div>
-            {teacher ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><SelectedPerson person={teacher} onEdit={() => setEditing(teacher)} onRemove={() => setTeacher(null)} /></div> : <AddPersonButton label="添加老师" onClick={() => setPickerRole("teacher")} />}
+            {teacher ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><SelectedPerson person={teacher} onEdit={legacyReadOnly ? undefined : () => setEditing(teacher)} onRemove={legacyReadOnly ? undefined : () => setTeacher(null)} /></div> : legacyReadOnly ? <p className="text-sm text-muted-foreground">旧课程未记录老师</p> : <AddPersonButton label="添加老师" onClick={() => setPickerRole("teacher")} />}
           </div>
         </AudienceSection>
 
         <AudienceSection icon={<UsersRound className="size-4" />} title="学生">
           <div className="space-y-3">
-            {students.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{students.map((student) => <SelectedPerson key={student.id} person={student} onEdit={() => setEditing(student)} onRemove={() => setStudents((current) => current.filter((person) => person.id !== student.id))} />)}</div> : null}
-            <AddPersonButton label={students.length ? "继续添加学生" : "添加学生"} onClick={() => setPickerRole("student")} />
-          </div>
-        </AudienceSection>
-
-        <AudienceSection icon={<Clock3 className="size-4" />} title="课程时长">
-          <div className="grid grid-cols-3 gap-2 rounded-lg bg-muted p-1">
-            {([30, 45, 60] as const).map((value) => <button aria-pressed={duration === value} className={cn("min-h-11 rounded-md px-3 text-sm font-medium transition-colors", duration === value ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70 hover:text-foreground")} key={value} onClick={() => setDuration(value)} type="button">{value} 分钟</button>)}
+            {students.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{students.map((student) => <SelectedPerson key={student.id} person={student} onEdit={legacyReadOnly ? undefined : () => setEditing(student)} onRemove={legacyReadOnly ? undefined : () => setStudents((current) => current.filter((person) => person.id !== student.id))} />)}</div> : legacyReadOnly ? <p className="text-sm text-muted-foreground">旧课程未记录学生</p> : null}
+            {!legacyReadOnly ? <AddPersonButton label={students.length ? "继续添加学生" : "添加学生"} onClick={() => setPickerRole("student")} /> : null}
           </div>
         </AudienceSection>
 
         <AudienceSection icon={<GraduationCap className="size-4" />} title="英语难度">
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">{(["Starter", "A1", "A2", "B1", "B2", "C1", "C2"] as const).map((level) => <button aria-pressed={englishLevel === level} className={cn("min-h-11 rounded-md border px-3 text-sm font-semibold transition-colors", englishLevel === level ? "border-primary bg-primary-50 text-primary-700" : "border-border bg-background text-muted-foreground hover:border-primary-300 hover:text-foreground")} key={level} onClick={() => setEnglishLevel(level)} type="button">{level}</button>)}</div>
+          <div aria-label="英语难度等级" className="grid grid-cols-4 gap-2 sm:grid-cols-7" role="group">{englishLevelOptions.map(({ level, band }) => <button aria-label={level} aria-pressed={englishLevel === level} className={cn("min-h-16 rounded-lg border px-2 py-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5365EC] focus-visible:ring-offset-2 disabled:cursor-default", englishLevel === level ? "border-[#5365EC] bg-[#5365EC] text-white shadow-sm" : "border-[#D7E5F1] bg-white text-[#30459E] hover:border-[#BFC9F7] hover:bg-[#EEF0FF]")} disabled={legacyReadOnly} key={level} onClick={() => { setEnglishLevel(level); if (!selectedKnowledgePointIds.length) setGrammarBookEditionId(defaultGrammarBookId(level)); }} type="button"><span className="block text-base font-bold">{level}</span><span className={cn("mt-0.5 block truncate text-[11px] font-semibold", englishLevel === level ? "text-white/85" : "text-[#69829B]")}>{band.replace("产品起步级 · ", "")}</span></button>)}</div>
+          {selectedLevelOption ? <div aria-live="polite" className="mt-3 rounded-lg border border-[#CCD8F8] bg-[#F8FAFF] px-4 py-3.5"><div className="flex flex-wrap items-center gap-2"><span className="rounded-md bg-[#5365EC] px-2 py-1 text-xs font-bold text-white">{selectedLevelOption.level}</span><span className="text-sm font-bold text-[#30459E]">{selectedLevelOption.band}</span></div><dl className="mt-2 grid gap-2 text-sm leading-6 text-[#38536E]"><div className="grid gap-0.5 sm:grid-cols-[5rem_minmax(0,1fr)] sm:gap-3"><dt className="font-semibold text-[#30459E]">综合能力</dt><dd className="text-pretty">{selectedLevelOption.communicationDescription}</dd></div><div className="grid gap-0.5 sm:grid-cols-[5rem_minmax(0,1fr)] sm:gap-3"><dt className="font-semibold text-[#30459E]">语法表现</dt><dd className="text-pretty">{selectedLevelOption.grammarDescription}</dd></div></dl></div> : null}
+          {!selectedLevelOption && legacyReadOnly ? <p className="mt-3 rounded-lg border border-dashed border-[#CCD8F8] bg-[#F8FAFF] px-4 py-3 text-sm text-[#69829B]">旧课程未记录英语难度</p> : null}
         </AudienceSection>
 
-        <AudienceSection action={<Button onClick={() => setKnowledgePickerOpen(true)} size="sm" type="button" variant="outline">选择知识点</Button>} icon={<Target className="size-4" />} title="全课知识点">
-          <div className="flex min-h-12 flex-wrap gap-2 rounded-md border border-primary-100 bg-primary-50/45 p-3">{selectedKnowledgePointIds.length ? selectedKnowledgePointIds.map((id) => { const point = knowledgePoints.find((item) => item.id === id); return point ? <span className="inline-flex items-center gap-1 rounded-full border border-primary-200 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-800" key={id}>{knowledgePointName(point)}<button aria-label={`移除${point.labelZh ?? point.label}`} onClick={() => setSelectedKnowledgePointIds((current) => current.filter((item) => item !== id))} type="button"><X aria-hidden className="size-3.5 text-primary-600" /></button></span> : null; }) : <span className="text-sm text-muted-foreground">至少选择 1 个知识点</span>}</div>
+        <AudienceSection action={!legacyReadOnly ? <Button onClick={() => setKnowledgePickerOpen(true)} size="sm" type="button" variant="outline">选择知识点</Button> : null} icon={<Target className="size-4" />} title="全课知识点">
+          {selectedBook ? <div className="mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2"><p className="text-sm font-semibold text-foreground">《{selectedBook.title}》</p><p className="mt-0.5 text-xs text-muted-foreground">默认按难度推荐 · {selectedBook.edition} · {selectedBook.officialLevel}</p></div> : legacyReadOnly ? <div className="mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2"><p className="text-sm font-semibold text-foreground">旧版知识点库</p><p className="mt-0.5 text-xs text-muted-foreground">保留课程创建时选择的原知识点</p></div> : null}
+          <div className="flex min-h-12 flex-wrap gap-2 rounded-md border border-primary-100 bg-primary-50/45 p-3">{legacyReadOnly ? legacyKnowledgePoints.length ? legacyKnowledgePoints.map((point) => { const displayName = point.labelZh ? `${point.labelZh} · ${point.label}` : point.label; return <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary-200 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-800" key={point.id}><OverflowingKnowledgePointTitle title={displayName} />{point.category ? <span className="shrink-0 text-xs font-normal text-primary-600">{point.category}</span> : null}</span>; }) : <span className="text-sm text-muted-foreground">旧课程未记录知识点</span> : selectedKnowledgePointIds.length ? selectedKnowledgePointIds.map((id) => { const point = selectedPointMap.get(id); return point ? <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary-200 bg-primary-50 py-1.5 pl-3 pr-1.5 text-sm font-medium text-primary-800" key={id}><OverflowingKnowledgePointTitle title={point.title} /><span className="shrink-0 text-xs font-normal text-primary-600">{unitRangeLabel(point)}</span><button aria-label={`移除 ${point.title}`} className="flex min-h-7 min-w-7 shrink-0 items-center justify-center" onClick={() => setSelectedKnowledgePointIds((current) => current.filter((item) => item !== id))} type="button"><X aria-hidden className="size-3.5 text-primary-600" /></button></span> : null; }) : <span className="text-sm text-muted-foreground">至少选择 1 个知识点</span>}</div>
           {selectedKnowledgePointIds.length > 10 ? <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">已选择 {selectedKnowledgePointIds.length} 个知识点，知识密度可能偏高。AI 会优先匹配适合各章节的重点，未推荐内容可在配置页调整。</p> : null}
         </AudienceSection>
 
         {error ? <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div> : null}
 
-        <div className="sticky bottom-4 flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-md sm:px-5">
+        {legacyReadOnly && courseId ? <div className="sticky bottom-4 flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-md sm:px-5"><p className="text-sm font-medium text-muted-foreground">只读模式</p><Button asChild><Link href={`/courses/${courseId}`}>返回课程详情</Link></Button></div> : <div className="sticky bottom-4 flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-md sm:px-5">
           <p aria-live="polite" className={cn("text-sm font-medium", disabledReason ? "text-red-600" : "text-muted-foreground")}>{disabledReason ? `还需：${disabledReason}` : saving ? "正在保存…" : hasUnsavedChanges ? "有未确认修改" : courseId ? "当前信息已确认" : `已选择 1 位老师、${students.length} 位学生`}</p>
           <Button disabled={Boolean(disabledReason) || saving} type="submit">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{saving ? "保存中" : "下一步：故事大纲"}</Button>
-        </div>
+        </div>}
       </form>
 
       {pickerRole ? (
@@ -271,7 +299,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
           onCompleteVisual={(person) => { setReturnToPickerRole(pickerRole); setPickerRole(null); setEditing(person); }}
         />
       ) : null}
-      {knowledgePickerOpen ? <KnowledgePointPickerDialog description="按类别选择本课教学目标。AI 只会在已选知识点中进行章节匹配。" knowledgePoints={knowledgePoints} onClose={() => setKnowledgePickerOpen(false)} onConfirm={(ids) => { setSelectedKnowledgePointIds(ids); setKnowledgePickerOpen(false); }} selectedIds={selectedKnowledgePointIds} title="选择全课知识点" /> : null}
+      {knowledgePickerOpen && grammarCatalog.books.length ? <GrammarKnowledgePointPickerDialog books={grammarCatalog.books} initialBookId={grammarBookEditionId || defaultGrammarBookId(englishLevel)} initialSelectedIds={selectedKnowledgePointIds} onClose={() => setKnowledgePickerOpen(false)} onConfirm={({ bookId, selectedIds }) => { setGrammarBookEditionId(bookId); setSelectedKnowledgePointIds(selectedIds); setKnowledgePickerOpen(false); }} /> : null}
       {downstreamChoice ? <Dialog description="本次修改尚未保存" onClose={() => setDownstreamChoice(null)} open size="compact" title="后续内容需要更新">
         <div className="space-y-5 p-5 sm:p-6">
           <div className="space-y-2 text-pretty text-sm leading-6">
@@ -310,17 +338,13 @@ function AudienceSection({ action, children, icon, title }: { action?: React.Rea
   );
 }
 
-function knowledgePointName(point: Pick<PresetOption, "label" | "labelZh">) {
-  return point.labelZh ? `${point.labelZh} · ${point.label}` : point.label;
-}
-
 function AddPersonButton({ label, onClick }: { label: string; onClick: () => void }) {
   return <button className="flex min-h-14 w-full items-center justify-center gap-2 rounded-md border border-dashed border-border text-sm font-medium text-muted-foreground transition-colors hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700" onClick={onClick} type="button"><Plus className="size-4" />{label}</button>;
 }
 
-function SelectedPerson({ person, onEdit, onRemove }: { person: AudiencePerson; onEdit: () => void; onRemove: () => void }) {
+function SelectedPerson({ person, onEdit, onRemove }: { person: AudiencePerson; onEdit?: () => void; onRemove?: () => void }) {
   return (
-    <article className="relative flex min-h-32 w-full max-w-sm gap-3 rounded-lg border border-border bg-card p-3 pr-11" data-testid={`selected-person-${person.id}`}>
+    <article className={cn("relative flex min-h-32 w-full max-w-sm gap-3 rounded-lg border border-border bg-card p-3", onEdit || onRemove ? "pr-11" : "pr-3")} data-testid={`selected-person-${person.id}`}>
       <PersonAvatar avatarUrl={person.activeVisual?.publicUrl} gender={person.gender} imageHeight={120} imageWidth={80} name={person.chineseName} seed={person.id} shape={person.activeVisual ? "square" : "circle"} size={64} />
       <div className="flex min-w-0 flex-1 flex-col items-center justify-center self-stretch rounded-md bg-primary-50/70 px-3 py-2 text-center">
         <h4 className="max-w-full truncate text-base font-bold text-foreground">{person.chineseName}</h4>
@@ -328,7 +352,7 @@ function SelectedPerson({ person, onEdit, onRemove }: { person: AudiencePerson; 
         <PersonMetaBadges person={person} />
         {person.profileChanged ? <span className="mt-2 w-fit rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">档案已更新</span> : null}
       </div>
-      <div className="absolute right-2 top-1/2 flex -translate-y-1/2 flex-col gap-0.5"><Button aria-label={`编辑${person.chineseName}`} className="text-muted-foreground hover:bg-muted hover:text-foreground" onClick={onEdit} size="icon-sm" title="编辑" type="button" variant="ghost"><Pencil className="size-3.5" /></Button><Button aria-label={`移除${person.chineseName}`} className="text-muted-foreground hover:bg-red-50 hover:text-red-600" onClick={onRemove} size="icon-sm" title="移除" type="button" variant="ghost"><Trash2 className="size-3.5" /></Button></div>
+      {onEdit || onRemove ? <div className="absolute right-2 top-1/2 flex -translate-y-1/2 flex-col gap-0.5">{onEdit ? <Button aria-label={`编辑${person.chineseName}`} className="text-muted-foreground hover:bg-muted hover:text-foreground" onClick={onEdit} size="icon-sm" title="编辑" type="button" variant="ghost"><Pencil className="size-3.5" /></Button> : null}{onRemove ? <Button aria-label={`移除${person.chineseName}`} className="text-muted-foreground hover:bg-red-50 hover:text-red-600" onClick={onRemove} size="icon-sm" title="移除" type="button" variant="ghost"><Trash2 className="size-3.5" /></Button> : null}</div> : null}
     </article>
   );
 }

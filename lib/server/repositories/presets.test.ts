@@ -1,8 +1,18 @@
 import { describe, expect, test } from "vitest";
 
-import { archivePreset, createPreset, listPresets, PresetConflictError, PresetNotFoundError, updatePreset } from "./presets";
+import { archivePreset, createPreset, listPresets, PresetConflictError, PresetNotFoundError, PresetReadOnlyError, updatePreset } from "./presets";
 
 describe("presets repository", () => {
+  test("keeps legacy grammar presets read-only", async () => {
+    const db = {
+      presetOption: {
+        findUnique: async () => ({ id: "grammar-1", kind: "grammar", label: "Past simple", labelZh: null, category: null, sortOrder: 0, archivedAt: null, createdAt: new Date(), updatedAt: new Date() }),
+      },
+    } as never;
+
+    await expect(archivePreset(db, "grammar-1")).rejects.toBeInstanceOf(PresetReadOnlyError);
+  });
+
   test("lists active presets filtered by kind and ordered", async () => {
     const presets = await listPresets(
       {
@@ -80,8 +90,8 @@ describe("presets repository", () => {
     expect(preset.category).toBe("自然与生态");
   });
 
-  test("stores the Chinese label for a grammar preset", async () => {
-    const preset = await createPreset(
+  test("rejects creating a legacy grammar preset", async () => {
+    await expect(createPreset(
       {
         presetOption: {
           findMany: async () => [],
@@ -92,9 +102,7 @@ describe("presets repository", () => {
         },
       },
       { kind: "grammar", label: "Past Simple", labelZh: "  一般过去时  ", category: "时态" },
-    );
-
-    expect(preset).toMatchObject({ label: "Past Simple", labelZh: "一般过去时", category: "时态" });
+    )).rejects.toBeInstanceOf(PresetReadOnlyError);
   });
 
   test("rejects creating a duplicate preset", async () => {
@@ -171,19 +179,19 @@ describe("presets repository", () => {
         presetOption: {
           findMany: async () => [],
           findFirst: async (query) => {
-            expect(query.where).toEqual({ kind: "grammar", label: "Future Simple", archivedAt: null, id: { not: "preset-3" } });
+            expect(query.where).toEqual({ kind: "theme", label: "未来世界", archivedAt: null, id: { not: "preset-3" } });
             return null;
           },
           create: async () => ({}) as never,
           update: async ({ where, data }) => {
             expect(where).toEqual({ id: "preset-3" });
-            expect(data).toEqual({ label: "Future Simple", labelZh: "一般将来时", category: "时态" });
+            expect(data).toEqual({ label: "未来世界", labelZh: null, category: "科学与未来" });
             return {
               id: "preset-3",
-              kind: "grammar",
-              label: "Future Simple",
-              labelZh: "一般将来时",
-              category: "时态",
+              kind: "theme",
+              label: "未来世界",
+              labelZh: null,
+              category: "科学与未来",
               sortOrder: 0,
               archivedAt: null,
               createdAt: new Date("2026-07-01T09:00:00.000Z"),
@@ -194,9 +202,9 @@ describe("presets repository", () => {
             expect(where).toEqual({ id: "preset-3" });
             return {
               id: "preset-3",
-              kind: "grammar",
-              label: "Future",
-              category: "时态",
+              kind: "theme",
+              label: "未来",
+              category: "科学与未来",
               sortOrder: 0,
               archivedAt: null,
               createdAt: new Date("2026-07-01T09:00:00.000Z"),
@@ -206,10 +214,10 @@ describe("presets repository", () => {
         },
       },
       "preset-3",
-      { kind: "grammar", label: "Future Simple", labelZh: "一般将来时", category: "时态" },
+      { kind: "theme", label: "未来世界", category: "科学与未来" },
     );
 
-    expect(updated.label).toBe("Future Simple");
+    expect(updated.label).toBe("未来世界");
     expect(updated.updatedAt).toBe("2026-07-03T09:00:00.000Z");
   });
 
