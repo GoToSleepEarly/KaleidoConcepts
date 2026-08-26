@@ -66,11 +66,28 @@ function AutoFit({ children, className, fontScale = 1, maxScale = 1 }: { childre
     };
     fit();
     if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(fit);
+    let frameId: number | null = null;
+    let lastWidth = outer.clientWidth;
+    let lastHeight = outer.clientHeight;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      if (Math.abs(width - lastWidth) < 0.5 && Math.abs(height - lastHeight) < 0.5) return;
+      lastWidth = width;
+      lastHeight = height;
+      if (frameId !== null) window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        fit();
+      });
+    });
     observer.observe(outer);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (frameId !== null) window.cancelAnimationFrame(frameId);
+    };
   }, [children, fontScale, maxScale]);
-  return <div className={cn("min-h-0 overflow-hidden", className)} ref={outerRef} style={{ "--page-scale": fontScale, "--auto-fit-scale": maxScale } as React.CSSProperties}><div ref={innerRef}>{children}</div></div>;
+  return <div className={cn("min-h-0 overflow-hidden [contain:layout]", className)} ref={outerRef} style={{ "--page-scale": fontScale, "--auto-fit-scale": maxScale } as React.CSSProperties}><div ref={innerRef}>{children}</div></div>;
 }
 
 function ExerciseToken({ part, points, answerMode, complete, revealed, onToggle }: { part: Extract<CoursePreviewReadingPart, { type: "exercise" }>; points: CoursePreviewKnowledgePoint[]; answerMode: PreviewSlideAnswerMode; complete: boolean; revealed: boolean; onToggle: () => void }) {

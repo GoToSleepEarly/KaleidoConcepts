@@ -2,10 +2,12 @@
 
 import React, { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, BookOpen, Bot, Check, Loader2, Pencil, RotateCcw, Search, Sparkles, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Bot, Check, Loader2, Pencil, RotateCcw, Search, Send, Sparkles, UserRound } from "lucide-react";
 
+import { AutoGrowTextarea } from "@/components/ui/auto-grow-textarea";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { AiOperationStatusCard, AiWorkspaceGuide, CourseAiWorkspaceFrame, type AiOperationPresentation } from "@/features/courses/components/course-ai-workspace";
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
 import type { CourseSourceReference, CourseStoryChatAction, CourseStoryMessageInput, CourseStoryOutline, CourseStoryOutlineState, CourseStoryDirection, PresetOption, StoryWritingProvider } from "@/lib/contracts/api";
@@ -89,6 +91,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const [customTone, setCustomTone] = useState("");
   const [pending, setPending] = useState(initialState.operation?.status === "running");
   const [pendingLabel, setPendingLabel] = useState(() => operationLoadingLabel(initialState.operation?.phase));
+  const [pendingAction, setPendingAction] = useState(initialState.operation?.action ?? "idea");
   const [pendingSeconds, setPendingSeconds] = useState(0);
   const [resultTab, setResultTab] = useState<ResultTab>(() => latestResultTab(initialState));
   const [error, setError] = useState("");
@@ -229,6 +232,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     setPendingSeconds(0);
     setPending(true);
     setPendingLabel(label);
+    setPendingAction(input.action ?? input.mode);
     setError("");
     requestInFlight.current = true;
     setOptimisticTeacherMessage(optimisticMessage);
@@ -441,10 +445,10 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   }
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-4 max-lg:h-[calc(100dvh-7.25rem)] max-lg:overflow-hidden lg:gap-6" data-testid="story-outline-shell">
+    <div className={cn("mx-auto flex max-w-7xl flex-col gap-4 lg:gap-5", hasResultContent && "gap-3 max-lg:h-[calc(100dvh-7.25rem)] max-lg:overflow-hidden lg:h-[calc(100dvh-8.5rem)] lg:min-h-[36rem] lg:gap-4 lg:overflow-hidden")} data-testid="story-outline-shell">
       <CourseCreateSteps courseId={state.course.id} currentStep={2} furthestStep={courseStageStep(state.course.currentStage)} onNavigate={navigate} />
       <CourseStaleNotice staleFromStage={state.course.staleFromStage} stage="story_outline" />
-      <div className="flex shrink-0 items-end justify-between gap-4">
+      <div className="flex shrink-0 items-end justify-between gap-4" data-testid="story-stage-heading-row">
         <div>
           <h2 className="text-2xl font-semibold text-foreground">故事大纲</h2>
         </div>
@@ -458,9 +462,30 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
         </div>
       </div>
 
-      <div className={cn("grid min-h-0 gap-4 transition-[max-width,grid-template-columns] duration-300 max-lg:flex-1 max-lg:grid-rows-[auto_minmax(0,1fr)] max-lg:overflow-hidden lg:gap-5 lg:grid-rows-none", hasResultContent ? "lg:h-[calc(100dvh-13.5rem)] lg:min-h-[680px] lg:grid-cols-[minmax(300px,0.85fr)_minmax(360px,1.15fr)] xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)]" : "mx-auto w-full max-w-5xl")} data-layout={hasResultContent ? "split" : "focus"} data-testid="story-outline-layout">
+      <CourseAiWorkspaceFrame
+        active={hasResultContent}
+        className={cn(hasResultContent && "gap-3 max-lg:flex-1 max-lg:overflow-hidden lg:flex-1 lg:gap-3")}
+        footer={(
+          <div className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-2 shadow-md sm:items-center sm:justify-between sm:flex-row" data-testid="story-step-footer">
+            <p aria-live="polite" className="text-sm text-muted-foreground">
+              {hasUnsentInput ? "输入内容尚未发送" : state.outline ? "故事大纲已生成，可以进入教学规划" : "还需：生成故事大纲"}
+            </p>
+            <div className="flex gap-2">
+              <Button disabled={pending} onClick={() => navigate(`/courses/${state.course.id}/create/audience`)} type="button" variant="outline">
+                <ArrowLeft className="size-4" />
+                上一步
+              </Button>
+              <Button disabled={pending || !state.outline || state.alignment?.artifactsOutdated === true} loading={pending && pendingLabel === "正在确认故事大纲..."} onClick={() => (courseStageStep(state.course.currentStage) >= 3 ? navigate(`/courses/${state.course.id}/create/teaching-plan`) : void confirm())} type="button">
+                下一步：教学规划
+                <ArrowRight className="size-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      >
+      <div className={cn("grid min-h-0 gap-4 lg:gap-5", hasResultContent ? "h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden xl:grid-cols-[minmax(420px,1fr)_minmax(0,1.2fr)] xl:grid-rows-[minmax(0,1fr)]" : "w-full xl:grid-cols-[minmax(0,2fr)_minmax(260px,0.75fr)] xl:items-start")} data-layout={hasResultContent ? "split" : "focus"} data-testid="story-outline-layout">
         {hasResultContent ? (
-          <div className="grid shrink-0 grid-cols-2 gap-1 rounded-lg bg-muted p-1 lg:hidden" data-testid="story-mobile-view-tabs">
+          <div className="grid shrink-0 grid-cols-2 gap-1 rounded-lg bg-muted p-1 xl:hidden" data-testid="story-mobile-view-tabs">
             <button aria-pressed={mobileView === "chat"} className={modeClass(mobileView === "chat")} onClick={() => setMobileView("chat")} type="button">
               聊天
             </button>
@@ -469,8 +494,8 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
             </button>
           </div>
         ) : null}
-        <section className={cn("flex min-h-0 min-w-0 flex-col rounded-lg bg-card shadow-sm", hasResultContent ? "overflow-hidden lg:h-full" : "min-h-[clamp(560px,calc(100dvh-18rem),720px)]", hasResultContent && mobileView === "result" && "hidden lg:flex")} data-testid="story-chat-pane">
-          <div className="border-b border-border p-4">
+        <section className={cn("flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-card shadow-sm", hasResultContent && "lg:h-full", !hasResultContent && "self-start", hasResultContent && mobileView === "result" && "hidden xl:flex")} data-testid="story-chat-pane">
+          <div className={cn("border-b border-border", conversationStarted ? "flex min-h-14 items-center justify-between gap-3 px-4 py-2" : "p-4", !hasResultContent && "max-w-3xl")} data-testid="story-chat-toolbar">
             {!conversationStarted ? (
               <div className={cn("grid grid-cols-2 gap-2 rounded-lg bg-muted p-1", !hasResultContent && "w-full")}>
                 <button className={modeClass(mode === "idea")} onClick={() => setMode("idea")} type="button">
@@ -480,11 +505,11 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                   随机灵感
                 </button>
               </div>
-            ) : null}
-            <div className={cn("mt-3 grid grid-cols-2 gap-2 sm:gap-3", !hasResultContent && "w-full")} data-testid="story-chat-settings">
-              <label className="block">
-                <span className="text-xs text-muted-foreground">章节数</span>
-                <select aria-label="章节数" className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm sm:h-10 sm:px-3" onChange={(event) => setChapterCount(Number(event.target.value))} value={chapterCount}>
+            ) : <span className="shrink-0 text-sm font-semibold text-foreground">创作对话</span>}
+            <div className={cn(conversationStarted ? "flex min-w-0 items-center gap-2" : "mt-3 grid w-full grid-cols-2 gap-2 sm:gap-3")} data-testid="story-chat-settings">
+              <label className={cn(conversationStarted ? "flex min-w-0 items-center gap-1" : "block")}>
+                <span className="shrink-0 text-xs text-muted-foreground">章节数</span>
+                <select aria-label="章节数" className={cn("rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100", conversationStarted ? "h-10 w-20" : "mt-1 h-9 w-full sm:h-10 sm:px-3")} onChange={(event) => setChapterCount(Number(event.target.value))} value={chapterCount}>
                   {[3, 4, 5].map((value) => (
                     <option key={value} value={value}>
                       {value} 章
@@ -492,9 +517,9 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                   ))}
                 </select>
               </label>
-              <label className="block">
-                <span className="text-xs text-muted-foreground">写作模型</span>
-                <select aria-label="写作模型" className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm sm:h-10 sm:px-3" onChange={(event) => setWritingProvider(event.target.value as StoryWritingProvider)} value={writingProvider}>
+              <label className={cn(conversationStarted ? "flex min-w-0 items-center gap-1" : "block")}>
+                <span className="shrink-0 text-xs text-muted-foreground">写作模型</span>
+                <select aria-label="写作模型" className={cn("rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100", conversationStarted ? "h-10 w-24" : "mt-1 h-9 w-full sm:h-10 sm:px-3")} onChange={(event) => setWritingProvider(event.target.value as StoryWritingProvider)} value={writingProvider}>
                   <option value="quickrouter_gpt">GPT</option>
                   <option value="quickrouter_deepseek">DeepSeek（成本更低）</option>
                 </select>
@@ -504,7 +529,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
 
           <div className="min-h-0 flex-1 touch-pan-y space-y-3 overflow-y-auto overscroll-contain scroll-pb-24 p-4" data-testid="story-chat-scroll" ref={chatScrollRef}>
             {!conversationStarted && mode === "random" ? (
-              <form className="w-full space-y-4 rounded-lg border border-border bg-muted/30 p-4" onSubmit={submit}>
+              <form className={cn("w-full space-y-4 rounded-lg border border-border bg-muted/30 p-4", !hasResultContent && "max-w-3xl")} onSubmit={submit}>
                 <h3 className="font-medium text-foreground">生成故事方向</h3>
                 <div className="block">
                   <span className="text-xs text-muted-foreground">主题灵感</span>
@@ -578,7 +603,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
             {pending && pendingLabel && pendingLabel !== "正在确认故事大纲..." ? (
               <div className="flex items-start gap-2">
                 <ChatAvatar role="assistant" />
-                <LoadingCard className="max-w-xl" label={pendingLabel} seconds={pendingSeconds} />
+                <AiOperationStatusCard compact elapsedSeconds={pendingSeconds} persisted={state.operation?.status === "running"} presentation={storyOperationPresentation(state.operation?.action ?? pendingAction, state.operation?.phase)} />
               </div>
             ) : null}
             {!pending && state.operation?.status === "failed" && !hasCurrentRetryAction ? (
@@ -606,8 +631,8 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
           </div>
 
           {mode === "idea" || conversationStarted ? (
-            <form className="shrink-0 border-t border-border p-4" data-testid="story-chat-composer" onSubmit={submit}>
-              <div className={cn("mx-auto w-full", !hasResultContent && "max-w-4xl")}>
+            <form className={cn("shrink-0 border-t border-border", conversationStarted ? "p-3" : "p-4")} data-testid="story-chat-composer" onSubmit={submit}>
+              <div className={cn("w-full", !hasResultContent && "max-w-3xl")}>
                 {composerIntent ? (
                   <div className="mb-2 flex items-center justify-between gap-3 rounded-md bg-primary-50 px-3 py-2 text-xs text-primary-800" role="status">
                     <span className="font-medium">正在修改：{composerIntent.label}</span>
@@ -624,25 +649,34 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                     </button>
                   </div>
                 ) : null}
-                <label className="block">
-                  <span className={conversationStarted ? "sr-only" : "text-sm font-medium text-foreground"}>{conversationStarted ? "故事想法" : "说说你的故事想法"}</span>
-                  {!conversationStarted ? <span className="mt-1 block text-pretty text-xs leading-5 text-muted-foreground">可以写参考人物、IP、故事类型，以及希望老师学生如何参与。例如：老师和学生一起穿越到魔法世界经历了一场奇幻冒险。</span> : null}
-                  <textarea aria-label="故事想法" className="mt-2 min-h-24 w-full resize-none rounded-md border border-input bg-background p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" onChange={(event) => setMessage(event.target.value)} placeholder={conversationStarted ? "继续补充故事要求，或说明希望如何修改" : "输入你的故事想法"} ref={inputRef} value={message} />
-                </label>
-                {error ? <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
-                <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-                  <Button disabled={pending || (mode === "idea" && !message.trim())} type="submit">
-                    {pending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-                    {pending ? "处理中" : conversationStarted ? "发送" : "开始讨论故事"}
-                  </Button>
+                <div className={cn(conversationStarted && "relative")} data-testid={conversationStarted ? "story-inline-composer" : undefined}>
+                  <label className="block">
+                    <span className={conversationStarted ? "sr-only" : "text-sm font-medium text-foreground"}>{conversationStarted ? "故事想法" : "说说你的故事想法"}</span>
+                    {!conversationStarted ? <span className="mt-1 block text-pretty text-xs leading-5 text-muted-foreground">可以写参考人物、IP、故事类型，以及希望老师学生如何参与。例如：老师和学生一起穿越到魔法世界经历了一场奇幻冒险。</span> : null}
+                    <AutoGrowTextarea aria-label="故事想法" className={cn("block w-full resize-none overflow-y-hidden rounded-md border border-input bg-background px-3 text-sm leading-5 outline-none focus:border-primary focus:ring-2 focus:ring-primary-100", conversationStarted ? "min-h-13 max-h-32 py-4 pr-16" : "mt-2 min-h-13 max-h-32 py-4")} onChange={(event) => setMessage(event.target.value)} placeholder={conversationStarted ? "继续补充故事要求，或说明希望如何修改" : "输入你的故事想法"} ref={inputRef} rows={1} value={message} />
+                  </label>
+                  {conversationStarted ? (
+                    <Button aria-label={pending ? "处理中" : "发送"} className="absolute bottom-1 right-1 size-11 min-h-11 min-w-11 rounded-full bg-primary-50 p-0 text-primary shadow-none hover:bg-primary-100 hover:text-primary" disabled={pending || (mode === "idea" && !message.trim())} type="submit" variant="ghost">
+                      {pending ? <Loader2 className="size-4 animate-spin" /> : <Send aria-hidden="true" className="size-4" />}
+                    </Button>
+                  ) : null}
                 </div>
+                {error ? <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+                {!conversationStarted ? (
+                  <div className="mt-3">
+                    <Button className="w-full" disabled={pending || (mode === "idea" && !message.trim())} type="submit">
+                    {pending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                      {pending ? "处理中" : "开始讨论故事"}
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             </form>
           ) : null}
         </section>
 
         {hasResultContent ? (
-          <div className={cn("min-h-0 min-w-0 overflow-y-auto overscroll-contain scroll-pb-24 lg:h-full", mobileView === "chat" && "hidden lg:block")} data-testid="story-result-scroll">
+          <div className={cn("min-h-0 min-w-0 overflow-y-auto overscroll-contain scroll-pb-24 lg:h-full", mobileView === "chat" && "hidden xl:block")} data-testid="story-result-scroll">
             <ResultPanel
               onDescribeDirection={() => continueModify("我希望的故事方向：")}
               onConfirmDirection={(direction) =>
@@ -680,10 +714,8 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                   `修改第 ${order} 章：`,
                 )
               }
-              onConfirm={() => (courseStageStep(state.course.currentStage) >= 3 ? navigate(`/courses/${state.course.id}/create/teaching-plan`) : void confirm())}
               outline={state.outline}
               pending={pending}
-              pendingLabel={pendingLabel}
               references={state.referenceMaterials}
               resultTab={resultTab}
               setResultTab={setResultTab}
@@ -691,22 +723,9 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
             />
           </div>
         ) : null}
+        {!hasResultContent ? <AiWorkspaceGuide className="hidden xl:block" items={["描述已有想法，或用随机灵感快速确定主题与氛围。", "AI 会先确认创作理解，信息不足时只询问必要问题。", "确认方向后生成可逐章修改的故事大纲。"]} title="从一个清楚的故事目标开始" /> : null}
       </div>
-      <div className="hidden flex-col gap-3 rounded-lg border border-border bg-card/95 px-4 py-3 shadow-md backdrop-blur sm:items-center sm:justify-between lg:sticky lg:bottom-4 lg:z-20 lg:flex lg:flex-row" data-testid="story-step-footer">
-        <p aria-live="polite" className="text-sm text-muted-foreground">
-          {hasUnsentInput ? "输入内容尚未发送" : state.outline ? "故事大纲已生成，可以进入教学规划" : "还需：生成故事大纲"}
-        </p>
-        <div className="flex gap-2">
-          <Button disabled={pending} onClick={() => navigate(`/courses/${state.course.id}/create/audience`)} type="button" variant="outline">
-            <ArrowLeft className="size-4" />
-            上一步
-          </Button>
-          <Button disabled={pending || !state.outline} onClick={() => (courseStageStep(state.course.currentStage) >= 3 ? navigate(`/courses/${state.course.id}/create/teaching-plan`) : void confirm())} type="button">
-            下一步：教学规划
-            <ArrowRight className="size-4" />
-          </Button>
-        </div>
-      </div>
+      </CourseAiWorkspaceFrame>
       {themePickerOpen ? (
         <ThemePickerDialog
           onClose={() => setThemePickerOpen(false)}
@@ -1080,47 +1099,79 @@ function AlignmentQuestionForm({ questions, disabled, onSubmit }: { questions: N
   );
 }
 
-function loadingStatus(label: string, seconds: number) {
-  const elapsed = seconds > 0 ? `${seconds}s` : "刚刚开始";
-  if (label.includes("分析")) {
-    if (seconds < 6)
-      return {
-        title: "正在理解你的故事想法",
-        detail: `识别人物、类型和学生参与方式 · ${elapsed}`,
-      };
-    if (seconds < 14)
-      return {
-        title: "正在梳理故事上下文",
-        detail: `结合历史对话和人物信息 · ${elapsed}`,
-      };
+function storyOperationPresentation(action: string, phase?: NonNullable<CourseStoryOutlineState["operation"]>["phase"]): AiOperationPresentation {
+  if (phase === "repairing_alignment_format") {
     return {
-      title: "正在准备下一步内容",
-      detail: `可能返回澄清问题、故事方向或完整大纲 · ${elapsed}`,
+      title: "正在整理创作理解",
+      currentStep: 0,
+      steps: ["整理 AI 返回结构", "重新校验创作理解", "继续原任务"],
     };
   }
-  if (label.includes("故事方向"))
+  if (phase === "preparing_reference") {
     return {
-      title: "正在构思 3 个故事方向",
-      detail: `拉开任务、冲突和冒险路径的差异 · ${elapsed}`,
-    };
-  if (label.includes("故事大纲")) {
-    if (seconds < 10)
-      return {
-        title: "正在搭建故事主线",
-        detail: `保持人物和故事类型要求 · ${elapsed}`,
-      };
-    return {
-      title: "正在安排角色与章节",
-      detail: `让每章都推进具体事件 · ${elapsed}`,
+      title: "正在准备故事创作",
+      currentStep: 0,
+      steps: ["确认需要的背景范围", "准备故事方向或大纲", "保存本轮结果"],
     };
   }
-  if (label.includes("参考资料"))
+  if (phase === "searching_reference") {
     return {
-      title: "正在整理参考资料",
-      detail: `提取可用要点和改编边界 · ${elapsed}`,
+      title: "正在联网整理参考资料",
+      currentStep: 1,
+      steps: ["确认查询对象与范围", "查找可核实资料", "提取事实和改编边界", "保存参考资料"],
     };
-  if (label.includes("重新开始")) return { title: "正在清空本轮内容", detail: elapsed };
-  return { title: label.replace(/\.\.\.$/, ""), detail: elapsed };
+  }
+  if (phase === "generating_directions" || action === "generate_directions" || action === "random") {
+    return {
+      title: "正在生成 3 个故事方向",
+      currentStep: 1,
+      steps: ["整理已确认的创作要求", "构思不同任务与冲突", "检查人物和故事类型", "保存故事方向"],
+    };
+  }
+  if (phase === "generating_outline" || ["confirm_direction", "generate_from_reference", "regenerate_outline"].includes(action)) {
+    return {
+      title: action === "regenerate_outline" ? "正在重新生成故事大纲" : "正在生成故事大纲",
+      currentStep: 1,
+      steps: ["整理已确认方向和人物", "搭建故事主线", "安排角色与章节", "检查章节推进并保存"],
+      preserveMessage: action === "regenerate_outline" ? "新大纲通过检查前，当前版本不会被覆盖。" : undefined,
+    };
+  }
+  if (phase === "revising") {
+    const title = action === "revise_chapter" ? "正在修改目标章节" : action === "revise_direction" ? "正在修改故事方向" : "正在修改故事大纲";
+    return {
+      title,
+      currentStep: 1,
+      steps: ["确认修改目标与边界", "生成最小范围修改", "检查未选范围保持不变", "保存新版本"],
+      preserveMessage: "修改通过检查前，当前版本不会被覆盖。",
+    };
+  }
+  if (action === "confirm_requirements") {
+    return {
+      title: "正在准备故事创作",
+      currentStep: 1,
+      steps: ["读取已确认的创作理解", "准备必要背景与人物关系", "判断生成方向或完整大纲", "保存下一步成果"],
+    };
+  }
+  if (["confirm_reference_materials", "choose_story_usage"].includes(action)) {
+    return {
+      title: "正在继续构思故事",
+      currentStep: 1,
+      steps: ["读取已确认的参考资料", "结合故事使用方式", "生成方向或完整大纲", "保存本轮成果"],
+    };
+  }
+  if (action === "confirm_story_change") {
+    return {
+      title: "正在应用已确认的故事修改",
+      currentStep: 1,
+      steps: ["确认修改边界", "应用已确认的创作要求", "检查未选范围保持不变", "保存新版本"],
+      preserveMessage: "修改通过检查前，当前版本不会被覆盖。",
+    };
+  }
+  return {
+    title: "正在理解你的故事想法",
+    currentStep: 1,
+    steps: ["读取老师输入", "结合人物与课程设置", "判断需要澄清、方向或大纲", "保存创作理解"],
+  };
 }
 
 function operationLoadingLabel(phase?: NonNullable<CourseStoryOutlineState["operation"]>["phase"]) {
@@ -1152,26 +1203,11 @@ function isVisibleChatAction(action: CourseStoryChatAction, operation: CourseSto
   return operation?.status === "failed" && (!action.targetId || action.targetId === operation.requestId);
 }
 
-function LoadingCard({ label, seconds, className }: { label: string; seconds: number; className?: string }) {
-  const status = loadingStatus(label, seconds);
-  return (
-    <article aria-live="polite" className={cn("rounded-lg bg-muted px-3 py-3 text-sm text-foreground", className)}>
-      <div className="flex items-start gap-2">
-        <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-primary" />
-        <div>
-          <p className="font-medium leading-5">{status.title}</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{status.detail}</p>
-        </div>
-      </div>
-    </article>
-  );
-}
-
 function tabClass(active: boolean) {
   return cn("min-h-11 shrink-0 rounded-md px-3 text-sm font-medium transition-colors", active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted");
 }
 
-function ResultPanel({ state, references, outline, pendingLabel, resultTab, setResultTab, onConfirmDirection, onReviseDirection, onReviseOutline, onReviseChapter, onDescribeDirection, onConfirm, pending }: { state: CourseStoryOutlineState; references: CourseSourceReference[]; outline: CourseStoryOutline | null; pendingLabel: string; resultTab: ResultTab; setResultTab: (tab: ResultTab) => void; onConfirmDirection: (direction: CourseStoryDirection) => void; onReviseDirection: (direction: CourseStoryDirection) => void; onReviseOutline: () => void; onReviseChapter: (order: number) => void; onDescribeDirection: () => void; onConfirm: () => void; pending: boolean }) {
+function ResultPanel({ state, references, outline, resultTab, setResultTab, onConfirmDirection, onReviseDirection, onReviseOutline, onReviseChapter, onDescribeDirection, pending }: { state: CourseStoryOutlineState; references: CourseSourceReference[]; outline: CourseStoryOutline | null; resultTab: ResultTab; setResultTab: (tab: ResultTab) => void; onConfirmDirection: (direction: CourseStoryDirection) => void; onReviseDirection: (direction: CourseStoryDirection) => void; onReviseOutline: () => void; onReviseChapter: (order: number) => void; onDescribeDirection: () => void; pending: boolean }) {
   const artifactsOutdated = state.alignment?.artifactsOutdated === true;
   const hasSelectedDirection = state.directions.some((direction) => Boolean(direction.selectedAt));
   const hasDirectionsNewerThanOutline = Boolean(outline && state.directions.some((direction) => new Date(direction.createdAt).getTime() > new Date(outline.updatedAt).getTime()));
@@ -1207,7 +1243,7 @@ function ResultPanel({ state, references, outline, pendingLabel, resultTab, setR
 
   if (outline) {
     return (
-      <section className="space-y-4 rounded-lg bg-card p-5 shadow-sm">
+      <section className="space-y-3 rounded-lg bg-card p-4 shadow-sm">
         <ArtifactVersionNotice outdated={artifactsOutdated} />
         <div className="sticky top-0 z-10 flex gap-2 overflow-x-auto border-b border-border bg-card pb-3">
           <button className={tabClass(resultTab === "outline")} onClick={() => setResultTab("outline")} type="button">
@@ -1240,14 +1276,6 @@ function ResultPanel({ state, references, outline, pendingLabel, resultTab, setR
           </div>
         ) : null}
         {resultTab === "directions" ? <DirectionsHistory directions={state.directions} /> : null}
-        <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">确认后将进入教学规划，继续设计每章教学内容。</p>
-          <Button disabled={pending || artifactsOutdated} onClick={onConfirm} type="button">
-            {pending && pendingLabel === "正在确认故事大纲..." ? <Loader2 className="size-4 animate-spin" /> : null}
-            {courseStageStep(state.course.currentStage) >= 3 ? "进入教学规划" : "确认故事大纲并进入教学规划"}
-            {!pending ? <ArrowRight className="size-4" /> : null}
-          </Button>
-        </div>
       </section>
     );
   }
@@ -1272,12 +1300,7 @@ function ResultPanel({ state, references, outline, pendingLabel, resultTab, setR
 }
 
 function ArtifactVersionNotice({ outdated }: { outdated: boolean }) {
-  if (!outdated)
-    return (
-      <div>
-        <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">最新版本</span>
-      </div>
-    );
+  if (!outdated) return null;
   return (
     <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
       <p className="font-medium">当前展示的是上一版故事成果</p>
@@ -1288,7 +1311,7 @@ function ArtifactVersionNotice({ outdated }: { outdated: boolean }) {
 
 function DirectionsPanel({ directions, outdated, onConfirmDirection, onDescribeDirection, onReviseDirection, pending }: { directions: CourseStoryDirection[]; outdated: boolean; onConfirmDirection: (direction: CourseStoryDirection) => void; onDescribeDirection: () => void; onReviseDirection: (direction: CourseStoryDirection) => void; pending: boolean }) {
   return (
-    <section className="space-y-4 rounded-lg bg-card p-5 shadow-sm">
+    <section className="space-y-4 rounded-lg bg-card p-4 shadow-sm">
       <ArtifactVersionNotice outdated={outdated} />
       <div>
         <h3 className="text-lg font-semibold text-foreground">故事方向</h3>
@@ -1395,16 +1418,17 @@ function OutlineSummary({ outline, state, pending, onReviseOutline, onReviseChap
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-primary-100 bg-primary-50/40 p-4">
-        <div className="flex items-center gap-2">
-          <BookOpen className="size-5 text-primary" />
-          <h3 className="text-lg font-semibold text-foreground">{title.zh}</h3>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <BookOpen className="size-5 shrink-0 text-primary" />
+            <h3 className="text-balance text-lg font-semibold text-foreground">{title.zh}</h3>
+          </div>
+          <Button className="shrink-0" disabled={pending} onClick={onReviseOutline} size="sm" type="button" variant="outline">
+            <Pencil className="size-4" />
+            修改整体大纲
+          </Button>
         </div>
-        <p className="mt-3 text-sm leading-6 text-foreground">{summary.zh}</p>
-        <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground"></div>
-        <Button className="mt-4" disabled={pending} onClick={onReviseOutline} size="sm" type="button" variant="outline">
-          <Pencil className="size-4" />
-          修改整体大纲
-        </Button>
+        <p className="mt-3 text-pretty text-sm leading-6 text-foreground">{summary.zh}</p>
       </div>
       {state.unrecommendedKnowledgePoints?.length ? (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-800">
@@ -1419,11 +1443,17 @@ function OutlineSummary({ outline, state, pending, onReviseOutline, onReviseChap
             const plotSummary = chapter.whatHappens || chapter.storyGoal;
             return (
               <article className="rounded-md border border-border p-3" key={chapter.id}>
-                <div className="flex items-start gap-2">
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary">{chapter.order}</span>
-                  <div className="min-w-0">
-                    <h5 className="text-sm font-semibold text-foreground">{chapterTitle.zh}</h5>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary">{chapter.order}</span>
+                    <div className="min-w-0">
+                      <h5 className="text-balance text-sm font-semibold text-foreground">{chapterTitle.zh}</h5>
+                    </div>
                   </div>
+                  <Button className="shrink-0" disabled={pending} onClick={() => onReviseChapter(chapter.order)} size="sm" type="button" variant="outline">
+                    <Pencil className="size-4" />
+                    修改本章
+                  </Button>
                 </div>
                 <p className="mt-3 text-xs font-medium text-muted-foreground">剧情概述</p>
                 <p className="mt-1 text-sm leading-6 text-foreground">{plotSummary}</p>
@@ -1439,12 +1469,6 @@ function OutlineSummary({ outline, state, pending, onReviseOutline, onReviseChap
                     })}
                   </div>
                   {chapter.knowledgePointRecommendationSummary ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{chapter.knowledgePointRecommendationSummary}</p> : null}
-                </div>
-                <div className="mt-3 border-t border-border pt-3">
-                  <Button disabled={pending} onClick={() => onReviseChapter(chapter.order)} size="sm" type="button" variant="outline">
-                    <Pencil className="size-4" />
-                    修改本章
-                  </Button>
                 </div>
               </article>
             );

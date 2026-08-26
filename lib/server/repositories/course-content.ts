@@ -28,7 +28,7 @@ type GenerationRecord = {
   id: string; courseId: string; operation: ContentOperation; status: "running" | "succeeded" | "failed" | "result_unknown";
   baseContentVersion: number; previousStatus: CourseContentStatus; leaseExpiresAt: Date; startedAt: Date; updatedAt: Date;
 };
-type MessageRecord = { id: string; role: "teacher" | "assistant" | "system"; content: string; createdAt: Date };
+type MessageRecord = { id: string; role: "teacher" | "assistant" | "system"; content: string; targetType?: "chapter" | "paragraph" | "chapter_practice" | "main_idea" | "homework" | null; targetId?: string | null; createdAt: Date };
 type PromptPersonRecord = { role: "teacher" | "student"; chineseNameSnapshot: string; englishNameSnapshot: string };
 type PromptCharacterRecord = { displayName: string; englishName: string; roleInStory: string; shortDescription: string };
 type Delegate<T> = {
@@ -243,7 +243,7 @@ function toState(state: TeachingPlanState, content: ContentRecord, messages: Mes
     mainIdea: (content.mainIdea as CourseContentState["mainIdea"]) ?? null,
     homework: (content.homework as CourseContentState["homework"]) ?? null,
     exercisesStale: content.exercisesStale,
-    messages: messages.map((message) => ({ id: message.id, role: message.role, content: message.content, createdAt: message.createdAt.toISOString() })),
+    messages: messages.map((message) => ({ id: message.id, role: message.role, content: message.content, ...(message.targetType ? { targetType: message.targetType, targetId: message.targetId ?? null } : {}), createdAt: message.createdAt.toISOString() })),
     errorMessage: content.errorMessage,
     updatedAt: content.updatedAt?.toISOString() ?? null,
     operation: operation?.status === "running" ? {

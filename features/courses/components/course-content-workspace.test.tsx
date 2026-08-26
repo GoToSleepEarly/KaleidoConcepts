@@ -58,6 +58,9 @@ describe("CourseContentWorkspace", () => {
   });
   test("defaults to the first chapter and exposes highlighted top-level and chapter tabs", () => {
     render(<CourseContentWorkspace initialState={initialState} />);
+    expect(screen.getByRole("heading", { name: "文案与练习" })).toHaveClass("text-2xl");
+    expect(screen.getByTestId("content-story-title")).toHaveTextContent("Hidden Door");
+    expect(screen.getByTestId("content-story-title")).toHaveClass("text-sm", "text-muted-foreground");
     expect(screen.getByRole("option", { name: "GPT" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "GPT（默认）" })).not.toBeInTheDocument();
     expect(screen.getByText("B1 · 1/1 章正文已完成 · 课后阅读已生成 · 无额外语法练习")).toBeInTheDocument();
@@ -66,10 +69,10 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByRole("tab", { name: "Reading" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: "课后练习" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: "正文" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByTestId("content-primary-tabs")).toHaveClass("border-b");
+    expect(screen.getByTestId("content-primary-tabs")).toHaveClass("border-b", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
     expect(screen.getByRole("tab", { name: "Chapter 1" })).toHaveClass("border-b-2");
     expect(screen.getByRole("tab", { name: "Chapter 1" })).toHaveClass("shrink-0", "whitespace-nowrap");
-    expect(screen.getByTestId("content-secondary-tabs")).toHaveClass("border-b");
+    expect(screen.getByTestId("content-secondary-tabs")).toHaveClass("border-b", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
     expect(screen.queryByRole("tab", { name: "练习" })).not.toBeInTheDocument();
     expect(screen.getByText("1 / 1 页")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上一页" })).toBeDisabled();
@@ -176,7 +179,7 @@ describe("CourseContentWorkspace", () => {
     }
   });
 
-  test("starts with guided chat and disables the composer before reading generation", () => {
+  test("starts with a focused generation entry and hides the unavailable composer", () => {
     render(<CourseContentWorkspace initialState={{ ...initialState, status: "empty", chapters: [], mainIdea: null, homework: null }} />);
     expect(screen.getByText("B1 · 1 章 · 待生成正文")).toBeInTheDocument();
     expect(screen.getByTestId("content-stage-heading")).toHaveTextContent("文案与练习Hidden Door");
@@ -187,8 +190,8 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByRole("button", { name: "生成正文与课后阅读" })).toBeInTheDocument();
     expect(screen.getByText("生成后可逐页检查和修改").closest("[data-chat-action]")).toHaveClass("w-fit", "max-w-xl");
     expect(screen.getByRole("button", { name: "生成正文与课后阅读" })).not.toHaveClass("w-full");
-    expect(screen.getByLabelText("修改要求")).toBeDisabled();
-    expect(screen.getByPlaceholderText("请先生成正文与课后阅读")).toBeInTheDocument();
+    expect(screen.queryByLabelText("修改要求")).not.toBeInTheDocument();
+    expect(screen.getByTestId("content-workspace-layout")).toHaveClass("w-full", "xl:grid-cols-[minmax(0,2fr)_minmax(260px,0.75fr)]");
     expect(screen.queryByLabelText("课程内容预览")).not.toBeInTheDocument();
     expect(screen.queryByText("等待生成正文")).not.toBeInTheDocument();
   });
@@ -197,16 +200,35 @@ describe("CourseContentWorkspace", () => {
     render(<CourseContentWorkspace initialState={initialState} />);
 
     expect(screen.getByTestId("content-workspace-layout")).toHaveAttribute("data-layout", "split");
-    expect(screen.getByTestId("content-workspace-layout")).toHaveClass(
-      "lg:h-[calc(100dvh-13.5rem)]",
-      "lg:grid-cols-[minmax(300px,0.85fr)_minmax(360px,1.15fr)]",
-      "lg:grid-rows-[minmax(0,1fr)]",
-    );
+    expect(screen.getByTestId("course-ai-workspace-frame")).toHaveClass("lg:h-full", "lg:grid-rows-[minmax(0,1fr)_auto]");
+    expect(screen.getByTestId("content-workspace-layout")).toHaveClass("lg:h-full", "lg:grid-rows-[auto_minmax(0,1fr)]", "xl:grid-cols-[minmax(400px,0.95fr)_minmax(0,1.3fr)]", "xl:grid-rows-[minmax(0,1fr)]");
     expect(screen.getByTestId("content-workspace-layout")).not.toHaveClass("md:h-[calc(100dvh-13.5rem)]");
-    expect(screen.getByTestId("content-chat-pane")).toHaveClass("h-[calc(100dvh-18rem)]", "min-h-[480px]", "lg:h-full", "lg:overflow-hidden");
+    expect(screen.getByTestId("content-chat-pane")).toHaveClass("h-[calc(100dvh-18rem)]", "min-h-[480px]", "lg:h-full", "overflow-hidden");
     expect(screen.getByTestId("content-chat-scroll")).toHaveClass("overflow-y-auto", "overscroll-contain");
     expect(screen.getByTestId("content-preview-pane")).toHaveClass("lg:h-full", "lg:overflow-hidden");
-    expect(screen.getByTestId("content-preview-scroll")).toHaveClass("overflow-y-auto", "overscroll-contain");
+    expect(screen.getByTestId("content-preview-scroll")).toHaveClass("overflow-y-scroll", "overscroll-contain", "[scrollbar-gutter:stable]", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
+  });
+
+  test("keeps Step 4 history, composer, and preview controls dense", () => {
+    render(<CourseContentWorkspace initialState={{
+      ...initialState,
+      messages: [
+        { id: "m1", role: "teacher", content: "让语气更紧张", createdAt: "2026-08-10T00:00:00.000Z" },
+        { id: "m2", role: "assistant", content: "已完成修改。", createdAt: "2026-08-10T00:01:00.000Z" },
+      ],
+    }} />);
+
+    expect(screen.getByTestId("content-chat-scroll")).toHaveClass("space-y-2", "p-3", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
+    expect(screen.getByText("让语气更紧张")).toBeInTheDocument();
+    expect(screen.getByText("已完成修改。")).toBeInTheDocument();
+    expect(screen.queryByText(/将先生成全部章节正文、正文内练习和课后阅读/)).not.toBeInTheDocument();
+    expect(screen.getByTestId("content-chat-composer")).toHaveClass("space-y-1.5", "p-3");
+    expect(screen.getByLabelText("修改要求")).toHaveAttribute("rows", "1");
+    expect(screen.getByLabelText("修改要求")).toHaveClass("block", "min-h-13", "max-h-28", "resize-none", "pr-16");
+    expect(screen.getByRole("button", { name: "发送修改要求" })).toHaveClass("absolute", "bottom-1", "right-1", "size-11", "rounded-full", "bg-primary-50", "text-primary", "p-0");
+    expect(screen.getByTestId("content-preview-toolbar")).toHaveClass("space-y-0", "px-3", "py-1");
+    expect(screen.getByTestId("content-preview-toolbar")).toContainElement(screen.getByTestId("content-page-controls"));
+    expect(screen.getByTestId("content-preview-scroll")).toHaveClass("p-3");
   });
 
   test("uses mobile chat and preview tabs with preview selected first when content exists", () => {
@@ -218,45 +240,68 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByRole("button", { name: "预览" })).toHaveClass("whitespace-nowrap");
     expect(screen.getByRole("button", { name: "预览" })).toHaveClass("min-h-11");
     expect(screen.getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByTestId("content-chat-pane")).toHaveClass("hidden", "lg:flex");
+    expect(screen.getByTestId("content-chat-pane")).toHaveClass("hidden", "xl:flex");
     expect(screen.getByTestId("content-preview-pane")).not.toHaveClass("hidden");
 
     fireEvent.click(screen.getByRole("button", { name: "对话" }));
 
     expect(screen.getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("content-chat-pane")).not.toHaveClass("hidden");
-    expect(screen.getByTestId("content-preview-pane")).toHaveClass("hidden", "lg:block");
+    expect(screen.getByTestId("content-preview-pane")).toHaveClass("hidden", "xl:block");
   });
 
   test("keeps mobile actions compact and prevents the bottom action bar from covering the composer", () => {
     render(<CourseContentWorkspace initialState={initialState} />);
 
-    expect(screen.getByTestId("content-stage-actions")).toHaveClass("hidden", "lg:flex");
-    expect(screen.getByTestId("content-mobile-actions")).toHaveClass("lg:hidden");
-    expect(screen.getByTestId("content-bottom-actions")).toHaveClass("max-xl:static", "xl:sticky");
+    expect(screen.getByTestId("content-stage-actions")).toHaveClass("hidden", "xl:flex");
+    expect(screen.getByTestId("content-mobile-actions")).toHaveClass("xl:hidden");
+    expect(screen.getByTestId("content-bottom-actions")).not.toHaveClass("sticky", "xl:sticky", "fixed");
+    expect(screen.getByTestId("course-ai-workspace-frame")).toContainElement(screen.getByTestId("content-bottom-actions"));
   });
 
-  test("keeps the chat timeline at the bottom when an operation result is shown", () => {
+  test("keeps the preview scroll surface mounted when the stale notice is dismissed", () => {
+    render(<CourseContentWorkspace initialState={{
+      ...initialState,
+      course: { ...initialState.course, staleFromStage: "teaching_plan" },
+    }} />);
+
+    const previewScroll = screen.getByTestId("content-preview-scroll");
+    fireEvent.click(screen.getByRole("button", { name: "关闭旧版本提示" }));
+
+    expect(screen.getByTestId("content-preview-scroll")).toBe(previewScroll);
+    expect(previewScroll).toHaveClass("overflow-y-scroll", "[scrollbar-gutter:stable]");
+  });
+
+  test("opens both the full chat history and the current preview at their latest content", () => {
     const scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(520);
     render(<CourseContentWorkspace initialState={{
       ...initialState,
-      messages: [{ id: "assistant-result", role: "assistant", content: "正文与课后阅读已生成。", createdAt: "2026-08-18T12:00:00.000Z" }],
+      messages: [
+        { id: "teacher-history", role: "teacher", content: "先保留这条历史要求。", createdAt: "2026-08-18T11:59:00.000Z" },
+        { id: "assistant-result", role: "assistant", content: "正文与课后阅读已生成。", createdAt: "2026-08-18T12:00:00.000Z" },
+      ],
       updatedAt: "2026-08-18T12:00:00.000Z",
     }} />);
 
+    expect(screen.getByText("先保留这条历史要求。")).toBeInTheDocument();
+    expect(screen.getByText("正文与课后阅读已生成。")).toBeInTheDocument();
     expect(screen.getByTestId("content-chat-scroll").scrollTop).toBe(520);
+    expect(screen.getByTestId("content-preview-scroll").scrollTop).toBe(520);
     scrollHeight.mockRestore();
   });
 
   test("uses the same role avatars and constrained bubble width as story chat", () => {
     render(<CourseContentWorkspace initialState={{
       ...initialState,
-      messages: [{ id: "m1", role: "teacher", content: "让语气更紧张", createdAt: "2026-08-10T00:00:00.000Z" }],
+      messages: [
+        { id: "m1", role: "teacher", content: "让语气更紧张", createdAt: "2026-08-10T00:00:00.000Z" },
+        { id: "m2", role: "assistant", content: "已完成修改。", createdAt: "2026-08-10T00:01:00.000Z" },
+      ],
     }} />);
 
     expect(screen.getAllByRole("img", { name: "AI 助手" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("img", { name: "老师" })).toBeInTheDocument();
-    expect(screen.getByText("让语气更紧张").closest("[data-chat-bubble]")).toHaveClass("max-w-[calc(100%-2.5rem)]");
+    expect(screen.getByText("让语气更紧张").closest("[data-chat-bubble]")).toHaveClass("max-w-[calc(100%-2.25rem)]", "py-2", "leading-5");
   });
 
   test("selects and clears a preview page as the chat modification target", () => {
@@ -323,7 +368,7 @@ describe("CourseContentWorkspace", () => {
 
   test("explains that generation state is saved", () => {
     render(<CourseContentWorkspace initialState={{ ...initialState, status: "generating_reading", phase: "generating_chapters" }} />);
-    expect(screen.getByText(/处理状态会自动保存/)).toBeInTheDocument();
+    expect(screen.getByText(/任务已经提交，本次操作只会执行一次/)).toBeInTheDocument();
   });
 
   test("keeps the reading confirmation before loading and preserves all records after exercises finish", async () => {
@@ -363,10 +408,12 @@ describe("CourseContentWorkspace", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CourseContentWorkspace initialState={{
       ...initialState,
+      messages: [{ id: "modify-target", role: "teacher", content: "让语气更紧张", targetType: "paragraph", targetId: "p1", createdAt: "2026-08-09T00:00:00.000Z" }],
       operation: { id: "generation-1", type: "modify", status: "running", startedAt: "2026-08-09T00:00:00.000Z", updatedAt: "2026-08-09T00:00:00.000Z" },
     }} />);
 
-    expect(screen.getByText("正在按指定范围修改内容")).toBeInTheDocument();
+    expect(screen.getByText("正在修改课程内容")).toBeInTheDocument();
+    expect(screen.getByText("第 1 章 · 正文第 1 页")).toBeInTheDocument();
     expect(screen.getByLabelText("修改要求")).toBeDisabled();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/courses/course-1/content"), { timeout: 3000 });
   });
@@ -417,7 +464,7 @@ describe("CourseContentWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "重试未通过内容" }));
 
     expect(screen.queryByText("请求超时")).not.toBeInTheDocument();
-    expect(screen.getByText("正在生成全部章节正文和课后阅读")).toBeInTheDocument();
+    expect(screen.getByText("正在生成正文与课后阅读")).toBeInTheDocument();
   });
 
   test("keeps Step 5 reachable without adding a confirmation action to chat", () => {
@@ -430,6 +477,16 @@ describe("CourseContentWorkspace", () => {
     expect(screen.queryByText("本环节已确认，视觉资源可继续编辑")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "下一步：视觉资源" }));
     expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/visual-resources");
+  });
+
+  test("keeps focus on real preview controls instead of the whole render window", () => {
+    render(<CourseContentWorkspace initialState={initialState} />);
+
+    const preview = screen.getByLabelText("课程内容预览");
+    expect(preview).not.toHaveAttribute("tabindex");
+    expect(preview).not.toHaveClass("focus-visible:ring-2", "focus-visible:ring-inset");
+    expect(screen.getByRole("button", { name: "上一页" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下一页" })).toBeInTheDocument();
   });
 
   test("keeps next step available when the current content is an older retained version", () => {

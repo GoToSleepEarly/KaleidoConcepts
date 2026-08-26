@@ -546,6 +546,8 @@ export type CourseContentMessage = {
   id: string;
   role: "teacher" | "assistant" | "system";
   content: string;
+  targetType?: CourseContentTargetType | null;
+  targetId?: string | null;
   createdAt: string;
 };
 

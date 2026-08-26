@@ -120,11 +120,12 @@ describe("CourseStoryOutlineWorkspace", () => {
     vi.restoreAllMocks();
   });
 
-  test("shows guided idea input and keeps the right panel empty before results exist", () => {
+  test("shows a guided idea input aligned with a compact process guide before results exist", () => {
     render(<CourseStoryOutlineWorkspace initialState={emptyState} storyTonePresets={storyTonePresets} storyTypePresets={storyTypePresets} themePresets={themePresets} />);
 
     expect(screen.getByTestId("story-outline-layout")).toHaveAttribute("data-layout", "focus");
-    expect(screen.getByTestId("story-outline-layout")).toHaveClass("max-w-5xl");
+    expect(screen.getByTestId("story-outline-layout")).toHaveClass("w-full", "xl:grid-cols-[minmax(0,2fr)_minmax(260px,0.75fr)]");
+    expect(screen.getByTestId("ai-workspace-guide")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "故事大纲" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "故事想法" })).toBeInTheDocument();
     expect(screen.getByText("说说你的故事想法")).toBeInTheDocument();
@@ -169,22 +170,25 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByText("已根据 A1 难度和 30 分钟课时智能匹配。Past Continuous 暂未放入章节推荐，可在下一阶段：教学规划手动调整。")).toBeInTheDocument();
   });
 
-  test("switches to an iPad-compatible two-column layout only after a result exists", () => {
+  test("switches to a wide-screen two-column layout only after a result exists", () => {
     render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
 
+    expect(screen.getByTestId("story-stage-heading-row").previousElementSibling).toBe(screen.getByRole("region", { name: "课程创建进度" }));
+    expect(screen.getByTestId("story-outline-shell")).toHaveClass("gap-3", "lg:gap-4");
     expect(screen.getByTestId("story-outline-layout")).toHaveAttribute("data-layout", "split");
-    expect(screen.getByTestId("story-outline-layout")).toHaveClass("min-h-0", "lg:grid-cols-[minmax(300px,0.85fr)_minmax(360px,1.15fr)]");
-    expect(screen.getByTestId("story-outline-layout")).toHaveClass("lg:h-[calc(100dvh-13.5rem)]");
-    expect(screen.getByTestId("story-mobile-view-tabs")).toHaveClass("shrink-0", "lg:hidden");
+    expect(screen.getByTestId("story-outline-layout")).toHaveClass("min-h-0", "xl:grid-cols-[minmax(420px,1fr)_minmax(0,1.2fr)]");
+    expect(screen.getByTestId("course-ai-workspace-frame")).toHaveClass("gap-3", "lg:h-full", "lg:grid-rows-[minmax(0,1fr)_auto]");
+    expect(screen.getByTestId("story-outline-layout")).toHaveClass("h-full");
+    expect(screen.getByTestId("story-mobile-view-tabs")).toHaveClass("shrink-0", "xl:hidden");
     expect(screen.getByTestId("story-chat-pane")).toHaveClass("min-h-0", "overflow-hidden", "lg:h-full");
     expect(screen.getByTestId("story-chat-scroll")).toHaveClass("overflow-y-auto", "overscroll-contain", "touch-pan-y");
     expect(screen.getByTestId("story-result-scroll")).toHaveClass("lg:h-full", "overflow-y-auto", "overscroll-contain");
-    expect(screen.getByTestId("story-mobile-view-tabs")).toHaveClass("lg:hidden");
+    expect(screen.getByTestId("story-mobile-view-tabs")).toHaveClass("xl:hidden");
     expect(screen.queryByTestId("story-step-mobile-actions")).not.toBeInTheDocument();
-    expect(screen.getByTestId("story-chat-settings")).toHaveClass("grid-cols-2");
-    expect(screen.getByTestId("story-chat-settings")).not.toHaveClass("grid-cols-1");
-    expect(screen.getByTestId("story-step-footer")).toHaveClass("hidden", "lg:sticky", "lg:bottom-4");
-    expect(screen.getByTestId("story-step-footer")).not.toHaveClass("sticky");
+    expect(screen.getByTestId("story-chat-settings")).toHaveClass("flex", "items-center");
+    expect(screen.getByTestId("story-chat-settings")).not.toHaveClass("grid-cols-1", "grid-cols-2");
+    expect(screen.getByTestId("story-step-footer")).toHaveClass("flex");
+    expect(screen.getByTestId("story-step-footer")).not.toHaveClass("sticky", "lg:sticky", "fixed");
     expect(screen.getByRole("button", { name: "故事大纲" })).toHaveClass("min-h-11");
   });
 
@@ -198,14 +202,15 @@ describe("CourseStoryOutlineWorkspace", () => {
     }} />);
 
     expect(screen.getByTestId("story-outline-shell")).toHaveClass("flex", "max-lg:h-[calc(100dvh-7.25rem)]", "max-lg:overflow-hidden");
-    expect(screen.getByTestId("story-outline-layout")).toHaveClass("min-h-0", "max-lg:flex-1", "max-lg:overflow-hidden");
-    expect(screen.getByTestId("story-outline-layout")).toHaveClass("max-lg:grid-rows-[auto_minmax(0,1fr)]");
+    expect(screen.getByTestId("course-ai-workspace-frame")).toHaveClass("max-lg:flex-1", "max-lg:overflow-hidden");
+    expect(screen.getByTestId("story-outline-layout")).toHaveClass("min-h-0", "h-full", "overflow-hidden");
+    expect(screen.getByTestId("story-outline-layout")).toHaveClass("grid-rows-[auto_minmax(0,1fr)]");
     expect(screen.getByTestId("story-chat-pane")).toHaveClass("min-h-0", "overflow-hidden");
     expect(screen.getByTestId("story-chat-scroll")).toHaveClass("min-h-0", "flex-1", "overflow-y-auto", "touch-pan-y");
     expect(screen.getByTestId("story-chat-composer")).toHaveClass("shrink-0");
     expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
     expect(screen.queryByTestId("story-step-mobile-actions")).not.toBeInTheDocument();
-    expect(screen.getByTestId("story-step-footer")).toHaveClass("hidden", "lg:flex");
+    expect(screen.getByTestId("story-step-footer")).toHaveClass("flex");
     expect(screen.getByTestId("story-result-scroll")).toHaveClass("min-h-0", "overflow-y-auto");
   });
 
@@ -213,11 +218,24 @@ describe("CourseStoryOutlineWorkspace", () => {
     render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
 
     const settings = screen.getByTestId("story-chat-settings");
-    expect(settings).toHaveClass("grid-cols-2");
+    expect(screen.getByTestId("story-chat-toolbar")).toHaveClass("min-h-14", "items-center");
+    expect(settings).toHaveClass("flex", "items-center");
+    expect(settings).not.toHaveClass("mt-3");
     expect(screen.getByText("章节数")).toBeInTheDocument();
     expect(screen.getByText("写作模型")).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "章节数" })).toHaveClass("h-9");
-    expect(screen.getByRole("combobox", { name: "写作模型" })).toHaveClass("h-9");
+    expect(screen.getByRole("combobox", { name: "章节数" })).toHaveClass("h-10", "w-20");
+    expect(screen.getByRole("combobox", { name: "写作模型" })).toHaveClass("h-10", "w-24");
+  });
+
+  test("gives the conversation timeline priority with a one-line growing composer", () => {
+    render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
+
+    expect(screen.getByTestId("story-chat-composer")).toHaveClass("p-3");
+    expect(screen.getByTestId("story-inline-composer")).toHaveClass("relative");
+    expect(screen.getByRole("textbox", { name: "故事想法" })).toHaveAttribute("rows", "1");
+    expect(screen.getByRole("textbox", { name: "故事想法" })).toHaveClass("block", "min-h-13", "max-h-32", "resize-none", "pr-16");
+    expect(screen.getByRole("button", { name: "发送" })).toHaveClass("absolute", "bottom-1", "right-1", "size-11", "rounded-full", "bg-primary-50", "text-primary", "p-0", "shadow-none");
+    expect(screen.getByRole("button", { name: "发送" })).not.toHaveClass("w-full");
   });
 
   test("lets phone and iPad portrait switch between chat and result without scrolling to the other pane", () => {
@@ -227,24 +245,24 @@ describe("CourseStoryOutlineWorkspace", () => {
     const chatPane = screen.getByTestId("story-chat-pane");
     const resultPane = screen.getByTestId("story-result-scroll");
 
-    expect(tabs).toHaveClass("lg:hidden");
+    expect(tabs).toHaveClass("xl:hidden");
     expect(screen.getByRole("button", { name: "聊天" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "结果" })).toHaveAttribute("aria-pressed", "false");
     expect(chatPane).not.toHaveClass("hidden");
-    expect(resultPane).toHaveClass("hidden", "lg:block");
+    expect(resultPane).toHaveClass("hidden", "xl:block");
 
     fireEvent.click(screen.getByRole("button", { name: "结果" }));
 
     expect(screen.getByRole("button", { name: "聊天" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "结果" })).toHaveAttribute("aria-pressed", "true");
-    expect(chatPane).toHaveClass("hidden", "lg:flex");
+    expect(chatPane).toHaveClass("hidden", "xl:flex");
     expect(resultPane).not.toHaveClass("hidden");
 
     fireEvent.click(screen.getByRole("button", { name: "聊天" }));
 
     expect(screen.getByRole("button", { name: "聊天" })).toHaveAttribute("aria-pressed", "true");
     expect(chatPane).not.toHaveClass("hidden");
-    expect(resultPane).toHaveClass("hidden", "lg:block");
+    expect(resultPane).toHaveClass("hidden", "xl:block");
   });
 
   test("keeps the chat timeline at the bottom when a result is shown", () => {
@@ -655,7 +673,7 @@ describe("CourseStoryOutlineWorkspace", () => {
       },
     }} />);
 
-    expect(screen.getAllByText("正在构思 3 个故事方向").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("正在生成 3 个故事方向").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "处理中" })).toBeDisabled();
     await act(async () => { await vi.advanceTimersByTimeAsync(800); });
     expect(fetchMock).toHaveBeenCalledWith("/api/courses/course-1/story-outline", { cache: "no-store" });
@@ -693,7 +711,7 @@ describe("CourseStoryOutlineWorkspace", () => {
       },
     }} />);
 
-    expect(screen.getAllByText("AI 返回格式需要整理，正在自动修复").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("正在整理创作理解").length).toBeGreaterThan(0);
   });
 
   test("reconciles an accepted failed request without restoring or resending the original text", async () => {
@@ -1278,6 +1296,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "开始讨论故事" }));
 
     expect((await screen.findAllByText("正在理解你的故事想法")).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("ai-operation-status")).toHaveAttribute("data-density", "compact");
     await act(async () => {
       resolveResponse(Response.json(emptyState));
       await responsePromise;
@@ -1300,8 +1319,8 @@ describe("CourseStoryOutlineWorkspace", () => {
       vi.advanceTimersByTime(16_000);
     });
 
-    expect(screen.getAllByText(/16s/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/正在准备下一步内容/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/16 秒/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/正在理解你的故事想法/).length).toBeGreaterThan(0);
 
     await act(async () => {
       resolveResponse(Response.json(emptyState));
@@ -1368,7 +1387,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByRole("button", { name: "角色" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "参考资料" })).toBeInTheDocument();
     expect(screen.getByText("剧情概述")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "修改本章" }).parentElement).toHaveClass("border-t");
+    expect(screen.getByRole("button", { name: "修改本章" }).parentElement).toHaveClass("justify-between");
 
     fireEvent.click(screen.getByRole("button", { name: "角色" }));
     expect(screen.getByText("故事出场角色")).toBeInTheDocument();
@@ -1464,7 +1483,8 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.queryByText("The Glowing Map")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("中文主线概括")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "保存故事大纲" })).not.toBeInTheDocument();
-    expect(screen.getByText("最新版本")).toBeInTheDocument();
+    expect(screen.queryByText("最新版本")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "下一步：教学规划" })).toHaveLength(1);
   });
 
   test("marks the existing outline and characters as outdated after the creative requirement changes", () => {
@@ -1484,16 +1504,16 @@ describe("CourseStoryOutlineWorkspace", () => {
 
     expect(screen.getByText("当前展示的是上一版故事成果")).toBeInTheDocument();
     expect(screen.getByText("确认新的创作需求并完成生成后，故事方向、大纲和角色会更新为最新版本。")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "确认故事大纲并进入教学规划" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下一步：教学规划" })).toBeDisabled();
   });
 
-  test("confirms the generated outline from the result panel before entering Step 3", async () => {
+  test("confirms the generated outline from the single bottom action before entering Step 3", async () => {
     const fetchMock = vi.fn(async () => Response.json({ course: { id: "course-1", currentStage: "teaching_plan" } }));
     vi.stubGlobal("fetch", fetchMock);
     render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
 
-    expect(screen.getAllByRole("button", { name: "确认故事大纲并进入教学规划" })).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: "确认故事大纲并进入教学规划" }));
+    expect(screen.getAllByRole("button", { name: "下一步：教学规划" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "下一步：教学规划" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       "/api/courses/course-1/story-outline/confirm",
@@ -1507,19 +1527,19 @@ describe("CourseStoryOutlineWorkspace", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { resolveResponse = resolve; })));
     render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "确认故事大纲并进入教学规划" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一步：教学规划" }));
 
     expect(screen.queryByText("正在确认故事大纲...", { exact: false })).not.toBeInTheDocument();
     resolveResponse(Response.json({ course: { id: "course-1", currentStage: "teaching_plan" } }));
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/teaching-plan"));
   });
 
-  test("continues directly from the result panel when an existing outline is only viewed", () => {
+  test("continues directly from the bottom action when an existing outline is only viewed", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     render(<CourseStoryOutlineWorkspace initialState={{ ...outlineState, course: { ...outlineState.course, currentStage: "preview" } }} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "进入教学规划" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一步：教学规划" }));
 
     expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/teaching-plan");
     expect(fetchPostCallCount(fetchMock)).toBe(0);

@@ -173,6 +173,41 @@ describe("CoursePreviewWorkspace", () => {
     expect(screen.queryByRole("status", { name: "PDF 导出进度" })).not.toBeInTheDocument();
   });
 
+  it("defers auto-fit writes outside ResizeObserver callbacks", () => {
+    let resizeCallback: ResizeObserverCallback | undefined;
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+    vi.stubGlobal("ResizeObserver", class ResizeObserverMock {
+      constructor(callback: ResizeObserverCallback) { resizeCallback = callback; }
+      observe = observe;
+      disconnect = disconnect;
+      unobserve = vi.fn();
+    });
+    let scheduledFrame: FrameRequestCallback | undefined;
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      scheduledFrame = callback;
+      return 1;
+    });
+
+    const presentation = { coverTheme: "dark", coverTitleFontSize: 1, chapterTheme: "blue-purple", slideOverrides: {} } as const;
+    const { unmount } = render(<PreviewSlide page={{ id: "main", type: "main_idea", title: "Main Idea", text: "A concise summary." }} presentation={presentation} />);
+    const autoFit = screen.getByText("A concise summary.").parentElement?.parentElement as HTMLDivElement;
+    const setProperty = vi.spyOn(autoFit.style, "setProperty");
+
+    resizeCallback?.([{ contentRect: { width: 640, height: 360 } } as ResizeObserverEntry], {} as ResizeObserver);
+    expect(requestFrame).toHaveBeenCalledOnce();
+    expect(setProperty).not.toHaveBeenCalled();
+
+    scheduledFrame?.(0);
+    expect(setProperty).toHaveBeenCalled();
+    expect(autoFit).toHaveClass("[contain:layout]");
+
+    unmount();
+    expect(disconnect).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+    requestFrame.mockRestore();
+  });
+
   it("offers a print-friendly PDF containing only reading and exercise pages", async () => {
     render(<CoursePreviewWorkspace initialState={{
       course: { id: "course-1", title: "Mystery", lifecycleStatus: "draft", teacherName: "Lin", studentNames: ["Summer"] },
