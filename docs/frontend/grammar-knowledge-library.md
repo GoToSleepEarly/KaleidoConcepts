@@ -292,5 +292,5 @@ AI 仍只返回 Prompt 内短键；服务端确定性映射为统一 `KnowledgeP
 - 内置数据：三册共 365 个 Unit、52 个 Section，按已确认规则编译为 346 个系统知识点；导入时校验册内 Unit 数量和连续编号。
 - 数据迁移：`prisma/migrations/20260826195000_add_grammar_in_use_catalog/migration.sql`；旧 57 项保留原 ID 并迁入 `KnowledgePoint(source = legacy)`。
 - 验证命令：`pnpm test`（82 个测试文件、628 项通过）、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm build`、`pnpm prisma validate`；目录 migration 已通过生成器幂等性校验。
-- 提交号：尚未提交。
+- 实现提交：`435d89a` (`feat: align grammar knowledge with Grammar in Use`)。
 - 商用前置项：目录仅包含书目与目录级信息，仍须由业务方完成 Cambridge 版权与授权审查。
