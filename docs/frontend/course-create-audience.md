@@ -329,7 +329,7 @@ type CoursePerson = {
 
 ## 实现状态
 
-- 2026-08-27：Step 1 正式不再承担课程时长概念。遗留 `durationMinutes` 仅作旧接口 / 数据兼容，不进入新课程的方向、大纲、教学规划或正文篇幅规则；统一规则见 `docs/frontend/story-complexity-length-policy.md`。旧课程读取不改写。实现提交：`c79c6b2`。
+- 2026-08-27：Step 1 正式不再承担课程时长概念。遗留 `durationMinutes` 仅作旧接口 / 数据兼容，不进入新课程的方向、大纲、教学规划或正文篇幅规则；统一规则见 `docs/frontend/story-complexity-length-policy.md`。旧课程读取不改写。实现提交：`3636339`。
 
 - Grammar in Use 单册选择、目录来源展示和新数据合同：已实现，待用户验收。
 - 状态：已实现。2026-08-07 已加入英语难度、按语法类别选择全课知识点、超过 10 个知识点的密度提示及下游重置保护。

@@ -115,4 +115,4 @@ fixture 中的 `semanticReview` 是本 Codex 任务对固定样例逐项做出�
 - 数据迁移：`20260827143000_add_story_complexity`，字段可空以保护旧课程。
 - 自动化验证：本轮共享范围、中文生成上限与 fixture 定向回归 85 项通过；全量 84 个文件 / 660 项通过；`pnpm exec tsc --noEmit`、目标 ESLint、全量 `pnpm lint`、`pnpm build`、乱码扫描与 `git diff --check` 通过。前一轮 Prisma format / validate / generate 已通过，本轮未修改 schema。
 - 语义样例评估：29 个固定样例由本 Codex 任务生成并逐项审阅；未调用任何项目 AI / API。此结论不等同于真实生产模型稳定性。
-- 初次实现提交：`c79c6b2`；二次统一边界修正提交：`d5dce93`。
+- 初次实现提交：`3636339`；二次统一边界修正提交：`c000c4e`；复杂度变更失效修正提交：`b7a0bb4`。
