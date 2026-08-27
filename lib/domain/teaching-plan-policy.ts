@@ -1,26 +1,11 @@
-import type { EnglishLevel, GrammarExerciseCounts, GrammarPracticeConfig, ReadingExerciseConfig } from "@/lib/contracts/api";
+import type { EnglishLevel, GrammarExerciseCounts, GrammarPracticeConfig, ReadingExerciseConfig, StoryComplexity } from "@/lib/contracts/api";
+import { STORY_CHAPTER_WORD_HARD_RANGE, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 
-const WORD_BUDGETS: Record<"starter" | "basic" | "intermediate" | "advanced", Record<30 | 45 | 60, number>> = {
-  starter: { 30: 160, 45: 240, 60: 320 },
-  basic: { 30: 200, 45: 300, 60: 400 },
-  intermediate: { 30: 240, 45: 360, 60: 480 },
-  advanced: { 30: 280, 45: 420, 60: 560 },
-};
+export const MIN_CHAPTER_TARGET_WORD_COUNT = STORY_CHAPTER_WORD_HARD_RANGE[0];
+export const MAX_CHAPTER_TARGET_WORD_COUNT = STORY_CHAPTER_WORD_HARD_RANGE[1];
 
-export const MIN_CHAPTER_TARGET_WORD_COUNT = 120;
-export const MAX_CHAPTER_TARGET_WORD_COUNT = 200;
-
-export function courseWordBudget(level: EnglishLevel, duration: 30 | 45 | 60) {
-  const band = level === "Starter" ? "starter" : level === "A1" || level === "A2" ? "basic" : level === "B1" || level === "B2" ? "intermediate" : "advanced";
-  return WORD_BUDGETS[band][duration];
-}
-
-export function recommendedChapterWordCount(level: EnglishLevel, duration: 30 | 45 | 60, chapterCount: number) {
-  const budgetShare = Math.round(courseWordBudget(level, duration) / Math.max(1, chapterCount) / 10) * 10;
-  const recommendedMinimum = level === "Starter" || level === "A1" || level === "A2"
-    ? MIN_CHAPTER_TARGET_WORD_COUNT
-    : 150;
-  return Math.max(recommendedMinimum, Math.min(MAX_CHAPTER_TARGET_WORD_COUNT, budgetShare));
+export function recommendedChapterWordCount(level: EnglishLevel, storyComplexity: StoryComplexity) {
+  return storyLengthPolicy(level, storyComplexity).english.chapterTargetWords;
 }
 
 export function defaultPracticeConfig(enabled = true): GrammarPracticeConfig {
@@ -40,7 +25,7 @@ export function grammarExerciseTotal(counts: GrammarExerciseCounts) {
 }
 
 export function minimumReadingParagraphCount(targetWordCount: number, config: ReadingExerciseConfig) {
-  const wordPages = targetWordCount <= 90 ? 1 : targetWordCount <= 150 ? 2 : 3;
+  const wordPages = targetWordCount <= 90 ? 1 : targetWordCount <= 150 ? 2 : targetWordCount <= 200 ? 3 : targetWordCount <= 260 ? 4 : targetWordCount <= 320 ? 5 : 6;
   return Math.max(wordPages, Math.ceil(readingExerciseTotal(config) / 5));
 }
 

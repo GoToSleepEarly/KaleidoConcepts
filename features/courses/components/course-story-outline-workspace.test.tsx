@@ -37,6 +37,7 @@ const emptyState: CourseStoryOutlineState = {
   settings: {
     chapterCount: 4,
     writingProvider: "quickrouter_gpt",
+    storyComplexity: "clear_linear",
   },
   directions: [],
   referenceMaterials: [],
@@ -222,9 +223,30 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(settings).toHaveClass("flex", "items-center");
     expect(settings).not.toHaveClass("mt-3");
     expect(screen.getByText("章节数")).toBeInTheDocument();
+    expect(screen.getByText("故事复杂度")).toBeInTheDocument();
     expect(screen.getByText("写作模型")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "章节数" })).toHaveClass("h-10", "w-20");
+    expect(screen.getByRole("combobox", { name: "故事复杂度" })).toHaveValue("clear_linear");
     expect(screen.getByRole("combobox", { name: "写作模型" })).toHaveClass("h-10", "w-24");
+  });
+
+  test("persists a complexity change before the teacher can continue with an existing outline", async () => {
+    const fetchMock = vi.fn(async () => Response.json({
+      ...outlineState,
+      settings: { ...outlineState.settings, storyComplexity: "layered" as const },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "故事复杂度" }), { target: { value: "layered" } });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/courses/course-1/story-outline/settings",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ chapterCount: 4, writingProvider: "quickrouter_gpt", storyComplexity: "layered" }),
+      }),
+    ));
   });
 
   test("gives the conversation timeline priority with a one-line growing composer", () => {
@@ -561,6 +583,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     ));
     expect(fetchBody(fetchMock)).toMatchObject({
       message: "我的故事想法：\n学生们进入海底图书馆",
+      storyComplexity: "clear_linear",
       requestId: expect.any(String),
     });
   });

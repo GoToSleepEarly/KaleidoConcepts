@@ -5,8 +5,11 @@ import type {
   StoryAlignmentQuestion,
   StoryMainlineCard,
   StoryRequirementBrief,
+  StoryComplexity,
   StoryWritingProvider,
+  EnglishLevel,
 } from "@/lib/contracts/api";
+import { defaultStoryComplexity, storyLengthPolicy, type StoryLengthPolicy } from "@/lib/domain/story-length-policy";
 
 import { devAiLog } from "./dev-ai-log";
 import { createStoryOutlineProvider } from "./story-outline-provider";
@@ -93,15 +96,25 @@ type StoryPromptContext = {
   currentDirections?: unknown[];
   currentOutline: unknown;
   englishLevel?: string;
+  /** Legacy request compatibility only. Intentionally excluded from every prompt and length rule. */
   durationMinutes?: 30 | 45 | 60;
+  storyComplexity?: StoryComplexity;
+  lengthPolicy?: StoryLengthPolicy;
   selectedKnowledgePoints?: Array<{ id: string; label: string; category?: string; bookTitle?: string; edition?: string; officialLevel?: string; unitStart?: number; unitEnd?: number; units?: Array<{ unitNumber: number; officialTitle: string }> }>;
   confirmedRequirement?: string;
+  requirementBrief?: StoryRequirementBrief;
   storyMode?: "faithful" | "new_story";
   classroomPresence?: "observer" | "participant" | "absent";
   requiredNamedCharacters?: string[];
   mainlineCard?: StoryMainlineCard;
   onFormatRepair?: () => Promise<void>;
 };
+
+function resolvedStoryPolicy(input: StoryPromptContext) {
+  if (input.lengthPolicy) return input.lengthPolicy;
+  const level = (input.englishLevel ?? "A2") as EnglishLevel;
+  return storyLengthPolicy(level, input.storyComplexity ?? defaultStoryComplexity(level), { chapterCount: input.chapterCount });
+}
 
 type StoryReferenceOption = {
   key: string;
@@ -190,6 +203,7 @@ function directionReferenceForPrompt(value: unknown) {
 }
 
 function directionContextPrompt(input: StoryPromptContext) {
+  const policy = resolvedStoryPolicy(input);
   const peopleSnapshots = input.coursePeople.map(({ personId, role, chineseName, englishName, age, gender }) => ({
     personId,
     role,
@@ -201,7 +215,8 @@ function directionContextPrompt(input: StoryPromptContext) {
   const latestTeacherMessage = [...input.conversationHistory].reverse().find((message) => message.role === "teacher");
   return [
     "<course_context>",
-    `故事容量：${input.chapterCount} 章${input.durationMinutes ? ` / ${input.durationMinutes} 分钟` : ""}；只设计一条能在该容量内讲清的核心主线。`,
+    `故事容量：${input.chapterCount} 章；故事复杂度：${policy.storyComplexity}；每章英文正文容量：${JSON.stringify(policy.english)}。只设计一条能在该容量内讲清的核心主线。`,
+    `中文篇幅：方向概要推荐不超过 ${policy.chinese.directionOverview.recommendedMax} 字，硬上限 ${policy.chinese.directionOverview.hardMax} 字；中文没有强制下限，不得为凑长度填充。`,
     `老师和学生人物快照：${JSON.stringify(peopleSnapshots)}`,
     ...(input.confirmedRequirement ? [`已确认创作理解：${input.confirmedRequirement}`] : []),
     ...(input.requiredNamedCharacters?.length ? [`必须出场的点名角色：${JSON.stringify(input.requiredNamedCharacters)}`] : []),
@@ -217,6 +232,7 @@ function directionContextPrompt(input: StoryPromptContext) {
 }
 
 function contextPrompt(input: StoryPromptContext) {
+  const policy = resolvedStoryPolicy(input);
   const peopleSnapshots = input.coursePeople.map(({ personId, role, chineseName, englishName, age, gender }) => ({
     personId,
     role,
@@ -228,7 +244,7 @@ function contextPrompt(input: StoryPromptContext) {
   return [
     "<course_context>",
     `指定章节数：${input.chapterCount}`,
-    ...(input.englishLevel ? [`英语难度：${input.englishLevel}`, `课程时长：${input.durationMinutes} 分钟`, `全课可选知识点：${JSON.stringify(knowledgePointOptions(input).map((point) => ({ key: point.key, label: point.label, category: point.category })))}`] : []),
+    ...(input.englishLevel ? [`英语难度：${input.englishLevel}`, `故事复杂度：${policy.storyComplexity}`, `统一篇幅策略：${JSON.stringify(policy)}`, `全课可选知识点：${JSON.stringify(knowledgePointOptions(input).map((point) => ({ key: point.key, label: point.label, category: point.category })))}`] : []),
     `老师和学生人物快照：${JSON.stringify(peopleSnapshots)}`,
     ...(input.confirmedRequirement ? [`已确认创作理解：${input.confirmedRequirement}`] : []),
     ...(input.requiredNamedCharacters?.length ? [`必须出场的点名角色：${JSON.stringify(input.requiredNamedCharacters)}`] : []),
@@ -276,7 +292,6 @@ function alignmentContextPrompt(input: StoryPromptContext) {
     `课堂人物：${JSON.stringify(people)}`,
     `指定章节数：${input.chapterCount}`,
     ...(input.englishLevel ? [`英语难度：${input.englishLevel}`] : []),
-    ...(input.durationMinutes ? [`课程时长：${input.durationMinutes} 分钟`] : []),
     "</course_context>",
     "<conversation_history>",
     JSON.stringify(input.conversationHistory),
@@ -319,23 +334,26 @@ function confirmedReferenceRules(input: Pick<StoryPromptContext, "storyMode">) {
 
 const directionCardBaseRules = [
   "方向卡的最高验收标准：不了解创作过程的老师读一遍后就能用一句话讲清整个故事设计或讲述方案，包括被讲述的对象、核心内容、主要讲述路径，以及这个方向最独特的地方。",
-  "方向卡用于快速选择主线，不是压缩版大纲。hook 使用 2–4 个简短自然句，通常约 3 句，按最自然的顺序组织完整意思。",
+  "方向卡用于快速选择主线，不是营销文案。hook 是老师可快速读懂的故事概要，按最自然的顺序组织，用 2–3 个短句说明开端、主要发展和结果方向；可以交代结果方向，不以隐藏结果制造悬念。",
   "mainCharacters 完整记录具体角色和需要保持视觉一致性的具名群体，但只能是 JSON 字符串数组，每一项只写一个名称；不得返回对象，不得把已经逐人列出的课堂成员再用“学生队”“师生团队”“英雄战队”等课堂团队称呼作为额外角色重复放入 mainCharacters。这里的具名群体只指外部作品真实存在且老师明确要求的团队。hook 可以使用自然的团队称呼表达共同参与。",
 ];
 
-function directionCardWritingRules(input: Pick<StoryPromptContext, "storyMode">) {
+function directionCardWritingRules(input: Pick<StoryPromptContext, "storyMode" | "storyComplexity">) {
+  const complexityRule = `故事复杂度 ${input.storyComplexity ?? "clear_linear"} 只是结构上限，不要求机械用满；每个方向始终只有一条主要主线，不得为显得复杂而强加受挫、冲突或反转。`;
   if (input.storyMode === "faithful") {
     return [
       ...directionCardBaseRules,
+      complexityRule,
       "hook 只概括已经确认的原作或史实内容、当前叙事视角和事实焦点，不给课堂人物创造任务、障碍、解法或改变结局的行动。",
-      "storyHighlight 用一句话指出这个叙事视角最值得关注的既定事实、事件或关系；growthCore 只说明课堂理解可能发生的变化，不虚构被讲述人物的心理成长；whyFits 精简说明该视角与老师要求的对应关系。",
+      "storyHighlight 只写这个叙事视角的辨识度。growthCore 是面向老师的“成长与理解”，只选择最自然的一个理解主题，不虚构被讲述人物的心理成长；whyFits 只解释与老师要求和难度的匹配。",
     ];
   }
   return [
     ...directionCardBaseRules,
+    complexityRule,
     "每个 hook 只呈现一个决定性故事引擎，让核心问题、主要行动和独特之处彼此直接相关。辅助规则、逐人分工、阶段任务和具体解法由大纲展开。",
     "使用具体人物、地点、动作和清楚的行动对象。方向中的物品、规则或原创概念在首次出现时说明它怎样改变人物行动或核心问题。",
-    "storyHighlight 用一句话指出真正影响剧情、最有辨识度的亮点。growthCore 说明角色原先的应对方式和故事经历可能带来的具体变化。whyFits 精简说明该方向与老师要求的对应关系。",
+    "storyHighlight 只写真正影响剧情的辨识度，不复述主线。growthCore 是面向老师的“成长与理解”，从自我效能、情绪识别、同理心、合作、成长型思维、边界或独立判断等自然主题中只选最贴合故事的一个；不得说教，也不得为了表达主题强加冲突或反转。whyFits 只解释与老师要求和英语难度的匹配。",
   ];
 }
 
@@ -364,7 +382,7 @@ function directionSetDiversityRules(input: Pick<StoryPromptContext, "storyMode">
   ];
 }
 
-function outlineNarrativeRules(input: Pick<StoryPromptContext, "storyMode">) {
+function outlineNarrativeRules(input: Pick<StoryPromptContext, "storyMode" | "storyComplexity">) {
   if (input.storyMode === "faithful") {
     return [
       "写作前只根据已确认资料梳理既定事件、时间顺序、人物关系和可确认因果；资料没有支持的心理动机、对话、冲突、行动或结果不得补写为事实。",
@@ -373,11 +391,21 @@ function outlineNarrativeRules(input: Pick<StoryPromptContext, "storyMode">) {
     ];
   }
   return [
-    "写作前在内部明确核心矛盾、事件之间为什么相互导致、每章使局面发生什么变化，以及结局如何由前文自然产生；再自行选择最适合当前故事的叙事结构，不输出内部规划。不要套用固定的“受挫—调整—成功”框架，也不预设行动路径数量、转折次数或计划改变次数。保留会改变人物决定、升级冲突或影响结果的事件；删除不影响后续，或无法在指定章节与课时内解释清楚的内容。",
-    "复杂度根据章节数和课时决定，不预设魔法机制、地点、物品或新信息的数量；它们可以有多个，但都必须容易解释、持续影响人物行动或后续结果。不断追加规则、没有后续作用或只让名词变多的内容必须删除。",
+    "写作前在内部明确核心矛盾、事件之间为什么相互导致、每章使局面发生什么变化，以及结局如何由前文自然产生；再自行选择最适合当前故事的叙事结构，不输出内部规划。不要套用固定的“受挫—调整—成功”框架，也不预设行动路径数量、转折次数或计划改变次数。保留会改变人物决定、升级冲突或影响结果的事件；删除不影响后续，或无法在指定章节与英文容量内解释清楚的内容。",
+    `故事复杂度 ${input.storyComplexity ?? "clear_linear"} 是结构上限，不要求机械用满：clear_linear 只用一条直接的目标—行动—结果主线；conflict_driven 允许一个核心矛盾、受挫、选择或策略调整；layered 允许复杂动机、信息回收和有铺垫的反转，但仍只有一条主要主线。不得为了达到档位机械增加冲突或反转。`,
     "生成章节时在内部检查连续状态：人物位置、关键物品归属、角色已知信息和核心矛盾进展。下一章必须承接上一章的实际结果，本章结果必须改变下一章成立时的局面；失踪角色在被找到前不能行动，未取得的物品不能使用或交付，新规则必须先被发现或验证。最终结果必须回应开头建立的核心矛盾，结局只能来自前文已经建立的行动、信息、关系或规则，不能突然出现新的解决工具。",
     "角色行动分散到完整大纲，并通过选择和结果体现成长，不在 summary 或单章集中点名所有角色。多人、具名团队或不可分割的群像共享核心矛盾，每章只突出当前事件需要的成员；默认不要求逐人发言、平均戏份，也不要求每名成员拥有独立支线或成长线。老师明确要求“每名学生都有高光时刻”或同义要求时，该要求优先：每名学生都要有一次能改变局面或帮助团队推进的可辨识行动，但仍不需要独立支线、平均篇幅或逐章轮流点名。",
   ];
+}
+
+function contentPriorityRules(input: Pick<StoryPromptContext, "storyMode" | "requirementBrief">) {
+  if (input.storyMode === "faithful" || input.requirementBrief?.kind === "factual") {
+    return ["事实与既定因果优先于故事包装；不得因故事复杂度虚构冲突、动机、反转或结果。信息很多但事件少时，按事实关系清楚组织，不把信息数量伪装成更多事件。"];
+  }
+  if (input.requirementBrief?.kind === "concept") {
+    return ["理论学习目标优先于故事包装；只保留帮助理解和应用概念的事件，复杂度不足时先简化包装，不删减已确认学习目标，也不靠虚构冲突证明概念。"];
+  }
+  return ["叙事目标优先；故事复杂度只控制结构上限，不改变老师已确认的角色、主线、排除项和硬要求。"];
 }
 
 function outlineStoryQualityRules(input: Pick<StoryPromptContext, "storyMode">) {
@@ -861,7 +889,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           "planningMode 只判断是否需要比较不同核心方向。老师已经固定核心因果、特定真实历程或原作主线时为 follow_defined_plot；只有主题、人物、类型、知识素材或宽泛真实历史范围时为 explore_options。宽泛真实历史仍是 factual + faithful + observer，方向只能比较真实视角。",
           "默认 0 题。只有来源或版本差异会改变内容、硬要求互相冲突、明确学习理论但可验证学习目标未知，或上一答案新激活必要条件时才提问。地点、配角、奇幻机制、人物如何进入、具体转折和结尾细节交给后续设计。",
           "需要澄清时通常 1 题；同一轮最多返回 3 个当前已成立、彼此独立的阻塞问题。依赖上一答案的问题不得提前展示。不得因为轮数或成本自动采用推荐。",
-          "推荐必须满足老师明确目标的最低复杂度，并受课堂人物年龄、英语等级、章节数和课时容量约束；不能为了简单而降低目标。明确要求学习 MBTI 理论时，基础推荐至少应理解四组偏好的含义并能结合简单例子，不能降成只知道人人不同，也不要求记忆 16 型。",
+          "推荐必须满足老师明确目标的最低复杂度，并受课堂人物年龄、英语等级、章节数和英文容量约束；不能为了简单而降低目标。明确要求学习某个理论时，推荐必须形成可验证的理解或应用结果，不能降成只知道宽泛口号，也不机械要求记忆整个分类体系。",
           ...classroomParticipationRules,
           "把“故事是否忠实”和“课堂人物是否进入”分开判断。storyMode 只能是 faithful 或 new_story；classroomPresence 只能是 observer、participant 或 absent。",
           "忠实讲述原作、真实人物传记或历史事实时使用 faithful + observer：课堂人物默认进入场景但只观察、记录、见证或彼此交流，不承担剧情贡献，也不能影响原作或史实的关键事件、因果、转折和结局。只有老师明确要求课堂人物不进入时才使用 absent。",
@@ -1192,7 +1220,11 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       classroomPresence?: "observer" | "participant" | "absent";
       requiredNamedCharacters?: string[];
       englishLevel?: string;
+      /** Legacy request compatibility only. Intentionally ignored. */
       durationMinutes?: 30 | 45 | 60;
+      storyComplexity?: StoryComplexity;
+      lengthPolicy?: StoryLengthPolicy;
+      requirementBrief?: StoryRequirementBrief;
       selectedKnowledgePoints?: StoryPromptContext["selectedKnowledgePoints"];
     }) => {
       const referenceOptions = storyReferenceOptions(input.references);
@@ -1209,8 +1241,10 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
             ? "首先保证老师能够快速读懂内容。完整保留已选方向的讲述对象、范围、主要人物、事实焦点；允许删除、合并或简化不必要的解释，不要求逐字扩写方向文案。"
             : "首先保证老师能够快速读懂故事。完整保留已选方向的核心任务、主要冲突、主要角色或群体、故事亮点和成长方向，但允许删除、合并或简化方向中不必要的道具、规则和解释，不要求逐字扩写方向文案。",
           ...outlineNarrativeRules(input),
+          ...contentPriorityRules(input),
           "summary 使用 3–4 个自然短句，按故事自身顺序讲清起点、关键发展、决定性行动和最终结果；故事没有某类环节时不要强行补齐。每句都有清楚的行动者、具体动作或局面变化，不得用“情况发生变化”“重新判断”“经历挑战”“大家共同努力”等抽象概括替代关键事件。老师只读 summary 就应能快速复述主线。",
           "每章 whatHappens 写成 2–4 个自然短句，语义完整优先于凑固定句数。讲清从上一章承接的具体局面、本章必要行动、这些行动造成的直接结果，以及结果怎样影响后续；每句话只表达一个主要事件，不显示结构标签，也不把命令、发现、选择、移动和结果塞进同一句。大纲只规定核心事件，不写正式对话或环境描写。",
+          `中文篇幅不设强制下限，不得填充。summary 推荐不超过 ${input.lengthPolicy?.chinese.outlineSummary.recommendedMax ?? 110} 字、硬上限 ${input.lengthPolicy?.chinese.outlineSummary.hardMax ?? 160} 字；每章 whatHappens 推荐不超过 ${input.lengthPolicy?.chinese.chapterOverview.recommendedMax ?? 65} 字、硬上限 ${input.lengthPolicy?.chinese.chapterOverview.hardMax ?? 100} 字。超出推荐值时先删除重复修饰，不能程序截断。`,
           "任何新地点、物品、规则、路线关系或信息首次出现时立刻说明它与当前任务的关系，不能先使用后解释；避免“连接处”“上方区域”“另一边”“旧痕迹”等只有作者知道所指的表达。相邻章节不得重复同一种“发现信息—重新选择路线—继续前进”或其他相同动作模板；每章承担不同功能并造成不同类型的局面变化。",
           "先在不考虑知识点的情况下完成故事概括和全部章节剧情，再从全课视角根据已经形成的自然语境匹配知识点。不得为使用某个知识点新增道具、规则、人物行为或支线；summary 和 whatHappens 不得出现语法、知识点或教学安排说明。",
           "只返回 JSON 对象，字段为 title, summary, characters, chapters。故事 title 和章节 title 返回中英文双语对象 {zh,en}；英文标题应简洁、自然并忠实对应中文标题。面向老师展示的说明使用中文，但课堂人物名称按下述规则使用人物快照英文名。",
@@ -1231,7 +1265,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           "全部章节剧情完成后再从全课视角统一规划知识点分布。recommendedKnowledgePointKeys 只能逐字复制“全课可选知识点”中的 key（例如 KP1），不要返回数据库 id、知识点名称或自行创造 key。某章没有自然语境时允许返回空数组，并把 knowledgePointRecommendationSummary 留空；不得为覆盖知识点改写剧情。",
           "有自然语境的章节通常推荐 1–2 个知识点，每章最多 3 个；书籍、版本、官方难度、Section 与 Unit 来源用于理解语法范围和相邻 Unit 差异，不得作为必须出现的硬约束。",
           ...(knowledgePointCoverageTarget ? [`知识点覆盖软基准：全课优先覆盖 ${knowledgePointCoverageTarget} 个不同知识点。这是自然适配后的选择目标，不是必须凑满的硬校验；无法自然使用时允许少于该数量，也不得为达到数量改写剧情。`] : []),
-          "知识点分布优先考虑本章表达适配性、同章知识点能否在同一语境中自然共存、英语难度与课程时长承载能力，再覆盖老师选择的多样知识点；不得为了平均分配强行组合。同一知识点可以在多章复用，但复用不应挤占其他同样自然适配的知识点。knowledgePointRecommendationSummary 用一条精简中文逐个引用对应 KP 短键并说明使用语境；多个知识点还要说明如何自然配合，无法说明时不要同时推荐。不要生成词数、题型或题量。",
+          "知识点分布优先考虑本章表达适配性、同章知识点能否在同一语境中自然共存、英语难度与已给出的每章英文容量，再覆盖老师选择的多样知识点；不得为了平均分配强行组合。同一知识点可以在多章复用，但复用不应挤占其他同样自然适配的知识点。knowledgePointRecommendationSummary 用一条精简中文逐个引用对应 KP 短键并说明使用语境；多个知识点还要说明如何自然配合，无法说明时不要同时推荐。不要生成词数、题型或题量。",
           input.storyMode === "faithful"
             ? "忠实讲述的优先级为：已确认事实及原作事件、因果和结局；老师在该边界内明确的讲述范围与呈现要求；已选择方向；当前大纲；通用写作建议。任何要求都不能把课堂人物变成事件推动者。"
             : "需求优先级从高到低为：老师历史中明确要求；已选择方向；已确认参考资料；当前大纲；通用创作建议。低优先级内容不得覆盖高优先级要求。",

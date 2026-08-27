@@ -29,6 +29,16 @@ function state(): TeachingPlanState {
       { id: "grammar-3", label: "Present Perfect", labelZh: "现在完成时", category: "时态" },
       { id: "grammar-4", label: "Modal Verbs", labelZh: "情态动词", category: "情态动词" },
     ],
+    lengthPolicy: {
+      englishLevel: "B1",
+      storyComplexity: "conflict_driven",
+      chinese: {
+        directionOverview: { recommendedMax: 95, hardMax: 140 },
+        outlineSummary: { recommendedMax: 130, hardMax: 190 },
+        chapterOverview: { recommendedMax: 80, hardMax: 120 },
+      },
+      english: { chapterTargetWords: 170, generationRange: [150, 200], teacherRecommendedRange: [140, 210], hardRange: [60, 360] },
+    },
     plan: {
       courseId: "course-1",
       status: "draft",
@@ -87,7 +97,8 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.getByLabelText("第 1 章目标词数")).toHaveValue(180);
     expect(screen.getByLabelText("第 1 章章节练习选项填空数量")).toHaveValue(5);
     expect(screen.getByText(/AI 推荐：适合用过去时/)).toBeInTheDocument();
-    expect(screen.getByLabelText("第 1 章目标词数")).toHaveAttribute("max", "200");
+    expect(screen.getByLabelText("第 1 章目标词数")).toHaveAttribute("min", "60");
+    expect(screen.getByLabelText("第 1 章目标词数")).toHaveAttribute("max", "360");
     expect(screen.queryByText(/当前难度推荐/)).not.toBeInTheDocument();
     expect(screen.queryByText("部分配置保留了你的修改。")).not.toBeInTheDocument();
   });
@@ -109,7 +120,8 @@ describe("CourseTeachingPlanWorkspace", () => {
     render(<CourseTeachingPlanWorkspace initialState={state()} />);
 
     expect(screen.getByRole("heading", { name: "海底图书馆" })).toBeInTheDocument();
-    expect(screen.getByText("45 分钟")).toBeInTheDocument();
+    expect(screen.getByText("标准·冲突推进")).toBeInTheDocument();
+    expect(screen.queryByText("45 分钟")).not.toBeInTheDocument();
     expect(screen.queryByText("选择全课英语难度")).not.toBeInTheDocument();
     const desktopSidebar = screen.getByTestId("teaching-plan-desktop-sidebar");
     expect(within(desktopSidebar).getByRole("tab", { name: /章节/ })).toBeInTheDocument();
@@ -207,6 +219,17 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.getAllByText("有未确认修改").length).toBeGreaterThan(0);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  test("warns outside the shared recommendation while keeping hard-boundary values editable", () => {
+    render(<CourseTeachingPlanWorkspace initialState={state()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: /章节/ }));
+    fireEvent.change(screen.getByLabelText("第 1 章目标词数"), { target: { value: "120" } });
+    expect(screen.getByText(/低于推荐范围，可能无法完整表达本章事件/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("第 1 章目标词数"), { target: { value: "220" } });
+    expect(screen.getByText(/高于推荐范围，可能增加学生阅读负担；调高词数不会增加剧情复杂度/)).toBeInTheDocument();
   });
 
   test("turns an empty confirm response into a recoverable business error", async () => {

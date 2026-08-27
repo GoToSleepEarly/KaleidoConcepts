@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { TeachingPlanState } from "@/lib/contracts/api";
+import { storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import {
   buildExercisePromptContext,
   buildModificationPromptContext,
@@ -19,10 +20,12 @@ import {
   readingGrammarCoherenceRules,
   readingStoryQualityRules,
   readingWordCountPolicy,
+  storyComplexityWritingProfile,
 } from "@/lib/server/ai/course-content-deps";
 
 const input = {
-  course: { id: "c1", title: "李老师和小明的故事", durationMinutes: 30, currentStage: "content", englishLevel: "A2", knowledgePointIds: ["kp1"] },
+  course: { id: "c1", title: "李老师和小明的故事", durationMinutes: 30, currentStage: "content", englishLevel: "A2", storyComplexity: "clear_linear", knowledgePointIds: ["kp1"] },
+  lengthPolicy: storyLengthPolicy("A2", "clear_linear"),
   outline: { id: "o1", title: "小明的冒险", summary: "小明必须找回地图，才能带大家安全回家。", chapters: [{ id: "ch1", order: 1, title: "小明出发", summary: "李老师帮助小明。", recommendedKnowledgePointIds: ["kp1"], knowledgePointRecommendationSummary: "一般过去时：用于描述Milo已经完成的开门动作。" }] },
   knowledgePoints: [{ id: "kp1", label: "一般过去时" }],
   plan: {
@@ -123,6 +126,8 @@ describe("course content prompt contexts", () => {
       storySummary: "Milo必须找回地图，才能带大家安全回家。",
       englishLevel: "A2",
       cefrWritingProfile: cefrWritingProfile("A2"),
+      storyComplexity: "clear_linear",
+      storyComplexityProfile: storyComplexityWritingProfile("clear_linear"),
       people: [{ role: "teacher", englishName: "Linda" }, { role: "student", englishName: "Milo" }],
       storyCharacters: [{ displayName: "Map Guardian", storyRole: "阻止Milo找到地图；守护错误路线的角色" }],
       chapters: [{
@@ -142,6 +147,14 @@ describe("course content prompt contexts", () => {
     expect(serialized).not.toContain("readingExerciseMode");
     expect(serialized).not.toContain("paragraphExerciseTargets");
     expect(serialized).toContain("已经完成的开门动作");
+  });
+
+  test("keeps the teacher's final word target while reading complexity from the shared policy", () => {
+    const context = buildReadingPromptContext(input);
+
+    expect(input.lengthPolicy.english.chapterTargetWords).toBe(120);
+    expect(context.storyComplexity).toBe("clear_linear");
+    expect(context.chapters[0]).toMatchObject({ targetWordCount: 90, acceptedWordCountRange: [79, 120] });
   });
 
   test("builds deterministic typed slot requirements while leaving knowledge-point assignment to AI", () => {

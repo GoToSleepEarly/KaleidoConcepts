@@ -209,6 +209,7 @@ model CourseStorySetting {
   courseId        String               @unique
   chapterCount    Int
   writingProvider StoryWritingProvider @default(quickrouter_gpt)
+  storyComplexity StoryComplexity?
   alignmentStatus StoryAlignmentStatus @default(idle)
   planningMode StoryPlanningMode @default(explore_options)
   alignmentSummary String?
@@ -599,6 +600,12 @@ enum StoryAlignmentStatus {
 enum StoryPlanningMode {
   explore_options
   follow_defined_plot
+}
+
+enum StoryComplexity {
+  clear_linear
+  conflict_driven
+  layered
 }
 
 enum StoryResearchProvider {

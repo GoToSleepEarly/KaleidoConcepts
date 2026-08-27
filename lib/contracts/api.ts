@@ -404,6 +404,7 @@ export type CourseStoryOutlineState = {
     currentStage: CourseStage;
     staleFromStage?: CourseStage | null;
     englishLevel?: EnglishLevel;
+    storyComplexity?: StoryComplexity;
     knowledgePointIds?: string[];
   };
   selectedKnowledgePoints?: TeachingPlanKnowledgePoint[];
@@ -412,6 +413,7 @@ export type CourseStoryOutlineState = {
   settings: {
     chapterCount: number;
     writingProvider: StoryWritingProvider;
+    storyComplexity: StoryComplexity;
   };
   alignment?: StoryAlignmentState;
   directions: CourseStoryDirection[];
@@ -444,6 +446,7 @@ export type CourseStoryMessageInput = {
   researchPlan?: CourseResearchPlan;
   chapterCount?: number;
   writingProvider?: StoryWritingProvider;
+  storyComplexity?: StoryComplexity;
   requestId?: string;
   preserveDownstream?: boolean;
 };
@@ -469,6 +472,7 @@ export type PresetOptionInput = {
 };
 
 export type EnglishLevel = "Starter" | "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
+export type StoryComplexity = "clear_linear" | "conflict_driven" | "layered";
 
 export type GrammarSourceUnit = {
   unitNumber: number;
@@ -579,6 +583,7 @@ export type TeachingPlanState = {
     currentStage: CourseStage;
     staleFromStage?: CourseStage | null;
     englishLevel?: EnglishLevel;
+    storyComplexity?: StoryComplexity;
     knowledgePointIds?: string[];
   };
   outline: {
@@ -596,6 +601,7 @@ export type TeachingPlanState = {
   };
   knowledgePoints: TeachingPlanKnowledgePoint[];
   plan: TeachingPlan;
+  lengthPolicy: import("@/lib/domain/story-length-policy").StoryLengthPolicy;
 };
 
 export type CourseContentStatus = "empty" | "generating_reading" | "reading_ready" | "generating_exercises" | "ready" | "failed" | "confirmed";
@@ -665,7 +671,7 @@ export type CourseContentMessage = {
 };
 
 export type CourseContentState = {
-  course: { id: string; title: string; currentStage: CourseStage; staleFromStage?: CourseStage | null; englishLevel: EnglishLevel };
+  course: { id: string; title: string; currentStage: CourseStage; staleFromStage?: CourseStage | null; englishLevel: EnglishLevel; storyComplexity: StoryComplexity };
   storyTitle: string;
   knowledgePoints: TeachingPlanKnowledgePoint[];
   chapterKnowledgePointIds: Record<string, string[]>;

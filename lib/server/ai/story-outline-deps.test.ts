@@ -191,7 +191,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(result.brief).toMatchObject({ kind: "concept", learningTargets: [{ concept: "四组偏好维度" }] });
     const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
     expect(prompt).toContain("英语难度：A2");
-    expect(prompt).toContain("课程时长：45 分钟");
+    expect(prompt).not.toContain("课程时长");
     expect(prompt).not.toContain("不应进入对齐 Prompt");
   });
 
@@ -900,7 +900,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("夏天");
     expect(prompt).toContain("指定章节数：4");
     expect(prompt).toContain("英语难度：B1");
-    expect(prompt).toContain("课程时长：45 分钟");
+    expect(prompt).not.toContain("课程时长");
     expect(prompt).toContain('"key":"KP1"');
     expect(prompt).not.toContain('"id":"grammar-1"');
     expect(prompt).toContain("recommendedKnowledgePointKeys");
@@ -1034,7 +1034,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     });
 
     const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    for (const expected of ["student-9", "安安", "age\":9", "必须让暮光闪闪和云宝共同出场", "使用小马宝莉原作人物创作新剧情", '"key":"R01"', "情绪天气城", "情绪改变天气", "学会表达情绪", "当前大纲", "风暴来临", "指定章节数：4", "英语难度：A2", "课程时长：45", "KP1", "把第三章改得更紧张"]) {
+    for (const expected of ["student-9", "安安", "age\":9", "必须让暮光闪闪和云宝共同出场", "使用小马宝莉原作人物创作新剧情", '"key":"R01"', "情绪天气城", "情绪改变天气", "学会表达情绪", "当前大纲", "风暴来临", "指定章节数：4", "英语难度：A2", "故事复杂度：clear_linear", "KP1", "把第三章改得更紧张"]) {
       expect(prompt).toContain(expected);
     }
     expect(prompt).not.toContain("ref-1");
@@ -1072,7 +1072,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     });
 
     const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(prompt).toContain("故事容量：4 章 / 45 分钟");
+    expect(prompt).toContain("故事容量：4 章；故事复杂度：clear_linear");
     expect(prompt).toContain('"personId":"teacher-1"');
     expect(prompt).toContain("林老师");
     expect(prompt).toContain("主题：太空学校");
@@ -1083,8 +1083,8 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).not.toContain("旧回复 4");
     expect(prompt).not.toContain("已经被替代的旧方向");
     expect(prompt).not.toContain("已经被替代的旧大纲");
-    expect(prompt).not.toContain("英语难度");
-    expect(prompt).toContain("故事容量：4 章 / 45 分钟");
+    expect(prompt).toContain("英语难度");
+    expect(prompt).toContain("故事容量：4 章；故事复杂度：clear_linear");
     expect(prompt).not.toContain("Daily routines");
     expect(prompt).not.toContain("grammar-1");
     expect(prompt).not.toContain("无关资料");
@@ -1092,10 +1092,10 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("Step 1 课堂人物逐字使用快照中的 englishName");
     expect(prompt).toContain("外部角色使用老师输入或参考资料确认的名称");
     expect(prompt).toContain("富有想象力的儿童故事创意总监");
-    expect(prompt).toContain("方向卡用于快速选择主线，不是压缩版大纲");
+    expect(prompt).toContain("方向卡用于快速选择主线，不是营销文案");
     expect(prompt).toContain("最高验收标准");
     expect(prompt).toContain("读一遍后就能用一句话讲清整个故事设计");
-    expect(prompt).toContain("使用 2–4 个简短自然句，通常约 3 句");
+    expect(prompt).toContain("2–3 个短句说明开端、主要发展和结果方向");
     expect(prompt).toContain("按最自然的顺序组织");
     expect(prompt).toContain("每个 hook 只呈现一个决定性故事引擎");
     expect(prompt).toContain("辅助规则、逐人分工、阶段任务和具体解法由大纲展开");
@@ -1147,10 +1147,10 @@ describe("createStoryOutlineGenerationDeps", () => {
     });
 
     const directionPrompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(directionPrompt).toContain("方向卡用于快速选择主线，不是压缩版大纲");
+    expect(directionPrompt).toContain("方向卡用于快速选择主线，不是营销文案");
     expect(directionPrompt).toContain("最高验收标准");
     expect(directionPrompt).toContain("读一遍后就能用一句话讲清整个故事设计");
-    expect(directionPrompt).toContain("使用 2–4 个简短自然句，通常约 3 句");
+    expect(directionPrompt).toContain("2–3 个短句说明开端、主要发展和结果方向");
     expect(directionPrompt).toContain("按最自然的顺序组织");
     expect(directionPrompt).toContain("每个 hook 只呈现一个决定性故事引擎");
     expect(directionPrompt).toContain("辅助规则、逐人分工、阶段任务和具体解法由大纲展开");
@@ -1219,7 +1219,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("语义完整优先于凑固定句数");
     expect(prompt).toContain("同一种“发现信息—重新选择路线—继续前进”");
     expect(prompt).toContain("每句话只表达一个主要事件");
-    expect(prompt).toContain("不预设魔法机制、地点、物品或新信息的数量");
+    expect(prompt).toContain("是结构上限，不要求机械用满");
     expect(prompt).toContain("具名团队或不可分割的群像");
     expect(prompt).toContain("不要求每名成员拥有独立支线");
     expect(prompt).toContain("先在不考虑知识点的情况下完成故事概括和全部章节剧情");

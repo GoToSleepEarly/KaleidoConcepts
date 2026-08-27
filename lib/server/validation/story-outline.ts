@@ -5,9 +5,12 @@ export const storyWritingProviderSchema = z.union([
   z.literal("quickrouter_deepseek"),
 ]);
 
+export const storyComplexitySchema = z.enum(["clear_linear", "conflict_driven", "layered"]);
+
 export const storyOutlineSettingsSchema = z.object({
   chapterCount: z.number().int().min(1).max(8),
   writingProvider: storyWritingProviderSchema,
+  storyComplexity: storyComplexitySchema,
 });
 
 export const researchPlanSchema = z.object({
@@ -67,6 +70,7 @@ export const storyOutlineMessageSchema = z.object({
   researchPlan: researchPlanSchema.optional(),
   chapterCount: z.number().int().min(1).max(8).optional(),
   writingProvider: storyWritingProviderSchema.optional(),
+  storyComplexity: storyComplexitySchema.optional(),
   requestId: z.string().uuid().optional(),
   preserveDownstream: z.boolean().optional(),
 });

@@ -28,6 +28,7 @@
 | 故事大纲 | `docs/frontend/course-create-story-outline.md` | 已实现 |
 | 教学规划 | `docs/frontend/course-create-teaching-plan.md` | 已实现，待用户验收 |
 | 文案与练习 | `docs/frontend/course-create-content-and-exercises.md` | 已实现，待用户验收 |
+| 故事复杂度与统一篇幅策略 | `docs/frontend/story-complexity-length-policy.md` | 已实现，待用户验收 |
 | 视觉资源 | `docs/frontend/course-create-visual-resources.md` | 已实现，待用户验收 |
 | 预览发布 | `docs/frontend/course-preview-and-publish.md` | 已实现，待用户验收 |
 | Grammar in Use 语法知识库 | `docs/frontend/grammar-knowledge-library.md` | 已实现，待用户验收 |

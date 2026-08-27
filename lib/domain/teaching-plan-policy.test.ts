@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   balancedPageSizes,
-  courseWordBudget,
   defaultPracticeConfig,
   defaultReadingExerciseConfig,
   practicePageCount,
@@ -11,18 +10,11 @@ import {
 } from "@/lib/domain/teaching-plan-policy";
 
 describe("teaching plan policy", () => {
-  it("uses stable word budgets from difficulty and duration", () => {
-    expect(courseWordBudget("Starter", 60)).toBe(320);
-    expect(courseWordBudget("A2", 30)).toBe(200);
-    expect(courseWordBudget("B1", 45)).toBe(360);
-    expect(courseWordBudget("C2", 60)).toBe(560);
-  });
-
-  it("splits the course budget while keeping B1 and higher recommendations at 150 words or more", () => {
-    expect(recommendedChapterWordCount("A2", 30, 3)).toBe(120);
-    expect(recommendedChapterWordCount("B1", 45, 4)).toBe(150);
-    expect(recommendedChapterWordCount("C1", 60, 5)).toBe(150);
-    expect(recommendedChapterWordCount("C2", 60, 1)).toBe(200);
+  it("reads recommendations from CEFR and story complexity without duration", () => {
+    expect(recommendedChapterWordCount("A2", "clear_linear")).toBe(120);
+    expect(recommendedChapterWordCount("B1", "conflict_driven")).toBe(170);
+    expect(recommendedChapterWordCount("C1", "layered")).toBe(240);
+    expect(recommendedChapterWordCount("C2", "layered")).toBe(260);
   });
 
   it("starts grammar practice with five option cloze and five word-form questions", () => {

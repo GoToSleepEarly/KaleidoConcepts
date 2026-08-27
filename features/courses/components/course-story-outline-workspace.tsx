@@ -11,7 +11,7 @@ import { AiOperationStatusCard, AiWorkspaceGuide, CourseAiWorkspaceFrame, type A
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
-import type { CourseSourceReference, CourseStoryChatAction, CourseStoryMessageInput, CourseStoryOutline, CourseStoryOutlineState, CourseStoryDirection, PresetOption, StoryWritingProvider } from "@/lib/contracts/api";
+import type { CourseSourceReference, CourseStoryChatAction, CourseStoryMessageInput, CourseStoryOutline, CourseStoryOutlineState, CourseStoryDirection, PresetOption, StoryComplexity, StoryWritingProvider } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 import { createRequestId } from "@/lib/utils/request-id";
 
@@ -82,6 +82,8 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const [randomSupplement, setRandomSupplement] = useState("");
   const [chapterCount, setChapterCount] = useState(initialState.settings.chapterCount);
   const [writingProvider, setWritingProvider] = useState<StoryWritingProvider>(initialState.settings.writingProvider);
+  const [storyComplexity, setStoryComplexity] = useState<StoryComplexity>(initialState.settings.storyComplexity);
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState<PresetOption | null>(null);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [storyTypePickerOpen, setStoryTypePickerOpen] = useState(false);
@@ -104,6 +106,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const requestInFlight = useRef(false);
+  const settingsSaveInFlight = useRef(false);
   const stateRef = useRef(initialState);
   const hasStepContent = Boolean(state.chatMessages.length || state.directions.length || state.referenceMaterials.length || state.outline);
   const hasResultContent = Boolean(state.directions.length || state.referenceMaterials.length || state.outline);
@@ -160,11 +163,12 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
         const response = await fetch(`/api/courses/${initialState.course.id}/story-outline`, { cache: "no-store" });
         if (!response.ok || !active) return;
         const nextState: unknown = await response.json();
-        if (!active || requestInFlight.current || !isCourseStoryOutlineState(nextState)) return;
+        if (!active || requestInFlight.current || settingsSaveInFlight.current || !isCourseStoryOutlineState(nextState)) return;
         if (JSON.stringify(nextState) === JSON.stringify(stateRef.current)) return;
         applyNextState(nextState);
         setChapterCount(nextState.settings.chapterCount);
         setWritingProvider(nextState.settings.writingProvider);
+        setStoryComplexity(nextState.settings.storyComplexity);
         const operationRunning = nextState.operation?.status === "running";
         setPending(operationRunning);
         setPendingLabel(operationRunning ? operationLoadingLabel(nextState.operation?.phase) : "");
@@ -178,6 +182,31 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
       active = false;
     };
   }, [applyNextState, initialState.course.id]);
+
+  async function changeStoryComplexity(nextComplexity: StoryComplexity) {
+    const previousComplexity = storyComplexity;
+    setStoryComplexity(nextComplexity);
+    setSettingsSaving(true);
+    settingsSaveInFlight.current = true;
+    setError("");
+    try {
+      const response = await fetch(`/api/courses/${state.course.id}/story-outline/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chapterCount, writingProvider, storyComplexity: nextComplexity }),
+      });
+      const data = (await response.json()) as CourseStoryOutlineState & { message?: string };
+      if (!response.ok) throw new Error(data.message || "故事复杂度保存失败");
+      applyNextState(data);
+      setStoryComplexity(data.settings.storyComplexity);
+    } catch (saveError) {
+      setStoryComplexity(previousComplexity);
+      setError(saveError instanceof Error ? saveError.message : "故事复杂度保存失败");
+    } finally {
+      settingsSaveInFlight.current = false;
+      setSettingsSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (!pending) return;
@@ -250,6 +279,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
           requestId,
           chapterCount,
           writingProvider,
+          storyComplexity,
         }),
       });
       const data = (await response.json()) as CourseStoryOutlineState & {
@@ -489,7 +519,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                 <ArrowLeft className="size-4" />
                 上一步
               </Button>
-              <Button disabled={pending || !state.outline || state.alignment?.artifactsOutdated === true} loading={pending && pendingLabel === "正在确认故事大纲..."} onClick={() => (courseStageStep(state.course.currentStage) >= 3 ? navigate(`/courses/${state.course.id}/create/teaching-plan`) : void confirm())} type="button">
+              <Button disabled={pending || settingsSaving || !state.outline || state.alignment?.artifactsOutdated === true} loading={pending && pendingLabel === "正在确认故事大纲..."} onClick={() => (courseStageStep(state.course.currentStage) >= 3 ? navigate(`/courses/${state.course.id}/create/teaching-plan`) : void confirm())} type="button">
                 下一步：教学规划
                 <ArrowRight className="size-4" />
               </Button>
@@ -520,7 +550,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                 </button>
               </div>
             ) : <span className="shrink-0 text-sm font-semibold text-foreground">创作对话</span>}
-            <div className={cn(conversationStarted ? "flex min-w-0 items-center gap-2" : "mt-3 grid w-full grid-cols-2 gap-2 sm:gap-3")} data-testid="story-chat-settings">
+            <div className={cn(conversationStarted ? "flex min-w-0 items-center gap-2" : "mt-3 grid w-full grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3")} data-testid="story-chat-settings">
               <label className={cn(conversationStarted ? "flex min-w-0 items-center gap-1" : "block")}>
                 <span className="shrink-0 text-xs text-muted-foreground">章节数</span>
                 <select aria-label="章节数" className={cn("rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100", conversationStarted ? "h-10 w-20" : "mt-1 h-9 w-full sm:h-10 sm:px-3")} onChange={(event) => setChapterCount(Number(event.target.value))} value={chapterCount}>
@@ -529,6 +559,14 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                       {value} 章
                     </option>
                   ))}
+                </select>
+              </label>
+              <label className={cn(conversationStarted ? "flex min-w-0 items-center gap-1" : "block")}>
+                <span className="shrink-0 text-xs text-muted-foreground">故事复杂度</span>
+                <select aria-label="故事复杂度" className={cn("rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100", conversationStarted ? "h-10 w-36" : "mt-1 h-9 w-full sm:h-10 sm:px-3")} disabled={settingsSaving} onChange={(event) => void changeStoryComplexity(event.target.value as StoryComplexity)} value={storyComplexity}>
+                  <option value="clear_linear">精简·清晰线性</option>
+                  <option value="conflict_driven">标准·冲突推进</option>
+                  <option value="layered">丰富·多层叙事</option>
                 </select>
               </label>
               <label className={cn(conversationStarted ? "flex min-w-0 items-center gap-1" : "block")}>
@@ -561,7 +599,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                   <input aria-label="补充要求（可选）" className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" onChange={(event) => setRandomSupplement(event.target.value)} placeholder="例如：希望学生成为大侦探" value={randomSupplement} />
                 </label>
                 {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
-                <Button className="w-full" disabled={pending} type="submit">
+                <Button className="w-full" disabled={pending || settingsSaving} type="submit">
                   <Sparkles className="size-4" />
                   生成 3 个故事方向
                 </Button>
@@ -671,7 +709,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                     <AutoGrowTextarea aria-label="故事想法" className={cn("block w-full resize-none overflow-y-hidden rounded-md border border-input bg-background px-3 text-sm leading-5 outline-none focus:border-primary focus:ring-2 focus:ring-primary-100", conversationStarted ? "min-h-13 max-h-32 py-4 pr-16" : "mt-2 min-h-13 max-h-32 py-4")} onChange={(event) => setMessage(event.target.value)} placeholder={conversationStarted ? "继续补充故事要求，或说明希望如何修改" : "输入你的故事想法"} ref={inputRef} rows={1} value={message} />
                   </label>
                   {conversationStarted ? (
-                    <Button aria-label={pending ? "处理中" : "发送"} className="absolute bottom-1 right-1 size-11 min-h-11 min-w-11 rounded-full bg-primary-50 p-0 text-primary shadow-none hover:bg-primary-100 hover:text-primary" disabled={pending || (mode === "idea" && !message.trim())} type="submit" variant="ghost">
+                    <Button aria-label={pending ? "处理中" : "发送"} className="absolute bottom-1 right-1 size-11 min-h-11 min-w-11 rounded-full bg-primary-50 p-0 text-primary shadow-none hover:bg-primary-100 hover:text-primary" disabled={pending || settingsSaving || (mode === "idea" && !message.trim())} type="submit" variant="ghost">
                       {pending ? <Loader2 className="size-4 animate-spin" /> : <Send aria-hidden="true" className="size-4" />}
                     </Button>
                   ) : null}
@@ -679,7 +717,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                 {error ? <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
                 {!conversationStarted ? (
                   <div className="mt-3">
-                    <Button className="w-full" disabled={pending || (mode === "idea" && !message.trim())} type="submit">
+                    <Button className="w-full" disabled={pending || settingsSaving || (mode === "idea" && !message.trim())} type="submit">
                     {pending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
                       {pending ? "处理中" : "开始讨论故事"}
                     </Button>

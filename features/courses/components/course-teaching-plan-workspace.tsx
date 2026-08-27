@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, BookOpenText, Check, ChevronDown, ChevronRight, Clock3, Loader2, Minus, PencilLine, Plus, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BookOpenText, Check, ChevronDown, ChevronRight, Loader2, Minus, PencilLine, Plus, RotateCcw, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -12,6 +12,7 @@ import { KnowledgePointPickerDialog } from "@/features/courses/components/knowle
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
 import type { GrammarExerciseType, GrammarPracticeConfig, ReadingExerciseMode, TeachingPlan, TeachingPlanChapter, TeachingPlanState } from "@/lib/contracts/api";
 import { grammarExerciseTotal, MAX_CHAPTER_TARGET_WORD_COUNT, MIN_CHAPTER_TARGET_WORD_COUNT, minimumReadingParagraphCount, practicePageCount, readingExerciseTotal, readingPageCount } from "@/lib/domain/teaching-plan-policy";
+import { storyComplexityLabel } from "@/lib/domain/story-length-policy";
 import { cn } from "@/lib/utils";
 import { readJsonResponse } from "@/lib/utils/response-json";
 
@@ -285,10 +286,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
             <RotateCcw className="size-4" />
             重置教学规划
           </Button>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1.5 font-medium text-muted-foreground sm:px-3">
-            <Clock3 className="size-4" />
-            {initialState.course.durationMinutes} 分钟
-          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1.5 font-medium text-muted-foreground sm:px-3">{storyComplexityLabel(initialState.lengthPolicy.storyComplexity)}</span>
           <span className="rounded-full bg-primary-50 px-3 py-1.5 text-sm font-semibold text-primary-700">{initialState.course.englishLevel}</span>
           <span className="rounded-full bg-muted px-2.5 py-1.5 font-medium text-muted-foreground sm:px-3">全课 {courseKnowledgePointCount} 个知识点</span>
           <span className={cn("shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium", !exercisePlanValid ? "bg-amber-50 text-amber-800" : hasChanges ? "bg-primary-50 text-primary-700" : "bg-muted text-muted-foreground")}>{!exercisePlanValid ? "待完善" : hasChanges ? "有未确认修改" : "已确认"}</span>
@@ -399,7 +397,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
         </aside>
 
         <main className="min-w-0 space-y-5">
-          {activePanel === "chapters" && selectedChapter && selectedOutlineChapter ? <ChapterEditor chapter={selectedChapter} index={selectedChapterIndex} knowledgePoints={initialState.knowledgePoints} unrecommendedSelectedKnowledgePointIds={unrecommendedSelectedKnowledgePointIds} mobileSection={mobileChapterSection} onApplyChapterPracticeToAll={applyCurrentChapterPracticeToAll} onApplyReadingToAll={applyCurrentChapterReadingToAll} onChange={(updater) => updateChapter(selectedChapterIndex, updater)} outline={selectedOutlineChapter} /> : null}
+          {activePanel === "chapters" && selectedChapter && selectedOutlineChapter ? <ChapterEditor chapter={selectedChapter} index={selectedChapterIndex} knowledgePoints={initialState.knowledgePoints} lengthPolicy={initialState.lengthPolicy} unrecommendedSelectedKnowledgePointIds={unrecommendedSelectedKnowledgePointIds} mobileSection={mobileChapterSection} onApplyChapterPracticeToAll={applyCurrentChapterPracticeToAll} onApplyReadingToAll={applyCurrentChapterReadingToAll} onChange={(updater) => updateChapter(selectedChapterIndex, updater)} outline={selectedOutlineChapter} /> : null}
 
           {activePanel === "afterClass" ? (
             <>
@@ -553,11 +551,17 @@ function PanelTab({ active, label, summary, onClick }: { active: boolean; label:
   );
 }
 
-function ChapterEditor({ chapter, outline, index, knowledgePoints, unrecommendedSelectedKnowledgePointIds, mobileSection, onApplyReadingToAll, onApplyChapterPracticeToAll, onChange }: { chapter: TeachingPlanChapter; outline: TeachingPlanState["outline"]["chapters"][number]; index: number; knowledgePoints: TeachingPlanState["knowledgePoints"]; unrecommendedSelectedKnowledgePointIds: string[]; mobileSection?: MobileChapterSection; onApplyReadingToAll: () => void; onApplyChapterPracticeToAll: () => void; onChange: (updater: (chapter: TeachingPlanChapter) => TeachingPlanChapter) => void }) {
+function ChapterEditor({ chapter, outline, index, knowledgePoints, lengthPolicy, unrecommendedSelectedKnowledgePointIds, mobileSection, onApplyReadingToAll, onApplyChapterPracticeToAll, onChange }: { chapter: TeachingPlanChapter; outline: TeachingPlanState["outline"]["chapters"][number]; index: number; knowledgePoints: TeachingPlanState["knowledgePoints"]; lengthPolicy: TeachingPlanState["lengthPolicy"]; unrecommendedSelectedKnowledgePointIds: string[]; mobileSection?: MobileChapterSection; onApplyReadingToAll: () => void; onApplyChapterPracticeToAll: () => void; onChange: (updater: (chapter: TeachingPlanChapter) => TeachingPlanChapter) => void }) {
   const chapterLabel = `第 ${index + 1} 章`;
   const [pickerOpen, setPickerOpen] = useState(false);
   const recommendedIds = outline.recommendedKnowledgePointIds;
   const knowledgePointsChanged = !sameIdSet(chapter.knowledgePointIds, recommendedIds);
+  const recommendedRange = lengthPolicy.english.teacherRecommendedRange;
+  const wordCountWarning = chapter.targetWordCount !== null && chapter.targetWordCount < recommendedRange[0]
+    ? "低于推荐范围，可能无法完整表达本章事件。"
+    : chapter.targetWordCount !== null && chapter.targetWordCount > recommendedRange[1]
+      ? "高于推荐范围，可能增加学生阅读负担；调高词数不会增加剧情复杂度。"
+      : "";
   const mobileSectionClass = (section: MobileChapterSection) => (mobileSection && mobileSection !== section ? "max-lg:hidden" : "");
   return (
     <section>
@@ -609,6 +613,9 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, unrecommended
               </div>
             </div>
           </div>
+          <p className={cn("mt-2 text-xs", wordCountWarning ? "text-amber-700" : "text-muted-foreground")}>
+            推荐 {recommendedRange[0]}–{recommendedRange[1]} 词；只有低于 {lengthPolicy.english.hardRange[0]} 或高于 {lengthPolicy.english.hardRange[1]} 才会阻止保存。{wordCountWarning ? ` ${wordCountWarning}` : ""}
+          </p>
           <div className="mt-6 border-t border-border pt-5">
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm font-medium text-foreground">知识点</div>

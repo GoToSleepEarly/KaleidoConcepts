@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import type { TeachingPlan } from "@/lib/contracts/api";
+import type { StoryComplexity, TeachingPlan } from "@/lib/contracts/api";
+import { defaultStoryComplexity } from "@/lib/domain/story-length-policy";
 import { defaultPracticeConfig, defaultReadingExerciseConfig, grammarExerciseTotal, MAX_CHAPTER_TARGET_WORD_COUNT, MIN_CHAPTER_TARGET_WORD_COUNT, minimumReadingParagraphCount, recommendedChapterWordCount } from "@/lib/domain/teaching-plan-policy";
 
 export const englishLevelSchema = z.union([
@@ -75,7 +76,9 @@ export class TeachingPlanValidationError extends Error {
 export function buildTeachingPlanDraft(input: {
   courseId: string;
   englishLevel: NonNullable<TeachingPlan["englishLevel"]>;
-  durationMinutes: 30 | 45 | 60;
+  storyComplexity?: StoryComplexity;
+  /** Legacy caller compatibility only. Intentionally ignored by the new policy. */
+  durationMinutes?: 30 | 45 | 60;
   chapters: Array<{ id: string; title: string; summary: string; recommendedKnowledgePointIds: string[]; knowledgePointRecommendationSummary: string }>;
   updatedAt: string;
 }): TeachingPlan {
@@ -86,7 +89,7 @@ export function buildTeachingPlanDraft(input: {
     englishLevel: input.englishLevel,
     mainIdeaTargetWordCount: 120,
     chapters: input.chapters.map((chapter) => {
-      const targetWordCount = recommendedChapterWordCount(input.englishLevel, input.durationMinutes, input.chapters.length);
+      const targetWordCount = recommendedChapterWordCount(input.englishLevel, input.storyComplexity ?? defaultStoryComplexity(input.englishLevel));
       const readingExercises = chapter.recommendedKnowledgePointIds.length
         ? defaultReadingExerciseConfig()
         : { ...defaultReadingExerciseConfig(), grammar: { optionCloze: 0, wordForm: 0 } };

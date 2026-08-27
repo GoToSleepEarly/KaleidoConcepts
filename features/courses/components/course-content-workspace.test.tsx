@@ -17,7 +17,7 @@ beforeEach(() => {
 });
 
 const initialState: CourseContentState = {
-  course: { id: "course-1", title: "English Adventure", currentStage: "content", englishLevel: "B1" },
+  course: { id: "course-1", title: "English Adventure", currentStage: "content", englishLevel: "B1", storyComplexity: "conflict_driven" },
   storyTitle: "Hidden Door",
   knowledgePoints: [{ id: "kp1", label: "一般过去时" }],
   chapterKnowledgePointIds: { o1: ["kp1"] },

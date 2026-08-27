@@ -91,6 +91,8 @@ export type ReadingTemplatePromptContext = {
   storySummary: string;
   englishLevel: string;
   cefrWritingProfile: string;
+  storyComplexity: string;
+  storyComplexityProfile: string;
   people: Array<{ englishName: string; role: "teacher" | "student" }>;
   storyCharacters: Array<{ displayName: string; storyRole: string }>;
   chapters: Array<{
@@ -337,6 +339,8 @@ export function buildReadingTemplatePrompt(context: ReadingTemplatePromptContext
     storySummary: context.storySummary,
     englishLevel: context.englishLevel,
     cefrWritingProfile: context.cefrWritingProfile,
+    storyComplexity: context.storyComplexity,
+    storyComplexityProfile: context.storyComplexityProfile,
     people: context.people,
     storyCharacters: context.storyCharacters,
     chapters: context.chapters.map(promptChapterSpec),
@@ -348,6 +352,7 @@ export function buildReadingTemplatePrompt(context: ReadingTemplatePromptContext
     "slot 统一放入同一个数组：选项填空={id,kind:'optionCloze',knowledgePointKey,answer,distractors:[两个]}；给词填空={id,kind:'wordForm',knowledgePointKey,answer,cue}；词汇={id,kind:'vocabulary',answer,canonicalForm,meaningZh}。",
     "AI 根据故事语境自主为语法槽位选择允许的 grammarPoints.key；全部 grammarPoints 至少覆盖一次，额外槽位按自然度分配，不机械平均。",
     "先写自然、连贯、符合 englishLevel 的完整故事，再设置槽位。答案拼回后必须语法正确，不能为了覆盖知识点制造错误句子。",
+    "storyComplexity 只限制叙事结构，不改变上游事实、既定因果、学习目标或点名角色。目标词数调高时只增加必要表达、连接与细节，不得增加冲突、反转、支线或新机制。",
     ...context.qualityRules,
     "每段优先落入 paragraphBudgets.preferredRange，绝不能超过 acceptedRange；题目答案计入词数。人物、信息、物品和章节结果必须连续。",
     "Main Idea 只返回 {text}，概括全故事且遵守 mainIdea 的 preferredRange 和 acceptedRange，不含题目或标题。",
@@ -367,11 +372,12 @@ export function buildReadingTemplateRepairPrompt(targets: Array<{
   requirements: ChapterTemplateRequirements;
   issues: ChapterTemplateIssue[];
   parseError?: string | null;
-}>) {
+}>, storyRules?: { storyComplexity: string; storyComplexityProfile: string }) {
   return [
     "修复失败章节，只返回严格 JSON：{contractVersion,repairs:[...]}。不得返回或修改未列出的成功章节。",
     "有可用 current 且问题只影响局部时返回 paragraph repair={kind:'paragraph',outlineChapterId,paragraphIndex,template,slots:[只含该段需新增或修改的槽位]}。结构无法局部恢复或 current 为空时返回 chapter repair={kind:'chapter',outlineChapterId,chapter}。",
     "每个修复必须一次消除该章全部 issues；保留故事事实、未失败段落和未失败槽位。若无法保证完全修复，也必须只返回目标范围，禁止扩大修改。",
+    ...(storyRules ? [`故事复杂度与边界：${JSON.stringify(storyRules)}。只修篇幅或结构，不得借修复增加冲突、反转、支线或改变事实。`] : []),
     "knowledgePointKey 只能来自 requirements.grammarPoints，全部知识点至少覆盖一次；requiredSlotIds 必须在模板和 slots 中各恰好出现一次。",
     "<repairTargets>",
     JSON.stringify({ contractVersion: STEP4_CONTENT_CONTRACT_VERSION, targets: targets.map((target) => ({ ...target, requirements: { ...target.requirements, requiredSlotIds: requiredChapterSlotIds(target.requirements), paragraphBudgets: paragraphWordBudgets(target.requirements.targetWordCount, target.requirements.paragraphCount) } })) }),

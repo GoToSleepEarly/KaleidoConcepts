@@ -1,11 +1,13 @@
 import type {
   CourseStage,
   EnglishLevel,
+  StoryComplexity,
   TeachingPlan,
   TeachingPlanState,
 } from "@/lib/contracts/api";
 import { buildTeachingPlanDraft, TeachingPlanValidationError, validateTeachingPlanForConfirm } from "@/lib/server/validation/teaching-plan";
-import { defaultPracticeConfig, defaultReadingExerciseConfig, MIN_CHAPTER_TARGET_WORD_COUNT, minimumReadingParagraphCount } from "@/lib/domain/teaching-plan-policy";
+import { defaultPracticeConfig, defaultReadingExerciseConfig, minimumReadingParagraphCount } from "@/lib/domain/teaching-plan-policy";
+import { defaultStoryComplexity, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import { earliestCourseStage, furthestCourseStage, nextCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
 import { resolveGrammarKnowledgePoints, type GrammarContextDb } from "@/lib/server/repositories/grammar-context";
 
@@ -18,6 +20,7 @@ type DbCourse = {
   lifecycleStatus?: "draft" | "published" | "archived";
   englishLevel?: EnglishLevel | null;
   knowledgePointIds?: unknown;
+  storySetting?: { storyComplexity?: StoryComplexity | null } | null;
 };
 
 type DbOutlineChapter = {
@@ -216,7 +219,7 @@ function planWriteData(plan: TeachingPlan) {
 }
 
 async function getCourse(db: TeachingPlanDb, courseId: string) {
-  const course = await db.course.findUnique({ where: { id: courseId } });
+  const course = await db.course.findUnique({ where: { id: courseId }, include: { storySetting: true } });
   if (!course) throw new CourseTeachingPlanNotFoundError();
   return course;
 }
@@ -243,7 +246,7 @@ function buildFreshTeachingPlan(course: DbCourse, outline: DbOutline) {
   return buildTeachingPlanDraft({
     courseId: course.id,
     englishLevel: course.englishLevel,
-    durationMinutes: course.durationMinutes as 30 | 45 | 60,
+    storyComplexity: course.storySetting?.storyComplexity ?? defaultStoryComplexity(course.englishLevel),
     chapters: outlineState.chapters.map((chapter) => ({ ...chapter, recommendedKnowledgePointIds: chapter.recommendedKnowledgePointIds ?? [], knowledgePointRecommendationSummary: chapter.knowledgePointRecommendationSummary ?? "" })),
     updatedAt: new Date().toISOString(),
   });
@@ -266,20 +269,7 @@ async function ensureTeachingPlan(db: TeachingPlanDb, course: DbCourse, outline:
       await db.course.update({ where: { id: course.id }, data: { currentStage: furthestCourseStage(course.currentStage, "teaching_plan") } });
       return toTeachingPlan(updated);
     }
-    if (savedPlan.status !== "draft" || savedPlan.chapters.every((chapter) => chapter.targetWordCount === null || chapter.targetWordCount >= MIN_CHAPTER_TARGET_WORD_COUNT)) return savedPlan;
-    const normalizedPlan = {
-      ...savedPlan,
-      chapters: savedPlan.chapters.map((chapter) => {
-        if (chapter.targetWordCount === null || chapter.targetWordCount >= MIN_CHAPTER_TARGET_WORD_COUNT) return chapter;
-        return {
-          ...chapter,
-          targetWordCount: MIN_CHAPTER_TARGET_WORD_COUNT,
-          paragraphCount: minimumReadingParagraphCount(MIN_CHAPTER_TARGET_WORD_COUNT, chapter.readingExercises),
-        };
-      }),
-    };
-    const updated = await db.courseTeachingPlan.update({ where: { courseId: course.id }, data: planWriteData(normalizedPlan) });
-    return toTeachingPlan(updated);
+    return savedPlan;
   }
   const draft = buildFreshTeachingPlan(course, outline);
   const created = await db.courseTeachingPlan.upsert({
@@ -334,11 +324,17 @@ export async function getTeachingPlanState(db: TeachingPlanDb, courseId: string)
       currentStage: course.currentStage,
       staleFromStage: course.staleFromStage ?? null,
       englishLevel: course.englishLevel as EnglishLevel,
+      storyComplexity: course.storySetting?.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel),
       knowledgePointIds: Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [],
     },
     outline: toOutlineState(outline),
     knowledgePoints,
     plan,
+    lengthPolicy: storyLengthPolicy(
+      course.englishLevel as EnglishLevel,
+      course.storySetting?.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel),
+      { chapterCount: outline.chapters?.length ?? 0 },
+    ),
   };
 }
 

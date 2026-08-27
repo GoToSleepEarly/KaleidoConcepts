@@ -57,6 +57,8 @@ describe("Step4 fixed-slot production contract", () => {
       storySummary: "Mia opens a door.",
       englishLevel: "A2",
       cefrWritingProfile: "Use short sentences.",
+      storyComplexity: "clear_linear",
+      storyComplexityProfile: "Use one direct mainline.",
       people: [],
       storyCharacters: [],
       chapters: [{ id: "chapter-1", order: 1, title: "The Gate", summary: "Mia reaches the gate.", requirements, knowledgePointUsagePlan: "Future with Will：用于描述 Mia 的计划。" }],

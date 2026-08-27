@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { CourseContentChapter, CourseContentPart, CourseGrammarQuestion, EnglishLevel, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
 import { buildCleanParagraphText } from "@/lib/domain/course-content";
+import { defaultStoryComplexity, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import { createStoryOutlineProvider } from "@/lib/server/ai/story-outline-provider";
 import type { AiProviderSettingsInput } from "@/lib/ai-gateway";
 import { devAiLog } from "@/lib/server/ai/dev-ai-log";
@@ -25,6 +26,7 @@ import {
 export type CourseContentPromptPerson = { role: "teacher" | "student"; chineseName: string; englishName: string };
 export type CourseContentPromptCharacter = { displayName: string; englishName: string; roleInStory: string; shortDescription: string };
 export type CourseContentPromptInput = Pick<TeachingPlanState, "course" | "outline" | "knowledgePoints" | "plan"> & {
+  lengthPolicy?: TeachingPlanState["lengthPolicy"];
   promptPeople?: CourseContentPromptPerson[];
   promptCharacters?: CourseContentPromptCharacter[];
 };
@@ -88,6 +90,20 @@ export const cefrWritingQualityRules = [
   "低等级应删减非必要修饰、隐喻和心理描写，但仍要用完整句和明确连接词讲清行动、原因与结果；禁止用互不衔接的电报式短句伪装简单英语。",
 ] as const;
 
+export function storyComplexityWritingProfile(complexity: TeachingPlanState["lengthPolicy"]["storyComplexity"]) {
+  return {
+    clear_linear: "精简·清晰线性：只表达一条直接主线，目标、行动和结果清楚；不新增核心矛盾、受挫、反转或隐藏信息。",
+    conflict_driven: "标准·冲突推进：可以充分表达上游已经确定的一个核心矛盾、受挫、选择或策略调整；不增加第二条主线或机械反转。",
+    layered: "丰富·多层叙事：可以表达上游已有的复杂动机、信息回收和有铺垫的反转，但仍只有一条主要主线；不得为达到档位凭空添加这些结构。",
+  }[complexity];
+}
+
+function resolvedLengthPolicy(input: CourseContentPromptInput) {
+  if (input.lengthPolicy) return input.lengthPolicy;
+  const level = input.course.englishLevel ?? "A2";
+  return storyLengthPolicy(level, input.course.storyComplexity ?? defaultStoryComplexity(level));
+}
+
 export function readingWordCountPolicy(targetWordCount: number) {
   const lowerTolerance = Math.max(10, Math.round(targetWordCount * 0.12));
   const acceptedRange: [number, number] = [Math.max(1, targetWordCount - lowerTolerance), targetWordCount + 30];
@@ -104,11 +120,14 @@ export function buildReadingPromptContext(input: CourseContentPromptInput) {
   const characters = input.promptCharacters ?? [];
   const replaceNames = (value: string) => replaceStoryCharacterNames(replacePersonNames(value, people), characters);
   const points = pointMap(input);
+  const lengthPolicy = resolvedLengthPolicy(input);
   return {
     storyTitle: replaceNames(input.outline.title),
     storySummary: replaceNames(input.outline.summary ?? ""),
     englishLevel: input.course.englishLevel,
     cefrWritingProfile: cefrWritingProfile(input.course.englishLevel),
+    storyComplexity: lengthPolicy.storyComplexity,
+    storyComplexityProfile: storyComplexityWritingProfile(lengthPolicy.storyComplexity),
     people: people.map(({ role, englishName }) => ({ role, englishName })),
     storyCharacters: characters.map((character) => {
       const role = character.shortDescription && character.shortDescription !== character.roleInStory
@@ -175,6 +194,8 @@ export function buildReadingTemplatePromptContext(input: CourseContentPromptInpu
     storySummary: context.storySummary,
     englishLevel: context.englishLevel ?? "",
     cefrWritingProfile: context.cefrWritingProfile,
+    storyComplexity: context.storyComplexity,
+    storyComplexityProfile: context.storyComplexityProfile,
     people: context.people,
     storyCharacters: context.storyCharacters,
     chapters: context.chapters.map((chapter) => ({
@@ -406,8 +427,12 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
       return { ...parseReadingTemplatePayload(payload, requirements), usage: response.usage };
     },
 
-    repairReading: async (_input: CourseContentPromptInput, writingProvider: StoryWritingProvider, targets: ReadingTemplateRepairTarget[]) => {
-      const response = await callWithUsage(writingProvider, "content_repair_reading_v2", buildReadingTemplateRepairPrompt(targets), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 3_000 });
+    repairReading: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, targets: ReadingTemplateRepairTarget[]) => {
+      const lengthPolicy = resolvedLengthPolicy(input);
+      const response = await callWithUsage(writingProvider, "content_repair_reading_v2", buildReadingTemplateRepairPrompt(targets, {
+        storyComplexity: lengthPolicy.storyComplexity,
+        storyComplexityProfile: storyComplexityWritingProfile(lengthPolicy.storyComplexity),
+      }), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 3_000 });
       return { ...parseAiJson(response.text, chapterTemplateRepairBundleSchema, "正文最小修复结构解析失败"), usage: response.usage };
     },
 

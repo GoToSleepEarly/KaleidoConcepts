@@ -306,7 +306,7 @@ describe("story outline repository", () => {
   test("loads initial state with default settings from course duration", async () => {
     const state = await getStoryOutlineState(createDb(), "course-1");
 
-    expect(state.settings).toEqual({ chapterCount: 4, writingProvider: "quickrouter_gpt" });
+    expect(state.settings).toEqual({ chapterCount: 4, storyComplexity: "clear_linear", writingProvider: "quickrouter_gpt" });
     expect(state.outline).toBeNull();
     expect(state.coursePeople.map((person) => person.chineseName)).toEqual(["林老师", "夏天"]);
   });

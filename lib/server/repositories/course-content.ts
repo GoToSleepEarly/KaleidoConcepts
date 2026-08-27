@@ -229,7 +229,7 @@ async function ensureContent(db: CourseContentDb, state: TeachingPlanState) {
 
 function toState(state: TeachingPlanState, content: ContentRecord, messages: MessageRecord[], operation: GenerationRecord | null): CourseContentState {
   return {
-    course: { id: state.course.id, title: state.course.title, currentStage: state.course.currentStage, staleFromStage: state.course.staleFromStage ?? null, englishLevel: state.course.englishLevel! },
+    course: { id: state.course.id, title: state.course.title, currentStage: state.course.currentStage, staleFromStage: state.course.staleFromStage ?? null, englishLevel: state.course.englishLevel!, storyComplexity: state.lengthPolicy.storyComplexity },
     storyTitle: state.outline.title,
     knowledgePoints: state.knowledgePoints,
     chapterKnowledgePointIds: Object.fromEntries(state.plan.chapters.map((chapter) => [chapter.outlineChapterId, chapter.knowledgePointIds])),

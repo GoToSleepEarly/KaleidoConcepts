@@ -20,9 +20,11 @@ import type {
   StoryAlignmentQuestion,
   StoryAlignmentState,
   StoryMainlineCard,
+  StoryComplexity,
   StoryRequirementBrief,
 } from "@/lib/contracts/api";
 import { furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
+import { defaultStoryComplexity, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import { resolveGrammarKnowledgePoints, type GrammarContextDb } from "@/lib/server/repositories/grammar-context";
 
 type DbCourse = {
@@ -103,6 +105,7 @@ type DbSetting = {
   courseId: string;
   chapterCount: number;
   writingProvider: StoryWritingProvider;
+  storyComplexity?: StoryComplexity | null;
   alignmentStatus?: StoryAlignmentState["status"];
   planningMode?: StoryAlignmentState["planningMode"];
   alignmentSummary?: string | null;
@@ -198,7 +201,8 @@ type StoryOutlineAiContext = {
   currentDirections: CourseStoryDirection[];
   currentOutline: CourseStoryOutline | null;
   englishLevel?: EnglishLevel;
-  durationMinutes?: 30 | 45 | 60;
+  storyComplexity?: StoryComplexity;
+  lengthPolicy?: ReturnType<typeof storyLengthPolicy>;
   selectedKnowledgePoints?: TeachingPlanKnowledgePoint[];
   confirmedRequirement?: string;
   requirementBrief?: StoryRequirementBrief;
@@ -694,6 +698,7 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
     settings: {
       chapterCount: mappedOutline?.chapterCount ?? setting?.chapterCount ?? defaultChapterCount(course.durationMinutes),
       writingProvider: mappedOutline?.writingProvider ?? setting?.writingProvider ?? "quickrouter_gpt",
+      storyComplexity: setting?.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel),
     },
     alignment: {
       status: setting?.alignmentStatus ?? "idle",
@@ -820,31 +825,34 @@ async function writeOutline(db: StoryOutlineDb, course: DbCourse, outline: Gener
   });
 }
 
-async function currentSetting(db: StoryOutlineDb, course: DbCourse, input?: Pick<CourseStoryMessageInput, "chapterCount" | "writingProvider">) {
-  if (input?.chapterCount || input?.writingProvider) {
+async function currentSetting(db: StoryOutlineDb, course: DbCourse, input?: Pick<CourseStoryMessageInput, "chapterCount" | "writingProvider" | "storyComplexity">) {
+  if (input?.chapterCount || input?.writingProvider || input?.storyComplexity) {
     const chapterCount = input.chapterCount ?? defaultChapterCount(course.durationMinutes);
     const writingProvider = input.writingProvider ?? "quickrouter_gpt";
+    const storyComplexity = input.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel);
     await db.courseStorySetting.upsert({
       where: { courseId: course.id },
-      create: { courseId: course.id, chapterCount, writingProvider },
-      update: { chapterCount, writingProvider },
+      create: { courseId: course.id, chapterCount, writingProvider, storyComplexity },
+      update: { chapterCount, writingProvider, storyComplexity },
     });
-    return { chapterCount, writingProvider };
+    return { chapterCount, writingProvider, storyComplexity };
   }
   const setting = await db.courseStorySetting.findUnique({ where: { courseId: course.id } });
   if (!setting) {
     const chapterCount = defaultChapterCount(course.durationMinutes);
     const writingProvider: StoryWritingProvider = "quickrouter_gpt";
+    const storyComplexity = defaultStoryComplexity(course.englishLevel as EnglishLevel);
     await db.courseStorySetting.upsert({
       where: { courseId: course.id },
-      create: { courseId: course.id, chapterCount, writingProvider },
+      create: { courseId: course.id, chapterCount, writingProvider, storyComplexity },
       update: {},
     });
-    return { chapterCount, writingProvider };
+    return { chapterCount, writingProvider, storyComplexity };
   }
   return {
     chapterCount: setting?.chapterCount ?? defaultChapterCount(course.durationMinutes),
     writingProvider: setting?.writingProvider ?? "quickrouter_gpt",
+    storyComplexity: setting?.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel),
   };
 }
 
@@ -885,7 +893,12 @@ async function storyAiContext(
       : selectedDirectionOverride,
     currentOutline: toOutline(existingOutline, mappedReferences, mappedCharacters),
     englishLevel: course.englishLevel ?? undefined,
-    durationMinutes: course.durationMinutes as 30 | 45 | 60,
+    storyComplexity: storySetting?.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel),
+    lengthPolicy: storyLengthPolicy(
+      course.englishLevel as EnglishLevel,
+      storySetting?.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel),
+      { chapterCount },
+    ),
     selectedKnowledgePoints,
     confirmedRequirement: resolvedV2 ? JSON.stringify(resolvedV2.brief) : storySetting?.alignmentSummary ?? undefined,
     requirementBrief: resolvedV2?.brief,
@@ -900,7 +913,7 @@ async function storyAiContext(
 
 type OperationGuard = (db?: StoryOutlineDb) => Promise<void>;
 
-async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task: string, deps: StoryOutlineGenerationDeps, setting?: { chapterCount: number; writingProvider: StoryWritingProvider }, selectedDirection?: CourseStoryDirection | null, guard?: OperationGuard) {
+async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task: string, deps: StoryOutlineGenerationDeps, setting?: { chapterCount: number; writingProvider: StoryWritingProvider; storyComplexity: StoryComplexity }, selectedDirection?: CourseStoryDirection | null, guard?: OperationGuard) {
   const started = Date.now();
   try {
     const resolved = setting ?? await currentSetting(db, course);
@@ -996,7 +1009,7 @@ async function generateAndSaveDirections(
 async function saveAlignment(
   db: StoryOutlineDb,
   course: DbCourse,
-  setting: { chapterCount: number; writingProvider: StoryWritingProvider },
+  setting: { chapterCount: number; writingProvider: StoryWritingProvider; storyComplexity: StoryComplexity },
   alignment: {
     status: "needs_clarification" | "ready_for_confirmation" | "confirmed";
     planningMode: "explore_options" | "follow_defined_plot";
@@ -1098,7 +1111,7 @@ async function continueAfterBackground(
   db: StoryOutlineDb,
   course: DbCourse,
   deps: StoryOutlineGenerationDeps,
-  setting: { chapterCount: number; writingProvider: StoryWritingProvider },
+  setting: { chapterCount: number; writingProvider: StoryWritingProvider; storyComplexity: StoryComplexity },
   guard?: OperationGuard,
 ) {
   const stored = await db.courseStorySetting.findUnique({ where: { courseId: course.id } });
@@ -1782,7 +1795,7 @@ export async function confirmStoryOutline(db: StoryOutlineDb, courseId: string) 
 export async function updateStoryOutlineSettings(
   db: StoryOutlineDb,
   courseId: string,
-  input: { chapterCount: number; writingProvider: StoryWritingProvider },
+  input: { chapterCount: number; writingProvider: StoryWritingProvider; storyComplexity: StoryComplexity },
 ) {
   const course = await getCourse(db, courseId);
   const existing = await db.courseStoryOutline.findUnique({ where: { courseId } });
@@ -1791,8 +1804,8 @@ export async function updateStoryOutlineSettings(
   }
   await db.courseStorySetting.upsert({
     where: { courseId },
-    create: { courseId, chapterCount: input.chapterCount, writingProvider: input.writingProvider },
-    update: { chapterCount: input.chapterCount, writingProvider: input.writingProvider },
+    create: { courseId, chapterCount: input.chapterCount, writingProvider: input.writingProvider, storyComplexity: input.storyComplexity },
+    update: { chapterCount: input.chapterCount, writingProvider: input.writingProvider, storyComplexity: input.storyComplexity },
   });
   return getStoryOutlineState(db, course.id);
 }
