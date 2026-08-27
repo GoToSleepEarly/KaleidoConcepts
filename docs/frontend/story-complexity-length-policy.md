@@ -113,4 +113,4 @@ fixture 中的 `semanticReview` 是本 Codex 任务对固定样例逐项做出�
 - 数据迁移：`20260827143000_add_story_complexity`，字段可空以保护旧课程。
 - 自动化验证：目标回归 10 个文件 / 223 项通过；全量 84 个文件 / 657 项通过；`pnpm exec tsc --noEmit`、目标 ESLint、全量 `pnpm lint`、Prisma format / validate / generate、`pnpm build`、乱码扫描与 `git diff --check` 通过。
 - 语义样例评估：29 个固定样例由本 Codex 任务生成并逐项审阅；未调用任何项目 AI / API。此结论不等同于真实生产模型稳定性。
-- 提交号：见本轮最终回复。
+- 实现提交：`c79c6b2`。

@@ -1156,7 +1156,7 @@ Prompt 复核还需统一以下输出原则：
 
 ## 实现状态
 
-- 2026-08-27：Step 2 新增老师可调的故事复杂度，按 Starter/A1/A2、B1/B2、C1/C2 初始化三档默认值；方向与大纲 Prompt 读取同一无课时篇幅策略。`hook` 改为含结果方向的 2–3 句老师概要，`growthCore` 老师文案为“成长与理解”；summary / whatHappens 使用集中中文上限。四类内容优先级、两轮 16+13 回归与不确定性见 `docs/frontend/story-complexity-length-policy.md`。未新增方向 / 大纲核心语义字段或生产 AI 调用。
+- 2026-08-27：Step 2 新增老师可调的故事复杂度，按 Starter/A1/A2、B1/B2、C1/C2 初始化三档默认值；方向与大纲 Prompt 读取同一无课时篇幅策略。`hook` 改为含结果方向的 2–3 句老师概要，`growthCore` 老师文案为“成长与理解”；summary / whatHappens 使用集中中文上限。四类内容优先级、两轮 16+13 回归与不确定性见 `docs/frontend/story-complexity-length-policy.md`。未新增方向 / 大纲核心语义字段或生产 AI 调用。实现提交：`c79c6b2`。
 
 - 2026-08-27：需求对齐 V2 已同步实现前后端。AI 使用 `narrative / concept / factual` 联合 brief，澄清响应不再被迫提前返回故事模式；服务端验证 0-3 个当前阻塞问题、稳定问题与选项 ID、推荐关联、重复 ID 和固定主线组合，失败时至多执行一次语义修复。表单提交结构化答案和 `expectedStateRevision`，服务端根据问题快照生成老师消息并拒绝过期 ID；未回答问题必须以原 ID 保留。确认卡由服务端确定性渲染，V2 下游只读取 brief。随机灵感与“我有想法”进入同一对齐链路；V2 固定主线在生成大纲前增加可修改、可确认的主线理解卡。旧 JSON、旧问题卡和旧答案 record 兼容读取；旧课程只读和旧固定主线确认不改写、不改变原流程，重新对齐时才写 V2。未新增数据库表、字段或 migration。验证通过 138 项 Step 2 定向测试、目标 ESLint、`pnpm exec tsc --noEmit`、全量 82 个文件 / 640 项测试和 `pnpm build`；未调用真实 AI，实现提交 `828878a`。
 
