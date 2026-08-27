@@ -8,6 +8,7 @@ import {
   handleStoryOutlineMessage,
   resetStoryOutline,
   saveStoryOutline,
+  updateStoryOutlineSettings,
   type StoryOutlineDb,
   type StoryOutlineGenerationDeps,
 } from "./story-outline";
@@ -304,11 +305,13 @@ async function generateDirectionsThroughAlignment(db: ReturnType<typeof createDb
 
 describe("story outline repository", () => {
   test("loads initial state with default settings from course duration", async () => {
-    const state = await getStoryOutlineState(createDb(), "course-1");
+    const db = createDb();
+    const state = await getStoryOutlineState(db, "course-1");
 
     expect(state.settings).toEqual({ chapterCount: 4, storyComplexity: "clear_linear", writingProvider: "quickrouter_gpt" });
     expect(state.outline).toBeNull();
     expect(state.coursePeople.map((person) => person.chineseName)).toEqual(["林老师", "夏天"]);
+    expect(db.state.setting).toBeNull();
   });
 
   test("reads legacy alignment details without rewriting them", async () => {
@@ -1220,6 +1223,43 @@ describe("story outline repository", () => {
     await confirmStoryOutline(db, "course-1");
 
     expect(db.state.updates.at(-1)).toEqual({ currentStage: "teaching_plan", staleFromStage: null });
+  });
+
+  test("marks generated artifacts outdated and blocks confirmation when story complexity changes", async () => {
+    const db = createDb();
+    await generateConfirmedOutline(db);
+
+    const changed = await updateStoryOutlineSettings(db, "course-1", {
+      chapterCount: 4,
+      writingProvider: "quickrouter_gpt",
+      storyComplexity: "layered",
+    });
+
+    expect(changed.settings.storyComplexity).toBe("layered");
+    expect(changed.alignment?.artifactsOutdated).toBe(true);
+    await expect(confirmStoryOutline(db, "course-1")).rejects.toThrow("当前故事成果已失效，请重新生成后再进入教学规划");
+    expect(db.state.course.currentStage).toBe("story_outline");
+  });
+
+  test("marks directions outdated before an outline exists, but a no-op complexity save stays clean", async () => {
+    const db = createDb();
+    await generateDirectionsThroughAlignment(db);
+
+    const unchanged = await updateStoryOutlineSettings(db, "course-1", {
+      chapterCount: 4,
+      writingProvider: "quickrouter_gpt",
+      storyComplexity: "clear_linear",
+    });
+    expect(unchanged.alignment?.artifactsOutdated).not.toBe(true);
+
+    const changed = await updateStoryOutlineSettings(db, "course-1", {
+      chapterCount: 4,
+      writingProvider: "quickrouter_gpt",
+      storyComplexity: "conflict_driven",
+    });
+    expect(changed.outline).toBeNull();
+    expect(changed.directions.length).toBeGreaterThan(0);
+    expect(changed.alignment?.artifactsOutdated).toBe(true);
   });
 
   test("reconfirming a viewed outline does not move a later course backwards", async () => {

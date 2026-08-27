@@ -1775,6 +1775,9 @@ export async function saveStoryOutline(
 
 export async function confirmStoryOutline(db: StoryOutlineDb, courseId: string) {
   const state = await getStoryOutlineState(db, courseId);
+  if (state.alignment?.artifactsOutdated === true) {
+    throw new CourseStoryOutlineValidationError("当前故事成果已失效，请重新生成后再进入教学规划");
+  }
   if (!state.outline || !state.outline.title || !state.outline.summary || !state.outline.chapters.length) {
     throw new CourseStoryOutlineValidationError();
   }
@@ -1797,15 +1800,29 @@ export async function updateStoryOutlineSettings(
   input: { chapterCount: number; writingProvider: StoryWritingProvider; storyComplexity: StoryComplexity },
 ) {
   const course = await getCourse(db, courseId);
-  const existing = await db.courseStoryOutline.findUnique({ where: { courseId } });
-  if (existing && existing.chapterCount !== input.chapterCount) {
-    throw new CourseStoryOutlineConflictError("故事大纲已生成，章节数需要重新生成大纲后才能修改");
-  }
-  await db.courseStorySetting.upsert({
-    where: { courseId },
-    create: { courseId, chapterCount: input.chapterCount, writingProvider: input.writingProvider, storyComplexity: input.storyComplexity },
-    update: { chapterCount: input.chapterCount, writingProvider: input.writingProvider, storyComplexity: input.storyComplexity },
-  });
+  const persist = async (tx: StoryOutlineDb) => {
+    const [storedSetting, existingOutline, existingDirections] = await Promise.all([
+      tx.courseStorySetting.findUnique({ where: { courseId } }),
+      tx.courseStoryOutline.findUnique({ where: { courseId } }),
+      tx.courseStoryDirection.findMany({ where: { courseId }, orderBy: { createdAt: "asc" } }),
+    ]);
+    if (existingOutline && existingOutline.chapterCount !== input.chapterCount) {
+      throw new CourseStoryOutlineConflictError("故事大纲已生成，章节数需要重新生成大纲后才能修改");
+    }
+    const previousComplexity = storedSetting?.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel);
+    const complexityChanged = previousComplexity !== input.storyComplexity;
+    const hasGeneratedArtifacts = Boolean(existingOutline) || existingDirections.length > 0;
+    await tx.courseStorySetting.upsert({
+      where: { courseId },
+      create: { courseId, chapterCount: input.chapterCount, writingProvider: input.writingProvider, storyComplexity: input.storyComplexity },
+      update: { chapterCount: input.chapterCount, writingProvider: input.writingProvider, storyComplexity: input.storyComplexity },
+    });
+    if (complexityChanged && hasGeneratedArtifacts) {
+      await updateAlignmentDetails(tx, courseId, { artifactsOutdated: true });
+    }
+  };
+  if (db.$transaction) await db.$transaction(persist);
+  else await persist(db);
   return getStoryOutlineState(db, course.id);
 }
 

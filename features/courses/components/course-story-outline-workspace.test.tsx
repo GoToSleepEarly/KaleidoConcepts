@@ -234,6 +234,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     const fetchMock = vi.fn(async () => Response.json({
       ...outlineState,
       settings: { ...outlineState.settings, storyComplexity: "layered" as const },
+      alignment: { ...outlineState.alignment, artifactsOutdated: true },
     }));
     vi.stubGlobal("fetch", fetchMock);
     render(<CourseStoryOutlineWorkspace initialState={outlineState} />);
@@ -247,6 +248,9 @@ describe("CourseStoryOutlineWorkspace", () => {
         body: JSON.stringify({ chapterCount: 4, writingProvider: "quickrouter_gpt", storyComplexity: "layered" }),
       }),
     ));
+    expect(screen.getByText("当前展示的是上一版故事成果")).toBeInTheDocument();
+    expect(screen.getByText("故事设置或创作需求已变化，需要重新生成故事成果")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下一步：教学规划" })).toBeDisabled();
   });
 
   test("gives the conversation timeline priority with a one-line growing composer", () => {
@@ -1631,7 +1635,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     }} />);
 
     expect(screen.getByText("当前展示的是上一版故事成果")).toBeInTheDocument();
-    expect(screen.getByText("确认新的创作需求并完成生成后，故事方向、大纲和角色会更新为最新版本。")).toBeInTheDocument();
+    expect(screen.getByText("完成重新生成后，故事方向、大纲和角色会更新为最新版本。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "下一步：教学规划" })).toBeDisabled();
   });
 
