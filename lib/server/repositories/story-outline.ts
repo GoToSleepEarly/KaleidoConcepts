@@ -19,6 +19,8 @@ import type {
   TeachingPlanKnowledgePoint,
   StoryAlignmentQuestion,
   StoryAlignmentState,
+  StoryMainlineCard,
+  StoryRequirementBrief,
 } from "@/lib/contracts/api";
 import { furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
 import { resolveGrammarKnowledgePoints, type GrammarContextDb } from "@/lib/server/repositories/grammar-context";
@@ -178,6 +180,7 @@ export type StoryOutlineDb = {
 
 export type GeneratedDirection = Omit<CourseStoryDirection, "id" | "courseId" | "selectedAt" | "createdAt">;
 export type GeneratedReference = Pick<CourseSourceReference, "name" | "type" | "sourceStatus" | "summary" | "usableFacts" | "avoidTopics" | "adaptationBoundary">;
+export type GeneratedMainlineCard = Omit<StoryMainlineCard, "status" | "confirmedAt">;
 export type GeneratedOutline = Pick<CourseStoryOutline, "title" | "summary"> & {
   storyHook?: string;
   characters: Array<Omit<CourseCharacter, "id" | "courseId" | "createdAt" | "updatedAt"> & { key?: string }>;
@@ -198,9 +201,11 @@ type StoryOutlineAiContext = {
   durationMinutes?: 30 | 45 | 60;
   selectedKnowledgePoints?: TeachingPlanKnowledgePoint[];
   confirmedRequirement?: string;
+  requirementBrief?: StoryRequirementBrief;
   storyMode?: "faithful" | "new_story";
   classroomPresence?: "observer" | "participant" | "absent";
   requiredNamedCharacters?: string[];
+  mainlineCard?: StoryMainlineCard;
 };
 
 export type StoryOutlineGenerationDeps = {
@@ -208,6 +213,7 @@ export type StoryOutlineGenerationDeps = {
     task: string;
     replyContext?: "initial" | "requirement_change";
     needsBackgroundRefresh?: boolean;
+    requiredQuestionIds?: string[];
     onFormatRepair?: () => Promise<void>;
   }) => Promise<{
     status: "needs_clarification" | "ready_for_confirmation";
@@ -215,6 +221,8 @@ export type StoryOutlineGenerationDeps = {
     storyMode: "faithful" | "new_story";
     classroomPresence: "observer" | "participant" | "absent";
     requiredNamedCharacters?: string[];
+    provisionalBriefKind?: StoryRequirementBrief["kind"];
+    brief?: StoryRequirementBrief;
     assistantMessage: string;
     resolvedUnderstanding: string[];
     unresolvedIssues: string[];
@@ -226,6 +234,7 @@ export type StoryOutlineGenerationDeps = {
     | { status: "ready"; references: GeneratedReference[] }
     | { status: "external_required"; reason: string; researchPlan: CourseResearchPlan }
   >;
+  generateMainlineCard: (input: StoryOutlineAiContext & { task: string; requirementBrief: StoryRequirementBrief }) => Promise<GeneratedMainlineCard>;
   checkChangeBoundary: (input: StoryOutlineAiContext & { task: string; targetScope: "direction" | "outline" | "chapter" }) => Promise<
     | { scope: "within_target"; needsBackgroundRefresh: false }
     | { scope: "outline_revision"; reason: string; needsBackgroundRefresh: false }
@@ -289,10 +298,120 @@ async function updateAlignmentDetails(db: StoryOutlineDb, courseId: string, chan
   const current = typeof stored?.alignmentDetails === "object" && stored.alignmentDetails !== null
     ? stored.alignmentDetails as Record<string, unknown>
     : {};
+  const next = current.schemaVersion === 2
+    ? {
+        ...current,
+        workflow: {
+          ...(current.workflow && typeof current.workflow === "object" && !Array.isArray(current.workflow) ? current.workflow as Record<string, unknown> : {}),
+          ...changes,
+        },
+      }
+    : { ...current, ...changes };
   await db.courseStorySetting.updateMany({
     where: { courseId },
-    data: { alignmentDetails: { ...current, ...changes } },
+    data: { alignmentDetails: next },
   });
+}
+
+type AlignmentDetailsV2 = {
+  schemaVersion: 2;
+  requirement:
+    | { kind: "clarification"; provisionalBriefKind?: StoryRequirementBrief["kind"]; resolvedRequirements: string[]; questions: StoryAlignmentQuestion[] }
+    | { kind: "resolved"; storyMode: "faithful" | "new_story"; classroomPresence: "observer" | "participant" | "absent"; brief: StoryRequirementBrief };
+  workflow?: {
+    needsBackgroundRefresh?: boolean;
+    artifactsOutdated?: boolean;
+    pendingChange?: StoryAlignmentState["pendingChange"] | null;
+    mainlineCard?: StoryMainlineCard;
+  };
+};
+
+function isAlignmentDetailsV2(value: unknown): value is AlignmentDetailsV2 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const source = value as Record<string, unknown>;
+  return source.schemaVersion === 2 && Boolean(source.requirement && typeof source.requirement === "object" && !Array.isArray(source.requirement));
+}
+
+function alignmentWorkflowDetails(value: unknown) {
+  if (isAlignmentDetailsV2(value)) return value.workflow ?? {};
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Partial<StoryAlignmentState> : {};
+}
+
+function alignmentQuestionsFromDetails(value: unknown) {
+  if (isAlignmentDetailsV2(value) && value.requirement.kind === "clarification") return value.requirement.questions;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const questions = (value as Partial<StoryAlignmentState>).questions;
+  return Array.isArray(questions) ? questions : [];
+}
+
+function renderStructuredAlignmentAnswers(
+  questions: StoryAlignmentQuestion[],
+  answers: Array<{ questionId: string; selectedOptionIds: string[]; customText?: string }>,
+) {
+  const questionMap = new Map(questions.map((question) => [question.id, question]));
+  const answeredIds = new Set<string>();
+  const lines = ["我的回答："];
+  for (const answer of answers) {
+    if (answeredIds.has(answer.questionId)) throw new CourseStoryOutlineValidationError("回答中包含重复的问题，请刷新后重试");
+    answeredIds.add(answer.questionId);
+    const question = questionMap.get(answer.questionId);
+    if (!question) throw new CourseStoryOutlineValidationError("问题已经更新，请使用最新问题卡回答");
+    const optionMap = new Map((question.options ?? []).map((option) => [option.id, option.label]));
+    if (new Set(answer.selectedOptionIds).size !== answer.selectedOptionIds.length) throw new CourseStoryOutlineValidationError("同一选项不能重复提交");
+    const optionLabels = answer.selectedOptionIds.map((id) => {
+      const label = optionMap.get(id);
+      if (!label) throw new CourseStoryOutlineValidationError("选项已经更新，请使用最新问题卡回答");
+      return label;
+    });
+    if (answer.customText && !question.allowCustom && question.answerMode !== "text") throw new CourseStoryOutlineValidationError("当前问题不接受自定义回答");
+    const values = [...optionLabels, ...(answer.customText ? [answer.customText] : [])];
+    if (!values.length) throw new CourseStoryOutlineValidationError("请填写或选择至少一项回答");
+    if (question.answerMode === "single_choice" && answer.selectedOptionIds.length > 1) throw new CourseStoryOutlineValidationError("该问题只能选择一个答案");
+    lines.push(`${question.label}：${values.join("；")}`);
+  }
+  return lines.join("\n");
+}
+
+function briefNamedCharacters(brief: StoryRequirementBrief | undefined) {
+  return brief && (brief.kind === "narrative" || brief.kind === "concept") ? brief.requiredNamedCharacters : [];
+}
+
+function renderRequirementConfirmation(
+  brief: StoryRequirementBrief,
+  planningMode: "explore_options" | "follow_defined_plot",
+  storyMode: "faithful" | "new_story",
+  classroomPresence: "observer" | "participant" | "absent",
+  replyContext: "initial" | "requirement_change" = "initial",
+  needsBackgroundRefresh = true,
+) {
+  const sources = brief.sourceRequirements.map((item) => `${item.name}：${item.useInCourse}`).join("；") || "无指定来源";
+  const constraints = [
+    brief.additionalConstraints.required.length ? `必须保留：${brief.additionalConstraints.required.join("；")}` : "",
+    brief.additionalConstraints.preferred.length ? `偏好：${brief.additionalConstraints.preferred.join("；")}` : "",
+    brief.additionalConstraints.excluded.length ? `排除：${brief.additionalConstraints.excluded.join("；")}` : "",
+  ].filter(Boolean);
+  const lines = [replyContext === "requirement_change" ? "请确认调整后的创作需求：" : "请确认创作需求："];
+  if (brief.kind === "narrative") {
+    lines.push(`故事目标：${brief.objective}`, `来源使用：${sources}`);
+    if (brief.requiredNamedCharacters.length) lines.push(`必须出场：${brief.requiredNamedCharacters.join("、")}`);
+    lines.push(brief.fixedPlot ? `固定主线：${brief.fixedPlot}` : "故事范围：核心方向可继续探索");
+  } else if (brief.kind === "concept") {
+    lines.push(`教学目的：${brief.objective}`, `学习目标：${brief.learningTargets.map((item) => `${item.concept}—${item.expectedUnderstanding}`).join("；")}`);
+    if (brief.assumedPriorKnowledge.length) lines.push(`已假定基础：${brief.assumedPriorKnowledge.join("；")}`);
+    lines.push(`来源使用：${sources}`);
+    if (brief.fixedPlot) lines.push(`固定主线：${brief.fixedPlot}`);
+  } else {
+    lines.push(`真实对象：${brief.subjects.map((item) => item.name).join("、")}`, `事实范围：${brief.factualFocus}`, `来源要求：${sources}`);
+  }
+  lines.push(...constraints);
+  const modeText = storyMode === "faithful" ? "忠实讲述" : "创作新故事";
+  const presenceText = classroomPresence === "observer" ? "课堂人物旁观见证" : classroomPresence === "participant" ? "课堂人物参与推动" : "课堂人物不进入";
+  lines.push(`讲述方式：${modeText}；${presenceText}`);
+  const nextStep = replyContext === "requirement_change"
+    ? needsBackgroundRefresh ? "下一步：确认后按新需求继续，必要时重新整理背景资料。" : "下一步：确认后按新需求继续，并沿用现有背景资料。"
+    : planningMode === "explore_options" ? "下一步：确认后准备 3 个不同的故事方向；必要时先整理背景资料。" : "下一步：确认后准备主线理解卡；必要时先整理背景资料。";
+  lines.push(nextStep);
+  return lines.join("\n");
 }
 
 function fallbackResearchPlan(objectName: string): CourseResearchPlan {
@@ -549,11 +668,17 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
   const selectedKnowledgePoints = await resolveGrammarKnowledgePoints(db, selectedIds);
   const mappedOutline = toOutline(outline, mappedReferences, mappedCharacters);
   const coursePeople = toCoursePeople(course);
-  const alignmentDetails = typeof setting?.alignmentDetails === "object" && setting.alignmentDetails !== null
-    ? setting.alignmentDetails as Partial<StoryAlignmentState>
+  const rawAlignmentDetails = setting?.alignmentDetails;
+  const alignmentDetails = typeof rawAlignmentDetails === "object" && rawAlignmentDetails !== null
+    ? rawAlignmentDetails as Partial<StoryAlignmentState>
     : {};
+  const alignmentV2 = isAlignmentDetailsV2(rawAlignmentDetails) ? rawAlignmentDetails : null;
+  const resolvedV2 = alignmentV2?.requirement.kind === "resolved" ? alignmentV2.requirement : null;
+  const clarificationV2 = alignmentV2?.requirement.kind === "clarification" ? alignmentV2.requirement : null;
+  const workflowV2 = alignmentV2?.workflow ?? {};
   const recommendedIds = new Set(mappedOutline?.chapters.flatMap((chapter) => chapter.recommendedKnowledgePointIds) ?? []);
   return {
+    stateRevision: setting?.stateRevision ?? 0,
     course: {
       id: course.id,
       title: course.title,
@@ -573,15 +698,18 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
     alignment: {
       status: setting?.alignmentStatus ?? "idle",
       planningMode: setting?.planningMode ?? "explore_options",
-      resolvedUnderstanding: Array.isArray(alignmentDetails.resolvedUnderstanding) ? alignmentDetails.resolvedUnderstanding : [],
-      unresolvedIssues: Array.isArray(alignmentDetails.unresolvedIssues) ? alignmentDetails.unresolvedIssues : [],
-      questions: Array.isArray(alignmentDetails.questions) ? alignmentDetails.questions : [],
-      ...(alignmentDetails.storyMode === "faithful" || alignmentDetails.storyMode === "new_story" ? { storyMode: alignmentDetails.storyMode } : {}),
-      ...(alignmentDetails.classroomPresence === "observer" || alignmentDetails.classroomPresence === "participant" || alignmentDetails.classroomPresence === "absent" ? { classroomPresence: alignmentDetails.classroomPresence } : {}),
-      ...(Array.isArray(alignmentDetails.requiredNamedCharacters) ? { requiredNamedCharacters: alignmentDetails.requiredNamedCharacters.filter((value): value is string => typeof value === "string") } : {}),
-      ...(typeof alignmentDetails.needsBackgroundRefresh === "boolean" ? { needsBackgroundRefresh: alignmentDetails.needsBackgroundRefresh } : {}),
-      ...(typeof alignmentDetails.artifactsOutdated === "boolean" ? { artifactsOutdated: alignmentDetails.artifactsOutdated } : {}),
-      ...(alignmentDetails.pendingChange && typeof alignmentDetails.pendingChange === "object" ? { pendingChange: alignmentDetails.pendingChange } : {}),
+      resolvedUnderstanding: clarificationV2?.resolvedRequirements ?? (Array.isArray(alignmentDetails.resolvedUnderstanding) ? alignmentDetails.resolvedUnderstanding : []),
+      unresolvedIssues: clarificationV2?.questions.map((question) => question.label) ?? (Array.isArray(alignmentDetails.unresolvedIssues) ? alignmentDetails.unresolvedIssues : []),
+      questions: clarificationV2?.questions ?? (Array.isArray(alignmentDetails.questions) ? alignmentDetails.questions : []),
+      ...(resolvedV2 ? { schemaVersion: 2 as const, brief: resolvedV2.brief, storyMode: resolvedV2.storyMode, classroomPresence: resolvedV2.classroomPresence, requiredNamedCharacters: briefNamedCharacters(resolvedV2.brief) } : {}),
+      ...(clarificationV2 ? { schemaVersion: 2 as const, provisionalBriefKind: clarificationV2.provisionalBriefKind } : {}),
+      ...(!alignmentV2 && (alignmentDetails.storyMode === "faithful" || alignmentDetails.storyMode === "new_story") ? { storyMode: alignmentDetails.storyMode } : {}),
+      ...(!alignmentV2 && (alignmentDetails.classroomPresence === "observer" || alignmentDetails.classroomPresence === "participant" || alignmentDetails.classroomPresence === "absent") ? { classroomPresence: alignmentDetails.classroomPresence } : {}),
+      ...(!alignmentV2 && Array.isArray(alignmentDetails.requiredNamedCharacters) ? { requiredNamedCharacters: alignmentDetails.requiredNamedCharacters.filter((value): value is string => typeof value === "string") } : {}),
+      ...(typeof workflowV2.needsBackgroundRefresh === "boolean" ? { needsBackgroundRefresh: workflowV2.needsBackgroundRefresh } : typeof alignmentDetails.needsBackgroundRefresh === "boolean" ? { needsBackgroundRefresh: alignmentDetails.needsBackgroundRefresh } : {}),
+      ...(typeof workflowV2.artifactsOutdated === "boolean" ? { artifactsOutdated: workflowV2.artifactsOutdated } : typeof alignmentDetails.artifactsOutdated === "boolean" ? { artifactsOutdated: alignmentDetails.artifactsOutdated } : {}),
+      ...(workflowV2.pendingChange && typeof workflowV2.pendingChange === "object" ? { pendingChange: workflowV2.pendingChange } : alignmentDetails.pendingChange && typeof alignmentDetails.pendingChange === "object" ? { pendingChange: alignmentDetails.pendingChange } : {}),
+      ...(workflowV2.mainlineCard ? { mainlineCard: workflowV2.mainlineCard } : {}),
       ...(setting?.alignmentSummary ? { summary: setting.alignmentSummary } : {}),
     },
     operation: setting?.operationRequestId && (setting.operationStatus === "running" || setting.operationStatus === "failed" || setting.operationStatus === "result_unknown") && setting.operationPhase && setting.operationStartedAt ? {
@@ -742,6 +870,8 @@ async function storyAiContext(
   const alignmentDetails = typeof storySetting?.alignmentDetails === "object" && storySetting.alignmentDetails !== null
     ? storySetting.alignmentDetails as Partial<StoryAlignmentState>
     : {};
+  const alignmentV2 = isAlignmentDetailsV2(storySetting?.alignmentDetails) ? storySetting.alignmentDetails : null;
+  const resolvedV2 = alignmentV2?.requirement.kind === "resolved" ? alignmentV2.requirement : null;
   return {
     chapterCount,
     coursePeople,
@@ -757,12 +887,14 @@ async function storyAiContext(
     englishLevel: course.englishLevel ?? undefined,
     durationMinutes: course.durationMinutes as 30 | 45 | 60,
     selectedKnowledgePoints,
-    confirmedRequirement: storySetting?.alignmentSummary ?? undefined,
-    storyMode: alignmentDetails.storyMode,
-    classroomPresence: alignmentDetails.classroomPresence,
-    requiredNamedCharacters: Array.isArray(alignmentDetails.requiredNamedCharacters)
+    confirmedRequirement: resolvedV2 ? JSON.stringify(resolvedV2.brief) : storySetting?.alignmentSummary ?? undefined,
+    requirementBrief: resolvedV2?.brief,
+    storyMode: resolvedV2?.storyMode ?? alignmentDetails.storyMode,
+    classroomPresence: resolvedV2?.classroomPresence ?? alignmentDetails.classroomPresence,
+    requiredNamedCharacters: resolvedV2 ? briefNamedCharacters(resolvedV2.brief) : Array.isArray(alignmentDetails.requiredNamedCharacters)
       ? alignmentDetails.requiredNamedCharacters.filter((value): value is string => typeof value === "string")
       : [],
+    mainlineCard: alignmentV2?.workflow?.mainlineCard,
   };
 }
 
@@ -871,40 +1003,75 @@ async function saveAlignment(
     storyMode?: "faithful" | "new_story";
     classroomPresence?: "observer" | "participant" | "absent";
     requiredNamedCharacters?: string[];
+    provisionalBriefKind?: StoryRequirementBrief["kind"];
+    brief?: StoryRequirementBrief;
     resolvedUnderstanding: string[];
     unresolvedIssues: string[];
     questions: StoryAlignmentQuestion[];
     summary?: string;
     needsBackgroundRefresh?: boolean;
     artifactsOutdated?: boolean;
+    replyContext?: "initial" | "requirement_change";
   },
 ) {
   const stored = await db.courseStorySetting.findUnique({ where: { courseId: course.id } });
   const previousDetails = typeof stored?.alignmentDetails === "object" && stored.alignmentDetails !== null
     ? stored.alignmentDetails as Record<string, unknown>
     : {};
-  const alignmentDetails = {
-    resolvedUnderstanding: alignment.resolvedUnderstanding,
-    unresolvedIssues: alignment.unresolvedIssues,
-    questions: alignment.questions,
-    ...(alignment.storyMode ? { storyMode: alignment.storyMode } : typeof previousDetails.storyMode === "string" ? { storyMode: previousDetails.storyMode } : {}),
-    ...(alignment.classroomPresence ? { classroomPresence: alignment.classroomPresence } : typeof previousDetails.classroomPresence === "string" ? { classroomPresence: previousDetails.classroomPresence } : {}),
-    ...(Array.isArray(alignment.requiredNamedCharacters)
-      ? { requiredNamedCharacters: alignment.requiredNamedCharacters }
-      : Array.isArray(previousDetails.requiredNamedCharacters)
-        ? { requiredNamedCharacters: previousDetails.requiredNamedCharacters }
-        : {}),
-    ...(typeof alignment.needsBackgroundRefresh === "boolean"
-      ? { needsBackgroundRefresh: alignment.needsBackgroundRefresh }
-      : typeof previousDetails.needsBackgroundRefresh === "boolean"
-        ? { needsBackgroundRefresh: previousDetails.needsBackgroundRefresh }
-        : {}),
-    ...(typeof alignment.artifactsOutdated === "boolean"
-      ? { artifactsOutdated: alignment.artifactsOutdated }
-      : typeof previousDetails.artifactsOutdated === "boolean"
-        ? { artifactsOutdated: previousDetails.artifactsOutdated }
-        : {}),
+  const previousWorkflow: NonNullable<AlignmentDetailsV2["workflow"]> = isAlignmentDetailsV2(previousDetails) ? previousDetails.workflow ?? {} : {
+    ...(typeof previousDetails.needsBackgroundRefresh === "boolean" ? { needsBackgroundRefresh: previousDetails.needsBackgroundRefresh } : {}),
+    ...(typeof previousDetails.artifactsOutdated === "boolean" ? { artifactsOutdated: previousDetails.artifactsOutdated } : {}),
+    ...(previousDetails.pendingChange && typeof previousDetails.pendingChange === "object" ? { pendingChange: previousDetails.pendingChange as StoryAlignmentState["pendingChange"] } : {}),
   };
+  const workflowWithoutMainline: NonNullable<AlignmentDetailsV2["workflow"]> = {
+    ...(typeof previousWorkflow.needsBackgroundRefresh === "boolean" ? { needsBackgroundRefresh: previousWorkflow.needsBackgroundRefresh } : {}),
+    ...(typeof previousWorkflow.artifactsOutdated === "boolean" ? { artifactsOutdated: previousWorkflow.artifactsOutdated } : {}),
+    ...(previousWorkflow.pendingChange !== undefined ? { pendingChange: previousWorkflow.pendingChange } : {}),
+  };
+  const workflow = {
+    ...workflowWithoutMainline,
+    ...(typeof alignment.needsBackgroundRefresh === "boolean" ? { needsBackgroundRefresh: alignment.needsBackgroundRefresh } : {}),
+    ...(typeof alignment.artifactsOutdated === "boolean" ? { artifactsOutdated: alignment.artifactsOutdated } : {}),
+  };
+  const alignmentDetails: AlignmentDetailsV2 = alignment.status === "needs_clarification"
+    ? {
+        schemaVersion: 2,
+        requirement: {
+          kind: "clarification",
+          ...(alignment.provisionalBriefKind ? { provisionalBriefKind: alignment.provisionalBriefKind } : {}),
+          resolvedRequirements: alignment.resolvedUnderstanding,
+          questions: alignment.questions,
+        },
+        workflow,
+      }
+    : {
+        schemaVersion: 2,
+        requirement: {
+          kind: "resolved",
+          storyMode: alignment.storyMode ?? "new_story",
+          classroomPresence: alignment.classroomPresence ?? "participant",
+          brief: alignment.brief ?? {
+            kind: "narrative",
+            objective: alignment.summary ?? (alignment.resolvedUnderstanding.join("；") || "按老师已确认的要求创作课程故事"),
+            sourceRequirements: [],
+            requiredNamedCharacters: alignment.requiredNamedCharacters ?? [],
+            fixedPlot: alignment.planningMode === "follow_defined_plot" ? alignment.summary ?? null : null,
+            additionalConstraints: { required: [], preferred: [], excluded: [] },
+          },
+        },
+        workflow,
+      };
+  const resolvedRequirement = alignmentDetails.requirement.kind === "resolved" ? alignmentDetails.requirement : null;
+  const summary = resolvedRequirement
+    ? renderRequirementConfirmation(
+        resolvedRequirement.brief,
+        alignment.planningMode,
+        resolvedRequirement.storyMode,
+        resolvedRequirement.classroomPresence,
+        alignment.replyContext ?? "initial",
+        workflow.needsBackgroundRefresh !== false,
+      )
+    : null;
   await db.courseStorySetting.upsert({
     where: { courseId: course.id },
     create: {
@@ -913,14 +1080,14 @@ async function saveAlignment(
       writingProvider: setting.writingProvider,
       alignmentStatus: alignment.status,
       planningMode: alignment.planningMode,
-      alignmentSummary: alignment.summary ?? null,
+      alignmentSummary: summary,
       alignmentDetails,
       alignmentConfirmedAt: alignment.status === "confirmed" ? new Date() : null,
     },
     update: {
       alignmentStatus: alignment.status,
       planningMode: alignment.planningMode,
-      alignmentSummary: alignment.summary ?? null,
+      alignmentSummary: summary,
       alignmentDetails,
       alignmentConfirmedAt: alignment.status === "confirmed" ? new Date() : null,
     },
@@ -936,12 +1103,46 @@ async function continueAfterBackground(
 ) {
   const stored = await db.courseStorySetting.findUnique({ where: { courseId: course.id } });
   if (stored?.planningMode === "follow_defined_plot") {
+    const detailsV2 = isAlignmentDetailsV2(stored.alignmentDetails) ? stored.alignmentDetails : null;
+    if (detailsV2?.requirement.kind === "resolved") {
+      if (detailsV2.workflow?.mainlineCard?.status === "pending_confirmation") return;
+      const context = await storyAiContext(db, course, setting.chapterCount);
+      const generated = await deps.generateMainlineCard({
+        ...context,
+        requirementBrief: detailsV2.requirement.brief,
+        task: "根据已确认需求整理主线理解卡，供老师确认后再生成章节大纲。",
+      });
+      await guard?.();
+      const mainlineCard: StoryMainlineCard = { ...generated, status: "pending_confirmation" };
+      await updateAlignmentDetails(db, course.id, { mainlineCard });
+      await addMessage(db, course.id, "assistant", renderMainlineCard(mainlineCard, context.coursePeople), [
+        { id: `confirm-mainline-${Date.now()}`, label: "确认主线并生成大纲", action: "confirm_mainline" },
+        { id: `revise-mainline-${Date.now()}`, label: "修改主线理解", action: "revise_mainline" },
+      ]);
+      return;
+    }
     await addMessage(db, course.id, "system", "创作需求已确认，正在生成章节大纲。");
     await generateAndSaveOutline(db, course, "根据已确认的具体剧情生成完整故事大纲。", deps, setting, undefined, guard);
     return;
   }
   await addMessage(db, course.id, "system", "创作需求已确认，正在创作 3 个不同的故事方向。");
   await generateAndSaveDirections(db, course, deps, setting.chapterCount, undefined, guard);
+}
+
+function renderMainlineCard(card: StoryMainlineCard, coursePeople: CourseAudiencePerson[] = []) {
+  const peopleNames = new Map(coursePeople.map((person) => [person.personId, person.chineseName || person.englishName]));
+  return [
+    "请确认故事主线：",
+    `主角结构：${card.protagonistStructure}`,
+    ...(card.classroomRoles.length ? [`课堂人物作用：${card.classroomRoles.map((item) => `${peopleNames.get(item.personId) ?? item.personId}—${item.roleInStory}`).join("；")}`] : []),
+    `触发事件：${card.incitingEvent}`,
+    `共同目标：${card.goal}`,
+    `主要阻力：${card.mainObstacle}`,
+    `推进方式：${card.progression}`,
+    `结局方向：${card.endingDirection}`,
+    ...(card.mustKeep.length ? [`必须保留：${card.mustKeep.join("；")}`] : []),
+    ...(card.mayExpand.length ? [`允许补充：${card.mayExpand.join("；")}`] : []),
+  ].join("\n");
 }
 
 type InternalStoryMessageInput = CourseStoryMessageInput & { isRetry?: boolean; operationRevision?: number };
@@ -957,9 +1158,9 @@ async function assertCurrentOperation(db: StoryOutlineDb, courseId: string, inpu
 function operationPhase(input: CourseStoryMessageInput): NonNullable<CourseStoryOutlineState["operation"]>["phase"] {
   if (input.action === "choose_reference_search" || input.action === "request_reference_search") return "searching_reference";
   if (input.action === "confirm_requirements") return "preparing_reference";
-  if (input.action === "generate_directions" || input.mode === "random") return "generating_directions";
-  if (input.action === "confirm_direction" || input.action === "generate_from_reference" || input.action === "regenerate_outline") return "generating_outline";
-  if (input.action === "revise_direction" || input.action === "revise_outline" || input.action === "revise_chapter" || input.action === "confirm_story_change") return "revising";
+  if (input.action === "generate_directions") return "generating_directions";
+  if (input.action === "confirm_direction" || input.action === "confirm_mainline" || input.action === "generate_from_reference" || input.action === "regenerate_outline") return "generating_outline";
+  if (input.action === "revise_direction" || input.action === "revise_mainline" || input.action === "revise_outline" || input.action === "revise_chapter" || input.action === "confirm_story_change") return "revising";
   return "aligning";
 }
 
@@ -971,6 +1172,15 @@ async function executeStoryOutlineMessage(
 ) {
   const course = await getCourse(db, courseId);
   const setting = await currentSetting(db, course, input);
+  let requiredQuestionIds: string[] = [];
+  if (input.action === "submit_alignment_answers" && Array.isArray(input.alignmentAnswers)) {
+    const stored = await db.courseStorySetting.findUnique({ where: { courseId } });
+    const questions = alignmentQuestionsFromDetails(stored?.alignmentDetails);
+    if (!questions.length) throw new CourseStoryOutlineValidationError("当前没有等待回答的问题");
+    const answeredIds = new Set(input.alignmentAnswers.map((answer) => answer.questionId));
+    requiredQuestionIds = questions.filter((question) => !answeredIds.has(question.id)).map((question) => question.id);
+    input.message = renderStructuredAlignmentAnswers(questions, input.alignmentAnswers);
+  }
   const guard: OperationGuard = (targetDb = db) => assertCurrentOperation(targetDb, courseId, input);
   const markAlignmentFormatRepair = async () => {
     await guard();
@@ -1029,9 +1239,7 @@ async function executeStoryOutlineMessage(
 
   if (input.action === "cancel_story_change") {
     const stored = await db.courseStorySetting.findUnique({ where: { courseId } });
-    const details = typeof stored?.alignmentDetails === "object" && stored.alignmentDetails !== null
-      ? stored.alignmentDetails as Partial<StoryAlignmentState>
-      : {};
+    const details = alignmentWorkflowDetails(stored?.alignmentDetails);
     if (!details.pendingChange) throw new CourseStoryOutlineValidationError("当前没有等待确认的故事修改");
     if (input.targetId && input.targetId !== details.pendingChange.id) throw new CourseStoryOutlineValidationError("这项修改确认已经失效，请使用最新提示");
     await updateAlignmentDetails(db, courseId, { pendingChange: null });
@@ -1041,9 +1249,7 @@ async function executeStoryOutlineMessage(
 
   if (input.action === "confirm_story_change") {
     const stored = await db.courseStorySetting.findUnique({ where: { courseId } });
-    const details = typeof stored?.alignmentDetails === "object" && stored.alignmentDetails !== null
-      ? stored.alignmentDetails as Partial<StoryAlignmentState>
-      : {};
+    const details = alignmentWorkflowDetails(stored?.alignmentDetails);
     const pendingChange = details.pendingChange;
     if (!pendingChange) throw new CourseStoryOutlineValidationError("当前没有等待确认的故事修改");
     if (input.targetId && input.targetId !== pendingChange.id) throw new CourseStoryOutlineValidationError("这项修改确认已经失效，请使用最新提示");
@@ -1069,6 +1275,7 @@ async function executeStoryOutlineMessage(
       ...alignment,
       needsBackgroundRefresh: pendingChange.needsBackgroundRefresh,
       artifactsOutdated: true,
+      replyContext: "requirement_change",
     });
     await updateAlignmentDetails(db, courseId, { pendingChange: null });
     if (alignment.status === "needs_clarification") {
@@ -1079,7 +1286,10 @@ async function executeStoryOutlineMessage(
         questions: alignment.questions,
       }]);
     } else {
-      await addMessage(db, courseId, "assistant", alignment.summary || alignment.assistantMessage, [
+      const confirmation = alignment.brief
+        ? renderRequirementConfirmation(alignment.brief, alignment.planningMode, alignment.storyMode, alignment.classroomPresence, "requirement_change", pendingChange.needsBackgroundRefresh)
+        : alignment.summary || alignment.assistantMessage;
+      await addMessage(db, courseId, "assistant", confirmation, [
         { id: "confirm-requirements", label: "确认修改需求", action: "confirm_requirements" },
         { id: "modify-requirements", label: "调整我的意思", action: "modify_requirements" },
       ]);
@@ -1095,23 +1305,34 @@ async function executeStoryOutlineMessage(
     const details = typeof stored.alignmentDetails === "object" && stored.alignmentDetails !== null
       ? stored.alignmentDetails as Partial<StoryAlignmentState>
       : {};
+    const detailsV2 = isAlignmentDetailsV2(stored.alignmentDetails) ? stored.alignmentDetails : null;
+    const resolvedV2 = detailsV2?.requirement.kind === "resolved" ? detailsV2.requirement : null;
+    const workflowV2 = detailsV2?.workflow ?? {};
     if (stored.alignmentStatus !== "confirmed") {
-      await saveAlignment(db, course, setting, {
-        status: "confirmed",
-        planningMode: stored.planningMode ?? "explore_options",
-        storyMode: details.storyMode,
-        classroomPresence: details.classroomPresence,
-        requiredNamedCharacters: details.requiredNamedCharacters,
-        resolvedUnderstanding: details.resolvedUnderstanding ?? [],
-        unresolvedIssues: [],
-        questions: [],
-        summary: stored.alignmentSummary,
-        needsBackgroundRefresh: details.needsBackgroundRefresh,
-        artifactsOutdated: details.artifactsOutdated,
-      });
+      if (resolvedV2) {
+        await saveAlignment(db, course, setting, {
+          status: "confirmed",
+          planningMode: stored.planningMode ?? "explore_options",
+          storyMode: resolvedV2.storyMode,
+          classroomPresence: resolvedV2.classroomPresence,
+          requiredNamedCharacters: briefNamedCharacters(resolvedV2.brief),
+          brief: resolvedV2.brief,
+          resolvedUnderstanding: [],
+          unresolvedIssues: [],
+          questions: [],
+          summary: stored.alignmentSummary,
+          needsBackgroundRefresh: workflowV2.needsBackgroundRefresh,
+          artifactsOutdated: workflowV2.artifactsOutdated,
+        });
+      } else {
+        await db.courseStorySetting.updateMany({
+          where: { courseId },
+          data: { alignmentStatus: "confirmed", alignmentConfirmedAt: new Date() },
+        });
+      }
       await addMessage(db, courseId, "teacher", "我确认这份创作理解。");
     }
-    const shouldRefreshBackground = details.needsBackgroundRefresh !== false;
+    const shouldRefreshBackground = (workflowV2.needsBackgroundRefresh ?? details.needsBackgroundRefresh) !== false;
     if (!shouldRefreshBackground) {
       await addMessage(db, courseId, "system", "创作需求已确认，将沿用现有背景资料继续创作。");
       await continueAfterBackground(db, course, deps, setting, guard);
@@ -1122,11 +1343,11 @@ async function executeStoryOutlineMessage(
     const background = await deps.prepareBackgroundKnowledge({
       ...context,
       task: "根据老师确认的创作理解，为后续故事生成准备一次必要背景知识。",
-      confirmedRequirement: stored.alignmentSummary,
+      confirmedRequirement: resolvedV2 ? JSON.stringify(resolvedV2.brief) : stored.alignmentSummary,
     });
     await guard();
     if (background.status === "not_needed") {
-      if (details.needsBackgroundRefresh === true) {
+      if ((workflowV2.needsBackgroundRefresh ?? details.needsBackgroundRefresh) === true) {
         await db.courseSourceReference.deleteMany({ where: { courseId } });
         await updateAlignmentDetails(db, courseId, { needsBackgroundRefresh: false });
       }
@@ -1140,9 +1361,46 @@ async function executeStoryOutlineMessage(
       ]);
       return getStoryOutlineState(db, courseId);
     }
-    await persistPreparedReferences(db, courseId, background.references, details.needsBackgroundRefresh === true);
+    await persistPreparedReferences(db, courseId, background.references, (workflowV2.needsBackgroundRefresh ?? details.needsBackgroundRefresh) === true);
     await addMessage(db, courseId, "assistant", "背景资料已整理，请确认后继续。", [
       { id: "confirm-background-materials", label: "确认资料并继续", action: "confirm_reference_materials" },
+    ]);
+    return getStoryOutlineState(db, courseId);
+  }
+
+  if (input.action === "confirm_mainline") {
+    const stored = await db.courseStorySetting.findUnique({ where: { courseId } });
+    const detailsV2 = isAlignmentDetailsV2(stored?.alignmentDetails) ? stored.alignmentDetails : null;
+    const mainlineCard = detailsV2?.workflow?.mainlineCard;
+    if (!detailsV2 || detailsV2.requirement.kind !== "resolved" || !mainlineCard) throw new CourseStoryOutlineValidationError("当前没有等待确认的主线理解卡");
+    if (mainlineCard.status !== "pending_confirmation" && !(input.isRetry && mainlineCard.status === "confirmed")) throw new CourseStoryOutlineValidationError("主线理解卡已经更新，请使用最新内容");
+    if (mainlineCard.status !== "confirmed") {
+      await updateAlignmentDetails(db, courseId, { mainlineCard: { ...mainlineCard, status: "confirmed", confirmedAt: new Date().toISOString() } });
+      await addMessage(db, courseId, "teacher", "我确认这份故事主线，请生成故事大纲。");
+    }
+    await addMessage(db, courseId, "system", "故事主线已确认，正在生成章节大纲。");
+    await generateAndSaveOutline(db, course, "根据已确认的需求和主线理解卡生成完整故事大纲。", deps, setting, undefined, guard);
+    return getStoryOutlineState(db, courseId);
+  }
+
+  if (input.action === "revise_mainline") {
+    if (!input.message.trim()) throw new CourseStoryOutlineValidationError("请说明希望怎样调整故事主线");
+    const stored = await db.courseStorySetting.findUnique({ where: { courseId } });
+    const detailsV2 = isAlignmentDetailsV2(stored?.alignmentDetails) ? stored.alignmentDetails : null;
+    const currentMainline = detailsV2?.workflow?.mainlineCard;
+    if (!detailsV2 || detailsV2.requirement.kind !== "resolved" || !currentMainline) throw new CourseStoryOutlineValidationError("当前没有可以修改的主线理解卡");
+    const context = await storyAiContext(db, course, setting.chapterCount);
+    const generated = await deps.generateMainlineCard({
+      ...context,
+      requirementBrief: detailsV2.requirement.brief,
+      task: `只调整当前主线理解卡，不改变已确认需求。\n当前主线：${JSON.stringify(currentMainline)}\n老师修改：${input.message.trim()}`,
+    });
+    await guard();
+    const nextMainline: StoryMainlineCard = { ...generated, status: "pending_confirmation" };
+    await updateAlignmentDetails(db, courseId, { mainlineCard: nextMainline });
+    await addMessage(db, courseId, "assistant", renderMainlineCard(nextMainline, context.coursePeople), [
+      { id: `confirm-mainline-${Date.now()}`, label: "确认主线并生成大纲", action: "confirm_mainline" },
+      { id: `revise-mainline-${Date.now()}`, label: "继续修改主线", action: "revise_mainline" },
     ]);
     return getStoryOutlineState(db, courseId);
   }
@@ -1272,9 +1530,7 @@ async function executeStoryOutlineMessage(
       );
     });
     const stored = await db.courseStorySetting.findUnique({ where: { courseId } });
-    const details = typeof stored?.alignmentDetails === "object" && stored.alignmentDetails !== null
-      ? stored.alignmentDetails as Partial<StoryAlignmentState>
-      : {};
+    const details = alignmentWorkflowDetails(stored?.alignmentDetails);
     await persistPreparedReferences(db, courseId, referencesToPersist, details.needsBackgroundRefresh === true, "quickrouter_gpt");
     await addMessage(db, courseId, "assistant", "资料已整理，请确认后继续。", [
       { id: "confirm-reference-materials", label: "确认参考资料并继续", action: "confirm_reference_materials" },
@@ -1322,16 +1578,11 @@ async function executeStoryOutlineMessage(
     return getStoryOutlineState(db, courseId);
   }
 
-  if (input.mode === "random") {
-    await addMessage(db, courseId, "system", "已收到灵感设置，正在创作 3 个不同的故事方向。");
-    await generateAndSaveDirections(db, course, deps, setting.chapterCount, undefined, guard);
-    return getStoryOutlineState(db, courseId);
-  }
-
   const context = await storyAiContext(db, course, setting.chapterCount);
   const alignment = await deps.alignRequirements({
     ...context,
     onFormatRepair: markAlignmentFormatRepair,
+    ...(requiredQuestionIds.length ? { requiredQuestionIds } : {}),
     task: input.message.trim() || "根据老师最新回答继续对齐大体创作需求。",
   });
   await guard();
@@ -1347,7 +1598,10 @@ async function executeStoryOutlineMessage(
     ]);
     return getStoryOutlineState(db, courseId);
   }
-  await addMessage(db, courseId, "assistant", alignment.summary || alignment.assistantMessage, [
+  const confirmation = alignment.brief
+    ? renderRequirementConfirmation(alignment.brief, alignment.planningMode, alignment.storyMode, alignment.classroomPresence)
+    : alignment.summary || alignment.assistantMessage;
+  await addMessage(db, courseId, "assistant", confirmation, [
     { id: "confirm-requirements", label: "确认需求", action: "confirm_requirements" },
     { id: "modify-requirements", label: "修改需求", action: "modify_requirements" },
   ]);
@@ -1365,6 +1619,9 @@ export async function handleStoryOutlineMessage(
   const before = await db.courseStorySetting.findUnique({ where: { courseId } });
   const requestId = originalInput.requestId ?? crypto.randomUUID();
   if (before?.operationRequestId === requestId) return getStoryOutlineState(db, courseId);
+  if (originalInput.action !== "retry_operation" && originalInput.expectedStateRevision !== undefined && originalInput.expectedStateRevision !== (before?.stateRevision ?? 0)) {
+    throw new CourseStoryOutlineOperationConflictError("问题或确认卡已经更新，请使用最新内容继续");
+  }
   if (before?.operationStatus === "running") throw new CourseStoryOutlineOperationConflictError();
 
   let input: InternalStoryMessageInput = { ...originalInput, requestId };

@@ -90,6 +90,8 @@ Step 2 使用由成果状态驱动的自适应布局：
 
 实现状态：已实现并补充“新增资料与大纲同时返回”回归测试；本轮实现提交 `ea206d7`。
 
+2026-08-27 需求对齐 V2 已实现，待用户验收。AI 输出、服务端持久化和新前端提交统一使用 V2；旧 `alignmentDetails`、旧问题卡和旧答案 record 继续兼容读取。旧课程只读或确认时不改写为 V2，只有重新进入需求对齐才写入 V2；未新增表、字段或 migration。
+
 2026-08-15 修复结果 Tab 的轮询回归：轮询只在成果版本真正变化时切换到最新成果，不再因已有大纲存在而持续抢回“大纲”Tab。大纲确认只在确认按钮显示处理中，不向聊天时间线插入临时记录。
 
 右侧不展示 prompt、JSON、provider、Responses、QuickRouter、原始网页内容或技术错误。
@@ -173,11 +175,11 @@ Step 2 使用由成果状态驱动的自适应布局：
 - 事件如何继续推进的基本方式。
 - 故事走向的结局方向；不要求提前写出完整结尾文案。
 
-当 `planningMode = "follow_defined_plot"` 时，系统不得直接生成章节大纲，也不得把老师已经明确的主线扩写成 3 个不同故事。系统先展示一张“主线理解卡”，内容包括主角结构、师生参与方式、触发事件、目标、主要阻力、推进方式、结局方向、必须保留和允许补充的部分。老师可以修改；只有确认后才生成完整大纲。
+当 `planningMode = "follow_defined_plot"` 时，系统不得直接生成章节大纲，也不得把老师已经明确的主线扩写成 3 个不同故事。系统先展示一张“主线理解卡”，内容包括主角结构、师生参与方式、触发事件、目标、主要阻力、推进方式、结局方向、必须保留和允许补充的部分。老师可以修改；只有确认后才生成完整大纲。该卡负责把已确认需求展开成可写作的故事设计，不重新解释或覆盖需求对齐 `brief`。
 
 按原剧情讲时，已确认参考资料中的原作主线可视为主线明确，但仍必须先展示主线理解卡，确认讲述框架和师生参与方式后再生成大纲。
 
-忠实复述、真实人物和真实历史的主线理解卡在必要事实资料确认后生成；完全原创或已知作品的新剧情不因资料卡阻断方向生成。主线理解卡作为当前 Step 2 业务状态保存在 `CourseStorySetting.alignmentDetails.mainlineCard`，不新增 `storyBrief`：
+忠实复述、真实人物和真实历史的主线理解卡在必要事实资料确认后生成；完全原创或已知作品的新剧情不因资料卡阻断方向生成。主线理解卡是需求对齐之后的工作流成果，保存在 `CourseStorySetting.alignmentDetails.workflow.mainlineCard`；不新增独立表或列，也不再建立一份与 `brief` 竞争的需求快照：
 
 ```ts
 type StoryMainlineCard = {
@@ -199,9 +201,9 @@ type StoryMainlineCard = {
 
 资料是否出现、何时出现由归一化意图决定，不再让所有外部对象经过同一条“先整理资料、再确认资料、再生成方向”链路：
 
-- 已知作品、游戏或角色的新剧情：确认创作理解后直接生成 3 个方向；老师选定方向后，系统内部只准备该方向所需的精简 IP 资料，不增加老师确认步骤。
+- 已知作品、游戏或角色的新剧情：确认创作理解后按 `planningMode` 进入 3 个方向或主线理解卡；方向选定或主线确认后，系统内部只准备当前方案所需的精简 IP 资料，不增加老师确认步骤。
 - 真实人物、真实历史和忠实复述：确认讲述范围后准备可核实的精简事实资料；老师点击“确认事实资料”后再生成方向、主线理解卡或大纲。
-- 知识或理论故事：创作理解中直接展示最多 2 个推荐概念；确认后生成 3 个方向，不额外展示百科资料卡。
+- 知识或理论故事：需求对齐先确认可验证的学习目标；老师只把知识当作兴趣素材时，由 3 个方向分别推荐适龄切口。知识类不额外展示百科资料卡。
 - 无法识别的作品或对象：只询问一次来源，提供“我提供链接或梗概”和“联网查找”；资料确认后再生成方向。
 - 完全原创：不准备资料，直接生成方向或主线理解卡。
 
@@ -228,48 +230,66 @@ type StoryMainlineCard = {
 
 ## 需求对齐与创作理解确认
 
-需求对齐只负责把老师输入整理为一份创作理解，不负责补完整个故事，也不查找或整理背景资料。即使存在多个合理理解，只要系统能够给出符合老师语言、容易纠偏且风险较低的默认方案，就直接采用默认理解、不提问。只有不存在安全默认答案，或错误推断会造成对象错误、事实失真、版本冲突时才阻断提问。
+需求对齐只负责把老师输入归一化为一份可确认、可供下游直接消费的课程创作需求，不补完整故事、不查资料、不生成方向或大纲。系统优先采用容易纠偏、不会改变课程本质的安全理解；只有缺口会导致不同课程目标、不同来源对象、不同事实边界或互斥故事因果时才阻断提问。
 
-真正需要阻断确认的歧义包括：
+### 分类与路由
 
-- 引用对象不明确，例如同名人物、作品的不同版本或系列。
-- 老师同时给出互相冲突的原作使用要求，且无法从上下文判断优先级。
-- 老师的多个要求互相冲突。
+需求类型不是按“有没有故事”判断，而是按课程成功标准判断：
 
-地点、配角、奇幻机制、师生如何进入世界、具体转折和结尾细节等可以通过 3 个故事方向安全探索的内容，不属于必须追问的事项。老师没有完整故事想法不是信息缺失。Step 1 老师和学生默认全部进入故事，不询问选择哪些学生或如何进入；只有老师明确要求排除、调整某人参与方式，或实际人物范围无法从 Step 1 快照确定时才继续确认。老师说“参考某作品，师生一起经历新冒险”时，默认理解为使用该作品世界或核心人物创作新剧情，不追问复述还是改编，也不要求老师先列原作人物。
+1. 真实人物、真实事件或真实历史背景的准确性决定课程成功：`factual`。
+2. 否则，学生对理论或知识概念的理解、应用或体验决定课程成功：`concept`。
+3. 其余以角色经历和情节结果决定课程成功：`narrative`。
+
+故事包装不会把事实课变成叙事课；故事里出现知识素材也不会自动变成概念课。老师只要求“带一点知识、让学生觉得有趣”时可以归为 `narrative`，由方向推荐知识切口；老师明确要求“学生学会理论”但未说明深度时归为 `concept` 并提问学习目标。
+
+`planningMode` 只决定是否需要比较不同核心方向：
+
+- `follow_defined_plot`：老师已经给出的要求足以约束一条核心因果或真实历程，即使地点、机制和具体转折仍待补充。
+- `explore_options`：只有主题、人物、类型、知识素材，或只有宽泛历史范围，需要比较本质不同的故事核心或史实视角。
+
+真实历史允许 `factual + faithful + observer + explore_options`：例如“讲一个丝绸之路上的故事”不自动变成原创故事，三个方向只能选择不同真实事件、人物或史实视角。明确人物与明确真实历程使用 `follow_defined_plot`；明确架空、改写历史或让课堂人物改变真实因果才转为 `narrative + new_story + participant`。
+
+来源和课堂人物规则：
+
+- `faithful + observer`：忠实保留原作或史实的关键事件、人物关系发展、因果与结局；课堂人物只旁观、记录、见证或彼此交流。
+- `new_story + participant`：原创故事，或使用作品世界、角色和历史背景创造新事件；课堂人物通过行动推动因果。
+- `absent`：只有老师明确要求课堂人物不进入时使用。
+- 禁止 `faithful + participant`。
+- 老师说“根据某作品创造一个新故事”时，默认实际使用其世界或核心角色创作新剧情，不降级为只借风格，也不要求老师提前列出原作角色。
+- 老师说“见证、按原作讲”时，默认忠实主线、课堂人物旁观。
+- 成熟作品的适龄删减、含蓄表达和去除成人性内容属于系统呈现政策；只要不改变关键事件、人物关系发展、因果和结局，就不触发澄清、不进入老师需求，也不改变 `faithful`。
+
+真正需要阻断的事项包括：来源或版本无法确认且差异会改变内容；老师的硬要求互相冲突；明确要求学习理论但学习深度未知；以及老师回答后新激活的条件问题。地点、配角、奇幻机制、课堂人物如何进入、具体转折和结尾细节由后续方向或大纲设计，不属于缺失信息。
 
 ### 动态问题表单
 
-默认不提问，直接展示系统整理的创作理解。只有存在无法安全推断、会改变故事本质的阻断歧义时才提问：通常 1 题，两个独立阻断项并存时最多 2 题。前端在聊天消息中渲染为一个可提交的表单：
+默认 0 题；需要澄清时通常 1 题，同一张问题卡最多 3 个当前已经成立、彼此独立的阻塞决策。依赖上一答案才成立的问题不得提前展示。前端在一条聊天消息中渲染整张可提交表单：
 
 ```ts
 type AlignmentQuestion = {
   id: string;
   label: string;
-  reason?: string;
-  required: boolean;
+  impact: string;
   answerMode: "single_choice" | "multi_choice" | "text";
-  options?: Array<{
-    id: string;
-    label: string;
-    enablesTextInput?: boolean;
-    textPlaceholder?: string;
-  }>;
+  options?: Array<{ id: string; label: string }>;
   allowCustom: boolean;
   recommendedOptionId?: string;
   recommendationReason?: string;
 };
 ```
 
-- 每个选择题必须提供 2-3 个可直接选择的选项，并在这些现有选项中指定一项推荐，不再额外生成“采用 AI 推荐”伪选项。
+- 整次需求对齐可以 0 题直接确认；一旦返回 `needs_clarification`，`questions.length` 必须为 1-3。选择题必须提供 2-3 个可直接选择的选项，并在现有选项中指定一项推荐，不生成“采用 AI 推荐”伪选项。
 - 推荐选项移动到第一位，中文标签后标注“（推荐）”，下方展示简短推荐理由，并默认选中；内部 ID、枚举值或 `recommendedOptionId` 永远不作为用户文案展示。
-- AI 输出边界明确为 `options: Array<{id,label,...}>`、`recommendedOptionId` 和 `recommendationReason`。服务端兼容规范化 AI 可能返回的 `value` 字段，但对前端只返回统一的 `{id,label}`；推荐 ID 必须关联一个现有选项。
+- 推荐遵循“满足老师明确目标的最低复杂度”：不能为了简单而降低老师目标，也不能推荐超出学生年龄、英语等级、章节数和课程容量的内容。
 - `allowCustom` 为 `true` 时必须提供“其他，我来说明”入口，选中后在该题下原地展开独立文本输入。
-- 只有缺少无法推断的专有名称或版本时使用纯文本题；即使模型返回了缺少选项的异常选择题，前端也必须为该题单独显示兜底输入框。
-- 每个问题使用唯一 ID；服务端发现重复 ID 时重命名，避免两题共用一个输入状态。
+- 只有缺少无法预设的专有名称、版本、链接或精确来源时使用纯文本题。
+- 问题 `id` 是稳定语义身份。重复 ID、推荐项未关联现有选项、题数或选项数越界均属于无效协议，不能通过静默重命名、截断或补默认项掩盖。
 - 老师可以跳过选项，直接用自然语言回答整组问题；AI 必须结合问题 ID 和老师原文重新判断。
-- 提交后同时保存结构化选择与老师原文，不能只保存选项 ID。
+- 提交后保存结构化选项 ID；老师自己输入的文本必须原样保存。老师可见消息由服务端根据当时的问题与选项快照确定性生成，不能让客户端只提交易变的显示标签，也不能丢失自定义原文。
+- 部分回答后只移除已经解决的问题，保留未回答问题的原 ID；新激活的条件问题可以在下一张卡中出现，已回答语义不得重新询问。
+- 不设置会破坏正确性的澄清轮数硬上限。老师回答含糊时保持相同未解决问题和 `needs_clarification`，禁止因轮数或成本自动采用推荐。
 - 请求失败时保留整组未提交或未成功提交的答案。
+- AI 返回超过 3 题或其他语义组合错误时，服务端执行至多一次定向语义修复，要求合并同类决策且不得丢失阻塞项；再次失败返回 `502`，不放行确认。
 
 ### 失败对账与重试
 
@@ -281,55 +301,125 @@ type AlignmentQuestion = {
 
 ### AI 判断与服务端放行
 
-AI 负责理解语义、采用安全默认范围并发现真正的阻断缺口；服务端验证稳定协议，不让 AI 用自然语言直接控制状态机。服务端不依赖具体作品名或关键词表判断意图。
+AI 负责分类、提取老师要求、采用安全默认并发现阻塞缺口；服务端验证鉴别联合结构和业务组合，不让 AI 用自由文案控制状态机。AI 返回、持久化语义、页面展示和下游上下文必须分层，不能继续用一段 `summary` 同时承担四种职责。
 
 ```ts
-type StoryAlignmentState = {
-  status: "needs_clarification" | "ready_for_confirmation";
-  planningMode: "explore_options" | "follow_defined_plot";
-  storyMode?: "faithful" | "new_story";
-  classroomPresence?: "observer" | "participant" | "absent";
-  resolvedUnderstanding: string[];
-  unresolvedIssues: string[];
-  questions: AlignmentQuestion[];
-  summary?: string;
-  needsBackgroundRefresh?: boolean;
-  pendingChange?: {
-    id: string;
-    kind: "outline_revision" | "requirement_change";
-    request: string;
-    reason: string;
-    targetScope: "direction" | "outline" | "chapter";
-    needsBackgroundRefresh: boolean;
+type SourceRequirement = {
+  name: string;
+  useInCourse: string;
+};
+
+type AdditionalConstraints = {
+  required: string[];
+  preferred: string[];
+  excluded: string[];
+};
+
+type NarrativeRequirementBrief = {
+  kind: "narrative";
+  objective: string;
+  sourceRequirements: SourceRequirement[];
+  requiredNamedCharacters: string[];
+  fixedPlot: string | null;
+  additionalConstraints: AdditionalConstraints;
+};
+
+type ConceptRequirementBrief = {
+  kind: "concept";
+  objective: string;
+  learningTargets: Array<{
+    concept: string;
+    expectedUnderstanding: string;
+  }>;
+  assumedPriorKnowledge: string[];
+  sourceRequirements: SourceRequirement[];
+  requiredNamedCharacters: string[];
+  fixedPlot: string | null;
+  additionalConstraints: AdditionalConstraints;
+};
+
+type FactualRequirementBrief = {
+  kind: "factual";
+  subjects: Array<{
+    name: string;
+    kind: "person" | "event" | "topic";
+  }>;
+  factualFocus: string;
+  sourceRequirements: SourceRequirement[];
+  additionalConstraints: AdditionalConstraints;
+};
+
+type RequirementBrief =
+  | NarrativeRequirementBrief
+  | ConceptRequirementBrief
+  | FactualRequirementBrief;
+
+type AlignmentAiResponse =
+  | {
+      status: "needs_clarification";
+      provisionalBriefKind?: RequirementBrief["kind"];
+      resolvedRequirements: string[];
+      questions: AlignmentQuestion[];
+    }
+  | {
+      status: "ready_for_confirmation";
+      planningMode: "explore_options" | "follow_defined_plot";
+      storyMode: "faithful" | "new_story";
+      classroomPresence: "observer" | "participant" | "absent";
+      brief: RequirementBrief;
+    };
+
+type AlignmentDetailsV2 = {
+  schemaVersion: 2;
+  requirement:
+    | {
+        kind: "clarification";
+        provisionalBriefKind?: RequirementBrief["kind"];
+        resolvedRequirements: string[];
+        questions: AlignmentQuestion[];
+      }
+    | {
+        kind: "resolved";
+        storyMode: "faithful" | "new_story";
+        classroomPresence: "observer" | "participant" | "absent";
+        brief: RequirementBrief;
+      };
+  workflow: {
+    needsBackgroundRefresh?: boolean;
+    artifactsOutdated?: boolean;
+    mainlineCard?: StoryMainlineCard;
+    pendingChange?: {
+      id: string;
+      kind: "outline_revision" | "requirement_change";
+      request: string;
+      reason: string;
+      targetScope: "direction" | "outline" | "chapter";
+      needsBackgroundRefresh: boolean;
+    };
   };
 };
 ```
 
-该结构是流程判断 AI 的响应协议，不新增独立 `storyBrief` 数据源，也不新增数据库字段；新增语义继续保存在现有 `alignmentDetails` JSON。`needsBackgroundRefresh` 只在修改已有方向、大纲或章节并重新进入需求确认时保存；首次创作确认后仍按正常流程准备资料。已确认内容继续通过业务消息、参考资料和当前故事状态进入后续上下文。
+`AlignmentAiResponse` 不包含 `schemaVersion`、工作流标记、确认时间、数据库 ID 或独立 summary；这些值由服务端管理。数据库继续使用现有 `alignmentStatus`、`planningMode`、`alignmentSummary`、`alignmentConfirmedAt`、`stateRevision` 和 `alignmentDetails`，不新增表或列；`planningMode` 只存现有列，不在 JSON 中重复。旧 `alignmentDetails` 继续兼容读取，首次重新对齐时写入 V2。
 
-`storyMode` 与 `classroomPresence` 是两个独立维度：
+字段边界：
 
-- `faithful + observer`：忠实保留原作或史实的关键事件、因果与结局；除非老师明确排除，课堂人物进入场景旁观、记录、交流或见证，但不得向原作人物提供关键物品、信息、建议或其他会改变事件的帮助。
-- 适龄删减、弱化成熟或亲密关系内容、调整课堂表达尺度，不视为新剧情。只要原作关键事件、人物关系发展、因果与结局不变，继续保持 `faithful + observer + follow_defined_plot`；回答内容边界问题不得单独触发 3 个故事方向。
-- `new_story + participant`：使用原创设定，或使用作品、人物、世界观和历史背景创作新事件；课堂人物默认参与并通过具体行动推动剧情。
-- `faithful + absent` 或 `new_story + absent`：只有老师明确要求课堂人物不进入时使用。
-- 禁止 `faithful + participant`。人物传记和真实历史沿用同一规则：事实讲述为 `faithful`，让课堂人物参与并影响新事件为 `new_story`。
-- 兼容旧值：`follow_original` 映射为 `faithful + observer`，`create_new` 映射为 `new_story + participant`。
+- `fixedPlot` 是老师已经固定的核心因果的一段简洁归纳；没有固定主线时为 `null`，不得拆成任意粒度数组或补写触发事件、转折和结局。
+- `requiredNamedCharacters` 只保存老师明确点名且要求出场的外部角色原名。Step 1 师生、团队、机构、作品名和 AI 推测角色不进入；事实人物进入 `subjects`。
+- `additionalConstraints` 只保存没有被其他类型字段表达的老师要求。`preferred` 只保存老师明确表达的偏好；系统年龄政策和 AI 创意建议不进入 brief。
+- 所有数组始终存在。`concept` 在 `ready_for_confirmation` 时必须至少有一个可验证 `learningTarget`；只有兴趣目标而无学习结果时归为 `narrative`。
+- `new_story + follow_defined_plot` 必须有非空 `fixedPlot`；`faithful` 的既定主线可以由已确认来源或后续事实资料提供，因此 `fixedPlot` 可以为 `null`。
+- `faithful + participant`、推荐项不属于现有选项、超过 3 题、选择题少于 2 或多于 3 个选项均为非法组合。
 
-只有信息已经足以生成 3 个不会整体跑偏的候选方向，或足以形成一张不改变老师原意的主线理解卡时，才允许结束追问：
+### 确认卡与唯一真源
 
-- `status = "ready_for_confirmation"`。
-- `unresolvedIssues` 为空。
-- 存在引用对象时，对象身份已经明确。
-- 引用真实人物、IP、作品或事件时，系统已经给出可纠偏的默认使用方式。
-- 老师未点名原作人物时不阻断，由故事方向选择最小核心角色集合；老师点名的角色全部保留。
-- 老师未点名原作人物时，背景资料最多整理 4 个候选角色；候选角色只为方向设计提供素材，不代表都会进入最终故事。
-- `planningMode = "follow_defined_plot"` 时，历史或已确认原作使用方式足以在背景资料完成后生成主线理解卡；缺少地点、具体转折或逐章细节不阻止放行。
-- AI 能生成不包含猜测的简短创作理解摘要。
+AI 不自由编写另一段确认总结。服务端根据 `brief + planningMode + storyMode + classroomPresence` 确定性渲染一张确认卡，`alignmentSummary` 由该卡派生，仅用于展示和审计，不作为下游真源：
 
-每轮通常只问 1 个阻断问题，两个独立阻断项并存时最多 2 个。老师回答后重新归一化；已有安全默认答案时必须推荐放行，不能围绕可由故事方向解决的创作细节连续追问。
+- `narrative`：故事目标、来源使用方式、点名角色、固定主线或可探索范围、必须保留/偏好/排除项、课堂人物位置、下一步。
+- `concept`：总体教学目的、学习目标与预期理解、已假定基础、故事来源与固定主线、明确不讲的内容、课堂人物位置、下一步。
+- `factual`：真实对象、事实范围、来源要求、明确排除项、课堂人物旁观边界、下一步。
 
-对齐完成后，左侧只展示一次可修正的“创作理解”摘要，统一以“我理解你的创作需求是：”开头，不使用“建议按这个方向创作”假装提供了额外建议。摘要呈现来源对象、默认范围、课堂人物参与方式、事实或改编边界和下一步；不能承诺立即生成方向后又显示另一张创作理解卡。选择“修改需求”时继续对齐，且不清空已经确认的其他内容。
+栏目名称、顺序、空值处理、下一步文案和按钮由服务端控制；AI 只返回语义值和澄清问题。老师确认后，`brief` 成为后续资料、方向、主线和大纲的唯一需求真源。各下游 Prompt 只能接收任务所需字段白名单，禁止重新读取 `alignmentSummary` 或整段聊天推断需求。
 
 ### 修改影响确认
 
@@ -346,22 +436,26 @@ type StoryAlignmentState = {
 
 以下案例不是正式 Prompt 示例，而是需求归一化、状态路由和后续 Prompt 优化时必须持续验证的产品回归用例。正式 Prompt 不写死作品名，自动化测试使用等价输入断言意图、提问、资料策略和角色范围。
 
-| 老师输入 | 推荐意图 | 正常提问数 | 资料与角色策略 | 老师主要纠偏入口 |
+| 老师输入 | 结构化判断 | 正常提问数 | 资料与角色策略 | 老师主要纠偏入口 |
 | --- | --- | ---: | --- | --- |
-| 根据《冰雪奇缘》，创造一个奇幻探险故事 | `adapt_new_story` | 0 | 先生成方向；每个方向最多选择 2 个未点名原作角色 | 修改创作理解或调整方向卡 |
-| 根据《小马宝莉》，创造一个儿童冒险故事 | `adapt_new_story` | 0 | 不载入全部群像角色；每个方向最多选择 2 个 | 指定希望保留的角色或更换方向 |
-| 根据《神探夏洛克》，创造一个侦探故事 | `adapt_new_story` | 0 | 保留侦探类型和最小核心角色，不整理完整剧集 | 指定版本、角色或推理强度 |
-| 哆啦A梦和学生一起去异世界探索 | `source_immersion` | 0 | 只锁定老师点名的哆啦A梦，不自动加入大雄等角色 | 修改师生身份、世界或任务 |
-| 讲述马斯克创造火箭的故事 | `factual_narrative` | 0 | 推荐修正为个人与团队推动火箭研发；核实最多 5 个事实节点 | 修改讲述范围或事实资料 |
-| 讲述特朗普的人生经历 | `factual_narrative` | 0 | 推荐适龄、有限、事实中立的时间范围；必要时联网核实 | 修改时代范围、主题或排除内容 |
-| 通过故事讲述荣格心理学 | `concept_story` | 0 | 推荐最多 2 个适龄概念，不展开完整理论体系 | 修改推荐概念或故事表达方式 |
-| 根据网络小说《FuErlai》，带学生进入故事 | `source_immersion` + `unknown` | 1 | 只确认来源；提供链接/梗概或联网查找，不询问进入方式 | 补充来源或改成原创设定 |
-| 根据《瓦罗兰特》的 Jett 和 Sage，讲一个合作战斗故事 | `adapt_new_story` | 0 | 保留两名点名角色，战斗适龄且非血腥 | 修改战斗强度、合作目标或角色边界 |
-| 给学生讲一下二战的某个故事 | `factual_narrative` | 0 | 先给 3 个历史视角，选定后定向核实；师生不改变历史 | 指定地区、事件、人物或纯讲述模式 |
-| 给学生讲个地理知识，通过故事推动 | `concept_story` | 0 | 每个方向推荐一个适龄地理主题，知识用于解决任务 | 指定知识点、地区或现实/奇幻边界 |
-| 学生成为美人鱼在海底探索 | 原创 `source_immersion` | 0 | “美人鱼”按通用幻想形象处理，不自动关联任何 IP | 修改老师身份、海底规则或明确指定 IP |
+| 根据《冰雪奇缘》，创造一个奇幻探险故事 | `narrative + new_story + participant + explore_options` | 0 | 实际使用作品世界或核心角色；每个方向最多选择 2 个未点名原作角色 | 修改来源使用方式或调整方向卡 |
+| 根据《小马宝莉》，创造一个儿童冒险故事 | `narrative + new_story + participant + explore_options` | 0 | 不载入全部群像角色；每个方向最多选择 2 个未点名角色 | 指定希望保留的角色或更换方向 |
+| 根据《神探夏洛克》，创造一个侦探故事 | `narrative + new_story + participant + explore_options` | 0 | 默认使用最小核心角色；只有老师要求版本独有导师、人物或结局时才确认版本 | 指定版本、角色或推理强度 |
+| 哆啦A梦和学生一起去异世界探索 | `narrative + new_story + participant + explore_options` | 0 | `requiredNamedCharacters = ["哆啦A梦"]`，不自动加入大雄等角色 | 修改师生身份、世界或任务 |
+| 讲述马斯克创造火箭的故事 | `factual + faithful + observer + follow_defined_plot` | 0 | 归一为马斯克推动 SpaceX 团队研发和迭代火箭的真实历程，再核实关键事实 | 修改讲述范围或事实资料 |
+| 讲述特朗普的人生经历 | `factual + faithful + observer + follow_defined_plot` | 0 | 使用适龄、有限、事实中立的范围；必要时联网核实 | 修改时代范围、主题或排除内容 |
+| 通过故事讲述荣格心理学，让学生学会理论 | `concept + needs_clarification` | 1 | 询问可验证学习深度并推荐满足目标的最低复杂度，不展开完整理论体系 | 选择学习深度或自定义目标 |
+| 根据网络小说《FuErlai》，带学生进入故事 | `narrative + needs_clarification` | 1 | 只确认来源；提供链接、作者/平台或梗概，不询问进入方式 | 补充来源或改成原创设定 |
+| 根据《瓦罗兰特》的 Jett 和 Sage，讲一个合作战斗故事 | `narrative + new_story + participant + explore_options` | 0 | `requiredNamedCharacters = ["Jett", "Sage"]`；战斗适龄且非血腥 | 修改战斗强度、合作目标或角色边界 |
+| 给学生讲一下二战的某个故事 | `factual + faithful + observer + explore_options` | 0 | 给 3 个真实历史视角，选定后定向核实；师生不改变历史 | 指定地区、事件或人物 |
+| 给学生讲个地理知识，通过故事推动 | `narrative + new_story + participant + explore_options` | 0 | 地理知识只作宽泛素材，由每个方向推荐一个适龄切口 | 指定知识点或直接选择方向 |
+| 学生成为美人鱼在海底探索 | `narrative + new_story + participant + explore_options` | 0 | “美人鱼”按通用幻想形象处理，不自动关联任何 IP | 修改老师身份、海底规则或明确指定 IP |
+| 四名学生组成超级英雄战队，在老师带领下合力击败怪兽，每人都有高光 | `narrative + new_story + participant + follow_defined_plot` | 0 | 用单一 `fixedPlot` 保留组队、老师带领、全员贡献和共同胜利 | 修改固定主线或人物作用 |
+| 学生和老师进入《Call Me By Your Name》，见证主角假期和情感发展 | `narrative + faithful + observer + follow_defined_plot` | 0 | 适龄表达属于系统政策，不单独提问或改变原作因果 | 修改忠实范围或明确排除内容 |
+| 用故事讲 MBTI，学生学习到理论 | `concept + needs_clarification` | 1 | 推荐理解四组偏好的基础含义并举简单例子，不推荐只讲差异或记忆 16 类型 | 选择或自定义学习深度 |
+| 按《灰姑娘》原作讲，但学生必须改变结局 | `narrative + needs_clarification` | 1 | 合并成“忠实原作还是学生改写结局”的一个决策 | 选择忠实旁观或参与改编 |
 
-回归用例必须共同验证：Step 1 老师和所有学生默认参与；可由方向探索的内容不提问；点名角色全部保留；未知来源只问来源；事实叙事不把推测写成事实；老师的最新明确修改优先于系统推荐。
+回归用例必须共同验证：Step 1 老师和所有学生默认进入新故事；忠实讲述时默认旁观；可由方向探索的内容不提问；点名角色全部保留且课堂人物不进入 `requiredNamedCharacters`；未知来源只问来源；宽泛真实历史仍为事实型；事实简写不当作事实；理论目标与兴趣素材不混淆；老师的最新明确修改优先于系统默认。
 
 ## 统一入口 AI 决策
 
@@ -386,18 +480,20 @@ type StoryAlignmentState = {
 - 完整大纲接收指定章节数、人物快照、已确认创作理解、已选方向、必要参考资料、英语难度、课程时长、全课知识点和本轮任务。选择方向后生成大纲时不再发送未选择方向、旧大纲或重复聊天历史。
 - 整体修改大纲时才发送当前大纲和最近有效修改；系统进度消息只用于界面反馈，不进入 AI 上下文。
 
-不发送课程管理标题，不新增 `storyBrief`。课程时长以紧凑故事容量约束进入方向和完整大纲；英语难度和全课知识点只在生成完整大纲时追加，用于判断知识点分布承载能力，不进入流程判断、方向生成或参考资料整理。固定按钮行为必须写成有业务含义的老师消息，使后续 AI 能从历史中理解选择方向、使用资料或重新生成等操作。一次请求包含“判断 → 生成”等多轮 AI 调用时，后端在每轮结束后立即写入一条面向老师的系统进度消息；前端在请求处理中轮询当前故事状态并渲染新消息，避免只显示计时 Loading。
+不发送课程管理标题。需求对齐接收 Step 1 人物年龄、英语等级、章节数和课程时长，只用于判断目标容量、推荐最低复杂度和适龄默认；不接收全课知识点、旧方向或旧大纲。方向生成继续只接收紧凑故事容量约束；英语等级和全课知识点在生成完整大纲时追加。固定按钮行为必须写成有业务含义的老师消息，使后续 AI 能理解选择方向、使用资料或重新生成等操作。一次请求包含“判断 → 生成”等多轮 AI 调用时，后端在每轮结束后立即写入一条面向老师的系统进度消息；前端在请求处理中轮询当前故事状态并渲染新消息，避免只显示计时 Loading。
 
 AI 环节共享同一份稳定上下文，但 Prompt 职责必须互斥：
 
-- 需求对齐：只识别关键歧义、生成动态问题与创作理解摘要，不查资料、不创作方向或大纲。
+- 需求对齐：只分类、提取 `brief`、生成阻塞问题并返回可确认语义，不查资料、不创作方向或大纲、不自由编写确认摘要。
 - 资料解析：只按已归一化意图决定无需资料、内部精简资料、可确认事实资料或外部资料，不重新解释老师意图。
 - 方向生成：只在主线未明确时给出 3 个可选择的故事走向，不展开章节。
 - 主线理解：只把老师已经明确的剧情整理成一张可确认卡，不新增替代剧情或章节。
 - 资料搜索：只查证研究计划要求的事实与设定，不替老师决定故事走向。
 - 大纲生成：只在方向或主线理解卡已确认后生成角色、章节主线和每章知识点推荐，不生成正文、练习或图片提示。
 
-需求归一化 Prompt 只保留通用意图规则和安全默认原则，不写死具体作品、角色列表或问题文案。老师逐个点名且要求出场的作品角色以 `requiredNamedCharacters` 保存到现有 `alignmentDetails` JSON，并原样传给方向和大纲生成；不得在创作理解中压缩成“核心角色”“主要角色”或“某某等人”。课堂人物如何实际行动、点名角色如何进入剧情、故事质量和章节因果等约束放在方向和大纲 Prompt 中，避免多层 Prompt 重复决定同一件事。真实叙事不得改写事实、概念故事必须由知识推动问题解决等规则由后续生成 Prompt 根据已确认的创作理解执行。
+需求归一化 Prompt 由一套共享状态协议和三份类别策略组成：`narrative`、`concept`、`factual` 共享问题结构、确认流程、失败恢复和服务端验证，但分别定义必需信息、合法默认、阻塞条件和下游字段白名单。首次输入由一次 AI 调用同时完成分类、提取、推荐和提问，不拆成分类器调用再调用类别模型；类别已确定后的继续修改只加载共享规则与当前类别策略，老师实际更换课程目标时才重新分类。
+
+Prompt 不写死具体作品或角色列表。老师逐个点名且要求出场的外部角色以 `requiredNamedCharacters` 保存并原样传给需要它的下游；不得压缩成“核心角色”“主要角色”或“某某等人”。课堂人物从 Step 1 快照与 `classroomPresence` 读取。真实人物统一进入 `subjects`；AI 不能把来源中可能出现但老师没有点名的人物升级为必选角色。
 
 需求对齐只允许返回以下两种状态：
 
@@ -405,13 +501,13 @@ AI 环节共享同一份稳定上下文，但 Prompt 职责必须互斥：
 type AlignmentStatus = "needs_clarification" | "ready_for_confirmation";
 ```
 
-代码不再硬编码判断什么词需要搜索、什么对象需要澄清、什么历史人物不需要搜索。这些判断由 AI 的决策说明给出。
+代码不再硬编码判断什么词需要搜索、什么对象需要澄清、什么历史人物不需要搜索。这些判断由 AI 的结构化决策给出，服务端只验证协议和非法业务组合。
 
 资料是否对老师可见与是否联网是两个独立判断：
 
 - 已知 IP 的新剧情使用内部精简资料，不在方向生成前展示或确认资料卡。
 - 真实人物、历史和忠实复述使用老师可见的事实资料卡。
-- 知识故事只在创作理解中展示最多 2 个推荐概念，不单独生成百科资料卡。
+- 概念故事使用已确认 `learningTargets` 约束方向和大纲；宽泛知识只作兴趣素材时由方向推荐切口，不单独生成百科资料卡。
 - 对象冷门或有歧义、需要最新信息、精确时间线或专业细节、模型现有知识明显不足，或老师明确要求核实时，返回 `request_reference_material`，让老师选择手动补充或联网。
 - 已保存资料覆盖本轮所需背景时不重复生成；只有引入新对象或产生新的必要知识缺口时才准备新资料。
 - 纯原创想法不依赖外部背景知识时，不增加参考资料步骤，直接按主线清晰度生成方向或主线理解卡。
@@ -420,7 +516,7 @@ type AlignmentStatus = "needs_clarification" | "ready_for_confirmation";
 
 ### 生成方向卡
 
-老师确认创作理解后，只要当前模式允许探索且不存在未确认的必要事实资料，就生成 3 个方向卡。已知 IP 新剧情、概念故事和完全原创不经过可见资料确认步骤。
+老师确认创作理解后，只要 `planningMode = "explore_options"` 且不存在未确认的必要事实资料，就生成 3 个方向卡。已知 IP 新剧情、概念故事和完全原创不经过可见资料确认步骤；`follow_defined_plot` 直接进入主线理解卡，不因所属类别强制生成方向。
 
 后端直接生成 3 个方向卡。老师可以先单独调整任意方向；点击某张卡的“选择并生成大纲”后立即记录选择并生成完整故事大纲。
 
@@ -468,7 +564,7 @@ type CourseStoryDirection = {
 
 ### 需要澄清
 
-只有来源无法识别、老师要求直接冲突，或老师明确要求的特定版本缺失时，返回 `needs_clarification` 和结构化 `questions`。未点名原作角色、未指定故事入口、历史或知识范围宽泛都由推荐理解和 3 个方向解决，不构成阻断。
+只有来源无法识别、老师要求直接冲突、老师明确要求的特定版本缺失，或概念课的可验证学习目标尚未确定时，返回 `needs_clarification` 和结构化 `questions`。未点名原作角色、未指定故事入口、宽泛真实历史，以及只作为兴趣素材的宽泛知识，都由推荐理解和 3 个方向解决，不构成阻断。
 
 右侧不展示未确认候选对象卡。
 
@@ -488,7 +584,7 @@ type BackgroundKnowledgeResult =
 - 真实人物、历史和忠实复述返回可确认事实资料。
 - 内置知识不足以准确支持故事时返回 `external_required`，再让老师选择手动补充或联网。
 - IP 资料一部作品最多一张卡；老师未点名时最多 2 个原作角色、3 条世界规则和 2 条核心关系。
-- 事实资料最多 5 个关键节点和 2 个争议或不确定边界；概念故事最多使用 2 个概念。
+- 事实资料最多 5 个关键节点和 2 个争议或不确定边界。概念故事只使用老师已经确认的 `learningTargets`；如果目标数量或深度超过年龄、英语等级、章节数与课时容量，必须在需求对齐时推荐缩小或拆分，不能在资料或大纲阶段静默截成固定概念数。
 - 只有可见事实资料和外部补充资料需要老师确认；内部精简资料可直接进入大纲 Prompt。
 
 ### 需要外部补充资料
@@ -796,11 +892,32 @@ AI 返回严格结构化数据，前端渲染为组件。
 
 不为主线理解卡和修改决策增加独立 endpoint，继续通过 `POST /api/courses/:id/story-outline/message` 的显式业务 action 驱动：
 
+- `submit_alignment_answers`：提交当前问题卡的整组结构化答案，或提交老师直接输入的整组自然语言回答；只解决当前卡，不确认需求。
+- `confirm_requirements`：只确认当前已经处于 `ready_for_confirmation` 的 V2 需求，不接收客户端回传的 `brief`、summary 或模式值。
 - `confirm_mainline`：确认当前主线理解卡并生成大纲。
 - `revise_mainline`：只修改主线理解卡，不生成大纲。
 - `analyze_story_change`：返回 `StoryChangeDecision`，不修改现有成果。
 - `confirm_story_change`：确认结构性修改后执行对应重生成。
 - `cancel_story_change`：取消待确认修改并保留当前成果。
+
+问题答案请求使用语义 ID，不把显示标签当作值：
+
+```ts
+type AlignmentAnswerInput = {
+  questionId: string;
+  selectedOptionIds: string[];
+  customText?: string;
+};
+
+type SubmitAlignmentAnswersInput = {
+  action: "submit_alignment_answers";
+  expectedStateRevision: number;
+  alignmentAnswers?: AlignmentAnswerInput[];
+  message?: string;
+};
+```
+
+`alignmentAnswers` 与 `message` 至少提供一项：表单提交结构化答案，老师直接在聊天框回答时原样提交 `message`。服务端只接受当前未解决的问题 ID 和其现有选项 ID，保存自定义文本原文，并根据问题快照确定性生成表单答案的老师可见消息；未知、重复或已经过期的 ID 返回稳定冲突错误，不调用 AI。`confirm_requirements` 同样携带 `expectedStateRevision`，避免确认已被新回答或新需求替换的旧卡。
 
 `GET /api/courses/:id/story-outline` 在现有 `alignment` 状态内返回可选 `mainlineCard`；未确认卡不得进入大纲 Prompt。随机灵感首条消息与“我有想法”使用相同 message 合同，只允许保留非 AI 决策用的来源元数据。
 
@@ -919,17 +1036,17 @@ type CourseStorySettingOperationFields = {
 
 - “我有想法”原文和“随机灵感”整理出的自然语言消息进入同一套需求对齐流程；入口来源不改变后续判断与生成链路。
 - AI 先给出安全、可逆的推荐理解；服务端根据归一化枚举路由流程，不用具体作品名或关键词表硬编码故事意图。
-- AI 通常不提问；确有阻断歧义时通常返回 1 题，最多 2 个结构化问题，前端为每题独立渲染单选、多选或文本控件。
+- AI 通常不提问；确有阻断歧义时通常返回 1 题，同一张卡最多 3 个当前独立阻塞决策，前端为每题独立渲染单选、多选或文本控件。条件问题在前置答案确定后再出现，未解决问题保留原 ID。
 - 每题都有 2-3 个完整可见选项、可自定义输入及默认选中的推荐与理由；推荐项排在第一位并标注“（推荐）”，不显示独立的“采用 AI 推荐”选项或内部枚举值。
-- 模型异常返回无选项问题或重复问题 ID 时，前端仍显示每题独立兜底输入，提交按钮按各必答题真实完成状态启用。
-- 有安全默认答案时必须推荐放行；只有来源未知、要求冲突或特定版本缺失时继续追问，不能围绕角色名单、进入方式或可由方向探索的内容连续提问。
-- AI 负责判断语义是否明确，服务端验证 `status`、`unresolvedIssues` 和关键状态；仍有关键歧义时不得准备资料或生成方向。
-- 生成前展示可修正的创作理解摘要；摘要只包含本轮具体意图，不展示“有趣”“成长”等系统通用质量规则。
-- 需求较宽泛时先生成 3 个方向卡；老师已明确主要行动者、触发事件、目标、主要阻力、推进方式和结局方向时，先展示一张主线理解卡，不生成 3 个替代故事，也不直接生成大纲。
+- 模型异常返回无选项选择题、重复问题 ID、推荐项失联或超过题数/选项数上限时不交给前端渲染；服务端定向修复一次，再失败返回稳定 `502`。
+- 有安全默认答案时直接进入可确认理解；来源未知、要求冲突、特定版本缺失或明确理论目标深度未知时继续追问，不能围绕角色名单、进入方式或可由方向探索的内容连续提问。
+- AI 负责语义判断；服务端验证响应分支、`brief.kind`、字段完整性、合法模式组合和问题结构。仍有关键歧义时不得准备资料或生成方向。
+- 生成前展示服务端从 `brief` 确定性渲染的创作需求确认卡；`alignmentSummary` 只用于展示和审计，不进入下游 Prompt。
+- 需求较宽泛时先生成 3 个方向卡；`fixedPlot` 已足以约束核心因果时进入既定主线流程，不按输入字数或是否填满固定剧情模板判断。
 - 单独提供真实人物、IP、作品或事件名称且存在版本歧义时才确认对象身份；“参考某作品，师生一起经历新冒险”直接按推荐理解进入后续流程。
 - 老师明确要求冒险时，方向卡和大纲保持冒险，不默认偏成调查、推理或解谜。
 - 随机灵感只确定性整理第一条老师消息，不直接生成方向；选择方向、确认主线、用资料生成、重新生成、继续修改、重置 Step 2 都是固定流程。
-- 已知 IP 新剧情、概念故事和完全原创在确认创作理解后直接生成方向；选定 IP 方向后只内部准备精简资料，不增加资料确认。
+- 已知 IP 新剧情、需要探索的概念故事和完全原创在确认创作需求后生成方向；`follow_defined_plot` 沿既定主线流程推进。选定 IP 方向后只内部准备精简资料，不增加资料确认。
 - 真实人物、真实历史和忠实复述在确认讲述范围后准备最多 5 个关键节点的事实资料，并以“确认事实资料”进入下一步。
 - 模型知识不足时才让老师选择“我来补充资料”或“联网整理资料”。
 - 只有事实资料和老师补充或联网得到的外部资料需要确认；内部精简 IP 资料不展示确认按钮。
@@ -948,7 +1065,7 @@ type CourseStorySettingOperationFields = {
 - 随机灵感的主题、故事类型和故事氛围统一使用单选卡片弹窗；类型与氛围的“自定义”在弹窗原地输入并回显，不使用原生下拉框。
 - “我有想法”初始输入区提供人物、类型和故事方向示例；老师没有另行说明时使用“Step 1 老师和学生全部参与”的默认规则。
 - 随机灵感不显示“选择基本方向，也可以补充一个特别要求。”；补充要求 placeholder 为“例如：希望学生成为大侦探”。
-- 故事方向和需求判断继续按各自最小上下文执行；生成完整大纲时必须接收章节数、人物快照、英语难度、课程时长、Step 1 全课知识点、历史消息和当前业务状态，不发送课程管理标题。
+- 故事方向和需求判断继续按各自最小上下文执行；需求判断接收人物年龄、英语难度、章节数和课程时长但不接收全课知识点；生成完整大纲时接收章节数、人物快照、英语难度、课程时长、Step 1 全课知识点和已确认 `brief`，不重新发送整段历史解释需求，也不发送课程管理标题。
 - 老师点名的多个引用角色在 prompt 中均作为硬性要求保留。
 - 消息发送后输入框立即清空并显示老师消息，请求失败时恢复输入。
 - 固定选择操作使用带客户端消息 ID 的乐观消息，服务端消息到达后按 ID 对账，不得同时显示两条相同的确认消息；确认完成后旧操作立即失效。
@@ -1004,7 +1121,7 @@ type CourseStorySettingOperationFields = {
 
 | Prompt | 唯一职责 | 是否合并 | 原因 |
 | --- | --- | --- | --- |
-| `alignRequirements` | 把老师输入归一化为可确认创作理解，必要时最多追问两个阻断问题 | 不合并 | 这是唯一意图判断入口，不能让生成器或局部修改判断器共享其职责 |
+| `alignRequirements` | 把老师输入归一化为可确认创作理解；默认 0-1 个问题，同一张卡最多 3 个当前阻断问题，并支持条件追问 | 不合并 | 这是唯一意图判断入口，不能让生成器或局部修改判断器共享其职责 |
 | `prepareBackgroundKnowledge` | 在需求确认后判断是否需要背景资料，并返回无需资料、已有知识资料或外部研究计划 | 不合并 | 它决定资料路线，不执行联网；与研究执行合并会让联网变成隐式行为 |
 | `checkChangeBoundary` | 只判断局部修改是否越出方向、大纲或章节范围 | 不与意图对齐合并 | 它只返回范围内或新需求；新需求仍交给 `alignRequirements` 解释 |
 | `generateDirections` | 根据已确认需求生成 3 个可选方向 | 不与方向修改合并 | 三方向替换与单卡修改的输入、输出和写入范围不同 |
@@ -1034,10 +1151,12 @@ Prompt 复核还需统一以下输出原则：
 - 成功文案不得宣称资料“可靠”“已核实”，除非保存可追溯来源并满足明确校验规则。
 - 错误文案说明失败对象和恢复动作；页面只保留一个“重试本步”入口。
 - Prompt、后端固定消息和 UI loading 对同一状态使用相同术语：`创作理解`、`背景资料`、`故事方向`、`故事大纲`。
-- `ready_for_confirmation` 的 summary 必须以推荐理解呈现，不能使用“已确认”“已确定”；命名作品、人物、历史或知识主题必须明确说明其使用方式，不能只说“基于”或“参考”。需求对齐阶段尚未判断是否需要背景资料，因此只承诺“准备方向或大纲；如需资料会先整理”，不得承诺确认后立刻展示 3 个方向。系统对错误口吻和错误下一步做确定性归一化。
-- 系统在追加标准下一步前必须先移除模型已生成的同义或标准下一步；无论模型是否已经按要求收尾，最终摘要只能出现一次下一步说明。
+- `ready_for_confirmation` 不再让 AI 返回自由 summary。服务端从 `brief`、故事模式、课堂人物位置和规划模式确定性渲染确认卡，并派生 `alignmentSummary`；命名作品、人物、历史或知识主题必须在 `sourceRequirements.useInCourse` 或 `factualFocus` 中说明具体使用方式。需求对齐阶段只展示真实下一步，不承诺尚未确定的资料或生成动作。
+- 下一步说明只由服务端按确定状态写入确认卡一次；AI 响应不得生成下一步文案，服务端也不再依赖文本去重修补模型输出。
 
 ## 实现状态
+
+- 2026-08-27：需求对齐 V2 已同步实现前后端。AI 使用 `narrative / concept / factual` 联合 brief，澄清响应不再被迫提前返回故事模式；服务端验证 0-3 个当前阻塞问题、稳定问题与选项 ID、推荐关联、重复 ID 和固定主线组合，失败时至多执行一次语义修复。表单提交结构化答案和 `expectedStateRevision`，服务端根据问题快照生成老师消息并拒绝过期 ID；未回答问题必须以原 ID 保留。确认卡由服务端确定性渲染，V2 下游只读取 brief。随机灵感与“我有想法”进入同一对齐链路；V2 固定主线在生成大纲前增加可修改、可确认的主线理解卡。旧 JSON、旧问题卡和旧答案 record 兼容读取；旧课程只读和旧固定主线确认不改写、不改变原流程，重新对齐时才写 V2。未新增数据库表、字段或 migration。验证通过 138 项 Step 2 定向测试、目标 ESLint、`pnpm exec tsc --noEmit`、全量 82 个文件 / 640 项测试和 `pnpm build`；未调用真实 AI，提交号待用户验收后记录。
 
 - 2026-08-26：章节知识点标签复用溢出标题组件，支持桌面悬停轮动、触屏点击展开和减少动态效果偏好；Unit 保持固定。
 

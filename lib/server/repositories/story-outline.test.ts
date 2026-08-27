@@ -204,8 +204,27 @@ const deps: StoryOutlineGenerationDeps = {
     unresolvedIssues: [],
     questions: [],
     summary: "创作一个海底冒险，具体主线从 3 个方向中选择。",
+    brief: {
+      kind: "narrative" as const,
+      objective: "创作一个海底冒险，具体主线从 3 个方向中选择。",
+      sourceRequirements: [],
+      requiredNamedCharacters: ["暮光闪闪", "云宝黛西"],
+      fixedPlot: null,
+      additionalConstraints: { required: [], preferred: [], excluded: [] },
+    },
   })),
   prepareBackgroundKnowledge: vi.fn(async () => ({ status: "not_needed" as const, reason: "完全原创" })),
+  generateMainlineCard: vi.fn(async () => ({
+    protagonistStructure: "林老师带领学生团队",
+    classroomRoles: [{ personId: "teacher-1", roleInStory: "引导团队" }, { personId: "student-1", roleInStory: "发现关键线索" }],
+    incitingEvent: "怪兽突然出现",
+    goal: "合作保护城市",
+    mainObstacle: "团队技能尚未形成配合",
+    progression: "通过连续选择学会协作",
+    endingDirection: "团队合力击败怪兽",
+    mustKeep: ["每名学生都有高光"],
+    mayExpand: ["技能细节"],
+  })),
   checkChangeBoundary: vi.fn(async () => ({ scope: "within_target" as const, needsBackgroundRefresh: false as const })),
   generateDirections: vi.fn(async () => [
     {
@@ -272,10 +291,15 @@ const deps: StoryOutlineGenerationDeps = {
 };
 
 async function generateConfirmedOutline(db: ReturnType<typeof createDb>) {
-  await handleStoryOutlineMessage(db, "course-1", { message: "主题：海底", mode: "random" }, deps);
+  await generateDirectionsThroughAlignment(db);
   const directionId = String(db.state.directions[0]?.id);
   await handleStoryOutlineMessage(db, "course-1", { message: "", mode: "idea", action: "choose_direction", targetId: directionId }, deps);
   return handleStoryOutlineMessage(db, "course-1", { message: "", mode: "idea", action: "confirm_direction", targetId: directionId }, deps);
+}
+
+async function generateDirectionsThroughAlignment(db: ReturnType<typeof createDb>) {
+  const aligned = await handleStoryOutlineMessage(db, "course-1", { message: "主题：海底", mode: "random" }, deps);
+  await handleStoryOutlineMessage(db, "course-1", { message: "", mode: "idea", action: "confirm_requirements", expectedStateRevision: aligned.stateRevision }, deps);
 }
 
 describe("story outline repository", () => {
@@ -285,6 +309,34 @@ describe("story outline repository", () => {
     expect(state.settings).toEqual({ chapterCount: 4, writingProvider: "quickrouter_gpt" });
     expect(state.outline).toBeNull();
     expect(state.coursePeople.map((person) => person.chineseName)).toEqual(["林老师", "夏天"]);
+  });
+
+  test("reads legacy alignment details without rewriting them", async () => {
+    const db = createDb();
+    const legacyDetails = {
+      resolvedUnderstanding: ["忠实讲述旧课程"],
+      unresolvedIssues: [],
+      questions: [],
+      storyMode: "faithful",
+      classroomPresence: "observer",
+      requiredNamedCharacters: ["灰姑娘"],
+      needsBackgroundRefresh: false,
+    };
+    db.state.setting = record({
+      courseId: "course-1",
+      chapterCount: 4,
+      writingProvider: "quickrouter_gpt",
+      alignmentStatus: "confirmed",
+      planningMode: "follow_defined_plot",
+      alignmentSummary: "旧版确认摘要",
+      alignmentDetails: legacyDetails,
+      stateRevision: 3,
+    });
+
+    const state = await getStoryOutlineState(db, "course-1");
+
+    expect(state.alignment).toMatchObject({ storyMode: "faithful", classroomPresence: "observer", requiredNamedCharacters: ["灰姑娘"], summary: "旧版确认摘要" });
+    expect(db.state.setting.alignmentDetails).toEqual(legacyDetails);
   });
 
   test("aligns a broad original idea before generating any story artifact", async () => {
@@ -297,7 +349,110 @@ describe("story outline repository", () => {
     expect(state.chatMessages.map((message) => message.content)).toContain("学生们进入海底图书馆");
     expect(state.outline).toBeNull();
     expect(state.alignment).toMatchObject({ status: "ready_for_confirmation", storyMode: "new_story", classroomPresence: "participant", summary: expect.stringContaining("海底冒险") });
+    expect(db.state.setting?.alignmentDetails).toMatchObject({ schemaVersion: 2, requirement: { kind: "resolved", brief: { kind: "narrative" } } });
     expect(state.chatMessages.at(-1)?.actions.map((action) => action.action)).toEqual(["confirm_requirements", "modify_requirements"]);
+  });
+
+  test("routes random inspiration through the same requirement alignment before directions", async () => {
+    const db = createDb();
+    const alignRequirements = vi.fn(deps.alignRequirements);
+
+    const state = await handleStoryOutlineMessage(db, "course-1", { message: "主题：海底\n故事类型：冒险", mode: "random" }, { ...deps, alignRequirements });
+
+    expect(alignRequirements).toHaveBeenCalledTimes(1);
+    expect(state.alignment?.status).toBe("ready_for_confirmation");
+    expect(state.directions).toEqual([]);
+  });
+
+  test("rejects an answer submitted against an older alignment revision before calling AI", async () => {
+    const db = createDb();
+    await getStoryOutlineState(db, "course-1");
+    const alignRequirements = vi.fn(deps.alignRequirements);
+
+    await expect(handleStoryOutlineMessage(db, "course-1", {
+      message: "我的回答",
+      mode: "idea",
+      action: "submit_alignment_answers",
+      expectedStateRevision: 99,
+    }, { ...deps, alignRequirements })).rejects.toThrow("问题或确认卡已经更新");
+
+    expect(alignRequirements).not.toHaveBeenCalled();
+  });
+
+  test("routes only a V2 defined plot through a confirmable mainline card before outline generation", async () => {
+    const db = createDb();
+    const alignRequirements = vi.fn(async () => ({
+      status: "ready_for_confirmation" as const,
+      planningMode: "follow_defined_plot" as const,
+      storyMode: "new_story" as const,
+      classroomPresence: "participant" as const,
+      requiredNamedCharacters: [],
+      assistantMessage: "请确认。",
+      resolvedUnderstanding: [],
+      unresolvedIssues: [],
+      questions: [],
+      brief: {
+        kind: "narrative" as const,
+        objective: "四名学生组成超级英雄战队",
+        sourceRequirements: [],
+        requiredNamedCharacters: [],
+        fixedPlot: "老师带领四名学生合作击败怪兽，每名学生都有高光时刻",
+        additionalConstraints: { required: ["每名学生都有高光时刻"], preferred: [], excluded: [] },
+      },
+    }));
+    const generateMainlineCard = vi.fn(deps.generateMainlineCard);
+    const generateOutline = vi.fn(deps.generateOutline);
+    const scopedDeps = { ...deps, alignRequirements, generateMainlineCard, generateOutline };
+
+    const aligned = await handleStoryOutlineMessage(db, "course-1", { message: "四名学生组成超级英雄战队，合力击败怪兽，每人都有高光。", mode: "idea" }, scopedDeps);
+    await handleStoryOutlineMessage(db, "course-1", { message: "", mode: "idea", action: "confirm_requirements", expectedStateRevision: aligned.stateRevision }, scopedDeps);
+    const mainline = await getStoryOutlineState(db, "course-1");
+
+    expect(generateMainlineCard).toHaveBeenCalledTimes(1);
+    expect(generateOutline).not.toHaveBeenCalled();
+    expect(mainline.alignment?.mainlineCard).toMatchObject({ status: "pending_confirmation", goal: "合作保护城市" });
+    expect(mainline.chatMessages.at(-1)?.actions.map((action) => action.action)).toEqual(["confirm_mainline", "revise_mainline"]);
+
+    await handleStoryOutlineMessage(db, "course-1", { message: "", mode: "idea", action: "confirm_mainline", expectedStateRevision: mainline.stateRevision }, scopedDeps);
+    expect(generateOutline).toHaveBeenCalledTimes(1);
+    expect((await getStoryOutlineState(db, "course-1")).alignment?.mainlineCard?.status).toBe("confirmed");
+  });
+
+  test("keeps the legacy defined-plot confirmation path unchanged", async () => {
+    const db = createDb();
+    const legacyDetails = {
+      resolvedUnderstanding: ["旧版固定主线"],
+      unresolvedIssues: [],
+      questions: [],
+      storyMode: "new_story",
+      classroomPresence: "participant",
+      requiredNamedCharacters: [],
+      needsBackgroundRefresh: false,
+    };
+    db.state.setting = record({
+      courseId: "course-1",
+      chapterCount: 4,
+      writingProvider: "quickrouter_gpt",
+      alignmentStatus: "ready_for_confirmation",
+      planningMode: "follow_defined_plot",
+      alignmentSummary: "旧版固定主线",
+      alignmentDetails: legacyDetails,
+      stateRevision: 2,
+    });
+    const generateMainlineCard = vi.fn(deps.generateMainlineCard);
+    const generateOutline = vi.fn(deps.generateOutline);
+
+    await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "confirm_requirements",
+      expectedStateRevision: 2,
+    }, { ...deps, generateMainlineCard, generateOutline });
+
+    expect(generateMainlineCard).not.toHaveBeenCalled();
+    expect(generateOutline).toHaveBeenCalledTimes(1);
+    expect(db.state.setting?.alignmentDetails).toMatchObject(legacyDetails);
+    expect(db.state.setting?.alignmentDetails).not.toMatchObject({ schemaVersion: 2 });
   });
 
   test("normalizes legacy object-valued direction characters when loading state", async () => {
@@ -354,7 +509,8 @@ describe("story outline repository", () => {
 
     expect(prepareBackgroundKnowledge).toHaveBeenCalledTimes(1);
     expect(prepareBackgroundKnowledge).toHaveBeenCalledWith(expect.objectContaining({
-      confirmedRequirement: "创作一个海底冒险，具体主线从 3 个方向中选择。",
+      confirmedRequirement: expect.stringContaining('"kind":"narrative"'),
+      requirementBrief: expect.objectContaining({ kind: "narrative", objective: "创作一个海底冒险，具体主线从 3 个方向中选择。" }),
       conversationHistory: expect.arrayContaining([expect.objectContaining({ content: "参考小马宝莉创作新故事" })]),
       coursePeople: expect.arrayContaining([expect.objectContaining({ personId: "student-1", age: 10 })]),
     }));
@@ -667,7 +823,7 @@ describe("story outline repository", () => {
 
   test("selects a direction and generates the outline in one operation", async () => {
     const db = createDb();
-    await handleStoryOutlineMessage(db, "course-1", { message: "主题：海底", mode: "random" }, deps);
+    await generateDirectionsThroughAlignment(db);
     const directionId = String(db.state.directions[0]?.id);
     const generateOutline = vi.fn(deps.generateOutline);
 
@@ -692,7 +848,7 @@ describe("story outline repository", () => {
 
   test("keeps the selected direction when outline generation fails so the same operation can be retried", async () => {
     const db = createDb();
-    await handleStoryOutlineMessage(db, "course-1", { message: "主题：海底", mode: "random" }, deps);
+    await generateDirectionsThroughAlignment(db);
     const directionId = String(db.state.directions[0]?.id);
     const generateOutline = vi.fn(async () => { throw new Error("大纲生成暂时失败"); });
 
@@ -724,7 +880,7 @@ describe("story outline repository", () => {
 
   test("does not persist raw Prisma diagnostics as a teacher-facing operation error", async () => {
     const db = createDb();
-    await handleStoryOutlineMessage(db, "course-1", { message: "主题：海底", mode: "random" }, deps);
+    await generateDirectionsThroughAlignment(db);
     const directionId = String(db.state.directions[0]?.id);
     const generateOutline = vi.fn(async () => {
       throw new Error("Invalid `prisma.courseStoryOutlineChapter.createMany()` invocation:\nArgument storyGoal: Expected String, provided (String, String)");
@@ -942,6 +1098,50 @@ describe("story outline repository", () => {
     expect(db.state.references[0]).toMatchObject({ name: "新作品资料", summary: "新资料" });
   });
 
+  test("validates V2 option ids and builds the teacher message from the persisted question snapshot", async () => {
+    const db = createDb();
+    db.state.setting = record({
+      courseId: "course-1",
+      chapterCount: 4,
+      writingProvider: "quickrouter_gpt",
+      alignmentStatus: "needs_clarification",
+      planningMode: "explore_options",
+      alignmentSummary: null,
+      alignmentDetails: {
+        schemaVersion: 2,
+        requirement: {
+          kind: "clarification",
+          provisionalBriefKind: "concept",
+          resolvedRequirements: ["用故事讲 MBTI"],
+          questions: [{
+            id: "concept_depth",
+            label: "希望学生学到什么程度？",
+            impact: "决定理论容量。",
+            answerMode: "single_choice",
+            options: [{ id: "dimensions", label: "理解四组偏好并会举例" }, { id: "types", label: "认识类型组合" }],
+            allowCustom: true,
+            recommendedOptionId: "dimensions",
+            recommendationReason: "容量合适。",
+          }],
+        },
+        workflow: {},
+      },
+      stateRevision: 7,
+    });
+    const alignRequirements = vi.fn(deps.alignRequirements);
+
+    await handleStoryOutlineMessage(db, "course-1", {
+      message: "客户端伪造的显示文本",
+      mode: "idea",
+      action: "submit_alignment_answers",
+      expectedStateRevision: 7,
+      alignmentAnswers: [{ questionId: "concept_depth", selectedOptionIds: ["dimensions"], customText: "配合课堂人物举例" }],
+    }, { ...deps, alignRequirements });
+
+    expect(db.state.messages.some((message) => message.role === "teacher" && message.content === "我的回答：\n希望学生学到什么程度？：理解四组偏好并会举例；配合课堂人物举例")).toBe(true);
+    expect(alignRequirements).toHaveBeenCalledWith(expect.objectContaining({ task: "我的回答：\n希望学生学到什么程度？：理解四组偏好并会举例；配合课堂人物举例" }));
+  });
+
   test("does not execute the same request id twice", async () => {
     const db = createDb();
     const alignRequirements = vi.fn(deps.alignRequirements);
@@ -984,17 +1184,17 @@ describe("story outline repository", () => {
 
   test("does not let a late AI result overwrite a reset", async () => {
     const db = createDb();
-    let finishGeneration!: (value: Awaited<ReturnType<typeof deps.generateDirections>>) => void;
-    const generateDirections = vi.fn(() => new Promise<Awaited<ReturnType<typeof deps.generateDirections>>>((resolve) => { finishGeneration = resolve; }));
+    let finishAlignment!: (value: Awaited<ReturnType<typeof deps.alignRequirements>>) => void;
+    const alignRequirements = vi.fn(() => new Promise<Awaited<ReturnType<typeof deps.alignRequirements>>>((resolve) => { finishAlignment = resolve; }));
     const running = handleStoryOutlineMessage(db, "course-1", {
       message: "海底冒险",
       mode: "random",
       requestId: "slow-generation",
-    }, { ...deps, generateDirections });
-    await vi.waitFor(() => expect(generateDirections).toHaveBeenCalledTimes(1));
+    }, { ...deps, alignRequirements });
+    await vi.waitFor(() => expect(alignRequirements).toHaveBeenCalledTimes(1));
 
     await resetStoryOutline(db, "course-1");
-    finishGeneration(await deps.generateDirections({} as never));
+    finishAlignment(await deps.alignRequirements({} as never));
 
     await expect(running).rejects.toBeInstanceOf(CourseStoryOutlineOperationConflictError);
     expect((await getStoryOutlineState(db, "course-1")).directions).toEqual([]);

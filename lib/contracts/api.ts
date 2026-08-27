@@ -175,8 +175,11 @@ export type CourseResearchPlan = {
 export type StoryAlignmentQuestion = {
   id: string;
   label: string;
+  impact?: string;
+  /** 兼容旧问题卡；新响应统一使用 impact。 */
   reason?: string;
-  required: boolean;
+  /** 兼容旧问题卡；V2 中所有问题都是阻塞项。 */
+  required?: boolean;
   answerMode: "single_choice" | "multi_choice" | "text";
   options?: Array<{
     id: string;
@@ -193,6 +196,58 @@ export type StoryAlignmentQuestion = {
   recommendation?: { value: string; reason: string };
 };
 
+export type StorySourceRequirement = {
+  name: string;
+  useInCourse: string;
+};
+
+export type StoryAdditionalConstraints = {
+  required: string[];
+  preferred: string[];
+  excluded: string[];
+};
+
+export type StoryRequirementBrief =
+  | {
+      kind: "narrative";
+      objective: string;
+      sourceRequirements: StorySourceRequirement[];
+      requiredNamedCharacters: string[];
+      fixedPlot: string | null;
+      additionalConstraints: StoryAdditionalConstraints;
+    }
+  | {
+      kind: "concept";
+      objective: string;
+      learningTargets: Array<{ concept: string; expectedUnderstanding: string }>;
+      assumedPriorKnowledge: string[];
+      sourceRequirements: StorySourceRequirement[];
+      requiredNamedCharacters: string[];
+      fixedPlot: string | null;
+      additionalConstraints: StoryAdditionalConstraints;
+    }
+  | {
+      kind: "factual";
+      subjects: Array<{ name: string; kind: "person" | "event" | "topic" }>;
+      factualFocus: string;
+      sourceRequirements: StorySourceRequirement[];
+      additionalConstraints: StoryAdditionalConstraints;
+    };
+
+export type StoryMainlineCard = {
+  status: "pending_confirmation" | "confirmed";
+  protagonistStructure: string;
+  classroomRoles: Array<{ personId: string; roleInStory: string }>;
+  incitingEvent: string;
+  goal: string;
+  mainObstacle: string;
+  progression: string;
+  endingDirection: string;
+  mustKeep: string[];
+  mayExpand: string[];
+  confirmedAt?: string;
+};
+
 export type StoryAlignmentState = {
   status: "idle" | "needs_clarification" | "ready_for_confirmation" | "confirmed";
   planningMode: "explore_options" | "follow_defined_plot";
@@ -203,6 +258,9 @@ export type StoryAlignmentState = {
   unresolvedIssues: string[];
   questions: StoryAlignmentQuestion[];
   summary?: string;
+  schemaVersion?: 2;
+  provisionalBriefKind?: StoryRequirementBrief["kind"];
+  brief?: StoryRequirementBrief;
   needsBackgroundRefresh?: boolean;
   artifactsOutdated?: boolean;
   pendingChange?: {
@@ -213,6 +271,7 @@ export type StoryAlignmentState = {
     targetScope: "direction" | "outline" | "chapter";
     needsBackgroundRefresh: boolean;
   };
+  mainlineCard?: StoryMainlineCard;
 };
 
 export type CourseStoryChatAction = {
@@ -232,6 +291,8 @@ export type CourseStoryChatAction = {
     | "regenerate_outline"
     | "submit_alignment_answers"
     | "confirm_requirements"
+    | "confirm_mainline"
+    | "revise_mainline"
     | "modify_requirements"
     | "revise_direction"
     | "confirm_direction"
@@ -335,6 +396,7 @@ export type CourseStoryOutline = {
 };
 
 export type CourseStoryOutlineState = {
+  stateRevision?: number;
   course: {
     id: string;
     title: string;
@@ -373,7 +435,12 @@ export type CourseStoryMessageInput = {
   action?: CourseStoryChatAction["action"];
   targetId?: string;
   targetChapterOrder?: number;
-  alignmentAnswers?: Record<string, string | string[]>;
+  alignmentAnswers?: Record<string, string | string[]> | Array<{
+    questionId: string;
+    selectedOptionIds: string[];
+    customText?: string;
+  }>;
+  expectedStateRevision?: number;
   researchPlan?: CourseResearchPlan;
   chapterCount?: number;
   writingProvider?: StoryWritingProvider;

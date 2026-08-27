@@ -15,7 +15,7 @@ import type { CourseSourceReference, CourseStoryChatAction, CourseStoryMessageIn
 import { cn } from "@/lib/utils";
 import { createRequestId } from "@/lib/utils/request-id";
 
-type ComposerIntent = { action: "revise_direction"; label: string; targetId: string } | { action: "revise_outline"; label: string } | { action: "revise_chapter"; label: string; targetChapterOrder: number };
+type ComposerIntent = { action: "revise_direction"; label: string; targetId: string } | { action: "revise_mainline"; label: string } | { action: "revise_outline"; label: string } | { action: "revise_chapter"; label: string; targetChapterOrder: number };
 
 type ResultTab = "outline" | "characters" | "references" | "directions";
 
@@ -107,6 +107,8 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const stateRef = useRef(initialState);
   const hasStepContent = Boolean(state.chatMessages.length || state.directions.length || state.referenceMaterials.length || state.outline);
   const hasResultContent = Boolean(state.directions.length || state.referenceMaterials.length || state.outline);
+  const latestAlignmentQuestionMessageId = [...state.chatMessages].reverse().find((chat) => chat.actions.some((action) => action.action === "submit_alignment_answers" && action.questions?.length))?.id;
+  const latestMainlineActionMessageId = [...state.chatMessages].reverse().find((chat) => chat.actions.some((action) => action.action === "confirm_mainline" || action.action === "revise_mainline"))?.id;
   const conversationStarted = hasStepContent || pending || Boolean(state.operation) || Boolean(optimisticTeacherMessage);
   const hasUnsentInput = Boolean(message.trim() || (mode === "random" && (randomSupplement.trim() || selectedTheme || storyType || tone)));
   const resolvedStoryType = storyType === "__custom__" ? customStoryType.trim() : storyType;
@@ -310,9 +312,10 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
           action: composerIntent.action,
           ...(composerIntent.action === "revise_direction" ? { targetId: composerIntent.targetId } : {}),
           ...(composerIntent.action === "revise_chapter" ? { targetChapterOrder: composerIntent.targetChapterOrder } : {}),
+          ...(composerIntent.action === "revise_mainline" ? { expectedStateRevision: stateRef.current.stateRevision } : {}),
         }
       : { message: teacherMessage, mode };
-    const accepted = await postMessage(messageInput, composerIntent?.action === "revise_direction" ? "正在调整故事方向..." : composerIntent?.action === "revise_outline" ? "正在调整故事大纲..." : composerIntent?.action === "revise_chapter" ? `正在调整第 ${composerIntent.targetChapterOrder} 章...` : mode === "random" ? "正在生成故事方向..." : "正在分析故事要求...", {
+    const accepted = await postMessage(messageInput, composerIntent?.action === "revise_direction" ? "正在调整故事方向..." : composerIntent?.action === "revise_mainline" ? "正在调整故事主线..." : composerIntent?.action === "revise_outline" ? "正在调整故事大纲..." : composerIntent?.action === "revise_chapter" ? `正在调整第 ${composerIntent.targetChapterOrder} 章...` : "正在分析故事要求...", {
       restoreMessage: mode === "idea" ? message : undefined,
       restoreRandomSupplement: mode === "random" ? randomSupplement : undefined,
     });
@@ -364,6 +367,10 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
       continueModify("我想调整创作需求：");
       return;
     }
+    if (action.action === "revise_mainline") {
+      prepareComposer({ action: "revise_mainline", label: "故事主线" }, "修改故事主线：");
+      return;
+    }
     if (action.label === "继续修改" || action.action === "confirm_reference_object") {
       continueModify("帮我修改：");
       return;
@@ -390,10 +397,11 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     }
     const isReferenceSearch = action.action === "choose_reference_search" || action.action === "request_reference_search";
     const isRequirementConfirmation = action.action === "confirm_requirements";
+    const isMainlineConfirmation = action.action === "confirm_mainline";
     const isStoryChangeAction = action.action === "confirm_story_change" || action.action === "cancel_story_change";
     const isReferenceConfirmation = action.action === "confirm_reference_materials" || action.action === "choose_story_usage";
     const label = isReferenceSearch ? "正在整理参考资料..." : isRequirementConfirmation ? "正在准备故事创作..." : action.action === "confirm_story_change" ? "正在应用已确认的故事修改..." : action.action === "cancel_story_change" ? "正在保留当前内容..." : isReferenceConfirmation ? "正在继续构思故事..." : action.action === "generate_directions" ? "正在生成故事方向..." : "正在生成故事大纲...";
-    const draft = isRequirementConfirmation || isStoryChangeAction ? "" : message.trim();
+    const draft = isRequirementConfirmation || isMainlineConfirmation || isStoryChangeAction ? "" : message.trim();
     const optimisticMessage = draft || actionHistoryMessage(action);
     await postMessage(
       {
@@ -401,6 +409,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
         mode: action.action === "regenerate_outline" || isStoryChangeAction ? "revise" : "idea",
         action: action.action,
         targetId: action.targetId,
+        ...(action.action === "confirm_requirements" || action.action === "confirm_mainline" ? { expectedStateRevision: stateRef.current.stateRevision } : {}),
         researchPlan: action.researchPlan,
         preserveDownstream,
       },
@@ -408,7 +417,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
       {
         optimisticMessage,
         restoreMessage: draft,
-        preserveComposer: isRequirementConfirmation || isStoryChangeAction,
+        preserveComposer: isRequirementConfirmation || isMainlineConfirmation || isStoryChangeAction,
       },
     );
   }
@@ -563,7 +572,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                 {chat.role !== "teacher" ? <ChatAvatar role="assistant" /> : null}
                 <article className={cn("max-w-[calc(100%-2.5rem)] rounded-lg px-3 py-2 text-sm", !hasResultContent && "max-w-2xl", chat.role === "teacher" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground")}>
                   <p className="whitespace-pre-wrap leading-6">{chat.content}</p>
-                  {chat.actions.some((action) => action.action === "submit_alignment_answers" && action.questions?.length) ? (
+                  {chat.id === latestAlignmentQuestionMessageId && state.alignment?.status !== "ready_for_confirmation" && state.alignment?.status !== "confirmed" && chat.actions.some((action) => action.action === "submit_alignment_answers" && action.questions?.length) ? (
                     <AlignmentQuestionForm
                       disabled={pending}
                       onSubmit={async (answers, readableMessage) => {
@@ -573,6 +582,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                             mode: "idea",
                             action: "submit_alignment_answers",
                             alignmentAnswers: answers,
+                            expectedStateRevision: stateRef.current.stateRevision,
                           },
                           "正在确认故事要求...",
                           { optimisticMessage: readableMessage },
@@ -581,10 +591,10 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                       questions={chat.actions.find((action) => action.action === "submit_alignment_answers")?.questions ?? []}
                     />
                   ) : null}
-                  {chat.actions.some((action) => isVisibleChatAction(action, state.operation, state.alignment)) ? (
+                  {chat.actions.some((action) => isVisibleChatAction(action, state.operation, state.alignment, chat.id === latestMainlineActionMessageId)) ? (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {chat.actions
-                        .filter((action) => isVisibleChatAction(action, state.operation, state.alignment))
+                        .filter((action) => isVisibleChatAction(action, state.operation, state.alignment, chat.id === latestMainlineActionMessageId))
                         .map((action) => (
                           <Button disabled={pending} key={action.id} onClick={() => void handleAction(action)} size="sm" type="button" variant="outline">
                             {action.action === "request_reference_search" || action.action === "choose_reference_search" ? <Search className="size-4" /> : <Sparkles className="size-4" />}
@@ -976,6 +986,7 @@ function ChatAvatar({ role }: { role: "assistant" | "teacher" }) {
 
 function actionHistoryMessage(action: CourseStoryChatAction) {
   if (action.action === "confirm_requirements") return "我确认这份创作理解。";
+  if (action.action === "confirm_mainline") return "我确认这份故事主线，请生成故事大纲。";
   if (action.action === "request_reference_search" || action.action === "choose_reference_search") {
     return `请联网整理参考资料：${action.targetId || "当前引用对象"}`;
   }
@@ -989,7 +1000,7 @@ function actionHistoryMessage(action: CourseStoryChatAction) {
   return action.label;
 }
 
-function AlignmentQuestionForm({ questions, disabled, onSubmit }: { questions: NonNullable<CourseStoryChatAction["questions"]>; disabled: boolean; onSubmit: (answers: Record<string, string | string[]>, readableMessage: string) => void | Promise<void> }) {
+function AlignmentQuestionForm({ questions, disabled, onSubmit }: { questions: NonNullable<CourseStoryChatAction["questions"]>; disabled: boolean; onSubmit: (answers: Array<{ questionId: string; selectedOptionIds: string[]; customText?: string }>, readableMessage: string) => void | Promise<void> }) {
   const recommendedId = (question: (typeof questions)[number]) => {
     if (question.recommendedOptionId && question.options?.some((option) => option.id === question.recommendedOptionId)) return question.recommendedOptionId;
     const fallbackValue = question.recommendation?.value;
@@ -1009,13 +1020,13 @@ function AlignmentQuestionForm({ questions, disabled, onSubmit }: { questions: N
   }
 
   const complete = questions.every((question) => {
-    if (!question.required) return true;
+    if (question.required === false) return true;
     const selectedAnswers = (selected[question.id] ?? []).filter((id) => id !== "__custom");
     return Boolean(selectedAnswers.length || custom[question.id]?.trim());
   });
 
   function submitAnswers() {
-    const answers: Record<string, string | string[]> = {};
+    const answers: Array<{ questionId: string; selectedOptionIds: string[]; customText?: string }> = [];
     const lines = ["我的回答："];
     for (const question of questions) {
       const optionLabels = (selected[question.id] ?? []).flatMap((id) => {
@@ -1024,7 +1035,11 @@ function AlignmentQuestionForm({ questions, disabled, onSubmit }: { questions: N
       });
       const customValue = custom[question.id]?.trim();
       const values = [...optionLabels, ...(customValue ? [customValue] : [])];
-      answers[question.id] = question.answerMode === "multi_choice" ? values : values.join("；");
+      answers.push({
+        questionId: question.id,
+        selectedOptionIds: (selected[question.id] ?? []).filter((id) => id !== "__custom"),
+        ...(customValue ? { customText: customValue } : {}),
+      });
       lines.push(`${question.label}：${values.join("；") || "暂不回答"}`);
     }
     void onSubmit(answers, lines.join("\n"));
@@ -1046,7 +1061,7 @@ function AlignmentQuestionForm({ questions, disabled, onSubmit }: { questions: N
             <legend className="text-sm font-medium text-foreground">
               {index + 1}. {question.label}
             </legend>
-            {question.reason ? <p className="text-xs leading-5 text-muted-foreground">{question.reason}</p> : null}
+            {question.impact || question.reason ? <p className="text-xs leading-5 text-muted-foreground">{question.impact || question.reason}</p> : null}
             {hasOptions || (question.allowCustom && question.answerMode !== "text") ? (
               <div className="grid gap-2">
                 {hasOptions
@@ -1126,14 +1141,14 @@ function storyOperationPresentation(action: string, phase?: NonNullable<CourseSt
       steps: ["确认查询对象与范围", "查找可核实资料", "提取事实和改编边界", "保存参考资料"],
     };
   }
-  if (phase === "generating_directions" || action === "generate_directions" || action === "random") {
+  if (phase === "generating_directions" || action === "generate_directions") {
     return {
       title: "正在生成 3 个故事方向",
       currentStep: 1,
       steps: ["整理已确认的创作要求", "构思不同任务与冲突", "检查人物和故事类型", "保存故事方向"],
     };
   }
-  if (phase === "generating_outline" || ["confirm_direction", "generate_from_reference", "regenerate_outline"].includes(action)) {
+  if (phase === "generating_outline" || ["confirm_direction", "confirm_mainline", "generate_from_reference", "regenerate_outline"].includes(action)) {
     return {
       title: action === "regenerate_outline" ? "正在重新生成故事大纲" : "正在生成故事大纲",
       currentStep: 1,
@@ -1142,7 +1157,7 @@ function storyOperationPresentation(action: string, phase?: NonNullable<CourseSt
     };
   }
   if (phase === "revising") {
-    const title = action === "revise_chapter" ? "正在修改目标章节" : action === "revise_direction" ? "正在修改故事方向" : "正在修改故事大纲";
+    const title = action === "revise_chapter" ? "正在修改目标章节" : action === "revise_direction" ? "正在修改故事方向" : action === "revise_mainline" ? "正在修改故事主线" : "正在修改故事大纲";
     return {
       title,
       currentStep: 1,
@@ -1199,8 +1214,10 @@ function operationLoadingLabel(phase?: NonNullable<CourseStoryOutlineState["oper
   }
 }
 
-function isVisibleChatAction(action: CourseStoryChatAction, operation: CourseStoryOutlineState["operation"], alignment: CourseStoryOutlineState["alignment"]) {
+function isVisibleChatAction(action: CourseStoryChatAction, operation: CourseStoryOutlineState["operation"], alignment: CourseStoryOutlineState["alignment"], isLatestMainlineMessage = false) {
   if (action.action === "submit_alignment_answers") return false;
+  if (action.action === "confirm_requirements") return !alignment || alignment.status === "ready_for_confirmation";
+  if (action.action === "confirm_mainline" || action.action === "revise_mainline") return isLatestMainlineMessage && (!alignment || alignment.mainlineCard?.status === "pending_confirmation");
   if (action.action === "confirm_story_change" || action.action === "cancel_story_change") {
     return Boolean(alignment?.pendingChange && action.targetId === alignment.pendingChange.id);
   }

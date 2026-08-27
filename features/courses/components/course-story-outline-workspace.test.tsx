@@ -1068,7 +1068,10 @@ describe("CourseStoryOutlineWorkspace", () => {
 
     await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({
       action: "submit_alignment_answers",
-      alignmentAnswers: { usage: "使用角色创作新剧情", roles: "暮光闪闪和云宝" },
+      alignmentAnswers: [
+        { questionId: "usage", selectedOptionIds: ["new"] },
+        { questionId: "roles", selectedOptionIds: [], customText: "暮光闪闪和云宝" },
+      ],
     }));
   });
 
@@ -1119,9 +1122,7 @@ describe("CourseStoryOutlineWorkspace", () => {
 
     await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({
       action: "submit_alignment_answers",
-      alignmentAnswers: {
-        usage: "使用原作人物创作新剧情",
-      },
+      alignmentAnswers: [{ questionId: "usage", selectedOptionIds: ["new_story"] }],
     }));
   });
 
@@ -1485,6 +1486,110 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.queryByRole("button", { name: "保存故事大纲" })).not.toBeInTheDocument();
     expect(screen.queryByText("最新版本")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "下一步：教学规划" })).toHaveLength(1);
+  });
+
+  test("confirms the current V2 mainline without submitting or clearing the composer draft", async () => {
+    const responsePromise = new Promise<Response>(() => undefined);
+    vi.stubGlobal("fetch", vi.fn(() => responsePromise));
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      stateRevision: 4,
+      chatMessages: [{
+        id: "mainline-card",
+        courseId: "course-1",
+        role: "assistant",
+        content: "请确认故事主线。",
+        actions: [
+          { id: "confirm-mainline", label: "确认主线并生成大纲", action: "confirm_mainline" },
+          { id: "revise-mainline", label: "修改主线理解", action: "revise_mainline" },
+        ],
+        createdAt: "2026-08-27T00:00:00.000Z",
+      }],
+    }} />);
+
+    fireEvent.change(screen.getByLabelText("故事想法"), { target: { value: "尚未发送的补充" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认主线并生成大纲" }));
+
+    expect(fetchBody(vi.mocked(fetch))).toMatchObject({ action: "confirm_mainline", message: "", expectedStateRevision: 4 });
+    expect(screen.getByLabelText("故事想法")).toHaveValue("尚未发送的补充");
+    expect(screen.getByText("我确认这份故事主线，请生成故事大纲。")).toBeInTheDocument();
+  });
+
+  test("hides expired clarification forms and mainline actions after confirmation", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      alignment: {
+        status: "confirmed",
+        planningMode: "follow_defined_plot",
+        resolvedUnderstanding: [],
+        unresolvedIssues: [],
+        questions: [],
+        mainlineCard: {
+          status: "confirmed",
+          protagonistStructure: "学生团队",
+          classroomRoles: [],
+          incitingEvent: "任务开始",
+          goal: "完成任务",
+          mainObstacle: "主要困难",
+          progression: "持续推进",
+          endingDirection: "完成目标",
+          mustKeep: [],
+          mayExpand: [],
+        },
+      },
+      chatMessages: [{
+        id: "expired-actions",
+        courseId: "course-1",
+        role: "assistant",
+        content: "历史确认记录",
+        actions: [
+          { id: "old-question", label: "提交回答", action: "submit_alignment_answers", questions: [{ id: "q", label: "旧问题", impact: "旧影响", answerMode: "text", allowCustom: true }] },
+          { id: "old-confirm-mainline", label: "确认主线并生成大纲", action: "confirm_mainline" },
+          { id: "old-revise-mainline", label: "修改主线理解", action: "revise_mainline" },
+        ],
+        createdAt: "2026-08-27T00:00:00.000Z",
+      }],
+    }} />);
+
+    expect(screen.queryByRole("button", { name: "确认回答并继续" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认主线并生成大纲" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "修改主线理解" })).not.toBeInTheDocument();
+  });
+
+  test("shows mainline actions only on the latest pending mainline card", () => {
+    const mainlineActions = [
+      { id: "confirm-mainline", label: "确认主线并生成大纲", action: "confirm_mainline" as const },
+      { id: "revise-mainline", label: "修改主线理解", action: "revise_mainline" as const },
+    ];
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      alignment: {
+        status: "confirmed",
+        planningMode: "follow_defined_plot",
+        resolvedUnderstanding: [],
+        unresolvedIssues: [],
+        questions: [],
+        mainlineCard: {
+          status: "pending_confirmation",
+          protagonistStructure: "学生团队",
+          classroomRoles: [],
+          incitingEvent: "新任务开始",
+          goal: "完成新任务",
+          mainObstacle: "新的困难",
+          progression: "持续推进",
+          endingDirection: "完成目标",
+          mustKeep: [],
+          mayExpand: [],
+        },
+      },
+      chatMessages: [
+        { id: "old-mainline", courseId: "course-1", role: "assistant", content: "旧主线", actions: mainlineActions, createdAt: "2026-08-27T00:00:00.000Z" },
+        { id: "new-mainline", courseId: "course-1", role: "assistant", content: "新主线", actions: mainlineActions, createdAt: "2026-08-27T00:01:00.000Z" },
+      ],
+    }} />);
+
+    expect(screen.getAllByRole("button", { name: "确认主线并生成大纲" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "修改主线理解" })).toHaveLength(1);
   });
 
   test("marks the existing outline and characters as outdated after the creative requirement changes", () => {

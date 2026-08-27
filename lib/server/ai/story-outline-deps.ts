@@ -3,6 +3,8 @@ import type {
   CourseSourceReferenceType,
   CourseSourceStatus,
   StoryAlignmentQuestion,
+  StoryMainlineCard,
+  StoryRequirementBrief,
   StoryWritingProvider,
 } from "@/lib/contracts/api";
 
@@ -97,6 +99,7 @@ type StoryPromptContext = {
   storyMode?: "faithful" | "new_story";
   classroomPresence?: "observer" | "participant" | "absent";
   requiredNamedCharacters?: string[];
+  mainlineCard?: StoryMainlineCard;
   onFormatRepair?: () => Promise<void>;
 };
 
@@ -239,6 +242,7 @@ function contextPrompt(input: StoryPromptContext) {
     `当前未选择的故事方向：${JSON.stringify((input.currentDirections ?? []).map(directionForPrompt))}`,
     `已保存参考资料：${JSON.stringify(input.references)}`,
     `当前故事大纲：${JSON.stringify(input.currentOutline)}`,
+    `已确认主线理解卡：${JSON.stringify(input.mainlineCard ?? null)}`,
     "</current_state>",
   ];
 }
@@ -249,12 +253,36 @@ type AlignmentDecision = {
   storyMode: "faithful" | "new_story";
   classroomPresence: "observer" | "participant" | "absent";
   requiredNamedCharacters: string[];
+  provisionalBriefKind?: StoryRequirementBrief["kind"];
+  brief?: StoryRequirementBrief;
   assistantMessage: string;
   resolvedUnderstanding: string[];
   unresolvedIssues: string[];
   questions: StoryAlignmentQuestion[];
   summary?: string;
 };
+
+function alignmentContextPrompt(input: StoryPromptContext) {
+  const people = input.coursePeople.map(({ personId, role, chineseName, englishName, age, gender }) => ({
+    personId,
+    role,
+    chineseName,
+    englishName,
+    age,
+    gender,
+  }));
+  return [
+    "<course_context>",
+    `课堂人物：${JSON.stringify(people)}`,
+    `指定章节数：${input.chapterCount}`,
+    ...(input.englishLevel ? [`英语难度：${input.englishLevel}`] : []),
+    ...(input.durationMinutes ? [`课程时长：${input.durationMinutes} 分钟`] : []),
+    "</course_context>",
+    "<conversation_history>",
+    JSON.stringify(input.conversationHistory),
+    "</conversation_history>",
+  ];
+}
 
 const classroomParticipationRules = [
   "除非老师明确排除，Step 1 中的老师和所有学生默认全部参与故事；不得遗漏课堂人物，也不得默认只选择一名学生。",
@@ -580,10 +608,11 @@ function normalizeAlignmentQuestion(value: unknown): StoryAlignmentQuestion | nu
   const label = stringValue(source.label);
   const answerMode = source.answerMode === "multi_choice" || source.answerMode === "text" ? source.answerMode : "single_choice";
   if (!id || !label) return null;
-  const options = Array.isArray(source.options) ? source.options.flatMap((item) => {
+  const rawOptions = Array.isArray(source.options) ? source.options : undefined;
+  const options = rawOptions ? rawOptions.flatMap((item) => {
     if (typeof item !== "object" || item === null) return [];
     const option = item as Record<string, unknown>;
-    const optionId = stringValue(option.id) || stringValue(option.value);
+    const optionId = stringValue(option.id);
     const optionLabel = stringValue(option.label);
     if (!optionId || !optionLabel) return [];
     return [{
@@ -593,21 +622,17 @@ function normalizeAlignmentQuestion(value: unknown): StoryAlignmentQuestion | nu
       ...(stringValue(option.textPlaceholder) ? { textPlaceholder: stringValue(option.textPlaceholder) } : {}),
     }];
   }) : undefined;
-  const recommendationSource = typeof source.recommendation === "object" && source.recommendation !== null
-    ? source.recommendation as Record<string, unknown>
-    : null;
-  const recommendationValue = stringValue(recommendationSource?.value);
-  const recommendationReason = stringValue(source.recommendationReason) || stringValue(recommendationSource?.reason);
-  const requestedRecommendedId = stringValue(source.recommendedOptionId) || recommendationValue;
-  const recommendedOption = options?.find((option) => option.id === requestedRecommendedId || option.label === requestedRecommendedId);
+  if (rawOptions && options?.length !== rawOptions.length) return null;
+  const recommendationReason = stringValue(source.recommendationReason);
+  const requestedRecommendedId = stringValue(source.recommendedOptionId);
+  const recommendedOption = options?.find((option) => option.id === requestedRecommendedId);
   const orderedOptions = recommendedOption
     ? [recommendedOption, ...(options ?? []).filter((option) => option.id !== recommendedOption.id)]
     : options;
   return {
     id,
     label,
-    ...(stringValue(source.reason) ? { reason: stringValue(source.reason) } : {}),
-    required: source.required !== false,
+    ...(stringValue(source.impact) ? { impact: stringValue(source.impact) } : {}),
     answerMode,
     ...(orderedOptions?.length ? { options: orderedOptions } : {}),
     allowCustom: source.allowCustom !== false,
@@ -618,38 +643,126 @@ function normalizeAlignmentQuestion(value: unknown): StoryAlignmentQuestion | nu
   };
 }
 
-function normalizeRecommendedSummary(
-  value: string,
-  planningMode: AlignmentDecision["planningMode"],
-  replyContext: "initial" | "requirement_change" = "initial",
-  needsBackgroundRefresh = true,
-) {
-  let summary = value.trim()
-    .replace(/^已(?:确认|确定)(?:将|为)?\s*/u, "")
-    .replace(/^(?:建议按这个方向创作|我理解你的创作需求是|我理解你想将创作需求调整为)[：:]\s*/u, "")
-    .replace(/当前不(?:再|继续)?追问[^。！？；，,]*[；，,]?\s*/gu, "")
-    .replace(/(?:因此|所以|接下来)?确认后，我会准备\s*(?:3\s*个不同的故事方向|故事大纲)；如需背景资料，会先整理必要内容[。！？]?/gu, "")
-    .replace(/(?:下一步先提供|确认后，我会提供)\s*3\s*个(?:候选|不同)?故事方向(?:供(?:您|你)选择)?[。！？]?/gu, "")
-    .replace(/确认后，我会根据这条主线生成故事大纲[。！？]?/gu, "")
-    .replace(/确认后，我会按新的创作需求继续[^。！？]*[。！？]?/gu, "")
-    .replace(/由于故事背景发生变化，可能会重新整理背景资料[。！？]?/gu, "")
-    .replace(/。{2,}/gu, "。");
-  summary = summary.replace(/^[：:；;，,\s]+/u, "");
-  summary = summary.replace(/[；;，,\s]*$/u, "").replace(/[。！？\s]*$/u, "");
-  const prefix = replyContext === "requirement_change" ? "我理解你想将创作需求调整为：" : "我理解你的创作需求是：";
-  const nextStep = replyContext === "requirement_change"
-    ? needsBackgroundRefresh
-      ? "确认后，我会按新的创作需求继续。由于故事背景发生变化，可能会重新整理背景资料。"
-      : "确认后，我会按新的创作需求继续，并沿用现有背景资料。"
-    : planningMode === "follow_defined_plot"
-      ? "确认后，我会准备故事大纲；如需背景资料，会先整理必要内容。"
-      : "确认后，我会准备 3 个不同的故事方向；如需背景资料，会先整理必要内容。";
-  return `${prefix}${summary}。${nextStep}`;
+function normalizeSourceRequirements(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const source = item as Record<string, unknown>;
+    const name = stringValue(source.name);
+    const useInCourse = stringValue(source.useInCourse);
+    return name && useInCourse ? [{ name, useInCourse }] : [];
+  });
+}
+
+function normalizeAdditionalConstraints(value: unknown) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return {
+    required: stringArray(source.required),
+    preferred: stringArray(source.preferred),
+    excluded: stringArray(source.excluded),
+  };
+}
+
+function normalizeRequirementBrief(value: unknown): StoryRequirementBrief | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  const sourceRequirements = normalizeSourceRequirements(source.sourceRequirements);
+  const additionalConstraints = normalizeAdditionalConstraints(source.additionalConstraints);
+  if (source.kind === "narrative") {
+    const objective = stringValue(source.objective);
+    if (!objective) return null;
+    return {
+      kind: "narrative",
+      objective,
+      sourceRequirements,
+      requiredNamedCharacters: stringArray(source.requiredNamedCharacters),
+      fixedPlot: stringValue(source.fixedPlot) || null,
+      additionalConstraints,
+    };
+  }
+  if (source.kind === "concept") {
+    const objective = stringValue(source.objective);
+    const learningTargets = Array.isArray(source.learningTargets) ? source.learningTargets.flatMap((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+      const target = item as Record<string, unknown>;
+      const concept = stringValue(target.concept);
+      const expectedUnderstanding = stringValue(target.expectedUnderstanding);
+      return concept && expectedUnderstanding ? [{ concept, expectedUnderstanding }] : [];
+    }) : [];
+    if (!objective || !learningTargets.length) return null;
+    return {
+      kind: "concept",
+      objective,
+      learningTargets,
+      assumedPriorKnowledge: stringArray(source.assumedPriorKnowledge),
+      sourceRequirements,
+      requiredNamedCharacters: stringArray(source.requiredNamedCharacters),
+      fixedPlot: stringValue(source.fixedPlot) || null,
+      additionalConstraints,
+    };
+  }
+  if (source.kind === "factual") {
+    const subjects = Array.isArray(source.subjects) ? source.subjects.flatMap((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+      const subject = item as Record<string, unknown>;
+      const name = stringValue(subject.name);
+      const kind: "person" | "event" | "topic" | null = subject.kind === "person" || subject.kind === "event" || subject.kind === "topic" ? subject.kind : null;
+      return name && kind ? [{ name, kind }] : [];
+    }) : [];
+    const factualFocus = stringValue(source.factualFocus);
+    if (!subjects.length || !factualFocus) return null;
+    return { kind: "factual", subjects, factualFocus, sourceRequirements, additionalConstraints };
+  }
+  return null;
+}
+
+function validateAlignmentQuestions(questions: StoryAlignmentQuestion[]) {
+  if (questions.length > 3) return false;
+  const ids = new Set<string>();
+  for (const question of questions) {
+    if (ids.has(question.id) || !question.impact) return false;
+    ids.add(question.id);
+    if (question.answerMode === "text") {
+      if (!question.allowCustom || question.options?.length) return false;
+      continue;
+    }
+    if (!question.options || question.options.length < 2 || question.options.length > 3) return false;
+    if (new Set(question.options.map((option) => option.id)).size !== question.options.length) return false;
+    if (!question.recommendedOptionId || !question.recommendationReason) return false;
+    if (!question.options.some((option) => option.id === question.recommendedOptionId)) return false;
+  }
+  return true;
+}
+
+function parseMainlineCard(text: string): Omit<StoryMainlineCard, "status" | "confirmedAt"> {
+  const parsed = parseJson<Record<string, unknown>>(text, "AI 返回的主线理解卡不是有效 JSON");
+  const classroomRoles = Array.isArray(parsed.classroomRoles) ? parsed.classroomRoles.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const role = item as Record<string, unknown>;
+    const personId = stringValue(role.personId);
+    const roleInStory = stringValue(role.roleInStory);
+    return personId && roleInStory ? [{ personId, roleInStory }] : [];
+  }) : [];
+  const result = {
+    protagonistStructure: stringValue(parsed.protagonistStructure),
+    classroomRoles,
+    incitingEvent: stringValue(parsed.incitingEvent),
+    goal: stringValue(parsed.goal),
+    mainObstacle: stringValue(parsed.mainObstacle),
+    progression: stringValue(parsed.progression),
+    endingDirection: stringValue(parsed.endingDirection),
+    mustKeep: stringArray(parsed.mustKeep),
+    mayExpand: stringArray(parsed.mayExpand),
+  };
+  if (!result.protagonistStructure || !result.incitingEvent || !result.goal || !result.mainObstacle || !result.progression || !result.endingDirection) {
+    throw new StoryOutlineResponseError("AI 返回的主线理解卡结构不完整");
+  }
+  return result;
 }
 
 function parseAlignmentDecision(
   text: string,
-  input: Pick<StoryPromptContext, "onFormatRepair"> & { replyContext?: "initial" | "requirement_change"; needsBackgroundRefresh?: boolean },
+  input: Pick<StoryPromptContext, "onFormatRepair"> & { replyContext?: "initial" | "requirement_change"; needsBackgroundRefresh?: boolean; requiredQuestionIds?: string[] },
 ): AlignmentDecision {
   let parsed: Record<string, unknown>;
   try {
@@ -661,57 +774,74 @@ function parseAlignmentDecision(
       { cause: error },
     );
   }
-  if (
-    (parsed.status !== "ready_for_confirmation" && parsed.status !== "needs_clarification")
-    || (parsed.planningMode !== "follow_defined_plot" && parsed.planningMode !== "explore_options")
-    || (parsed.storyMode !== "faithful" && parsed.storyMode !== "new_story")
-    || (parsed.classroomPresence !== "observer" && parsed.classroomPresence !== "participant" && parsed.classroomPresence !== "absent")
-    || (parsed.storyMode === "faithful" && parsed.classroomPresence === "participant")
-  ) {
+  const validStatus = parsed.status === "ready_for_confirmation" || parsed.status === "needs_clarification";
+  const validReadyModes = parsed.status !== "ready_for_confirmation" || (
+    (parsed.planningMode === "follow_defined_plot" || parsed.planningMode === "explore_options")
+    && (parsed.storyMode === "faithful" || parsed.storyMode === "new_story")
+    && (parsed.classroomPresence === "observer" || parsed.classroomPresence === "participant" || parsed.classroomPresence === "absent")
+    && !(parsed.storyMode === "faithful" && parsed.classroomPresence === "participant")
+  );
+  if (!validStatus || !validReadyModes) {
     throw new StoryAlignmentResponseError(
       "STORY_ALIGNMENT_INVALID_STRUCTURE",
       "AI 返回的需求对齐结构不完整，自动修复后仍未通过。",
     );
   }
-  const status = parsed.status;
+  const status = parsed.status as AlignmentDecision["status"];
   const normalizedQuestions = Array.isArray(parsed.questions) ? parsed.questions.map(normalizeAlignmentQuestion).filter((item): item is StoryAlignmentQuestion => Boolean(item)) : [];
-  const questionIds = new Set<string>();
-  const questions = normalizedQuestions.map((question, index) => {
-    if (!questionIds.has(question.id)) {
-      questionIds.add(question.id);
-      return question;
-    }
-    const uniqueId = `${question.id}-${index + 1}`;
-    questionIds.add(uniqueId);
-    return { ...question, id: uniqueId };
-  });
+  const questions = normalizedQuestions;
+  const brief = normalizeRequirementBrief(parsed.brief);
+  const provisionalBriefKind = parsed.provisionalBriefKind === "narrative" || parsed.provisionalBriefKind === "concept" || parsed.provisionalBriefKind === "factual"
+    ? parsed.provisionalBriefKind
+    : undefined;
+  const planningMode = parsed.planningMode === "follow_defined_plot" ? "follow_defined_plot" : "explore_options";
+  const storyMode = parsed.storyMode === "faithful" ? "faithful" : provisionalBriefKind === "factual" ? "faithful" : "new_story";
+  const classroomPresence = parsed.classroomPresence === "observer" || parsed.classroomPresence === "participant" || parsed.classroomPresence === "absent"
+    ? parsed.classroomPresence
+    : storyMode === "faithful" ? "observer" : "participant";
+  const requiredNamedCharacters = brief && (brief.kind === "narrative" || brief.kind === "concept") ? brief.requiredNamedCharacters : [];
   const result: AlignmentDecision = {
     status,
-    planningMode: parsed.planningMode,
-    storyMode: parsed.storyMode,
-    classroomPresence: parsed.classroomPresence,
-    requiredNamedCharacters: stringArray(parsed.requiredNamedCharacters),
+    planningMode,
+    storyMode,
+    classroomPresence,
+    requiredNamedCharacters,
+    ...(provisionalBriefKind ? { provisionalBriefKind } : {}),
+    ...(brief ? { brief } : {}),
     assistantMessage: stringValue(parsed.assistantMessage) || (status === "ready_for_confirmation" ? "我已经整理好创作理解，请确认。" : "还需要确认几个会影响故事方向的问题。"),
-    resolvedUnderstanding: stringArray(parsed.resolvedUnderstanding),
-    unresolvedIssues: stringArray(parsed.unresolvedIssues),
+    resolvedUnderstanding: stringArray(parsed.resolvedRequirements).length ? stringArray(parsed.resolvedRequirements) : stringArray(parsed.resolvedUnderstanding),
+    unresolvedIssues: stringArray(parsed.unresolvedIssues).length ? stringArray(parsed.unresolvedIssues) : questions.map((question) => question.label),
     questions,
-    ...(stringValue(parsed.summary) ? { summary: normalizeRecommendedSummary(
-      stringValue(parsed.summary),
-      parsed.planningMode,
-      input.replyContext,
-      input.needsBackgroundRefresh,
-    ) } : {}),
   };
-  if (status === "ready_for_confirmation" && (!result.summary || result.unresolvedIssues.length || result.questions.length)) {
+  if (!validateAlignmentQuestions(result.questions)) {
     throw new StoryAlignmentResponseError(
       "STORY_ALIGNMENT_INVALID_STRUCTURE",
       "AI 返回的需求对齐结构不完整，自动修复后仍未通过。",
     );
   }
-  if (status === "needs_clarification" && !result.questions.length) {
+  if (status === "ready_for_confirmation" && (!result.brief || result.questions.length)) {
     throw new StoryAlignmentResponseError(
       "STORY_ALIGNMENT_INVALID_STRUCTURE",
       "AI 返回的需求对齐结构不完整，自动修复后仍未通过。",
+    );
+  }
+  const readyBrief = result.brief;
+  if (status === "ready_for_confirmation" && readyBrief && result.storyMode === "new_story" && result.planningMode === "follow_defined_plot" && readyBrief.kind !== "factual" && !readyBrief.fixedPlot) {
+    throw new StoryAlignmentResponseError(
+      "STORY_ALIGNMENT_INVALID_STRUCTURE",
+      "AI 返回的需求对齐结构不完整，自动修复后仍未通过。",
+    );
+  }
+  if (status === "needs_clarification" && (result.questions.length < 1 || result.questions.length > 3)) {
+    throw new StoryAlignmentResponseError(
+      "STORY_ALIGNMENT_INVALID_STRUCTURE",
+      "AI 返回的需求对齐结构不完整，自动修复后仍未通过。",
+    );
+  }
+  if (input.requiredQuestionIds?.some((id) => !result.questions.some((question) => question.id === id))) {
+    throw new StoryAlignmentResponseError(
+      "STORY_ALIGNMENT_INVALID_STRUCTURE",
+      "AI 返回的需求对齐结构遗漏了尚未回答的问题，自动修复后仍未通过。",
     );
   }
   return result;
@@ -721,16 +851,17 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
   let provider: ReturnType<typeof createStoryOutlineProvider> | null = null;
   const client = () => (provider ??= createStoryOutlineProvider(undefined, settings));
   return {
-    alignRequirements: async (input: StoryPromptContext & { task: string; replyContext?: "initial" | "requirement_change"; needsBackgroundRefresh?: boolean }): Promise<AlignmentDecision> => {
+    alignRequirements: async (input: StoryPromptContext & { task: string; replyContext?: "initial" | "requirement_change"; needsBackgroundRefresh?: boolean; requiredQuestionIds?: string[] }): Promise<AlignmentDecision> => {
       let { text } = await client().generateOutline({
         writingProvider: "quickrouter_gpt",
         operation: "story_align_requirements",
         prompt: [
-          "你是一名资深儿童故事策划编辑，擅长通过精准追问，把教师零散、模糊或有歧义的想法整理成清晰、可执行的故事创作意图。",
-          "你当前只负责理解和确认创作需求：不创作故事方向，不生成故事大纲，不查找或整理背景资料，也不替老师补充会改变故事本质的关键意图。",
-          "需求对齐的目标不是帮助老师补完整个故事，而是确认故事的大方向和不可误解的边界。",
-          "核心判断：如果当前信息存在两种或以上合理理解，并且不同理解会产生本质不同的故事，就必须继续提问；可以安全交给后续三个故事方向探索的内容不需要提问。",
-          "老师可以只提供人物、IP、主题或粗略想法。不要要求老师提前确定主角目标、核心冲突、关键事件、奇幻机制或结局；老师没有完整故事想法不是信息缺失，后续系统会生成 3 个候选故事方向供老师选择。",
+          "你是课程故事需求对齐引擎。你只负责把老师输入归一化为后续流程可直接消费的结构化需求；不创作方向、大纲或背景资料。",
+          "先按课程成功标准分类：真实人物、真实事件或真实历史的准确性决定成功时为 factual；否则学生理解、应用或体验理论概念决定成功时为 concept；其余以角色经历和情节结果为核心时为 narrative。故事包装不改变 factual 或 concept，知识只作兴趣素材时仍为 narrative。",
+          "planningMode 只判断是否需要比较不同核心方向。老师已经固定核心因果、特定真实历程或原作主线时为 follow_defined_plot；只有主题、人物、类型、知识素材或宽泛真实历史范围时为 explore_options。宽泛真实历史仍是 factual + faithful + observer，方向只能比较真实视角。",
+          "默认 0 题。只有来源或版本差异会改变内容、硬要求互相冲突、明确学习理论但可验证学习目标未知，或上一答案新激活必要条件时才提问。地点、配角、奇幻机制、人物如何进入、具体转折和结尾细节交给后续设计。",
+          "需要澄清时通常 1 题；同一轮最多返回 3 个当前已成立、彼此独立的阻塞问题。依赖上一答案的问题不得提前展示。不得因为轮数或成本自动采用推荐。",
+          "推荐必须满足老师明确目标的最低复杂度，并受课堂人物年龄、英语等级、章节数和课时容量约束；不能为了简单而降低目标。明确要求学习 MBTI 理论时，基础推荐至少应理解四组偏好的含义并能结合简单例子，不能降成只知道人人不同，也不要求记忆 16 型。",
           ...classroomParticipationRules,
           "把“故事是否忠实”和“课堂人物是否进入”分开判断。storyMode 只能是 faithful 或 new_story；classroomPresence 只能是 observer、participant 或 absent。",
           "忠实讲述原作、真实人物传记或历史事实时使用 faithful + observer：课堂人物默认进入场景但只观察、记录、见证或彼此交流，不承担剧情贡献，也不能影响原作或史实的关键事件、因果、转折和结局。只有老师明确要求课堂人物不进入时才使用 absent。",
@@ -741,20 +872,18 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           "后续在 new_story 中根据实际人数自动设计单人、双人或团队行动；在 faithful 中只设计不改变因果的观察、记录、见证和彼此交流。人物身份、相遇方式、任务、冲突、奇幻机制和结局由后续方向与大纲决定，不要向老师追问。",
           "老师明确提及 IP 或作品时，视为希望实际使用其中的原作人物；老师同时提出老师和学生经历新冒险时，默认理解为使用原作世界或核心人物创作新剧情，不追问是复述原作还是新编，也不主动提供只参考主题、氛围或风格的选项。",
           "老师未点名原作人物时，不要求老师列人物名单；后续根据背景资料选择与故事最相关的最小核心角色集合。只有版本歧义、点名人物冲突或其他差异会实质改变故事时，才需要确认。",
-          "requiredNamedCharacters 必须逐个保留老师明确点名且要求出场的角色原名，按老师表述去重后返回；不得归纳成“核心角色”“主要角色”“某某等人”，也不得把作品名、团队名、机构、老师或学生姓名放入该数组。老师没有点名具体作品角色时返回空数组。summary 和 resolvedUnderstanding 提及这些角色时也要逐个写出，不能用集合称呼替代。",
-          "通常不提问：信息足以生成 3 个明显不同的故事方向时，直接返回 ready_for_confirmation 和整理后的创作理解。只有确实存在会改变故事本质、且无法安全推断的阻断歧义时才提问；通常只问 1 题，两个互相独立的阻断歧义并存时最多问 2 题。",
-          "需要提问时，每个问题都必须给出 2-3 个可直接选择的选项，并从这些选项中指定一项具体推荐及简短理由；推荐项作为安全默认答案，老师可以直接确认。除非缺少无法推断的专有名称或版本，不使用纯文本题。每题仍允许自定义输入。",
-          "对齐完成后不直接生成故事，返回简短创作理解摘要等待老师确认。摘要须用面向老师的中文明确说明是忠实讲述还是新故事，以及课堂人物是旁观、参与还是不进入；没有具体主线时，说明将通过 3 个候选方向选择，不继续追问剧情细节。",
-          input.replyContext === "requirement_change"
-            ? "这是一次创作需求修改。summary 只概括修改后的创作理解，不使用“建议”“已确认”“已确定”等措辞；系统会统一添加“我理解你想将创作需求调整为：”和后续资料提示。"
-            : "summary 只概括你对老师创作需求的理解，不使用“建议”“已确认”“已确定”等措辞；系统会统一添加“我理解你的创作需求是：”。",
-          "老师提到任何作品、IP、真实人物、历史事件、知识主题或其他来源时，summary 必须明确说明该来源在故事中如何使用，不能只写“基于”或“参考”。作品与 IP 需要说明是使用原作世界和核心角色创作新剧情，还是忠实讲述已给出的原剧情；真实人物与历史事件需要说明事实叙事和适龄改编边界；知识主题需要说明知识如何通过故事事件呈现。",
-          "summary 不得向老师播报“不继续追问”“正在分析”“系统将处理”等内部流程。需求对齐阶段尚未判断是否需要背景资料，不能承诺确认后立刻展示方向或大纲。planningMode 为 explore_options 时以“确认后，我会准备 3 个不同的故事方向；如需背景资料，会先整理必要内容。”收尾；为 follow_defined_plot 时以“确认后，我会准备故事大纲；如需背景资料，会先整理必要内容。”收尾。",
-          "只返回 JSON：{status, planningMode, storyMode, classroomPresence, requiredNamedCharacters, assistantMessage, resolvedUnderstanding, unresolvedIssues, questions, summary?}。status 只能是 needs_clarification 或 ready_for_confirmation；planningMode 只能是 explore_options 或 follow_defined_plot；storyMode 只能是 faithful 或 new_story；classroomPresence 只能是 observer、participant 或 absent；requiredNamedCharacters 必须是字符串数组。",
-          "questions 每项字段为 id, label, reason?, required, answerMode, options?, allowCustom, recommendedOptionId?, recommendationReason?。answerMode 只能是 single_choice, multi_choice, text。选择题的 options 必须是 2-3 个 {id,label} 对象，id 是稳定内部值，label 是面向老师的中文文案；recommendedOptionId 必须等于某个 options.id，recommendationReason 必须说明推荐原因。",
-          "ready_for_confirmation 时 unresolvedIssues 和 questions 必须为空且 summary 非空；needs_clarification 时至少返回一个问题。不要使用模型、Prompt、JSON、调用等技术词。",
+          "narrative 和 concept 的 requiredNamedCharacters 只逐个保存老师明确点名且要求出场的外部角色原名；不放入 Step 1 师生、团队、机构、作品名或推测角色。真实人物只进入 factual.subjects。",
+          "fixedPlot 是老师已经固定的核心因果的一段简洁归纳；没有固定主线时为 null，不要补写老师未决定的触发、转折或结局。new_story + follow_defined_plot 必须有 fixedPlot。",
+          "additionalConstraints 只保存没有被其他字段表达的老师要求；preferred 只放老师明确偏好，不放你的建议或系统适龄政策。所有数组必须存在。concept 在 ready 时必须至少有一个 learningTarget，每项包含 concept 和 expectedUnderstanding。",
+          "needs_clarification 只返回 {status, provisionalBriefKind?, resolvedRequirements, questions}。每题字段为 id,label,impact,answerMode,options?,allowCustom,recommendedOptionId?,recommendationReason?；选择题必须有 2-3 个选项和属于现有选项的推荐，纯文本只用于名称、版本、链接或精确来源。ID 必须稳定且唯一。",
+          "ready_for_confirmation 只返回 {status,planningMode,storyMode,classroomPresence,brief}。brief 必须是 narrative、concept、factual 三种联合结构之一。不要返回 summary、assistantMessage、工作流字段或数据库字段。",
+          "narrative brief={kind,objective,sourceRequirements:[{name,useInCourse}],requiredNamedCharacters,fixedPlot,additionalConstraints:{required,preferred,excluded}}。",
+          "concept brief={kind,objective,learningTargets:[{concept,expectedUnderstanding}],assumedPriorKnowledge,sourceRequirements,requiredNamedCharacters,fixedPlot,additionalConstraints}。",
+          "factual brief={kind,subjects:[{name,kind:'person'|'event'|'topic'}],factualFocus,sourceRequirements,additionalConstraints}。",
+          input.replyContext === "requirement_change" ? "这是创作需求修改：保留未受影响的已确认要求，只改变老师明确修改的部分。" : "这是首次需求对齐。",
+          ...(input.requiredQuestionIds?.length ? [`以下问题尚未回答，下一响应必须保留相同 ID，不能放行确认：${JSON.stringify(input.requiredQuestionIds)}`] : []),
           ...teacherFacingReplyRules,
-          ...contextPrompt(input),
+          ...alignmentContextPrompt(input),
           "<current_task>",
           input.task,
           "</current_task>",
@@ -777,9 +906,10 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
             writingProvider: "quickrouter_gpt",
             operation: "story_align_requirements_repair_format",
             prompt: [
-              "只修复 JSON 或结构格式，不重新理解、补充或改写老师的需求。",
-              "不得改变任何人物、故事来源、创作模式、问题、选项、推荐项或推荐理由的语义；只允许移除额外说明、补齐协议字段并输出严格 JSON。",
-              "expectedSchema: {status:'needs_clarification'|'ready_for_confirmation',planningMode:'explore_options'|'follow_defined_plot',storyMode:'faithful'|'new_story',classroomPresence:'observer'|'participant'|'absent',requiredNamedCharacters:string[],assistantMessage:string,resolvedUnderstanding:string[],unresolvedIssues:string[],questions:array,summary?:string}",
+              "修复需求对齐响应，使其满足协议；保留老师已表达的目标和所有真正阻塞项。",
+              "允许合并同义问题并把当前问题数收敛到最多 3 个；不得截断阻塞项、静默采用推荐、重命名重复 ID 或改变推荐语义。",
+              "needs_clarification schema: {status,provisionalBriefKind?,resolvedRequirements:string[],questions:1..3}。ready_for_confirmation schema: {status,planningMode,storyMode,classroomPresence,brief}。",
+              ...(input.requiredQuestionIds?.length ? [`必须保留的未回答问题 ID：${JSON.stringify(input.requiredQuestionIds)}`] : []),
               `parseError: ${error.message}`,
               "<raw_output>",
               text,
@@ -790,6 +920,36 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
         }
       }
       throw new StoryAlignmentResponseError("STORY_ALIGNMENT_INVALID_STRUCTURE", "AI 返回的需求对齐结构不完整，自动修复后仍未通过。");
+    },
+    generateMainlineCard: async (input: StoryPromptContext & { task: string; requirementBrief: StoryRequirementBrief }) => {
+      const { text } = await client().generateOutline({
+        writingProvider: "quickrouter_gpt",
+        operation: "story_generate_mainline_card",
+        prompt: [
+          "你负责把老师已确认的需求展开成一张可确认的故事主线理解卡，不生成章节大纲，不改变需求。",
+          "只补足写作所需的主线设计；brief 中的目标、来源使用、固定因果、事实边界、点名角色和约束都是最高优先级。",
+          "忠实讲述只能整理既定事件，课堂人物只旁观、记录、见证或彼此交流，不能新增会改变原作或史实因果的行动。",
+          "新故事根据课堂人物数量形成单人、双人或团队结构。老师明确要求每名学生有高光时，角色作用必须分别推进同一个共同目标，不能拆成互不相关的小任务。",
+          "classroomRoles 只使用提供的 personId，不得重复；除非课堂人物明确不进入，否则必须逐个包含所有课堂人物。课堂人物不进入时返回空数组。mayExpand 只能列出后续可以创作补充、且不会改变已确认需求的部分。",
+          "只返回 JSON：{protagonistStructure,classroomRoles:[{personId,roleInStory}],incitingEvent,goal,mainObstacle,progression,endingDirection,mustKeep:string[],mayExpand:string[]}。",
+          ...alignmentContextPrompt(input),
+          `<requirement_brief>${JSON.stringify(input.requirementBrief)}</requirement_brief>`,
+          `<references>${JSON.stringify(input.references)}</references>`,
+          "<current_task>",
+          input.task,
+          "</current_task>",
+        ].join("\n"),
+      });
+      const card = parseMainlineCard(text);
+      const allowedPersonIds = new Set(input.coursePeople.map((person) => person.personId));
+      const returnedPersonIds = card.classroomRoles.map((role) => role.personId);
+      if (new Set(returnedPersonIds).size !== returnedPersonIds.length || returnedPersonIds.some((id) => !allowedPersonIds.has(id))) {
+        throw new StoryOutlineResponseError("AI 返回的主线理解卡包含无效或重复的课堂人物");
+      }
+      if (input.classroomPresence === "absent" ? returnedPersonIds.length > 0 : input.coursePeople.some((person) => !returnedPersonIds.includes(person.personId))) {
+        throw new StoryOutlineResponseError("AI 返回的主线理解卡遗漏或错误加入了课堂人物");
+      }
+      return card;
     },
     prepareBackgroundKnowledge: async (input: StoryPromptContext & { task: string; confirmedRequirement: string }): Promise<BackgroundKnowledgeResult> => {
       const { text } = await client().generateOutline({

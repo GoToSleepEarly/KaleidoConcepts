@@ -24,6 +24,17 @@ const generateOutlineMock = vi.fn<({ prompt }: { prompt: string }) => Promise<{ 
 }));
 const searchReferenceMock = vi.fn<({ prompt }: { prompt: string }) => Promise<{ text: string }>>();
 
+function narrativeBrief(objective: string, fixedPlot: string | null = null) {
+  return {
+    kind: "narrative",
+    objective,
+    sourceRequirements: [],
+    requiredNamedCharacters: [],
+    fixedPlot,
+    additionalConstraints: { required: [], preferred: [], excluded: [] },
+  };
+}
+
 vi.mock("./story-outline-provider", () => ({
   createStoryOutlineProvider: () => ({
     generateOutline: generateOutlineMock,
@@ -99,12 +110,14 @@ describe("createStoryOutlineGenerationDeps", () => {
         planningMode: "explore_options",
         storyMode: "new_story",
         classroomPresence: "participant",
-        requiredNamedCharacters: ["暮光闪闪", "云宝黛西"],
-        assistantMessage: "我已经理解你的大体需求，请确认。",
-        resolvedUnderstanding: ["使用《小马宝莉：友谊就是魔法》的原作人物创作新故事"],
-        unresolvedIssues: [],
-        questions: [],
-        summary: "使用暮光闪闪和云宝黛西创作新故事，具体主线将从 3 个候选方向中选择。",
+        brief: {
+          kind: "narrative",
+          objective: "使用《小马宝莉：友谊就是魔法》的原作人物创作新故事",
+          sourceRequirements: [{ name: "《小马宝莉：友谊就是魔法》", useInCourse: "使用原作世界和核心角色创作新剧情" }],
+          requiredNamedCharacters: ["暮光闪闪", "云宝黛西"],
+          fixedPlot: null,
+          additionalConstraints: { required: [], preferred: [], excluded: [] },
+        },
       }),
     });
 
@@ -124,23 +137,174 @@ describe("createStoryOutlineGenerationDeps", () => {
       storyMode: "new_story",
       classroomPresence: "participant",
       requiredNamedCharacters: ["暮光闪闪", "云宝黛西"],
+      brief: { kind: "narrative" },
     });
     const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(prompt).toContain("资深儿童故事策划编辑");
-    expect(prompt).toContain("不是帮助老师补完整个故事");
-    expect(prompt).toContain("后续系统会生成 3 个候选故事方向");
-    expect(prompt).toContain("不查找或整理背景资料");
+    expect(prompt).toContain("课程故事需求对齐引擎");
+    expect(prompt).toContain("不创作方向、大纲或背景资料");
     expect(prompt).toContain("Step 1 中的老师和所有学生默认全部参与故事");
     expect(prompt).toContain("课堂人物的具体进入方式由故事剧情决定");
-    expect(prompt).toContain("通常不提问");
-    expect(prompt).toContain("每个问题都必须给出 2-3 个可直接选择的选项");
+    expect(prompt).toContain("默认 0 题");
+    expect(prompt).toContain("同一轮最多返回 3 个");
     expect(prompt).toContain("recommendedOptionId");
     expect(prompt).not.toContain("researchPlan");
     expect(prompt).toContain("暮光闪闪和云宝黛西");
     expect(prompt).toContain("requiredNamedCharacters");
-    expect(prompt).toContain("逐个保留老师明确点名且要求出场的角色原名");
-    expect(prompt).toContain("不得归纳成“核心角色”“主要角色”");
+    expect(prompt).toContain("只逐个保存老师明确点名且要求出场的外部角色原名");
     expect(prompt).toContain('"personId":"student-1"');
+  });
+
+  test("returns a concept brief with a capacity-aware learning target and excludes the full knowledge-point list", async () => {
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        status: "ready_for_confirmation",
+        planningMode: "explore_options",
+        storyMode: "new_story",
+        classroomPresence: "participant",
+        brief: {
+          kind: "concept",
+          objective: "通过故事理解 MBTI 的基础偏好",
+          learningTargets: [{ concept: "四组偏好维度", expectedUnderstanding: "能用简单例子解释每组偏好的差异" }],
+          assumedPriorKnowledge: [],
+          sourceRequirements: [{ name: "MBTI", useInCourse: "作为角色观察和选择的概念框架" }],
+          requiredNamedCharacters: [],
+          fixedPlot: null,
+          additionalConstraints: { required: [], preferred: [], excluded: ["记忆 16 种类型"] },
+        },
+      }),
+    });
+
+    const result = await createStoryOutlineGenerationDeps().alignRequirements({
+      task: "用故事讲 MBTI，让学生学会基础理论。",
+      chapterCount: 3,
+      englishLevel: "A2",
+      durationMinutes: 45,
+      selectedKnowledgePoints: [{ id: "secret-kp", label: "不应进入对齐 Prompt", category: "语法" }],
+      coursePeople: [{ personId: "student-1", role: "student", chineseName: "夏天", englishName: "Summer", age: 10, gender: "female" }],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+    });
+
+    expect(result.brief).toMatchObject({ kind: "concept", learningTargets: [{ concept: "四组偏好维度" }] });
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain("英语难度：A2");
+    expect(prompt).toContain("课程时长：45 分钟");
+    expect(prompt).not.toContain("不应进入对齐 Prompt");
+  });
+
+  test("accepts a V2 clarification response without prematurely assigning story modes", async () => {
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        status: "needs_clarification",
+        provisionalBriefKind: "concept",
+        resolvedRequirements: ["用故事讲 MBTI", "学生需要学习理论"],
+        questions: [{
+          id: "concept_depth",
+          label: "这节课希望学生学到什么程度？",
+          impact: "学习深度会决定故事需要承载的概念数量和例子。",
+          answerMode: "single_choice",
+          options: [
+            { id: "dimensions", label: "理解四组偏好并会举例" },
+            { id: "types", label: "进一步认识常见类型组合" },
+          ],
+          allowCustom: true,
+          recommendedOptionId: "dimensions",
+          recommendationReason: "在当前课堂容量内能讲清理论又不会挤压故事。",
+        }],
+      }),
+    });
+
+    const result = await createStoryOutlineGenerationDeps().alignRequirements({
+      task: "用故事讲 MBTI，学生学习理论。",
+      chapterCount: 3,
+      coursePeople: [],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+    });
+
+    expect(result).toMatchObject({ status: "needs_clarification", provisionalBriefKind: "concept", resolvedUnderstanding: ["用故事讲 MBTI", "学生需要学习理论"] });
+    expect(result.questions).toHaveLength(1);
+  });
+
+  test("repairs more than three current blockers once instead of truncating them", async () => {
+    const question = (id: string) => ({
+      id,
+      label: `问题 ${id}`,
+      impact: "会改变课程核心目标。",
+      answerMode: "single_choice",
+      options: [{ id: "a", label: "方案 A" }, { id: "b", label: "方案 B" }],
+      allowCustom: true,
+      recommendedOptionId: "a",
+      recommendationReason: "更符合当前课程容量。",
+    });
+    generateOutlineMock
+      .mockResolvedValueOnce({ text: JSON.stringify({ status: "needs_clarification", provisionalBriefKind: "narrative", resolvedRequirements: [], questions: [question("q1"), question("q2"), question("q3"), question("q4")] }) })
+      .mockResolvedValueOnce({ text: JSON.stringify({ status: "needs_clarification", provisionalBriefKind: "narrative", resolvedRequirements: [], questions: [question("q1"), question("q2"), question("q3")] }) });
+    const onFormatRepair = vi.fn(async () => undefined);
+
+    const result = await createStoryOutlineGenerationDeps().alignRequirements({
+      task: "一个包含多项冲突要求的故事",
+      chapterCount: 4,
+      coursePeople: [],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+      onFormatRepair,
+    });
+
+    expect(onFormatRepair).toHaveBeenCalledTimes(1);
+    expect(result.questions.map((item) => item.id)).toEqual(["q1", "q2", "q3"]);
+    expect(generateOutlineMock.mock.calls.at(-1)?.[0].prompt).toContain("不得截断阻塞项");
+  });
+
+  test("expands a confirmed fixed plot into a mainline card without sending teaching knowledge points", async () => {
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        protagonistStructure: "老师带领学生英雄团队",
+        classroomRoles: [{ personId: "student-1", roleInStory: "发现怪兽弱点" }],
+        incitingEvent: "怪兽袭击城市",
+        goal: "全队合作保护城市",
+        mainObstacle: "技能互相干扰",
+        progression: "通过三次协作逐步形成配合",
+        endingDirection: "每名学生发挥专长后共同获胜",
+        mustKeep: ["每名学生都有高光"],
+        mayExpand: ["技能表现形式"],
+      }),
+    });
+    const brief = {
+      kind: "narrative" as const,
+      objective: "超级英雄团队故事",
+      sourceRequirements: [],
+      requiredNamedCharacters: [],
+      fixedPlot: "老师带领学生合作击败怪兽",
+      additionalConstraints: { required: ["每名学生都有高光"], preferred: [], excluded: [] },
+    };
+
+    const result = await createStoryOutlineGenerationDeps().generateMainlineCard({
+      task: "整理主线理解卡",
+      requirementBrief: brief,
+      chapterCount: 4,
+      selectedKnowledgePoints: [{ id: "kp", label: "不应进入主线卡", category: "语法" }],
+      coursePeople: [{ personId: "student-1", role: "student", chineseName: "夏天", englishName: "Summer", age: 10, gender: "female" }],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+    });
+
+    expect(result).toMatchObject({ goal: "全队合作保护城市", classroomRoles: [{ personId: "student-1" }] });
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain("不生成章节大纲");
+    expect(prompt).not.toContain("不应进入主线卡");
   });
 
   test("treats age-appropriate intimacy boundaries as presentation changes instead of a new plot", async () => {
@@ -150,12 +314,7 @@ describe("createStoryOutlineGenerationDeps", () => {
         planningMode: "follow_defined_plot",
         storyMode: "faithful",
         classroomPresence: "observer",
-        requiredNamedCharacters: [],
-        assistantMessage: "请确认适龄讲述范围。",
-        resolvedUnderstanding: ["忠实讲述原作主线并避开成人亲密内容"],
-        unresolvedIssues: [],
-        questions: [],
-        summary: "保留原作情感发展，以适合课堂的方式表达。",
+        brief: narrativeBrief("以适龄方式忠实讲述原作的假期、情感发展与离别", "保留原作假期中的相识、情感发展与离别"),
       }),
     });
 
@@ -313,8 +472,8 @@ describe("createStoryOutlineGenerationDeps", () => {
     })).rejects.toThrow("故事大纲角色 key 缺失或重复");
   });
 
-  test("normalizes value-based AI options and links the recommendation to a visible label", async () => {
-    generateOutlineMock.mockResolvedValueOnce({
+  test("rejects legacy value-based question fields instead of silently changing the V2 protocol", async () => {
+    const legacyResponse = {
       text: JSON.stringify({
         status: "needs_clarification",
         planningMode: "explore_options",
@@ -337,9 +496,10 @@ describe("createStoryOutlineGenerationDeps", () => {
           recommendation: { value: "new_story", reason: "老师已经提出新的课堂冒险。" },
         }],
       }),
-    });
+    };
+    generateOutlineMock.mockResolvedValueOnce(legacyResponse).mockResolvedValueOnce(legacyResponse);
 
-    const result = await createStoryOutlineGenerationDeps().alignRequirements({
+    await expect(createStoryOutlineGenerationDeps().alignRequirements({
       task: "根据原作创作课堂故事。",
       chapterCount: 4,
       coursePeople: [],
@@ -348,17 +508,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       selectedDirection: null,
       currentDirections: [],
       currentOutline: null,
-    });
-
-    expect(result.questions[0]).toMatchObject({
-      options: [
-        { id: "new_story", label: "使用原作人物创作新剧情" },
-        { id: "follow_original", label: "忠实讲述原剧情" },
-        { id: "theme_only", label: "只借用主题重新创作" },
-      ],
-      recommendedOptionId: "new_story",
-      recommendationReason: "老师已经提出新的课堂冒险。",
-    });
+    })).rejects.toMatchObject({ code: "STORY_ALIGNMENT_INVALID_STRUCTURE" });
   });
 
   test("keeps story fidelity separate from whether classroom people enter the story", async () => {
@@ -368,11 +518,7 @@ describe("createStoryOutlineGenerationDeps", () => {
         planningMode: "follow_defined_plot",
         storyMode: "faithful",
         classroomPresence: "observer",
-        assistantMessage: "请确认忠实讲述方式。",
-        resolvedUnderstanding: ["忠实讲述原作，课堂人物进入场景旁观"],
-        unresolvedIssues: [],
-        questions: [],
-        summary: "忠实讲述原作关键事件与结局，老师和学生进入场景旁观，但不影响原作因果。",
+        brief: narrativeBrief("忠实讲述《灰姑娘》，课堂人物只旁观", "保留原作关键事件、因果与结局"),
       }),
     });
 
@@ -406,11 +552,7 @@ describe("createStoryOutlineGenerationDeps", () => {
           planningMode: "explore_options",
           storyMode: "new_story",
           classroomPresence: "participant",
-          assistantMessage: "请确认。",
-          resolvedUnderstanding: ["创作海底冒险"],
-          unresolvedIssues: [],
-          questions: [],
-          summary: "创作一个由师生共同参与的海底冒险故事",
+          brief: narrativeBrief("创作一个由师生共同参与的海底冒险故事"),
         }),
       });
 
@@ -429,7 +571,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(onFormatRepair).toHaveBeenCalledTimes(1);
     expect(generateOutlineMock).toHaveBeenCalledTimes(2);
     expect(generateOutlineMock.mock.calls[1]?.[0]).toMatchObject({ operation: "story_align_requirements_repair_format" });
-    expect(generateOutlineMock.mock.calls[1]?.[0].prompt).toContain("只修复 JSON 或结构格式，不重新理解、补充或改写老师的需求");
+    expect(generateOutlineMock.mock.calls[1]?.[0].prompt).toContain("保留老师已表达的目标和所有真正阻塞项");
     expect(result.status).toBe("ready_for_confirmation");
   });
 
@@ -452,18 +594,14 @@ describe("createStoryOutlineGenerationDeps", () => {
     });
   });
 
-  test("presents every ready creative brief as an understanding awaiting teacher confirmation", async () => {
+  test("returns only the structured creative brief for deterministic downstream confirmation", async () => {
     generateOutlineMock.mockResolvedValueOnce({
       text: JSON.stringify({
         status: "ready_for_confirmation",
         planningMode: "explore_options",
         storyMode: "new_story",
         classroomPresence: "participant",
-        assistantMessage: "已整理完成。",
-        resolvedUnderstanding: ["使用指定作品创作新故事"],
-        unresolvedIssues: [],
-        questions: [],
-        summary: "已确认基于指定作品创作新的奇幻探险；老师和所有学生都会参与。当前不继续追问细节，下一步先提供3个候选故事方向供您选择。",
+        brief: narrativeBrief("基于指定作品创作新的奇幻探险；老师和所有学生都会参与"),
       }),
     });
 
@@ -478,43 +616,12 @@ describe("createStoryOutlineGenerationDeps", () => {
       currentOutline: null,
     });
 
-    expect(result.summary).toBe("我理解你的创作需求是：基于指定作品创作新的奇幻探险；老师和所有学生都会参与。确认后，我会准备 3 个不同的故事方向；如需背景资料，会先整理必要内容。");
+    expect(result).toMatchObject({ brief: { kind: "narrative", objective: "基于指定作品创作新的奇幻探险；老师和所有学生都会参与" } });
+    expect(result.summary).toBeUndefined();
     const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(prompt).toContain("不使用“建议”“已确认”“已确定”等措辞");
-    expect(prompt).toContain("明确说明该来源在故事中如何使用");
-    expect(prompt).toContain("不得向老师播报“不继续追问”");
-    expect(prompt).toContain("如需背景资料，会先整理必要内容");
+    expect(prompt).toContain("不要返回 summary");
+    expect(prompt).toContain("sourceRequirements");
     expect(prompt).toContain("follow_defined_plot");
-  });
-
-  test("does not append the normalized next step when the model already returned it", async () => {
-    const nextStep = "确认后，我会准备 3 个不同的故事方向；如需背景资料，会先整理必要内容。";
-    generateOutlineMock.mockResolvedValueOnce({
-      text: JSON.stringify({
-        status: "ready_for_confirmation",
-        planningMode: "explore_options",
-        storyMode: "new_story",
-        classroomPresence: "participant",
-        assistantMessage: "请确认创作理解。",
-        resolvedUnderstanding: ["使用《冰雪奇缘》创作新剧情"],
-        unresolvedIssues: [],
-        questions: [],
-        summary: `建议按这个方向创作：使用《冰雪奇缘》的原作世界和核心角色创作全新奇幻探险。${nextStep}`,
-      }),
-    });
-
-    const result = await createStoryOutlineGenerationDeps().alignRequirements({
-      task: "根据《冰雪奇缘》，创造一个奇幻探险故事。",
-      chapterCount: 4,
-      coursePeople: [],
-      conversationHistory: [],
-      references: [],
-      selectedDirection: null,
-      currentDirections: [],
-      currentOutline: null,
-    });
-
-    expect(result.summary?.split(nextStep)).toHaveLength(2);
   });
 
   test("prepares background once from built-in knowledge before requesting external material", async () => {
@@ -577,18 +684,14 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("反派、能力用法、地点、结局或师生参与方式");
   });
 
-  test("labels a rerouted edit as a requirement change and explains background reuse", async () => {
+  test("keeps a rerouted edit structured and tells the model to preserve unaffected requirements", async () => {
     generateOutlineMock.mockResolvedValueOnce({
       text: JSON.stringify({
         status: "ready_for_confirmation",
         planningMode: "explore_options",
         storyMode: "new_story",
         classroomPresence: "participant",
-        assistantMessage: "请确认修改后的创作理解。",
-        resolvedUnderstanding: ["改为合作战斗故事"],
-        unresolvedIssues: [],
-        questions: [],
-        summary: "老师和学生与当前主角合作，用魔法打败怪兽",
+        brief: narrativeBrief("老师和学生与当前主角合作，用魔法打败怪兽"),
       }),
     });
 
@@ -605,8 +708,9 @@ describe("createStoryOutlineGenerationDeps", () => {
       currentOutline: null,
     });
 
-    expect(result.summary).toBe("我理解你想将创作需求调整为：老师和学生与当前主角合作，用魔法打败怪兽。确认后，我会按新的创作需求继续，并沿用现有背景资料。");
-    expect(result.summary).not.toContain("建议");
+    expect(result).toMatchObject({ brief: { objective: "老师和学生与当前主角合作，用魔法打败怪兽" } });
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain("这是创作需求修改：保留未受影响的已确认要求");
   });
 
   test("returns the background refresh decision with a changed requirement", async () => {
