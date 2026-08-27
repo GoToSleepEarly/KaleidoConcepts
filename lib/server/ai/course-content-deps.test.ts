@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { TeachingPlanState } from "@/lib/contracts/api";
-import { storyLengthPolicy } from "@/lib/domain/story-length-policy";
+import { englishWordRangesForTarget, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import {
   buildExercisePromptContext,
   buildModificationPromptContext,
@@ -19,7 +19,6 @@ import {
   courseContentPromptExamples,
   readingGrammarCoherenceRules,
   readingStoryQualityRules,
-  readingWordCountPolicy,
   storyComplexityWritingProfile,
 } from "@/lib/server/ai/course-content-deps";
 
@@ -109,13 +108,13 @@ describe("course content prompt contexts", () => {
   });
 
   test("gives generation and repair a safe word-count range instead of an ambiguous exact target", () => {
-    expect(readingWordCountPolicy(100)).toEqual({ acceptedRange: [88, 130], aimRange: [92, 100] });
+    expect(englishWordRangesForTarget(100)).toEqual({ generationRange: [90, 120], aimRange: [92, 100] });
     const requirements = buildReadingRepairRequirements(input, [{
       id: "chapter-ch1", outlineChapterId: "ch1", order: 1, title: "Milo出发", targetWordCount: 90, readingExerciseMode: "interactive",
       paragraphs: [{ id: "paragraph-ch1-1", parts: [{ type: "text", text: `${Array(70).fill("story").join(" ")} ` }, { type: "grammar", id: "g1", exerciseType: "wordForm", knowledgePointId: "kp1", answer: "ended", baseForm: "end" }] }],
       chapterPractice: [], validationIssues: [],
     }]);
-    expect(requirements).toEqual([{ outlineChapterId: "ch1", currentWordCount: 71, targetWordCount: 90, acceptedRange: [79, 120], aimRange: [83, 90], minimumNetWordsToAdd: 8, recommendedNetWordsToAddRange: [12, 19] }]);
+    expect(requirements).toEqual([{ outlineChapterId: "ch1", currentWordCount: 71, targetWordCount: 90, acceptedRange: [80, 100], aimRange: [83, 90], minimumNetWordsToAdd: 9, recommendedNetWordsToAddRange: [12, 19] }]);
   });
 
   test("builds a minimal joint reading and Main Idea context with English names only", () => {
@@ -131,7 +130,7 @@ describe("course content prompt contexts", () => {
       people: [{ role: "teacher", englishName: "Linda" }, { role: "student", englishName: "Milo" }],
       storyCharacters: [{ displayName: "Map Guardian", storyRole: "阻止Milo找到地图；守护错误路线的角色" }],
       chapters: [{
-        id: "ch1", order: 1, title: "Milo出发", summary: "Linda帮助Milo。", targetWordCount: 90, acceptedWordCountRange: [79, 120], generationAimRange: [83, 90], paragraphCount: 2,
+        id: "ch1", order: 1, title: "Milo出发", summary: "Linda帮助Milo。", targetWordCount: 90, acceptedWordCountRange: [80, 100], generationAimRange: [83, 90], paragraphCount: 2,
         grammarPoints: [{ key: "KP1", label: "一般过去时" }],
         knowledgePointUsagePlan: "一般过去时：用于描述Milo已经完成的开门动作。",
         exerciseCounts: { optionCloze: 2, wordForm: 1, vocabulary: 2 },
@@ -154,7 +153,27 @@ describe("course content prompt contexts", () => {
 
     expect(input.lengthPolicy.english.chapterTargetWords).toBe(120);
     expect(context.storyComplexity).toBe("clear_linear");
-    expect(context.chapters[0]).toMatchObject({ targetWordCount: 90, acceptedWordCountRange: [79, 120] });
+    expect(context.chapters[0]).toMatchObject({ targetWordCount: 90, acceptedWordCountRange: [80, 100] });
+  });
+
+  test("uses identical Step 2 and Step 4 ranges for low, middle, high, and custom targets", () => {
+    for (const [level, complexity, target] of [
+      ["Starter", "clear_linear", 80],
+      ["B1", "conflict_driven", 170],
+      ["C2", "layered", 260],
+      ["A2", "clear_linear", 90],
+    ] as const) {
+      const changed = structuredClone(input);
+      changed.course.englishLevel = level;
+      changed.course.storyComplexity = complexity;
+      changed.lengthPolicy = storyLengthPolicy(level, complexity);
+      changed.plan.chapters[0].targetWordCount = target;
+      const step4Range = buildReadingPromptContext(changed).chapters[0].acceptedWordCountRange;
+      const sharedRange = englishWordRangesForTarget(target).generationRange;
+
+      expect(step4Range).toEqual(sharedRange);
+      if (target !== 90) expect(changed.lengthPolicy.english.generationRange).toEqual(step4Range);
+    }
   });
 
   test("builds deterministic typed slot requirements while leaving knowledge-point assignment to AI", () => {

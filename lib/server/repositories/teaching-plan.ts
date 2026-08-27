@@ -333,7 +333,6 @@ export async function getTeachingPlanState(db: TeachingPlanDb, courseId: string)
     lengthPolicy: storyLengthPolicy(
       course.englishLevel as EnglishLevel,
       course.storySetting?.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel),
-      { chapterCount: outline.chapters?.length ?? 0 },
     ),
   };
 }

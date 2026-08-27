@@ -9,7 +9,7 @@ import type {
   StoryWritingProvider,
   EnglishLevel,
 } from "@/lib/contracts/api";
-import { defaultStoryComplexity, storyLengthPolicy, type StoryLengthPolicy } from "@/lib/domain/story-length-policy";
+import { chineseTextLength, defaultStoryComplexity, storyLengthPolicy, type StoryLengthPolicy } from "@/lib/domain/story-length-policy";
 
 import { devAiLog } from "./dev-ai-log";
 import { createStoryOutlineProvider } from "./story-outline-provider";
@@ -110,10 +110,17 @@ type StoryPromptContext = {
   onFormatRepair?: () => Promise<void>;
 };
 
-function resolvedStoryPolicy(input: StoryPromptContext) {
+function resolvedStoryPolicy(input: Pick<StoryPromptContext, "englishLevel" | "storyComplexity" | "lengthPolicy">) {
   if (input.lengthPolicy) return input.lengthPolicy;
   const level = (input.englishLevel ?? "A2") as EnglishLevel;
-  return storyLengthPolicy(level, input.storyComplexity ?? defaultStoryComplexity(level), { chapterCount: input.chapterCount });
+  return storyLengthPolicy(level, input.storyComplexity ?? defaultStoryComplexity(level));
+}
+
+function enforceChineseGenerationMax(value: string, generationMax: number, label: string) {
+  const actualLength = chineseTextLength(value);
+  if (actualLength > generationMax) {
+    throw new StoryOutlineResponseError(`${label}超过 ${generationMax} 字生成上限（实际 ${actualLength} 字），请重试本步`);
+  }
 }
 
 type StoryReferenceOption = {
@@ -1043,6 +1050,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       return { scope: "within_target" as const, needsBackgroundRefresh: false as const };
     },
     generateDirections: async (input: StoryPromptContext & { task: string }) => {
+      const policy = resolvedStoryPolicy(input);
       const { text } = await client().generateOutline({
         writingProvider: "quickrouter_gpt",
         operation: "story_generate_directions",
@@ -1078,10 +1086,12 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       }
       return parsed.map((value) => {
         const direction = normalizeDirection(value, input.coursePeople, "故事方向返回的内容结构不完整，请重试本步");
+        enforceChineseGenerationMax(direction.hook, policy.chinese.directionOverview.hardMax, "方向概要");
         return { ...direction, classroomValue: "", seedPrompt: direction.hook };
       });
     },
     reviseDirection: async (input: StoryPromptContext & { task: string; direction: unknown }) => {
+      const policy = resolvedStoryPolicy(input);
       const { text } = await client().generateOutline({
         writingProvider: "quickrouter_gpt",
         operation: "story_revise_direction",
@@ -1112,6 +1122,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
         input.coursePeople,
         "故事方向修改返回的内容结构不完整，请重试本步",
       );
+      enforceChineseGenerationMax(parsed.hook, policy.chinese.directionOverview.hardMax, "方向概要");
       return {
         ...parsed,
         classroomValue: stringValue((input.direction as { classroomValue?: unknown }).classroomValue),
@@ -1119,6 +1130,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       };
     },
     reviseChapter: async (input: StoryPromptContext & { task: string; chapterOrder: number }) => {
+      const policy = resolvedStoryPolicy(input);
       const { text } = await client().generateOutline({
         writingProvider: "quickrouter_gpt",
         operation: "story_revise_chapter",
@@ -1153,12 +1165,14 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       const title = bilingualChapterTitle(chapter.title);
       const whatHappens = proseValue(chapter.whatHappens);
       if (!title || !whatHappens) throw new StoryOutlineResponseError("章节修改返回的内容结构不完整，请重试本步");
+      const normalizedWhatHappens = canonicalizeClassroomNames(whatHappens, input.coursePeople);
+      enforceChineseGenerationMax(normalizedWhatHappens, policy.chinese.chapterOverview.hardMax, "单章概述");
       return {
         status: "ready" as const,
         chapter: {
           order: Number(chapter.order) || input.chapterOrder,
           title,
-          whatHappens: canonicalizeClassroomNames(whatHappens, input.coursePeople),
+          whatHappens: normalizedWhatHappens,
           characterIds: stringArray(chapter.characterIds),
           recommendedKnowledgePointIds,
           knowledgePointRecommendationSummary: normalizeKnowledgePointSummary(chapter.knowledgePointRecommendationSummary, options),
@@ -1227,6 +1241,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       requirementBrief?: StoryRequirementBrief;
       selectedKnowledgePoints?: StoryPromptContext["selectedKnowledgePoints"];
     }) => {
+      const policy = resolvedStoryPolicy(input);
       const referenceOptions = storyReferenceOptions(input.references);
       const referenceByKey = new Map(referenceOptions.map((reference) => [reference.key, reference]));
       const knowledgePointCoverageTarget = Math.min(knowledgePointOptions(input).length, input.chapterCount * 2);
@@ -1244,7 +1259,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           ...contentPriorityRules(input),
           "summary 使用 3–4 个自然短句，按故事自身顺序讲清起点、关键发展、决定性行动和最终结果；故事没有某类环节时不要强行补齐。每句都有清楚的行动者、具体动作或局面变化，不得用“情况发生变化”“重新判断”“经历挑战”“大家共同努力”等抽象概括替代关键事件。老师只读 summary 就应能快速复述主线。",
           "每章 whatHappens 写成 2–4 个自然短句，语义完整优先于凑固定句数。讲清从上一章承接的具体局面、本章必要行动、这些行动造成的直接结果，以及结果怎样影响后续；每句话只表达一个主要事件，不显示结构标签，也不把命令、发现、选择、移动和结果塞进同一句。大纲只规定核心事件，不写正式对话或环境描写。",
-          `中文篇幅不设强制下限，不得填充。summary 推荐不超过 ${input.lengthPolicy?.chinese.outlineSummary.recommendedMax ?? 110} 字、硬上限 ${input.lengthPolicy?.chinese.outlineSummary.hardMax ?? 160} 字；每章 whatHappens 推荐不超过 ${input.lengthPolicy?.chinese.chapterOverview.recommendedMax ?? 65} 字、硬上限 ${input.lengthPolicy?.chinese.chapterOverview.hardMax ?? 100} 字。超出推荐值时先删除重复修饰，不能程序截断。`,
+          `中文篇幅不设强制下限，不得填充。summary 推荐不超过 ${policy.chinese.outlineSummary.recommendedMax} 字、生成上限 ${policy.chinese.outlineSummary.hardMax} 字；每章 whatHappens 推荐不超过 ${policy.chinese.chapterOverview.recommendedMax} 字、生成上限 ${policy.chinese.chapterOverview.hardMax} 字。超出推荐值时先删除重复修饰，不能程序截断；超过生成上限会整步失败，不得截断保存。`,
           "任何新地点、物品、规则、路线关系或信息首次出现时立刻说明它与当前任务的关系，不能先使用后解释；避免“连接处”“上方区域”“另一边”“旧痕迹”等只有作者知道所指的表达。相邻章节不得重复同一种“发现信息—重新选择路线—继续前进”或其他相同动作模板；每章承担不同功能并造成不同类型的局面变化。",
           "先在不考虑知识点的情况下完成故事概括和全部章节剧情，再从全课视角根据已经形成的自然语境匹配知识点。不得为使用某个知识点新增道具、规则、人物行为或支线；summary 和 whatHappens 不得出现语法、知识点或教学安排说明。",
           "只返回 JSON 对象，字段为 title, summary, characters, chapters。故事 title 和章节 title 返回中英文双语对象 {zh,en}；英文标题应简洁、自然并忠实对应中文标题。面向老师展示的说明使用中文，但课堂人物名称按下述规则使用人物快照英文名。",
@@ -1299,6 +1314,8 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       if (!title || !summary || !parsed.chapters.length) {
         throw new StoryOutlineResponseError("故事大纲返回的内容结构不完整，请重试本步");
       }
+      const normalizedSummary = canonicalizeClassroomNames(summary, input.coursePeople);
+      enforceChineseGenerationMax(normalizedSummary, policy.chinese.outlineSummary.hardMax, "整体概要");
       const options = knowledgePointOptions(input);
       const resolveKnowledgePointIds = (values: string[] = []) => [...new Set(values.flatMap((value) => {
         const normalized = value.trim().toLowerCase();
@@ -1382,16 +1399,18 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
         const recommendedKeys = stringArray(chapter.recommendedKnowledgePointKeys).length
           ? stringArray(chapter.recommendedKnowledgePointKeys)
           : stringArray(chapter.recommendedKnowledgePointIds);
+        const normalizedWhatHappens = canonicalizeClassroomNames(whatHappens, input.coursePeople);
+        enforceChineseGenerationMax(normalizedWhatHappens, policy.chinese.chapterOverview.hardMax, `第 ${order} 章概述`);
         return {
           order,
           title: chapterTitle,
-          storyGoal: canonicalizeClassroomNames(whatHappens, input.coursePeople),
+          storyGoal: normalizedWhatHappens,
           keyEvents: [characterActions, mainlineProgress, ...keyEvents]
             .filter(Boolean)
             .map((item) => canonicalizeClassroomNames(item, input.coursePeople)),
           setting: canonicalizeClassroomNames(proseValue(chapter.setting), input.coursePeople),
           endingHook: canonicalizeClassroomNames(proseValue(chapter.endingHook), input.coursePeople),
-          whatHappens: canonicalizeClassroomNames(whatHappens, input.coursePeople),
+          whatHappens: normalizedWhatHappens,
           characterActions: canonicalizeClassroomNames(characterActions, input.coursePeople),
           mainlineProgress: canonicalizeClassroomNames(mainlineProgress, input.coursePeople),
           characterKeys: chapterKeys,
@@ -1402,7 +1421,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       });
       return {
         title,
-        summary: canonicalizeClassroomNames(summary, input.coursePeople),
+        summary: normalizedSummary,
         storyHook: canonicalizeClassroomNames(proseValue(parsed.storyHook), input.coursePeople),
         characters,
         chapters,

@@ -50,7 +50,7 @@ describe("story complexity regression fixture", () => {
 
   test("keeps Chinese samples below hard caps without imposing a minimum", () => {
     for (const item of storyComplexityRegressionCases) {
-      const policy = storyLengthPolicy(item.englishLevel, item.storyComplexity, { chapterCount: item.chapterCount });
+      const policy = storyLengthPolicy(item.englishLevel, item.storyComplexity);
       expect(visibleLength(item.sample.hook), `${item.id} hook`).toBeLessThanOrEqual(policy.chinese.directionOverview.hardMax);
       expect(visibleLength(item.sample.summary), `${item.id} summary`).toBeLessThanOrEqual(policy.chinese.outlineSummary.hardMax);
       expect(visibleLength(item.sample.chapterWhatHappens), `${item.id} chapter`).toBeLessThanOrEqual(policy.chinese.chapterOverview.hardMax);
@@ -59,12 +59,11 @@ describe("story complexity regression fixture", () => {
 
   test("uses the same per-chapter English capacity for one and eight chapters", () => {
     for (const item of storyComplexityRegressionCases) {
-      const policy = storyLengthPolicy(item.englishLevel, item.storyComplexity, { chapterCount: item.chapterCount });
+      const policy = storyLengthPolicy(item.englishLevel, item.storyComplexity);
       expect(item.sample.estimatedEnglishWordsPerChapter, item.id).toBeGreaterThanOrEqual(policy.english.generationRange[0] - 20);
       expect(item.sample.estimatedEnglishWordsPerChapter, item.id).toBeLessThanOrEqual(policy.english.generationRange[1]);
     }
-    expect(storyLengthPolicy("B1", "conflict_driven", { chapterCount: 1 }).english)
-      .toEqual(storyLengthPolicy("B1", "conflict_driven", { chapterCount: 8 }).english);
+    expect(storyLengthPolicy("B1", "conflict_driven").english.chapterTargetWords).toBe(170);
   });
 
   test("records a separate task-local semantic review for every auditable sample", () => {

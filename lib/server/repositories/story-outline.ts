@@ -897,7 +897,6 @@ async function storyAiContext(
     lengthPolicy: storyLengthPolicy(
       course.englishLevel as EnglishLevel,
       storySetting?.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel),
-      { chapterCount },
     ),
     selectedKnowledgePoints,
     confirmedRequirement: resolvedV2 ? JSON.stringify(resolvedV2.brief) : storySetting?.alignmentSummary ?? undefined,

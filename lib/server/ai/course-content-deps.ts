@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { CourseContentChapter, CourseContentPart, CourseGrammarQuestion, EnglishLevel, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
 import { buildCleanParagraphText } from "@/lib/domain/course-content";
-import { defaultStoryComplexity, storyLengthPolicy } from "@/lib/domain/story-length-policy";
+import { defaultStoryComplexity, englishWordRangesForTarget, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import { createStoryOutlineProvider } from "@/lib/server/ai/story-outline-provider";
 import type { AiProviderSettingsInput } from "@/lib/ai-gateway";
 import { devAiLog } from "@/lib/server/ai/dev-ai-log";
@@ -104,13 +104,6 @@ function resolvedLengthPolicy(input: CourseContentPromptInput) {
   return storyLengthPolicy(level, input.course.storyComplexity ?? defaultStoryComplexity(level));
 }
 
-export function readingWordCountPolicy(targetWordCount: number) {
-  const lowerTolerance = Math.max(10, Math.round(targetWordCount * 0.12));
-  const acceptedRange: [number, number] = [Math.max(1, targetWordCount - lowerTolerance), targetWordCount + 30];
-  const aimRange: [number, number] = [Math.max(acceptedRange[0], Math.round(targetWordCount * 0.92)), targetWordCount];
-  return { acceptedRange, aimRange };
-}
-
 function sameStringSet(left: string[], right: string[]) {
   return left.length === right.length && new Set(left).size === new Set(right).size && left.every((value) => right.includes(value));
 }
@@ -142,7 +135,7 @@ export function buildReadingPromptContext(input: CourseContentPromptInput) {
       const plan = input.plan.chapters.find((chapter) => chapter.outlineChapterId === outline.id)!;
       const targetWordCount = plan.targetWordCount ?? 90;
       const paragraphCount = plan.paragraphCount;
-      const wordCountPolicy = readingWordCountPolicy(targetWordCount);
+      const wordCountPolicy = englishWordRangesForTarget(targetWordCount);
       const recommendedKnowledgePointIds = outline.recommendedKnowledgePointIds ?? [];
       const recommendationSummary = outline.knowledgePointRecommendationSummary.trim();
       const knowledgePointUsagePlan = recommendationSummary && sameStringSet(plan.knowledgePointIds, recommendedKnowledgePointIds)
@@ -154,7 +147,7 @@ export function buildReadingPromptContext(input: CourseContentPromptInput) {
         title: replaceNames(outline.title),
         summary: replaceNames(outline.summary),
         targetWordCount,
-        acceptedWordCountRange: wordCountPolicy.acceptedRange,
+        acceptedWordCountRange: wordCountPolicy.generationRange,
         generationAimRange: wordCountPolicy.aimRange,
         paragraphCount,
         grammarPoints: selectedPoints(plan.knowledgePointIds, points),
@@ -286,7 +279,7 @@ export function buildPromptQuestions(input: CourseContentPromptInput, questions:
 export function buildReadingRepairRequirements(input: CourseContentPromptInput, failedChapters: CourseContentChapter[]) {
   return failedChapters.map((chapter) => {
     const targetWordCount = input.plan.chapters.find((item) => item.outlineChapterId === chapter.outlineChapterId)?.targetWordCount ?? chapter.targetWordCount;
-    const { acceptedRange, aimRange } = readingWordCountPolicy(targetWordCount);
+    const { generationRange: acceptedRange, aimRange } = englishWordRangesForTarget(targetWordCount);
     const currentWordCount = englishWordCount(chapter.paragraphs.map(buildCleanParagraphText).join(" "));
     const base = { outlineChapterId: chapter.outlineChapterId, currentWordCount, targetWordCount, acceptedRange, aimRange };
     if (currentWordCount < acceptedRange[0]) return {

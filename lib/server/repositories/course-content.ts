@@ -3,8 +3,9 @@ import { createHash } from "node:crypto";
 import type { CourseContentChapter, CourseContentPart, CourseContentPhase, CourseContentState, CourseContentStatus, CourseGrammarQuestion, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
 import { buildCleanParagraphText, collectVocabularyMatching, courseContentQuestionPageSize, paginateBalanced, stableShuffle, validateGrammarCoverage, validateParagraphParts } from "@/lib/domain/course-content";
 import { furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
+import { englishWordRangesForTarget } from "@/lib/domain/story-length-policy";
 import { readingPageCount } from "@/lib/domain/teaching-plan-policy";
-import { buildPromptParts, buildPromptQuestions, buildReadingTemplateRequirements, mainIdeaWordCountPolicy, readingWordCountPolicy, type CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
+import { buildPromptParts, buildPromptQuestions, buildReadingTemplateRequirements, mainIdeaWordCountPolicy, type CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
 import {
   STEP4_CONTENT_CONTRACT_VERSION,
   applyChapterTemplateRepairs,
@@ -173,7 +174,7 @@ function validateChapter(state: TeachingPlanState, chapter: CourseContentChapter
   if (wordFormCount !== plan.readingExercises.grammar.wordForm) issues.push(`给词变形数量应为 ${plan.readingExercises.grammar.wordForm}，实际 ${wordFormCount}`);
   if (vocabulary.length !== plan.readingExercises.vocabulary.chineseHint) issues.push(`词汇题数量应为 ${plan.readingExercises.vocabulary.chineseHint}，实际 ${vocabulary.length}`);
   const actualWords = wordCount(chapter.paragraphs.map(buildCleanParagraphText).join(" "));
-  const [minimumWords, maximumWords] = readingWordCountPolicy(chapter.targetWordCount).acceptedRange;
+  const [minimumWords, maximumWords] = englishWordRangesForTarget(chapter.targetWordCount).generationRange;
   if (actualWords < minimumWords || actualWords > maximumWords) issues.push(`正文词数目标 ${chapter.targetWordCount}，实际 ${actualWords}`);
   const expectedPages = readingPageCount(plan.targetWordCount ?? 90, plan.readingExercises, plan.paragraphCount);
   if (chapter.paragraphs.length !== expectedPages) issues.push(`正文应分为 ${expectedPages} 个段落页，实际 ${chapter.paragraphs.length}`);

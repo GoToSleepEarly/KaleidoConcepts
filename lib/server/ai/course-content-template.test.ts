@@ -29,7 +29,7 @@ function validChapter(): GeneratedChapterTemplate {
   return {
     outlineChapterId: "chapter-1",
     paragraphs: [
-      { template: "Tomorrow, Mia {{OC1}} open the old gate with her team. They check the map, carry the box, and wait beside the quiet wall until sunrise. Everyone knows the careful plan and stays calm. Before they move, Mia reads each note aloud, while her friends compare every symbol with the drawing on the wall." },
+      { template: "Tomorrow, Mia {{OC1}} open the old gate with her team. They check the map, carry the box, and wait beside the quiet wall until sunrise. Everyone knows the careful plan and stays calm. Before they move, Mia reads each note aloud, while her friends compare every symbol with the drawing on the wall all day." },
       { template: "The students must {{WF1}} together when the bell rings. They follow {{VOC1}}, protect the people nearby, and bring every missing sound back to the city before the final celebration begins. At the last corner, they hear a soft song, choose the safest path, and tell the waiting families that the danger has finally passed." },
     ],
     slots: [

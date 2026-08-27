@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  chineseTextLength,
   defaultStoryComplexity,
+  englishWordRangesForTarget,
   storyLengthPolicy,
   validateTeacherChapterWordCount,
 } from "@/lib/domain/story-length-policy";
@@ -30,6 +32,22 @@ describe("story length policy", () => {
     expect(storyLengthPolicy("B1", "conflict_driven").english.chapterTargetWords).toBe(170);
     expect(storyLengthPolicy("C1", "layered").english.chapterTargetWords).toBe(240);
     expect(storyLengthPolicy("C2", "layered").english.chapterTargetWords).toBe(260);
+  });
+
+  it("derives the same generation range for Step 2 defaults and any Step 4 teacher target", () => {
+    for (const [level, complexity, target, generationRange] of [
+      ["Starter", "clear_linear", 80, [70, 90]],
+      ["B1", "conflict_driven", 170, [150, 200]],
+      ["C2", "layered", 260, [230, 300]],
+    ] as const) {
+      expect(storyLengthPolicy(level, complexity).english).toMatchObject({ chapterTargetWords: target, generationRange });
+      expect(englishWordRangesForTarget(target).generationRange).toEqual(generationRange);
+    }
+    expect(englishWordRangesForTarget(90)).toEqual({ generationRange: [80, 100], aimRange: [83, 90] });
+  });
+
+  it("counts Unicode code points without whitespace for Chinese generation validation", () => {
+    expect(chineseTextLength("开端。\n 结果方向")).toBe(7);
   });
 
   it("lets complexity raise capacity without forcing it to be used", () => {
@@ -63,9 +81,4 @@ describe("story length policy", () => {
     expect(validateTeacherChapterWordCount(361, "B2", "conflict_driven").status).toBe("blocked");
   });
 
-  it("does not vary per-chapter capacity with chapter count", () => {
-    const oneChapter = storyLengthPolicy("C1", "layered", { chapterCount: 1 });
-    const eightChapters = storyLengthPolicy("C1", "layered", { chapterCount: 8 });
-    expect(oneChapter.english).toEqual(eightChapters.english);
-  });
 });

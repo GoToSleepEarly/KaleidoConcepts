@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { CourseContentChapter, CourseContentParagraph, CourseContentPart } from "@/lib/contracts/api";
 import { buildCleanParagraphText, stableShuffle, validateParagraphParts } from "@/lib/domain/course-content";
+import { englishWordRangesForTarget } from "@/lib/domain/story-length-policy";
 
 export const STEP4_CONTENT_CONTRACT_VERSION = "step4.content.v2" as const;
 
@@ -109,13 +110,6 @@ export type ReadingTemplatePromptContext = {
 
 const markerPattern = /\{\{([A-Z]+\d+)\}\}/g;
 
-function readingWordCountPolicy(targetWordCount: number) {
-  const lowerTolerance = Math.max(10, Math.round(targetWordCount * 0.12));
-  const acceptedRange: [number, number] = [Math.max(1, targetWordCount - lowerTolerance), targetWordCount + 30];
-  const aimRange: [number, number] = [Math.max(acceptedRange[0], Math.round(targetWordCount * 0.92)), targetWordCount];
-  return { acceptedRange, aimRange };
-}
-
 function numberedIds(prefix: "OC" | "WF" | "VOC", count: number) {
   return Array.from({ length: count }, (_, index) => `${prefix}${index + 1}`);
 }
@@ -136,9 +130,9 @@ function distributeRange(range: [number, number], count: number) {
 
 export function paragraphWordBudgets(targetWordCount: number, paragraphCount: number) {
   if (!Number.isInteger(paragraphCount) || paragraphCount < 1) return [];
-  const policy = readingWordCountPolicy(targetWordCount);
+  const policy = englishWordRangesForTarget(targetWordCount);
   const preferred = distributeRange(policy.aimRange, paragraphCount);
-  const accepted = distributeRange(policy.acceptedRange, paragraphCount);
+  const accepted = distributeRange(policy.generationRange, paragraphCount);
   return preferred.map((preferredRange, paragraphIndex) => ({ paragraphIndex, preferredRange, acceptedRange: accepted[paragraphIndex] }));
 }
 
@@ -216,7 +210,7 @@ export function compileChapterTemplate(generated: GeneratedChapterTemplate, requ
   });
   const cleanText = cleanParagraphs.join(" ");
   const wordCount = englishWordCount(cleanText);
-  const [minimumWords, maximumWords] = readingWordCountPolicy(requirements.targetWordCount).acceptedRange;
+  const [minimumWords, maximumWords] = englishWordRangesForTarget(requirements.targetWordCount).generationRange;
   if (wordCount < minimumWords || wordCount > maximumWords) issues.push({ code: "word_count", message: `正文词数应为 ${minimumWords}–${maximumWords}，实际 ${wordCount}` });
 
   return { paragraphs, cleanText, wordCount, paragraphWordCounts, issues: [...new Map(issues.map((issue) => [issueKey(issue), issue])).values()] };

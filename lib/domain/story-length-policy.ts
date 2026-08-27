@@ -51,8 +51,25 @@ const CHINESE_LIMITS: Record<StoryComplexity, StoryLengthPolicy["chinese"]> = {
 
 export const STORY_CHAPTER_WORD_HARD_RANGE = [60, 360] as const;
 
-function roundToTen(value: number) {
-  return Math.round(value / 10) * 10;
+function roundRatioToTen(value: number, percentage: number) {
+  return Math.round((value * percentage) / 1_000) * 10;
+}
+
+export function englishWordRangesForTarget(targetWordCount: number) {
+  if (!Number.isInteger(targetWordCount) || targetWordCount < 1) throw new RangeError("英文目标词数必须是正整数");
+  const generationRange: [number, number] = [
+    Math.max(1, roundRatioToTen(targetWordCount, 88)),
+    Math.max(1, roundRatioToTen(targetWordCount, 115)),
+  ];
+  const aimRange: [number, number] = [
+    Math.max(generationRange[0], Math.round(targetWordCount * 0.92)),
+    targetWordCount,
+  ];
+  return { generationRange, aimRange };
+}
+
+export function chineseTextLength(value: string) {
+  return Array.from(value.replace(/\s/gu, "")).length;
 }
 
 export function normalizeEnglishLevel(level: EnglishLevel | null | undefined): EnglishLevel {
@@ -69,19 +86,18 @@ export function defaultStoryComplexity(level: EnglishLevel | null | undefined): 
 export function storyLengthPolicy(
   englishLevel: EnglishLevel | null | undefined,
   storyComplexity?: StoryComplexity | null,
-  context?: { chapterCount?: number },
 ): StoryLengthPolicy {
-  void context; // Chapter count changes total course capacity, never the shared per-chapter policy.
   englishLevel = normalizeEnglishLevel(englishLevel);
   storyComplexity = storyComplexity ?? defaultStoryComplexity(englishLevel);
   const target = TARGET_WORDS[englishLevel][storyComplexity];
+  const { generationRange } = englishWordRangesForTarget(target);
   return {
     englishLevel,
     storyComplexity,
     chinese: CHINESE_LIMITS[storyComplexity],
     english: {
       chapterTargetWords: target,
-      generationRange: [roundToTen(target * 0.88), roundToTen(target * 1.15)],
+      generationRange,
       teacherRecommendedRange: [Math.max(STORY_CHAPTER_WORD_HARD_RANGE[0], target - 30), Math.min(STORY_CHAPTER_WORD_HARD_RANGE[1], target + 40)],
       hardRange: [...STORY_CHAPTER_WORD_HARD_RANGE],
     },

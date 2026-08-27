@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 
 import { createStoryOutlineGenerationDeps } from "./story-outline-deps";
+import { storyLengthPolicy } from "@/lib/domain/story-length-policy";
 
 const generateOutlineMock = vi.fn<({ prompt }: { prompt: string }) => Promise<{ text: string }>>(async () => ({
   text: JSON.stringify({
@@ -43,6 +44,46 @@ vi.mock("./story-outline-provider", () => ({
 }));
 
 describe("createStoryOutlineGenerationDeps", () => {
+  test("rejects generated and revised Chinese story fields beyond the configured generation maximum", async () => {
+    const deps = createStoryOutlineGenerationDeps();
+    const shared = {
+      chapterCount: 1,
+      coursePeople: [],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentOutline: null,
+      englishLevel: "A2",
+      storyComplexity: "clear_linear" as const,
+      lengthPolicy: storyLengthPolicy("A2", "clear_linear"),
+    };
+    const direction = { title: "方向", hook: "长".repeat(121), storyHighlight: "亮点", growthCore: "合作", mainCharacters: ["Mia"], whyFits: "匹配要求" };
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify([direction, direction, direction]) });
+    await expect(deps.generateDirections({ ...shared, task: "生成方向" })).rejects.toThrow("方向概要超过 120 字生成上限");
+
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify(direction) });
+    await expect(deps.reviseDirection({ ...shared, task: "修改方向", direction: { title: "旧方向" } })).rejects.toThrow("方向概要超过 120 字生成上限");
+
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
+      title: { zh: "故事", en: "Story" },
+      summary: "长".repeat(161),
+      characters: [],
+      chapters: [{ order: 1, title: { zh: "第一章", en: "Chapter One" }, whatHappens: "行动产生结果。", characterKeys: [] }],
+    }) });
+    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).rejects.toThrow("整体概要超过 160 字生成上限");
+
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
+      title: { zh: "故事", en: "Story" },
+      summary: "角色完成任务。",
+      characters: [],
+      chapters: [{ order: 1, title: { zh: "第一章", en: "Chapter One" }, whatHappens: "长".repeat(101), characterKeys: [] }],
+    }) });
+    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).rejects.toThrow("第 1 章概述超过 100 字生成上限");
+
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({ status: "ready", chapter: { order: 1, title: { zh: "第一章", en: "Chapter One" }, whatHappens: "长".repeat(101), characterIds: [] } }) });
+    await expect(deps.reviseChapter({ ...shared, task: "修改章节", chapterOrder: 1 })).rejects.toThrow("单章概述超过 100 字生成上限");
+  });
+
   test("converts response-only KP keys to knowledge point labels in the saved recommendation summary", async () => {
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
       title: { zh: "港口任务", en: "Harbor Mission" },
