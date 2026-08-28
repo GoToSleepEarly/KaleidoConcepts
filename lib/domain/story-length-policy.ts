@@ -49,7 +49,7 @@ export function englishWordRangesForTarget(targetWordCount: number) {
     Math.max(STORY_GENERATED_WORD_ABSOLUTE_RANGE[0], roundToFive(targetWordCount * 0.85)),
     Math.min(STORY_GENERATED_WORD_ABSOLUTE_RANGE[1], roundToFive(targetWordCount * 1.2)),
   ];
-  return { generationRange, validationRange, aimRange: generationRange };
+  return { generationRange, validationRange };
 }
 
 export function chineseTextLength(value: string) {

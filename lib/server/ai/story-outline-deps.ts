@@ -209,6 +209,20 @@ function directionReferenceForPrompt(value: unknown) {
   );
 }
 
+function generationLengthForPrompt(policy: StoryLengthPolicy) {
+  return {
+    chapterTargetWords: policy.english.chapterTargetWords,
+    generationRange: policy.english.generationRange,
+  };
+}
+
+function requirementForPrompt(input: Pick<StoryPromptContext, "requirementBrief" | "confirmedRequirement">) {
+  if (input.requirementBrief) {
+    return ["<requirement_brief>", JSON.stringify(input.requirementBrief), "</requirement_brief>"];
+  }
+  return input.confirmedRequirement ? [`已确认创作理解：${input.confirmedRequirement}`] : [];
+}
+
 function directionContextPrompt(input: StoryPromptContext) {
   const policy = resolvedStoryPolicy(input);
   const peopleSnapshots = input.coursePeople.map(({ personId, role, chineseName, englishName, age, gender }) => ({
@@ -222,23 +236,21 @@ function directionContextPrompt(input: StoryPromptContext) {
   const latestTeacherMessage = [...input.conversationHistory].reverse().find((message) => message.role === "teacher");
   return [
     "<course_context>",
-    `故事容量：${input.chapterCount} 章；故事复杂度：${policy.storyComplexity}；每章英文正文容量：${JSON.stringify(policy.english)}。只设计一条能在该容量内讲清的核心主线。`,
+    `故事容量：${input.chapterCount} 章；故事复杂度：${policy.storyComplexity}；每章英文正文容量：${JSON.stringify(generationLengthForPrompt(policy))}。只设计一条能在该容量内讲清的核心主线。`,
     `中文篇幅：方向概要推荐不超过 ${policy.chinese.directionOverview.recommendedMax} 字，硬上限 ${policy.chinese.directionOverview.hardMax} 字；中文没有强制下限，不得为凑长度填充。`,
     `老师和学生人物快照：${JSON.stringify(peopleSnapshots)}`,
-    ...(input.confirmedRequirement ? [`已确认创作理解：${input.confirmedRequirement}`] : []),
+    ...requirementForPrompt(input),
     ...(input.requiredNamedCharacters?.length ? [`必须出场的点名角色：${JSON.stringify(input.requiredNamedCharacters)}`] : []),
     ...(input.storyMode ? [`故事模式：${input.storyMode}`, `课堂人物参与方式：${input.classroomPresence ?? (input.storyMode === "faithful" ? "observer" : "participant")}`] : []),
     "</course_context>",
-    "<recent_effective_conversation>",
-    JSON.stringify(latestTeacherMessage ? [latestTeacherMessage] : []),
-    "</recent_effective_conversation>",
+    ...(!input.requirementBrief ? ["<recent_effective_conversation>", JSON.stringify(latestTeacherMessage ? [latestTeacherMessage] : []), "</recent_effective_conversation>"] : []),
     "<confirmed_references>",
     JSON.stringify(input.references.map(directionReferenceForPrompt)),
     "</confirmed_references>",
   ];
 }
 
-function contextPrompt(input: StoryPromptContext) {
+function contextPrompt(input: StoryPromptContext, options: { includeCurrentDirections?: boolean; includeKnowledgePoints?: boolean } = {}) {
   const policy = resolvedStoryPolicy(input);
   const peopleSnapshots = input.coursePeople.map(({ personId, role, chineseName, englishName, age, gender }) => ({
     personId,
@@ -251,18 +263,21 @@ function contextPrompt(input: StoryPromptContext) {
   return [
     "<course_context>",
     `指定章节数：${input.chapterCount}`,
-    ...(input.englishLevel ? [`英语难度：${input.englishLevel}`, `故事复杂度：${policy.storyComplexity}`, `统一篇幅策略：${JSON.stringify(policy)}`, `全课可选知识点：${JSON.stringify(knowledgePointOptions(input).map((point) => ({ key: point.key, label: point.label, category: point.category })))}`] : []),
+    ...(input.englishLevel ? [
+      `英语难度：${input.englishLevel}`,
+      `故事复杂度：${policy.storyComplexity}`,
+      `每章英文正文容量：${JSON.stringify(generationLengthForPrompt(policy))}`,
+      ...(options.includeKnowledgePoints ? [`全课可选知识点：${JSON.stringify(knowledgePointOptions(input).map((point) => ({ key: point.key, label: point.label, category: point.category })))}`] : []),
+    ] : []),
     `老师和学生人物快照：${JSON.stringify(peopleSnapshots)}`,
-    ...(input.confirmedRequirement ? [`已确认创作理解：${input.confirmedRequirement}`] : []),
+    ...requirementForPrompt(input),
     ...(input.requiredNamedCharacters?.length ? [`必须出场的点名角色：${JSON.stringify(input.requiredNamedCharacters)}`] : []),
     ...(input.storyMode ? [`故事模式：${input.storyMode}`, `课堂人物参与方式：${input.classroomPresence ?? (input.storyMode === "faithful" ? "observer" : "participant")}`] : []),
     "</course_context>",
-    "<conversation_history>",
-    JSON.stringify(input.conversationHistory),
-    "</conversation_history>",
+    ...(!input.requirementBrief ? ["<conversation_history>", JSON.stringify(input.conversationHistory), "</conversation_history>"] : []),
     "<current_state>",
     `已选择故事方向：${JSON.stringify(directionForPrompt(input.selectedDirection))}`,
-    `当前未选择的故事方向：${JSON.stringify((input.currentDirections ?? []).map(directionForPrompt))}`,
+    ...(options.includeCurrentDirections ? [`当前未选择的故事方向：${JSON.stringify((input.currentDirections ?? []).map(directionForPrompt))}`] : []),
     `已保存参考资料：${JSON.stringify(input.references)}`,
     `当前故事大纲：${JSON.stringify(input.currentOutline)}`,
     `已确认主线理解卡：${JSON.stringify(input.mainlineCard ?? null)}`,
@@ -1034,7 +1049,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           "如果返回 new_requirement，同时判断修改后的创作是否仍可完整沿用当前已保存参考资料。只有新增或更换作品、人物、历史事实、知识对象、版本或原作边界时，needsBackgroundRefresh 才为 true；只改变剧情走向、冲突、任务、反派、能力用法、地点、结局或师生参与方式时为 false。",
           "只返回 JSON：范围内修改为 {scope:'within_target',needsBackgroundRefresh:false}；需调整整体大纲为 {scope:'outline_revision',reason,needsBackgroundRefresh:false}；核心需求变化为 {scope:'new_requirement',reason,needsBackgroundRefresh}。reason 用一句中文说明变化和影响。",
           `指定修改范围：${input.targetScope}`,
-          ...contextPrompt(input),
+          ...contextPrompt(input, { includeCurrentDirections: true }),
           "<current_task>",
           input.task,
           "</current_task>",
@@ -1142,7 +1157,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           ...chapterRevisionNarrativeRules(input),
           "修改知识点建议时仍需从全课分布判断：先完成本章故事，再只推荐与既有剧情自然适配且能在同一语境中共存的知识点；通常推荐 2 个、最多 3 个，只有确实找不到自然组合时才保留 1 个。不得为知识点新增道具、规则、人物行为或支线，不为平均分配强行组合。knowledgePointRecommendationSummary 用一条精简中文逐个引用对应 KP 短键并说明使用语境；多个知识点还要说明如何自然配合，无法说明时不要同时推荐。",
           ...confirmedReferenceRules(input),
-          ...contextPrompt(input),
+          ...contextPrompt(input, { includeKnowledgePoints: true }),
           "<target_chapter_order>",
           String(input.chapterOrder),
           "</target_chapter_order>",
@@ -1239,6 +1254,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       storyComplexity?: StoryComplexity;
       lengthPolicy?: StoryLengthPolicy;
       requirementBrief?: StoryRequirementBrief;
+      mainlineCard?: StoryMainlineCard;
       selectedKnowledgePoints?: StoryPromptContext["selectedKnowledgePoints"];
     }) => {
       const policy = resolvedStoryPolicy(input);
@@ -1283,7 +1299,9 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           "知识点分布优先考虑本章表达适配性、同章知识点能否在同一语境中自然共存、英语难度与已给出的每章英文容量，再覆盖老师选择的多样知识点；不得为了平均分配强行组合。同一知识点可以在多章复用，但复用不应挤占其他同样自然适配的知识点。knowledgePointRecommendationSummary 用一条精简中文逐个引用对应 KP 短键并说明使用语境；多个知识点还要说明如何自然配合，无法说明时不要同时推荐。不要生成词数、题型或题量。",
           input.storyMode === "faithful"
             ? "忠实讲述的优先级为：已确认事实及原作事件、因果和结局；老师在该边界内明确的讲述范围与呈现要求；已选择方向；当前大纲；通用写作建议。任何要求都不能把课堂人物变成事件推动者。"
-            : "需求优先级从高到低为：老师历史中明确要求；已选择方向；已确认参考资料；当前大纲；通用创作建议。低优先级内容不得覆盖高优先级要求。",
+            : input.requirementBrief
+              ? "需求优先级从高到低为：已确认结构化需求卡；已选择方向；已确认参考资料；当前大纲；通用创作建议。低优先级内容不得覆盖高优先级要求。"
+              : "需求优先级从高到低为：老师历史中明确要求；已选择方向；已确认参考资料；当前大纲；通用创作建议。低优先级内容不得覆盖高优先级要求。",
           ...classroomGenerationRules(input),
           ...confirmedReferenceRules(input),
           "根据人物年龄、老师要求、引用对象、故事模式和课堂人物参与方式选择合适的叙事结构与主角。课堂人物进入 characters 时，sourcePersonId 必须准确对应人物快照。",
@@ -1299,7 +1317,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
               adaptationBoundary: reference.adaptationBoundary,
             })),
             currentOutline: input.currentOutline ?? null,
-          }),
+          }, { includeKnowledgePoints: true }),
           "<current_task>",
           input.task,
           "</current_task>",

@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 
 import { createStoryOutlineGenerationDeps } from "./story-outline-deps";
+import type { StoryRequirementBrief } from "@/lib/contracts/api";
 import { storyLengthPolicy } from "@/lib/domain/story-length-policy";
 
 const generateOutlineMock = vi.fn<({ prompt }: { prompt: string }) => Promise<{ text: string }>>(async () => ({
@@ -25,7 +26,7 @@ const generateOutlineMock = vi.fn<({ prompt }: { prompt: string }) => Promise<{ 
 }));
 const searchReferenceMock = vi.fn<({ prompt }: { prompt: string }) => Promise<{ text: string }>>();
 
-function narrativeBrief(objective: string, fixedPlot: string | null = null) {
+function narrativeBrief(objective: string, fixedPlot: string | null = null): StoryRequirementBrief {
   return {
     kind: "narrative",
     objective,
@@ -691,6 +692,8 @@ describe("createStoryOutlineGenerationDeps", () => {
       currentDirections: [],
       currentOutline: null,
       confirmedRequirement: "使用暮光闪闪和云宝黛西创作新故事。",
+      englishLevel: "A2",
+      selectedKnowledgePoints: [{ id: "grammar-1", label: "Past Simple", category: "Grammar" }],
     });
 
     expect(result.status).toBe("ready");
@@ -702,6 +705,8 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("reason 会直接展示给老师");
     expect(prompt).toContain("最多整理 4 个原作候选角色");
     expect(prompt).toContain("候选角色不代表都会进入最终故事");
+    expect(prompt).not.toContain("Past Simple");
+    expect(prompt).not.toContain("grammar-1");
   });
 
   test("treats plot, antagonist, magic and classroom participation changes as local revisions", async () => {
@@ -1078,7 +1083,39 @@ describe("createStoryOutlineGenerationDeps", () => {
     for (const expected of ["student-9", "安安", "age\":9", "必须让暮光闪闪和云宝共同出场", "使用小马宝莉原作人物创作新剧情", '"key":"R01"', "情绪天气城", "情绪改变天气", "学会表达情绪", "当前大纲", "风暴来临", "指定章节数：4", "英语难度：A2", "故事复杂度：clear_linear", "KP1", "把第三章改得更紧张"]) {
       expect(prompt).toContain(expected);
     }
+    expect(prompt).toContain('"chapterTargetWords":90');
+    expect(prompt).toContain('"generationRange":[80,100]');
+    expect(prompt).not.toContain("teacherRecommendedRange");
+    expect(prompt).not.toContain("validationRange");
+    expect(prompt).not.toContain("hardRange");
     expect(prompt).not.toContain("ref-1");
+  });
+
+  test("uses the structured V2 brief as the downstream source of truth without replaying stale conversation", async () => {
+    await createStoryOutlineGenerationDeps().generateOutline({
+      task: "根据已确认需求生成故事大纲。",
+      chapterCount: 4,
+      writingProvider: "quickrouter_gpt",
+      coursePeople: [],
+      conversationHistory: [{ role: "teacher", content: "已经被替代的旧要求：海底调查" }],
+      confirmedRequirement: "兼容字段中的旧摘要，不应覆盖结构化需求。",
+      requirementBrief: narrativeBrief("四名学生进行时空穿越，并共同回到课堂"),
+      references: [],
+      selectedDirection: { id: "direction-1", title: "时间裂缝" },
+      currentDirections: [{ id: "direction-old", title: "已经淘汰的旧方向" }],
+      currentOutline: null,
+      englishLevel: "A2",
+      storyComplexity: "clear_linear",
+      selectedKnowledgePoints: [],
+    });
+
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain("<requirement_brief>");
+    expect(prompt).toContain("四名学生进行时空穿越，并共同回到课堂");
+    expect(prompt).not.toContain("已经被替代的旧要求");
+    expect(prompt).not.toContain("兼容字段中的旧摘要");
+    expect(prompt).not.toContain("已经淘汰的旧方向");
+    expect(prompt).not.toContain("<conversation_history>");
   });
 
   test("keeps direction generation focused on the latest story requirement without teaching or outline context", async () => {
@@ -1114,6 +1151,11 @@ describe("createStoryOutlineGenerationDeps", () => {
 
     const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
     expect(prompt).toContain("故事容量：4 章；故事复杂度：clear_linear");
+    expect(prompt).toContain('"chapterTargetWords":90');
+    expect(prompt).toContain('"generationRange":[80,100]');
+    expect(prompt).not.toContain("teacherRecommendedRange");
+    expect(prompt).not.toContain("validationRange");
+    expect(prompt).not.toContain("hardRange");
     expect(prompt).toContain('"personId":"teacher-1"');
     expect(prompt).toContain("林老师");
     expect(prompt).toContain("主题：太空学校");
@@ -1163,6 +1205,38 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("hook 使用自然的团队称呼表达课堂人物共同参与");
     expect(prompt).toContain("mainCharacters 完整保留 Step 1 人物");
     expect(directions[0]).toMatchObject({ storyHighlight: expect.any(String), growthCore: expect.any(String), seedPrompt: directions[0].hook });
+  });
+
+  test("uses the V2 brief instead of stale conversation when generating directions", async () => {
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify(Array.from({ length: 3 }, (_, index) => ({
+      title: `方向 ${index + 1}`,
+      hook: "四名学生穿过时间裂缝，并合作找到回家的路。",
+      storyHighlight: "每次选择都会改变下一站。",
+      growthCore: "合作与责任。",
+      mainCharacters: ["Summer"],
+      whyFits: "主线清楚且适合 A2。",
+    }))) });
+
+    await createStoryOutlineGenerationDeps().generateDirections({
+      task: "生成三个方向。",
+      chapterCount: 5,
+      coursePeople: [],
+      conversationHistory: [{ role: "teacher", content: "已经被替代的旧要求：海底调查" }],
+      references: [],
+      selectedDirection: null,
+      currentOutline: null,
+      confirmedRequirement: "兼容字段中的旧摘要。",
+      requirementBrief: narrativeBrief("四名学生一起经历时空穿越冒险"),
+      englishLevel: "A2",
+      storyComplexity: "clear_linear",
+    });
+
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain("<requirement_brief>");
+    expect(prompt).toContain("四名学生一起经历时空穿越冒险");
+    expect(prompt).not.toContain("已经被替代的旧要求");
+    expect(prompt).not.toContain("兼容字段中的旧摘要");
+    expect(prompt).not.toContain("<recent_effective_conversation>");
   });
 
   test("keeps causal clarity rules when revising one direction or chapter", async () => {

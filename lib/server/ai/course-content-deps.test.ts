@@ -108,7 +108,7 @@ describe("course content prompt contexts", () => {
   });
 
   test("gives generation and repair a safe word-count range instead of an ambiguous exact target", () => {
-    expect(englishWordRangesForTarget(100)).toEqual({ generationRange: [90, 110], validationRange: [85, 120], aimRange: [90, 110] });
+    expect(englishWordRangesForTarget(100)).toEqual({ generationRange: [90, 110], validationRange: [85, 120] });
     const requirements = buildReadingRepairRequirements(input, [{
       id: "chapter-ch1", outlineChapterId: "ch1", order: 1, title: "Milo出发", targetWordCount: 90, readingExerciseMode: "interactive",
       paragraphs: [{ id: "paragraph-ch1-1", parts: [{ type: "text", text: `${Array(70).fill("story").join(" ")} ` }, { type: "grammar", id: "g1", exerciseType: "wordForm", knowledgePointId: "kp1", answer: "ended", baseForm: "end" }] }],

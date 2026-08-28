@@ -77,6 +77,7 @@ describe("Step4 fixed-slot production contract", () => {
     expect(prompt).toContain("knowledgePointUsagePlan");
     expect(prompt).toContain("用于描述 Mia 的计划");
     expect(prompt).toContain("<formatExample>");
+    expect(prompt).toContain("上下界均为硬验收");
   });
 
   test("reports a named missing slot instead of accepting an anonymous count", () => {

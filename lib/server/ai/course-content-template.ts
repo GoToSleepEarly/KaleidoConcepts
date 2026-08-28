@@ -350,7 +350,7 @@ export function buildReadingTemplatePrompt(context: ReadingTemplatePromptContext
     "先写自然、连贯、符合 englishLevel 的完整故事，再设置槽位。答案拼回后必须语法正确，不能为了覆盖知识点制造错误句子。",
     "storyComplexity 只限制叙事结构，不改变上游事实、既定因果、学习目标或点名角色。目标词数调高时只增加必要表达、连接与细节，不得增加冲突、反转、支线或新机制。",
     ...context.qualityRules,
-    "每段优先落入 paragraphBudgets.preferredRange，绝不能超过 acceptedRange；题目答案计入词数。人物、信息、物品和章节结果必须连续。",
+    "每段优先落入 paragraphBudgets.preferredRange，且必须落入 paragraphBudgets.acceptedRange（上下界均为硬验收）；题目答案计入词数。人物、信息、物品和章节结果必须连续。",
     "Main Idea 只返回 {text}，概括全故事且遵守 mainIdea 的 preferredRange 和 acceptedRange，不含题目或标题。",
     "返回前在内部检查协议版本、章节 ID、段落数、全部固定槽位、知识点覆盖、答案正确性和词数；不要输出检查过程。",
     "下面仅示范 JSON 字段与槽位连接方式，禁止照抄章节 ID、内容或数量；实际输出必须完全遵守 context。",
