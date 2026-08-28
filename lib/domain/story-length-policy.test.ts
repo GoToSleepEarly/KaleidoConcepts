@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  chineseTextLength,
+  chineseDisplayLength,
+  chineseValidationMax,
   defaultStoryComplexity,
   englishWordRangesForTarget,
   normalizeStoryChapterCount,
@@ -53,8 +54,17 @@ describe("story length policy", () => {
     }
   });
 
-  it("counts Unicode code points without whitespace for Chinese generation validation", () => {
-    expect(chineseTextLength("开端。\n 结果方向")).toBe(7);
+  it("measures mixed Chinese copy by approximate display width", () => {
+    expect(chineseDisplayLength("开端。\n 结果方向")).toBe(7);
+    expect(chineseDisplayLength("冰桥 Ms. Lin")).toBe(5);
+    expect(chineseDisplayLength("Ms. Lin核对港口方向，Summer和Dawn依次发出最后指令。冰桥抵达船队，引导船只安全回港。")).toBe(41);
+    expect(chineseDisplayLength("听见前方港口钟声，Ms. Lin请孩子确认。两人决定直行，Anna引船跟随，Elsa将冰桥接上港口。")).toBe(42);
+  });
+
+  it("keeps a small deterministic validation margin outside the model generation target", () => {
+    expect(chineseValidationMax(45)).toBe(51);
+    expect(chineseValidationMax(90)).toBe(101);
+    expect(chineseValidationMax(105)).toBe(118);
   });
 
   it("lets complexity raise capacity without exceeding the two-paragraph ceiling", () => {

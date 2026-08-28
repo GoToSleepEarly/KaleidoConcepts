@@ -1,0 +1,49 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "alignRequirements"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "status": "needs_clarification",
+    "planningMode": "explore_options",
+    "storyMode": "new_story",
+    "classroomPresence": "participant",
+    "requiredNamedCharacters": [],
+    "provisionalBriefKind": "narrative",
+    "assistantMessage": "还需要确认几个会影响故事方向的问题。",
+    "resolvedUnderstanding": [
+      "赵老师、Mia 和 Ben 全部进入故事，以观察者身份见证主角的夏日经历与情感发展，不改变原作事件、因果或结局。",
+      "课程忠实讲述原作主线，并对亲密关系等成熟内容进行适合 12 岁学生和 B1 英语水平的弱化表达。",
+      "课程共 4 章。"
+    ],
+    "unresolvedIssues": [
+      "采用哪个作品版本？"
+    ],
+    "questions": [
+      {
+        "id": "source_version",
+        "label": "采用哪个作品版本？",
+        "impact": "小说与电影在人物、事件和结尾呈现上存在差异，选择会决定后续核实的背景资料和忠实讲述的主线。",
+        "answerMode": "single_choice",
+        "options": [
+          {
+            "id": "film_2017",
+            "label": "2017 年电影版",
+            "enablesTextInput": false
+          },
+          {
+            "id": "novel_2007",
+            "label": "2007 年原著小说",
+            "enablesTextInput": false
+          }
+        ],
+        "allowCustom": true,
+        "recommendedOptionId": "film_2017",
+        "recommendationReason": "电影版主线更集中，更适合在 4 章、B1 难度和适龄删减的条件下清晰呈现。"
+      }
+    ]
+  },
+  "error": null
+}

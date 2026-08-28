@@ -1,0 +1,8 @@
+{
+  "threadId": "01a048dc-cda7-7890-bd76-dbaf928a0e34",
+  "hostId": "local",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": "medium",
+  "result": "invalid_test_fixture",
+  "rootCause": "manual fixture omitted persisted reference ids, so no Rxx keys reached the prompt"
+}

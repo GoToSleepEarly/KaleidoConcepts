@@ -1,0 +1,14 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateOutline"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": null,
+  "error": {
+    "name": "StoryOutlineResponseError",
+    "message": "整体概要超过 116 展示单位验收上限（生成目标 105，实际 116.5），请重试本步",
+    "stack": "StoryOutlineResponseError: 整体概要超过 116 展示单位验收上限（生成目标 105，实际 116.5），请重试本步\n    at enforceChineseGenerationMax (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\story-outline-deps.ts:123:11)\n    at Object.generateOutline (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\story-outline-deps.ts:1427:7)\n    at async main (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\scripts\\prompt-eval\\run-manual-ai-operation.ts:98:14)"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "threadId": "01a048cd-f16e-77d0-a0ad-03463204d6b7",
+  "hostId": "local",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": "medium",
+  "result": "invalid_json",
+  "rootCause": "the shorthand question schema was still copied as JavaScript-style field shorthand"
+}

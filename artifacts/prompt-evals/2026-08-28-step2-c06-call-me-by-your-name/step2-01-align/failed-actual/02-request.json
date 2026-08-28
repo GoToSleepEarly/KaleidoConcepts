@@ -1,0 +1,12 @@
+{
+  "index": 1,
+  "url": "https://api.quickrouter.ai/v1/responses",
+  "operation": "alignRequirements",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": null,
+  "maxOutputTokens": null,
+  "prompt": "修复需求对齐响应，使其满足协议；保留老师已表达的目标和所有真正阻塞项。\n允许合并同义问题并把当前问题数收敛到最多 3 个；不得截断阻塞项、静默采用推荐、重命名重复 ID 或改变推荐语义。\nneeds_clarification schema: {status,provisionalBriefKind?,resolvedRequirements:string[],questions:1..3}。ready_for_confirmation schema: {status,planningMode,storyMode,classroomPresence,brief}。\nparseError: AI 返回的需求对齐内容不是有效 JSON，自动修复后仍未通过。\n<raw_output>\n{\"status\":\"needs_clarification\",\"provisionalBriefKind\":\"narrative\",\"resolvedRequirements\":[\"赵老师、Mia 和 Ben 全部进入故事，以观察者身份见证主角之间的假期与情感发展，不影响既定事件、因果和结局。\",\"课程忠实讲述《Call Me By Your Name》的原作主线，采用适合12岁学生和B1英语水平的表达，弱化成熟与亲密内容。\",\"课程共4章。\"],\"questions\":[{\"id\":\"source_version\",\"label\":\"采用哪个作品版本？\",\"impact\":\"小说与电影在人物经历、事件细节和结局呈现上存在差异，选择将决定忠实讲述的主线和背景资料范围。\",\"answerMode\":\"single_choice\",\"options\":[{\"id\":\"film_2017\",\"label\":\"2017年电影版\"},{\"id\":\"novel_2007\",\"label\":\"2007年原著小说\"},{\"id\":\"shared_core\",\"label\":\"两版共有主线\"}],\"allowCustom\",\"recommendedOptionId\":\"film_2017\",\"recommendationReason\":\"电影版主线更集中，更适合在4章、B1难度和适龄删减的容量内清晰呈现假期经历与情感发展。\"}]}\n\n</raw_output>",
+  "promptSha256": "5baf78fc6aedbf94881fe9e5c49fa98bca97a8ed44a189e02590c0dd391cafb5",
+  "promptCharacters": 976,
+  "promptUtf8Bytes": 1602
+}

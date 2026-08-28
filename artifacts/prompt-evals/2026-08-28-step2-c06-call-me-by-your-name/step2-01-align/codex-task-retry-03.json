@@ -1,0 +1,8 @@
+{
+  "threadId": "01a048d0-a314-7db1-963b-fde0c1cfdb44",
+  "hostId": "local",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": "medium",
+  "result": "program_pass_business_fail",
+  "rootCause": "cross-media version ambiguity was treated inconsistently"
+}

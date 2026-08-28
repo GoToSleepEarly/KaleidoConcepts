@@ -1,0 +1,182 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateOutline"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "title": "那个意大利夏天 / That Italian Summer",
+    "summary": "1983年夏天，Oliver住进Elio家，两人从疏离试探逐渐走近并确认真挚感情。短途旅行后，Oliver因假期结束返回美国，Elio在父亲的理解中承受离别。冬季来电带来Oliver即将结婚的消息，Elio独自在壁炉前面对回忆与失落；Ms. Zhao、Mia和Ben始终只在旁见证。",
+    "storyHook": "",
+    "characters": [
+      {
+        "key": "C1",
+        "displayName": "赵老师",
+        "englishName": "Ms. Zhao",
+        "sourceType": "person",
+        "sourcePersonId": "teacher-zhao",
+        "sourceReferenceId": null,
+        "roleInStory": "Ms. Zhao作为旁观者梳理事件顺序与情绪变化，不影响原作人物的选择。",
+        "shortDescription": "Ms. Zhao作为旁观者梳理事件顺序与情绪变化，不影响原作人物的选择。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C2",
+        "displayName": "米娅",
+        "englishName": "Mia",
+        "sourceType": "person",
+        "sourcePersonId": "student-mia",
+        "sourceReferenceId": null,
+        "roleInStory": "Mia作为旁观者记录Elio从好奇、犹豫到幸福与失落的情绪变化。",
+        "shortDescription": "Mia作为旁观者记录Elio从好奇、犹豫到幸福与失落的情绪变化。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C3",
+        "displayName": "本",
+        "englishName": "Ben",
+        "sourceType": "person",
+        "sourcePersonId": "student-ben",
+        "sourceReferenceId": null,
+        "roleInStory": "Ben作为旁观者记录Oliver从克制到回应、最终离开的行为变化。",
+        "shortDescription": "Ben作为旁观者记录Oliver从克制到回应、最终离开的行为变化。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C4",
+        "displayName": "埃利奥·帕尔曼",
+        "englishName": "Elio Perlman",
+        "sourceType": "referenced",
+        "sourcePersonId": null,
+        "sourceReferenceId": "ref-elio",
+        "roleInStory": "17岁的Elio在意大利北部度夏，主动向Oliver表达感情，并在离别后独自面对失落。",
+        "shortDescription": "17岁的Elio在意大利北部度夏，主动向Oliver表达感情，并在离别后独自面对失落。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C5",
+        "displayName": "奥利弗",
+        "englishName": "Oliver",
+        "sourceType": "referenced",
+        "sourcePersonId": null,
+        "sourceReferenceId": "ref-oliver",
+        "roleInStory": "Oliver是Elio父亲的暑期研究助理，从克制转为回应Elio的感情，最终返回美国。",
+        "shortDescription": "Oliver是Elio父亲的暑期研究助理，从克制转为回应Elio的感情，最终返回美国。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C6",
+        "displayName": "帕尔曼先生",
+        "englishName": "Mr. Perlman",
+        "sourceType": "referenced",
+        "sourcePersonId": null,
+        "sourceReferenceId": "ref-mr-perlman",
+        "roleInStory": "Mr. Perlman是Elio的父亲和Oliver的研究指导者，在离别后理解并开导Elio。",
+        "shortDescription": "Mr. Perlman是Elio的父亲和Oliver的研究指导者，在离别后理解并开导Elio。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C7",
+        "displayName": "玛琪娅",
+        "englishName": "Marzia",
+        "sourceType": "referenced",
+        "sourcePersonId": null,
+        "sourceReferenceId": "ref-marzia",
+        "roleInStory": "Marzia是Elio在当地的朋友；Elio的矛盾与疏离伤害了她，她后来仍愿意保留友谊。",
+        "shortDescription": "Marzia是Elio在当地的朋友；Elio的矛盾与疏离伤害了她，她后来仍愿意保留友谊。",
+        "shouldAppearInImages": true
+      }
+    ],
+    "chapters": [
+      {
+        "order": 1,
+        "title": "夏日来客 / A Summer Guest",
+        "storyGoal": "1983年夏天，Oliver以研究助理身份住进Elio家，两人初识时略显疏离。Ms. Zhao、Mia和Ben在旁见证。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "1983年夏天，Oliver以研究助理身份住进Elio家，两人初识时略显疏离。Ms. Zhao、Mia和Ben在旁见证。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5",
+          "C6"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [],
+        "knowledgePointRecommendationSummary": ""
+      },
+      {
+        "order": 2,
+        "title": "试探与靠近 / Growing Closer",
+        "storyGoal": "Elio与Oliver在游泳、骑车和交谈中靠近，Elio对Marzia的疏离也伤害了她。随后Elio在小镇纪念碑旁含蓄表白。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "Elio与Oliver在游泳、骑车和交谈中靠近，Elio对Marzia的疏离也伤害了她。随后Elio在小镇纪念碑旁含蓄表白。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5",
+          "C7"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [],
+        "knowledgePointRecommendationSummary": ""
+      },
+      {
+        "order": 3,
+        "title": "短暂同行 / A Brief Journey",
+        "storyGoal": "Oliver理解Elio的心意并谨慎回应，两人确认感情。离别前，他们共同进行了一次短途旅行。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "Oliver理解Elio的心意并谨慎回应，两人确认感情。离别前，他们共同进行了一次短途旅行。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [],
+        "knowledgePointRecommendationSummary": ""
+      },
+      {
+        "order": 4,
+        "title": "冬日余音 / Echoes in Winter",
+        "storyGoal": "Oliver返回美国后，Mr. Perlman鼓励Elio接纳这段感情与痛苦。冬季来电传来Oliver将结婚的消息，Elio独自在壁炉前面对回忆。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "Oliver返回美国后，Mr. Perlman鼓励Elio接纳这段感情与痛苦。冬季来电传来Oliver将结婚的消息，Elio独自在壁炉前面对回忆。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5",
+          "C6"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [],
+        "knowledgePointRecommendationSummary": ""
+      }
+    ]
+  },
+  "error": null
+}

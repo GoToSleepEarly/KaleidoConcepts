@@ -1,0 +1,25 @@
+{
+  "scope": "story",
+  "method": "alignRequirements",
+  "args": [{
+    "task": "我的回答：\n作品版本：2017 年电影版",
+    "chapterCount": 4,
+    "englishLevel": "B1",
+    "storyComplexity": "conflict_driven",
+    "coursePeople": [
+      { "personId": "teacher-zhao", "role": "teacher", "chineseName": "赵老师", "englishName": "Ms. Zhao", "age": 34, "gender": "female" },
+      { "personId": "student-mia", "role": "student", "chineseName": "米娅", "englishName": "Mia", "age": 12, "gender": "female" },
+      { "personId": "student-ben", "role": "student", "chineseName": "本", "englishName": "Ben", "age": 12, "gender": "male" }
+    ],
+    "conversationHistory": [
+      { "role": "teacher", "content": "学生和老师们一起进入了《Call Me By Your Name》(以你的名字呼唤我)，见证了主角之间的假期和情愫" },
+      { "role": "assistant", "content": "采用哪个作品版本？推荐 2017 年电影版。" },
+      { "role": "teacher", "content": "我的回答：\n作品版本：2017 年电影版" }
+    ],
+    "references": [],
+    "selectedDirection": null,
+    "currentDirections": [],
+    "currentOutline": null,
+    "requiredQuestionIds": []
+  }]
+}

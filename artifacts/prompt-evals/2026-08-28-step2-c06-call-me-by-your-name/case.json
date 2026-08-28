@@ -1,0 +1,13 @@
+{
+  "case": "C06",
+  "source": "user-specified historical case",
+  "teacherQuestion": "学生和老师们一起进入了《Call Me By Your Name》(以你的名字呼唤我)，见证了主角之间的假期和情愫",
+  "chapterCount": 4,
+  "englishLevel": "B1",
+  "storyComplexity": "conflict_driven",
+  "coursePeople": [
+    { "personId": "teacher-zhao", "role": "teacher", "chineseName": "赵老师", "englishName": "Ms. Zhao", "age": 34, "gender": "female" },
+    { "personId": "student-mia", "role": "student", "chineseName": "米娅", "englishName": "Mia", "age": 12, "gender": "female" },
+    { "personId": "student-ben", "role": "student", "chineseName": "本", "englishName": "Ben", "age": 12, "gender": "male" }
+  ]
+}

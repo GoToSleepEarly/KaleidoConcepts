@@ -1,0 +1,8 @@
+{
+  "threadId": "01a048d7-d028-7140-904f-2f5e0cdedd69",
+  "hostId": "local",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": "medium",
+  "result": "program_pass_business_fail",
+  "rootCause": "the English classroom-name contract did not cover the mainline-card branch"
+}

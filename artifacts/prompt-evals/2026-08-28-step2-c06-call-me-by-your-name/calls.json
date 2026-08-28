@@ -1,0 +1,29 @@
+{
+  "model": "gpt-5.6-sol",
+  "transport": "independent Codex tasks; no API calls",
+  "calls": [
+    { "id": "A01", "stage": "alignment", "promptChars": 3593, "promptBytes": 6725, "outputChars": 617, "outputBytes": 1021, "result": "invalid_json", "cause": "allowCustom emitted as a bare field" },
+    { "id": "A02", "stage": "alignment", "promptChars": 3593, "promptBytes": 6725, "outputChars": 608, "outputBytes": 994, "result": "invalid_json", "cause": "allowCustom emitted as a bare field" },
+    { "id": "A03", "stage": "alignment", "promptChars": 3619, "promptBytes": 6713, "outputChars": 600, "outputBytes": 972, "result": "invalid_json", "cause": "AI-owned allowCustom remained unstable" },
+    { "id": "A04", "stage": "alignment", "promptChars": 3665, "promptBytes": 6891, "outputChars": 673, "outputBytes": 1137, "result": "program_pass_business_fail", "cause": "cross-media version ambiguity was skipped" },
+    { "id": "A05", "stage": "alignment", "promptChars": 3665, "promptBytes": 6891, "outputChars": 546, "outputBytes": 918, "result": "pass", "finalPath": true },
+    { "id": "A06", "stage": "alignment_after_teacher_choice", "promptChars": 3737, "promptBytes": 6981, "outputChars": 633, "outputBytes": 1025, "result": "pass", "finalPath": true },
+    { "id": "A07", "stage": "background", "promptChars": 1669, "promptBytes": 3107, "outputChars": 2594, "outputBytes": 5396, "result": "pass", "finalPath": true },
+    { "id": "A08", "stage": "mainline", "promptChars": 4167, "promptBytes": 8119, "outputChars": 1959, "outputBytes": 4493, "result": "program_pass_business_fail", "cause": "mainline branch lacked the English classroom-name contract" },
+    { "id": "A09", "stage": "mainline", "promptChars": 4167, "promptBytes": 8119, "outputChars": 1995, "outputBytes": 4387, "result": "pass", "finalPath": true },
+    { "id": "A10", "stage": "outline", "promptChars": 6858, "promptBytes": 15114, "outputChars": 2303, "outputBytes": 3159, "result": "invalid_test_fixture", "cause": "manual fixture omitted persisted reference ids", "excludedFromProductMetric": true },
+    { "id": "A11", "stage": "outline", "promptChars": 8893, "promptBytes": 19383, "outputChars": 2434, "outputBytes": 3389, "result": "pass", "finalPath": true }
+  ],
+  "metrics": {
+    "optimizationRunProductCalls": 10,
+    "optimizationRunPasses": 6,
+    "optimizationRunOneShotAccuracy": 0.6,
+    "finalPathCalls": 5,
+    "finalPathPasses": 5,
+    "finalPathOneShotAccuracy": 1,
+    "finalPathPromptChars": 22131,
+    "finalPathPromptBytes": 44481,
+    "finalPathOutputChars": 8202,
+    "finalPathOutputBytes": 15115
+  }
+}

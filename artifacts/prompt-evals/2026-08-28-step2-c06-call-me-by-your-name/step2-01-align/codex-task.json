@@ -1,0 +1,8 @@
+{
+  "threadId": "01a048cc-a0b6-7cf1-b923-bb175b0682bc",
+  "hostId": "local",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": "medium",
+  "result": "invalid_json",
+  "rootCause": "allowCustom field type was not explicit in the production prompt"
+}

@@ -58,31 +58,31 @@ describe("createStoryOutlineGenerationDeps", () => {
       storyComplexity: "clear_linear" as const,
       lengthPolicy: storyLengthPolicy("A2", "clear_linear", 3),
     };
-    const direction = { title: "方向", hook: "长".repeat(91), storyHighlight: "亮点", growthCore: "合作", mainCharacters: ["Mia"], whyFits: "匹配要求" };
+    const direction = { title: "方向", hook: "长".repeat(102), storyHighlight: "亮点", growthCore: "合作", mainCharacters: ["Mia"], whyFits: "匹配要求" };
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify([direction, direction, direction]) });
-    await expect(deps.generateDirections({ ...shared, task: "生成方向" })).rejects.toThrow("方向概要超过 90 字生成上限");
+    await expect(deps.generateDirections({ ...shared, task: "生成方向" })).rejects.toThrow("方向概要超过 101 展示单位验收上限（生成目标 90，实际 102）");
 
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify(direction) });
-    await expect(deps.reviseDirection({ ...shared, task: "修改方向", direction: { title: "旧方向" } })).rejects.toThrow("方向概要超过 90 字生成上限");
+    await expect(deps.reviseDirection({ ...shared, task: "修改方向", direction: { title: "旧方向" } })).rejects.toThrow("方向概要超过 101 展示单位验收上限（生成目标 90，实际 102）");
 
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
       title: { zh: "故事", en: "Story" },
-      summary: "长".repeat(96),
+      summary: "长".repeat(108),
       characters: [],
       chapters: [1, 2, 3].map((order) => ({ order, title: { zh: `第${order}章`, en: `Chapter ${order}` }, whatHappens: "行动产生结果。", characterKeys: [] })),
     }) });
-    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).rejects.toThrow("整体概要超过 95 字生成上限");
+    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).rejects.toThrow("整体概要超过 107 展示单位验收上限（生成目标 95，实际 108）");
 
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
       title: { zh: "故事", en: "Story" },
       summary: "角色完成任务。",
       characters: [],
-      chapters: [1, 2, 3].map((order) => ({ order, title: { zh: `第${order}章`, en: `Chapter ${order}` }, whatHappens: order === 1 ? "长".repeat(46) : "行动产生结果。", characterKeys: [] })),
+      chapters: [1, 2, 3].map((order) => ({ order, title: { zh: `第${order}章`, en: `Chapter ${order}` }, whatHappens: order === 1 ? "长".repeat(52) : "行动产生结果。", characterKeys: [] })),
     }) });
-    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).rejects.toThrow("第 1 章概述超过 45 字生成上限");
+    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).rejects.toThrow("第 1 章概述超过 51 展示单位验收上限（生成目标 45，实际 52）");
 
-    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({ status: "ready", chapter: { order: 1, title: { zh: "第一章", en: "Chapter One" }, whatHappens: "长".repeat(46), characterIds: [] } }) });
-    await expect(deps.reviseChapter({ ...shared, task: "修改章节", chapterOrder: 1 })).rejects.toThrow("单章概述超过 45 字生成上限");
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({ status: "ready", chapter: { order: 1, title: { zh: "第一章", en: "Chapter One" }, whatHappens: "长".repeat(52), characterIds: [] } }) });
+    await expect(deps.reviseChapter({ ...shared, task: "修改章节", chapterOrder: 1 })).rejects.toThrow("单章概述超过 51 展示单位验收上限（生成目标 45，实际 52）");
   });
 
   test("converts response-only KP keys to knowledge point labels in the saved recommendation summary", async () => {
@@ -189,10 +189,19 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("默认 0 题");
     expect(prompt).toContain("同一轮最多返回 3 个");
     expect(prompt).toContain("recommendedOptionId");
+    expect(prompt).toContain("answerMode:'single_choice'|'multi_choice'|'text'");
+    expect(prompt).toContain("resolvedRequirements:string[]");
+    expect(prompt).toContain("必须是合法 JSON");
+    expect(prompt).not.toContain("allowCustom:boolean");
     expect(prompt).not.toContain("researchPlan");
     expect(prompt).toContain("暮光闪闪和云宝黛西");
     expect(prompt).toContain("requiredNamedCharacters");
     expect(prompt).toContain("只逐个保存老师明确点名且要求出场的外部角色原名");
+    expect(prompt).toContain("先提问并给出推荐");
+    expect(prompt).toContain("确认后才准备背景资料");
+    expect(prompt).toContain("跨媒介叙事版本");
+    expect(prompt).toContain("默认先确认版本");
+    expect(prompt).toContain("主角或团队、要解决的问题、主要行动和结果方向");
     expect(prompt).toContain('"personId":"student-1"');
   });
 
@@ -252,7 +261,6 @@ describe("createStoryOutlineGenerationDeps", () => {
             { id: "dimensions", label: "理解四组偏好并会举例" },
             { id: "types", label: "进一步认识常见类型组合" },
           ],
-          allowCustom: true,
           recommendedOptionId: "dimensions",
           recommendationReason: "在当前课堂容量内能讲清理论又不会挤压故事。",
         }],
@@ -272,6 +280,7 @@ describe("createStoryOutlineGenerationDeps", () => {
 
     expect(result).toMatchObject({ status: "needs_clarification", provisionalBriefKind: "concept", resolvedUnderstanding: ["用故事讲 MBTI", "学生需要学习理论"] });
     expect(result.questions).toHaveLength(1);
+    expect(result.questions[0]?.allowCustom).toBe(true);
   });
 
   test("repairs more than three current blockers once instead of truncating them", async () => {
@@ -346,6 +355,8 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(result).toMatchObject({ goal: "全队合作保护城市", classroomRoles: [{ personId: "student-1" }] });
     const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
     expect(prompt).toContain("不生成章节大纲");
+    expect(prompt).toContain("所有自然语言字段提到课堂人物时，逐字使用人物快照中的 englishName");
+    expect(prompt).toContain("程序不会改写自由文本姓名");
     expect(prompt).not.toContain("不应进入主线卡");
   });
 
@@ -709,6 +720,45 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).not.toContain("grammar-1");
   });
 
+  test("accepts a legacy string-array research plan without another AI repair call", async () => {
+    const callsBefore = generateOutlineMock.mock.calls.length;
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        status: "external_required",
+        reason: "需要确认作品设定。",
+        researchPlan: ["确认核心世界规则", "确认角色关系和能力边界"],
+      }),
+    });
+
+    const result = await createStoryOutlineGenerationDeps().prepareBackgroundKnowledge({
+      task: "准备背景资料",
+      chapterCount: 4,
+      coursePeople: [],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentOutline: null,
+      confirmedRequirement: "使用《小马宝莉：友谊就是魔法》创作新故事。",
+      requirementBrief: narrativeBrief("使用原作世界创作新故事"),
+    });
+
+    expect(result).toMatchObject({
+      status: "external_required",
+      researchPlan: {
+        packets: [{
+          researchQuestions: ["确认核心世界规则", "确认角色关系和能力边界"],
+        }],
+      },
+    });
+    expect(generateOutlineMock.mock.calls.length - callsBefore).toBe(1);
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain("researchGoal");
+    expect(prompt).toContain("researchQuestions");
+    expect(prompt).toContain("storyUseGoals");
+    expect(prompt).toContain("type 只能是 real_person, historical_person, public_figure, ip, game_character, fictional_character, other");
+    expect(prompt).toContain("sourceStatus 只能是 confirmed 或 insufficient");
+  });
+
   test("treats plot, antagonist, magic and classroom participation changes as local revisions", async () => {
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({ scope: "within_target" }) });
 
@@ -836,6 +886,46 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("课堂人物只观察");
     expect(prompt).not.toContain("选择差异最大的 3 个");
     expect(prompt).not.toContain("每名学生都有高光时刻");
+    expect(prompt).not.toContain("问题—行动—结果");
+  });
+
+  test("sends only references relevant to the selected direction into outline generation", async () => {
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        title: { zh: "彩虹之路", en: "The Rainbow Road" },
+        summary: "暮光闪闪与学生修复彩虹路。",
+        characters: [{ key: "C1", displayName: "暮光闪闪", englishName: "Twilight Sparkle", sourceType: "referenced", sourceReferenceKey: "R02", roleInStory: "帮助团队理解魔法规则。" }],
+        chapters: [{ order: 1, title: { zh: "道路变化", en: "The Road Changes" }, whatHappens: "暮光闪闪发现彩虹路失去控制。", characterKeys: ["C1"], recommendedKnowledgePointKeys: [], knowledgePointRecommendationSummary: "" }],
+      }),
+    });
+
+    await createStoryOutlineGenerationDeps().generateOutline({
+      task: "生成已选方向的大纲",
+      chapterCount: 1,
+      writingProvider: "quickrouter_gpt",
+      coursePeople: [],
+      conversationHistory: [],
+      references: [
+        { id: "world", name: "《小马宝莉：友谊就是魔法》", summary: "小马利亚世界规则。" },
+        { id: "twilight", name: "暮光闪闪", summary: "Twilight Sparkle 的能力和关系。" },
+        { id: "rainbow", name: "云宝黛西", summary: "Rainbow Dash 的能力和关系。" },
+        { id: "pinkie", name: "碧琪", summary: "Pinkie Pie 的能力和关系。" },
+      ],
+      selectedDirection: { title: "彩虹之路", hook: "暮光闪闪带领团队修复小马利亚的彩虹路。", mainCharacters: ["暮光闪闪"] },
+      currentOutline: null,
+      requirementBrief: {
+        ...narrativeBrief("使用《小马宝莉：友谊就是魔法》的世界创作新故事"),
+        sourceRequirements: [{ name: "《小马宝莉：友谊就是魔法》", useInCourse: "使用世界设定" }],
+      },
+    });
+
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain('"key":"R01"');
+    expect(prompt).toContain('"key":"R02"');
+    expect(prompt).not.toContain('"key":"R03"');
+    expect(prompt).not.toContain('"key":"R04"');
+    expect(prompt).not.toContain("云宝黛西");
+    expect(prompt).not.toContain("碧琪");
   });
 
   test("keeps faithful direction and chapter revisions inside the observer boundary", async () => {
@@ -879,7 +969,7 @@ describe("createStoryOutlineGenerationDeps", () => {
 
     await createStoryOutlineGenerationDeps().reviseChapter({ ...context, chapterOrder: 1 });
     const chapterPrompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(chapterPrompt).toContain("只按已确认资料讲清本章既定事件");
+    expect(chapterPrompt).toContain("只按已确认资料保留本章决定性事件及其直接结果");
     expect(chapterPrompt).toContain("课堂人物只观察、记录、见证或彼此交流");
     expect(chapterPrompt).not.toContain("本章结果必须改变下一章成立时的局面");
   });
@@ -967,7 +1057,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).not.toContain("课程：海底图书馆");
   });
 
-  test("normalizes malformed direction character objects to canonical classroom English names without a duplicate team entity", async () => {
+  test("normalizes structured direction character names without rewriting free prose", async () => {
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify(Array.from({ length: 3 }, (_, index) => ({
       title: `英雄方向 ${index + 1}`,
       hook: "孟雨带领 Ethan 和其他学生英雄合作迎战怪兽。",
@@ -997,9 +1087,8 @@ describe("createStoryOutlineGenerationDeps", () => {
     });
 
     expect(directions[0].mainCharacters).toEqual(["Ms. Meng", "Ethan"]);
-    expect(directions[0].hook).toContain("Ms. Meng");
+    expect(directions[0].hook).toContain("孟雨");
     expect(directions[0].hook).toContain("Ethan");
-    expect(directions[0].hook).not.toContain("孟雨");
     expect(generateOutlineMock.mock.calls.at(-1)?.[0].prompt).toContain("课堂团队称呼不能作为额外角色重复放入 mainCharacters");
     expect(generateOutlineMock.mock.calls.at(-1)?.[0].prompt).toContain("每名学生都有高光时刻");
   });
@@ -1028,8 +1117,90 @@ describe("createStoryOutlineGenerationDeps", () => {
       englishName: "Ethan",
       sourcePersonId: "student-1",
     });
-    expect(outline.chapters[0].whatHappens).toContain("Ethan");
-    expect(outline.chapters[0].whatHappens).not.toContain("李世翊");
+    expect(outline.chapters[0].whatHappens).toContain("李世翊");
+  });
+
+  test("never rewrites a single-character classroom name inside ordinary Chinese prose", async () => {
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify(Array.from({ length: 3 }, (_, index) => ({
+      title: `方向 ${index + 1}`,
+      hook: "Ms. Zhao、Mia 和 Ben 一起检查错误标签。",
+      storyHighlight: "错误标签本身成为需要解决的问题。",
+      growthCore: "独立判断",
+      mainCharacters: ["Ms. Zhao", "Mia", "Ben"],
+      whyFits: "适合当前课程。",
+    }))) });
+
+    const directions = await createStoryOutlineGenerationDeps().generateDirections({
+      task: "生成方向",
+      chapterCount: 4,
+      coursePeople: [
+        { personId: "teacher-1", role: "teacher", chineseName: "赵老师", englishName: "Ms. Zhao", age: 34, gender: "female" },
+        { personId: "student-1", role: "student", chineseName: "米娅", englishName: "Mia", age: 12, gender: "female" },
+        { personId: "student-2", role: "student", chineseName: "本", englishName: "Ben", age: 12, gender: "male" },
+      ],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+    });
+
+    expect(directions[0].storyHighlight).toBe("错误标签本身成为需要解决的问题。");
+    expect(directions[0].storyHighlight).not.toContain("Ben身");
+  });
+
+  test("omits only deterministic course-context duplicates from downstream prompts", async () => {
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify(Array.from({ length: 3 }, (_, index) => ({
+      title: `方向 ${index + 1}`,
+      hook: "Ms. Zhao、Mia 和 Ben 共同完成一项任务并解决问题。",
+      storyHighlight: "概念影响连续决策。",
+      growthCore: "合作",
+      mainCharacters: ["Ms. Zhao", "Mia", "Ben"],
+      whyFits: "适合当前课程。",
+    }))) });
+    const brief: StoryRequirementBrief = {
+      kind: "concept",
+      objective: "通过故事理解四组偏好",
+      learningTargets: [{ concept: "四组偏好", expectedUnderstanding: "能够用行为证据解释差异" }],
+      assumedPriorKnowledge: [],
+      sourceRequirements: [],
+      requiredNamedCharacters: [],
+      fixedPlot: null,
+      additionalConstraints: {
+        required: ["共 4 章", "英语难度为 B1", "赵老师、Mia 和 Ben 全部参与故事", "每名学生都有一次关键选择"],
+        preferred: [],
+        excluded: ["给学生贴固定类型标签"],
+      },
+    };
+
+    await createStoryOutlineGenerationDeps().generateDirections({
+      task: "生成方向",
+      chapterCount: 4,
+      englishLevel: "B1",
+      storyComplexity: "conflict_driven",
+      requirementBrief: brief,
+      storyMode: "new_story",
+      classroomPresence: "participant",
+      coursePeople: [
+        { personId: "teacher-1", role: "teacher", chineseName: "赵老师", englishName: "Ms. Zhao", age: 34, gender: "female" },
+        { personId: "student-1", role: "student", chineseName: "米娅", englishName: "Mia", age: 12, gender: "female" },
+        { personId: "student-2", role: "student", chineseName: "本", englishName: "Ben", age: 12, gender: "male" },
+      ],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+    });
+
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).not.toContain('"共 4 章"');
+    expect(prompt).not.toContain('"英语难度为 B1"');
+    expect(prompt).not.toContain('"赵老师、Mia 和 Ben 全部参与故事"');
+    expect(prompt).toContain("每名学生都有一次关键选择");
+    expect(prompt).toContain("给学生贴固定类型标签");
+    expect(prompt).toContain("一条持续发展的故事任务");
+    expect(prompt).toContain("不得把多个学习点机械拆成互不影响的并列关卡");
   });
 
   test("normalizes array-valued chapter prose before it reaches String database fields", async () => {
@@ -1176,11 +1347,13 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("外部角色使用老师输入或参考资料确认的名称");
     expect(prompt).toContain("富有想象力的儿童故事创意总监");
     expect(prompt).toContain("方向卡用于快速选择主线，不是营销文案");
-    expect(prompt).toContain("最高验收标准");
-    expect(prompt).toContain("读一遍后就能用一句话讲清整个故事设计");
+    expect(prompt).toContain("老师读一遍应能讲清讲述对象、核心内容、主要路径和独特之处");
     expect(prompt).toContain("2 个短句说明开端、主要发展和结果方向");
-    expect(prompt).toContain("按最自然的顺序组织");
-    expect(prompt).toContain("每个 hook 只呈现一个决定性故事引擎");
+    expect(prompt).toContain("hook 按最自然的顺序");
+    expect(prompt).toContain("问题—行动—结果");
+    expect(prompt).toContain("结果必须直接回答开头建立的问题");
+    expect(prompt).toContain("若主要行动的对象与待解决对象不同");
+    expect(prompt).toContain("不能用完成中间步骤或表达主题代替故事结果");
     expect(prompt).toContain("辅助规则、逐人分工、阶段任务和具体解法由大纲展开");
     expect(prompt).toContain("mainCharacters 完整记录具体角色");
     expect(prompt).toContain("hook 使用自然的团队称呼表达课堂人物共同参与");
@@ -1263,11 +1436,12 @@ describe("createStoryOutlineGenerationDeps", () => {
 
     const directionPrompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
     expect(directionPrompt).toContain("方向卡用于快速选择主线，不是营销文案");
-    expect(directionPrompt).toContain("最高验收标准");
-    expect(directionPrompt).toContain("读一遍后就能用一句话讲清整个故事设计");
+    expect(directionPrompt).toContain("老师读一遍应能讲清讲述对象、核心内容、主要路径和独特之处");
     expect(directionPrompt).toContain("2 个短句说明开端、主要发展和结果方向");
-    expect(directionPrompt).toContain("按最自然的顺序组织");
-    expect(directionPrompt).toContain("每个 hook 只呈现一个决定性故事引擎");
+    expect(directionPrompt).toContain("hook 按最自然的顺序");
+    expect(directionPrompt).toContain("问题—行动—结果");
+    expect(directionPrompt).toContain("结果必须直接回答开头建立的问题");
+    expect(directionPrompt).toContain("不能用完成中间步骤或表达主题代替故事结果");
     expect(directionPrompt).toContain("辅助规则、逐人分工、阶段任务和具体解法由大纲展开");
     expect(directionPrompt).not.toContain("最大的阻碍");
     expect(directionPrompt).not.toContain("他们准备");
@@ -1299,8 +1473,8 @@ describe("createStoryOutlineGenerationDeps", () => {
     });
 
     const chapterPrompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(chapterPrompt).toContain("使用 1–2 个自然短句");
-    expect(chapterPrompt).toContain("语义完整优先于凑固定句数");
+    expect(chapterPrompt).toContain("默认写成 1 个自然短句，必要时最多 2 句");
+    expect(chapterPrompt).toContain("决定性行动及其直接结果");
     expect(chapterPrompt).toContain("首次出现时说明它与当前任务的关系");
     expect(chapterPrompt).toContain("本章结果必须改变下一章成立时的局面");
     expect(chapterPrompt).toContain("人物位置、关键物品归属和已知线索");
@@ -1331,9 +1505,11 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("保留会改变人物决定、升级冲突或影响结果的事件");
     expect(prompt).toContain("summary 使用 2–3 个自然短句");
     expect(prompt).toContain("首次出现时立刻说明它与当前任务的关系");
-    expect(prompt).toContain("语义完整优先于凑固定句数");
+    expect(prompt).toContain("whatHappens 默认写成 1 个自然短句，必要时最多 2 句");
+    expect(prompt).toContain("2–3 个事件是结构上限而非目标");
+    expect(prompt).toContain("ASCII 字符按 0.5 个展示单位");
     expect(prompt).toContain("同一种“发现信息—重新选择路线—继续前进”");
-    expect(prompt).toContain("每句话只表达一个主要事件");
+    expect(prompt).not.toContain("每句话只表达一个主要事件");
     expect(prompt).toContain("是结构上限，不要求机械用满");
     expect(prompt).toContain("具名团队或不可分割的群像");
     expect(prompt).toContain("不要求每名成员拥有独立支线");

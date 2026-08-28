@@ -1,0 +1,12 @@
+{
+  "index": 0,
+  "url": "https://api.quickrouter.ai/v1/responses",
+  "operation": "prepareBackgroundKnowledge",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": null,
+  "maxOutputTokens": null,
+  "prompt": "你是一名儿童故事背景资料编辑，负责为后续故事创作准备准确、必要且简洁的背景知识。\n老师已确认创作方向；不要重新判断、追问或改变需求。完全原创且不依赖外部对象时返回 not_needed；需要资料时优先使用你已有且有把握的知识，只有当已有知识不足以准确创作时才返回 external_required。\n只整理当前方向会使用的对象、版本、人物、关系和规则，不做百科式扩展。\n老师明确点名的原作角色全部保留。老师未点名原作角色时，最多整理 4 个原作候选角色，只选择足以支持后续方向设计的核心人物；候选角色不代表都会进入最终故事。\n只使用与当前创作直接相关且能够确认的背景信息，不猜测细节，不混合不同版本。\n忠实讲述中，已确认事实、原作事件、因果和结局是最高边界；老师的视角、范围和呈现要求只能在该边界内执行。\n不生成故事方向或故事大纲，不实际执行联网搜索。\nexternal_required 的 reason 会直接展示给老师：只用一句中文具体说明缺少哪项背景信息，不描述你的知识、能力或内部判断。\n面向老师的回复只说明已确认结果、真正缺少的信息和下一步可执行动作，不播报内部分析过程。\n面向老师的回复不得出现模型、Prompt、JSON、调用、知识库或能力限制等内部术语。\n只返回 JSON。协议：{status:'not_needed',reason}；{status:'ready',references:[{name,type,sourceStatus,summary,usableFacts:string[],avoidTopics:string[],adaptationBoundary}]}；{status:'external_required',reason,researchPlan:{researchGoal,packets:[{title,subjects:[{name,context?}],researchQuestions:string[],storyUseGoals:string[]}]}}。external_required 至少返回 1 个完整 packet，不得把 researchPlan 简写成字符串数组。\nready 中 type 只能是 real_person, historical_person, public_figure, ip, game_character, fictional_character, other；sourceStatus 只能是 confirmed 或 insufficient。\n<confirmed_requirement>\n{\"kind\":\"narrative\",\"objective\":\"让赵老师、Mia 和 Ben 共同进入 2017 年电影版《Call Me by Your Name》的故事，以观察者身份见证两位主角在暑假中相识、相处、产生情愫并经历离别的原作历程。\",\"sourceRequirements\":[{\"name\":\"2017 年电影《Call Me by Your Name》\",\"useInCourse\":\"忠实保留原作的主要人物关系、关键事件、情感发展、因果与结局，并按 12 岁学生、B1 英语水平和 4 章容量适龄呈现。\"}],\"requiredNamedCharacters\":[],\"fixedPlot\":\"赵老师、Mia 和 Ben 见证两位主角在意大利暑假期间相识并逐渐建立亲密情感，随后因假期结束而分离；课堂人物不干预原作事件、因果或结局。\",\"additionalConstraints\":{\"required\":[\"赵老师、Mia 和 Ben 全部参与故事并仅作为观察者\"],\"preferred\":[],\"excluded\":[]}}\n</confirmed_requirement>\n<current_task>\n根据老师确认的创作理解，为后续故事生成准备一次必要背景知识。\n</current_task>",
+  "promptSha256": "8c8c37411c8facb3ee1fc545fb35561adb85b5fc9819fdda7f8c56966026471c",
+  "promptCharacters": 1669,
+  "promptUtf8Bytes": 3107
+}

@@ -52,8 +52,16 @@ export function englishWordRangesForTarget(targetWordCount: number) {
   return { generationRange, validationRange };
 }
 
-export function chineseTextLength(value: string) {
-  return Array.from(value.replace(/\s/gu, "")).length;
+export function chineseDisplayLength(value: string) {
+  return Array.from(value).reduce((length, character) => {
+    if (/\s/u.test(character)) return length;
+    return length + (character.codePointAt(0)! <= 0x7f ? 0.5 : 1);
+  }, 0);
+}
+
+export function chineseValidationMax(generationMax: number) {
+  if (!Number.isFinite(generationMax) || generationMax <= 0) throw new RangeError("中文生成上限必须是正数");
+  return Math.ceil((generationMax * 112) / 100);
 }
 
 export function normalizeEnglishLevel(level: EnglishLevel | null | undefined): EnglishLevel {

@@ -9,7 +9,7 @@ import type {
   StoryWritingProvider,
   EnglishLevel,
 } from "@/lib/contracts/api";
-import { chineseTextLength, defaultStoryComplexity, storyLengthPolicy, type StoryLengthPolicy } from "@/lib/domain/story-length-policy";
+import { chineseDisplayLength, chineseValidationMax, defaultStoryComplexity, storyLengthPolicy, type StoryLengthPolicy } from "@/lib/domain/story-length-policy";
 
 import { devAiLog } from "./dev-ai-log";
 import { createStoryOutlineProvider } from "./story-outline-provider";
@@ -117,9 +117,10 @@ function resolvedStoryPolicy(input: Pick<StoryPromptContext, "englishLevel" | "s
 }
 
 function enforceChineseGenerationMax(value: string, generationMax: number, label: string) {
-  const actualLength = chineseTextLength(value);
-  if (actualLength > generationMax) {
-    throw new StoryOutlineResponseError(`${label}超过 ${generationMax} 字生成上限（实际 ${actualLength} 字），请重试本步`);
+  const actualLength = chineseDisplayLength(value);
+  const validationMax = chineseValidationMax(generationMax);
+  if (actualLength > validationMax) {
+    throw new StoryOutlineResponseError(`${label}超过 ${validationMax} 展示单位验收上限（生成目标 ${generationMax}，实际 ${actualLength}），请重试本步`);
   }
 }
 
@@ -209,6 +210,43 @@ function directionReferenceForPrompt(value: unknown) {
   );
 }
 
+function compactMatchText(value: unknown) {
+  return JSON.stringify(value ?? "").normalize("NFKC").toLocaleLowerCase().replace(/[\s._'’·—–-]+/gu, "");
+}
+
+function referenceNameFragments(name: string) {
+  return [name, ...name.split(/[与和、,，/；;:：()（）《》【】]/u)]
+    .map((value) => compactMatchText(value))
+    .filter((value, index, values) => value.length >= 2 && values.indexOf(value) === index);
+}
+
+function textContainsReferenceName(text: string, name: string) {
+  return referenceNameFragments(name).some((fragment) => {
+    if (text.includes(fragment)) return true;
+    if (!/[\p{Script=Han}]/u.test(fragment) || fragment.length < 4) return false;
+    return Array.from({ length: fragment.length - 3 }, (_, index) => fragment.slice(index, index + 4))
+      .some((window) => text.includes(window));
+  });
+}
+
+function relevantStoryReferenceOptions(
+  references: StoryReferenceOption[],
+  selectedDirection: unknown,
+  brief?: StoryRequirementBrief,
+) {
+  if (!selectedDirection || references.length <= 1) return references;
+  const directionText = compactMatchText(directionForPrompt(selectedDirection));
+  const requiredText = compactMatchText([
+    ...(brief?.sourceRequirements ?? []).map((source) => source.name),
+    ...(brief && "requiredNamedCharacters" in brief ? brief.requiredNamedCharacters : []),
+  ]);
+  const selected = references.filter((reference) => {
+    return textContainsReferenceName(directionText, reference.name) || textContainsReferenceName(requiredText, reference.name);
+  });
+  // When names cannot be matched confidently, preserving all references is safer than dropping a required fact.
+  return selected.length ? selected : references;
+}
+
 function generationLengthForPrompt(policy: StoryLengthPolicy) {
   return {
     chapterTargetWords: policy.english.chapterTargetWords,
@@ -216,9 +254,47 @@ function generationLengthForPrompt(policy: StoryLengthPolicy) {
   };
 }
 
-function requirementForPrompt(input: Pick<StoryPromptContext, "requirementBrief" | "confirmedRequirement">) {
+function normalizedConstraint(value: string) {
+  return value.normalize("NFKC").trim().toLocaleLowerCase().replace(/\s+/gu, "");
+}
+
+function isAllPeopleParticipationConstraint(value: string, people: CoursePersonPrompt) {
+  if (!people.length) return false;
+  const normalized = value.normalize("NFKC").trim().toLocaleLowerCase().replace(/\s+/gu, "");
+  const prefix = normalized.replace(/(?:全部|全员|都)(?:一起)?参与(?:这个|本)?故事[。.]?$/u, "");
+  if (prefix === normalized) return false;
+  if (prefix === "老师和所有学生" || prefix === "老师及所有学生") return true;
+  const names = prefix.split(/[、,，和&＋+]|and/iu).filter(Boolean);
+  if (names.length !== people.length) return false;
+  const matchedIds = new Set(names.flatMap((name) => {
+    const person = uniquePersonByName(people, name);
+    return person ? [person.personId] : [];
+  }));
+  return matchedIds.size === people.length;
+}
+
+function briefForPrompt(input: Pick<StoryPromptContext, "requirementBrief" | "chapterCount" | "englishLevel" | "coursePeople" | "classroomPresence">) {
+  const brief = input.requirementBrief;
+  if (!brief) return undefined;
+  const chapter = String(input.chapterCount);
+  const level = input.englishLevel ? normalizedConstraint(input.englishLevel) : "";
+  const required = brief.additionalConstraints.required.filter((constraint) => {
+    const normalized = normalizedConstraint(constraint);
+    if (new RegExp(`^(?:全篇|全文|故事)?(?:共|一共)?${chapter}章$`, "u").test(normalized)) return false;
+    if (level && new RegExp(`^(?:英语)?(?:难度|等级)?(?:为)?${level}(?:英语)?$`, "u").test(normalized)) return false;
+    if (input.classroomPresence && input.classroomPresence !== "absent" && isAllPeopleParticipationConstraint(constraint, input.coursePeople)) return false;
+    return true;
+  });
+  if (required.length === brief.additionalConstraints.required.length) return brief;
+  return {
+    ...brief,
+    additionalConstraints: { ...brief.additionalConstraints, required },
+  };
+}
+
+function requirementForPrompt(input: Pick<StoryPromptContext, "requirementBrief" | "confirmedRequirement" | "chapterCount" | "englishLevel" | "coursePeople" | "classroomPresence">) {
   if (input.requirementBrief) {
-    return ["<requirement_brief>", JSON.stringify(input.requirementBrief), "</requirement_brief>"];
+    return ["<requirement_brief>", JSON.stringify(briefForPrompt(input)), "</requirement_brief>"];
   }
   return input.confirmedRequirement ? [`已确认创作理解：${input.confirmedRequirement}`] : [];
 }
@@ -237,7 +313,7 @@ function directionContextPrompt(input: StoryPromptContext) {
   return [
     "<course_context>",
     `故事容量：${input.chapterCount} 章；故事复杂度：${policy.storyComplexity}；每章英文正文容量：${JSON.stringify(generationLengthForPrompt(policy))}。只设计一条能在该容量内讲清的核心主线。`,
-    `中文篇幅：方向概要推荐不超过 ${policy.chinese.directionOverview.recommendedMax} 字，硬上限 ${policy.chinese.directionOverview.hardMax} 字；中文没有强制下限，不得为凑长度填充。`,
+    `中文展示容量：方向概要推荐不超过 ${policy.chinese.directionOverview.recommendedMax} 单位，生成上限 ${policy.chinese.directionOverview.hardMax} 单位；汉字和全角字符按 1 个展示单位、ASCII 字符按 0.5 个展示单位、空白不计。没有强制下限，不得为凑长度填充。`,
     `老师和学生人物快照：${JSON.stringify(peopleSnapshots)}`,
     ...requirementForPrompt(input),
     ...(input.requiredNamedCharacters?.length ? [`必须出场的点名角色：${JSON.stringify(input.requiredNamedCharacters)}`] : []),
@@ -321,6 +397,17 @@ function alignmentContextPrompt(input: StoryPromptContext) {
   ];
 }
 
+function backgroundContextPrompt(input: StoryPromptContext) {
+  const latestTeacherMessage = [...input.conversationHistory].reverse().find((message) => message.role === "teacher");
+  return [
+    "<confirmed_requirement>",
+    input.requirementBrief ? JSON.stringify(briefForPrompt(input)) : input.confirmedRequirement ?? "",
+    "</confirmed_requirement>",
+    ...(input.references.length ? ["<existing_references>", JSON.stringify(input.references.map(directionReferenceForPrompt)), "</existing_references>"] : []),
+    ...(!input.requirementBrief && latestTeacherMessage ? ["<latest_teacher_message>", latestTeacherMessage.content, "</latest_teacher_message>"] : []),
+  ];
+}
+
 const classroomParticipationRules = [
   "除非老师明确排除，Step 1 中的老师和所有学生默认全部参与故事；不得遗漏课堂人物，也不得默认只选择一名学生。",
   "课堂人物的具体进入方式由故事剧情决定，不把进入方式当作需求澄清问题。",
@@ -355,12 +442,12 @@ function confirmedReferenceRules(input: Pick<StoryPromptContext, "storyMode">) {
 }
 
 const directionCardBaseRules = [
-  "方向卡的最高验收标准：不了解创作过程的老师读一遍后就能用一句话讲清整个故事设计或讲述方案，包括被讲述的对象、核心内容、主要讲述路径，以及这个方向最独特的地方。",
-  "方向卡用于快速选择主线，不是营销文案。hook 是老师可快速读懂的故事概要，按最自然的顺序组织，用 2 个短句说明开端、主要发展和结果方向；可以交代结果方向，不以隐藏结果制造悬念。",
+  "方向卡用于快速选择主线，不是营销文案。老师读一遍应能讲清讲述对象、核心内容、主要路径和独特之处。",
+  "hook 按最自然的顺序用 2 个短句说明开端、主要发展和结果方向；可以直接交代结果，不靠隐藏结果制造悬念。",
   "mainCharacters 完整记录具体角色和需要保持视觉一致性的具名群体，但只能是 JSON 字符串数组，每一项只写一个名称；不得返回对象，不得把已经逐人列出的课堂成员再用“学生队”“师生团队”“英雄战队”等课堂团队称呼作为额外角色重复放入 mainCharacters。这里的具名群体只指外部作品真实存在且老师明确要求的团队。hook 可以使用自然的团队称呼表达共同参与。",
 ];
 
-function directionCardWritingRules(input: Pick<StoryPromptContext, "storyMode" | "storyComplexity">) {
+function directionCardWritingRules(input: Pick<StoryPromptContext, "storyMode" | "storyComplexity" | "requirementBrief">) {
   const complexityRule = `故事复杂度 ${input.storyComplexity ?? "clear_linear"} 只是结构上限，不要求机械用满；每个方向始终只有一条主要主线，不得为显得复杂而强加受挫、冲突或反转。`;
   if (input.storyMode === "faithful") {
     return [
@@ -373,9 +460,9 @@ function directionCardWritingRules(input: Pick<StoryPromptContext, "storyMode" |
   return [
     ...directionCardBaseRules,
     complexityRule,
-    "每个 hook 只呈现一个决定性故事引擎，让核心问题、主要行动和独特之处彼此直接相关。辅助规则、逐人分工、阶段任务和具体解法由大纲展开。",
-    "使用具体人物、地点、动作和清楚的行动对象。方向中的物品、规则或原创概念在首次出现时说明它怎样改变人物行动或核心问题。",
+    "每个 hook 只呈现一个决定性故事引擎，以具体人物和行动写清问题—行动—结果。结果必须直接回答开头建立的问题；若主要行动的对象与待解决对象不同，必须说明前者如何改变后者。不能用完成中间步骤或表达主题代替故事结果。物品、规则或原创概念首次出现时说明它怎样影响人物行动或核心问题；辅助规则、逐人分工、阶段任务和具体解法由大纲展开。",
     "storyHighlight 只写真正影响剧情的辨识度，不复述主线。growthCore 是面向老师的“成长与理解”，从自我效能、情绪识别、同理心、合作、成长型思维、边界或独立判断等自然主题中只选最贴合故事的一个；不得说教，也不得为了表达主题强加冲突或反转。whyFits 只解释与老师要求和英语难度的匹配。",
+    ...(input.requirementBrief?.kind === "concept" ? ["概念故事用一条持续发展的故事任务承载学习目标，让概念在连续决策及结果中发挥作用；不得把多个学习点机械拆成互不影响的并列关卡或逐章讲解。"] : []),
   ];
 }
 
@@ -447,13 +534,13 @@ function outlineGenreRules(input: Pick<StoryPromptContext, "storyMode">) {
 function chapterRevisionNarrativeRules(input: Pick<StoryPromptContext, "storyMode">) {
   if (input.storyMode === "faithful") {
     return [
-      "这是忠实讲述的章节修改。whatHappens 使用 1–2 个自然短句，只按已确认资料讲清本章既定事件及其与相邻章节的真实时间或因果关系，不新增或改变事实、原作事件、人物行为、转折或结局。",
+      "这是忠实讲述的章节修改。whatHappens 默认写成 1 个自然短句，必要时最多 2 句；只按已确认资料保留本章决定性事件及其直接结果，仅在无法理解时补充最小必要的时间或因果承接，不新增或改变事实、原作事件、人物行为、转折或结局。",
       "不得为了增强戏剧性新增地点、物品、规则、线索、任务、障碍或解决方案；资料没有支持的心理动机和对话不能写成事实。",
       "课堂人物只观察、记录、见证或彼此交流，不采访、提醒或帮助原作与历史人物，不承担推动、解决或改变事件的贡献。",
     ];
   }
   return [
-    "whatHappens 仍是一个自然的故事段落，使用 1–2 个自然短句，语义完整优先于凑固定句数。自然讲清承接的具体局面、本章必要行动和行动造成的直接结果，不显示结构标签；每句话只表达一个主要事件。本章结果必须改变下一章成立时的局面，但不预设行动数量或转折结构，也不把命令、发现、选择、移动、多人分工和多个转折压进同一句。",
+    "whatHappens 默认写成 1 个自然短句，必要时最多 2 句。只保留本章决定性行动及其直接结果；仅在缺少承接信息会无法理解行动时，补充最小必要局面。事件数量是上限而非目标，不显示结构标签。本章结果必须改变下一章成立时的局面。",
     "本章新增的地点、物品、规则、路线关系或信息必须在首次出现时说明它与当前任务的关系，不能使用只有作者知道所指的模糊位置词。检查相邻章节的动作结构，不得重复同一种“发现信息—重新选择路线—继续前进”或其他相同模板。",
     "修改前检查当前大纲中的人物位置、关键物品归属和已知线索。失踪角色在被找到前不能行动，未取得的物品不能被使用或交付，新规则必须先被发现或验证；修改后必须自然承接上一章，并为下一章提供成立的原因或条件。不得增加万能道具或无关支线。最后一章不需要引出下一章，但必须完成开头建立的同一项核心任务，并使用前文已经建立的信息、行动或规则解决核心问题。",
   ];
@@ -540,20 +627,6 @@ function resolveCoursePerson(
   return matches.length === 1 ? matches[0] : null;
 }
 
-function replaceAllLiteral(value: string, search: string, replacement: string) {
-  if (!search || search === replacement) return value;
-  return value.split(search).join(replacement);
-}
-
-function canonicalizeClassroomNames(value: string, coursePeople: CoursePersonPrompt) {
-  return coursePeople
-    .flatMap((person) => [person.chineseName, person.englishName]
-      .filter((name) => name && name !== person.englishName)
-      .map((name) => ({ name, replacement: person.englishName })))
-    .sort((left, right) => right.name.length - left.name.length)
-    .reduce((text, entry) => replaceAllLiteral(text, entry.name, entry.replacement), value);
-}
-
 function isGenericClassroomTeamName(value: string) {
   const normalized = value.normalize("NFKC").trim().toLocaleLowerCase();
   return /^(?:the\s+)?(?:class|classroom|student|teacher.?student|hero|superhero).*(?:team|group|squad)$/u.test(normalized)
@@ -589,11 +662,11 @@ function normalizeDirection(value: unknown, coursePeople: CoursePersonPrompt, fa
     .map((name) => [normalizedName(name), name])).values()];
   if (!mainCharacters.length) throw new StoryOutlineResponseError(fallbackMessage);
   return {
-    title: canonicalizeClassroomNames(title, coursePeople),
-    hook: canonicalizeClassroomNames(hook, coursePeople),
-    storyHighlight: canonicalizeClassroomNames(storyHighlight, coursePeople),
-    growthCore: canonicalizeClassroomNames(growthCore, coursePeople),
-    whyFits: canonicalizeClassroomNames(whyFits, coursePeople),
+    title,
+    hook,
+    storyHighlight,
+    growthCore,
+    whyFits,
     mainCharacters,
   };
 }
@@ -624,7 +697,25 @@ function normalizeReference(
   };
 }
 
-function normalizeResearchPlan(value: unknown): CourseResearchPlan | undefined {
+function normalizeResearchPlan(value: unknown, input?: Pick<StoryPromptContext, "requirementBrief" | "confirmedRequirement">): CourseResearchPlan | undefined {
+  if (Array.isArray(value)) {
+    const researchQuestions = stringArray(value);
+    if (!researchQuestions.length) return undefined;
+    const brief = input?.requirementBrief;
+    const subject = brief?.sourceRequirements[0]?.name
+      || (brief?.kind === "factual" ? brief.subjects[0]?.name : "")
+      || "当前故事背景";
+    const goal = brief?.kind === "factual" ? brief.factualFocus : brief?.objective;
+    return {
+      researchGoal: `补足${subject}中与当前故事直接相关的必要资料`,
+      packets: [{
+        title: subject,
+        subjects: [{ name: subject }],
+        researchQuestions,
+        storyUseGoals: [goal ? `准确支持已确认目标：${goal}` : "准确支持老师已确认的故事需求"],
+      }],
+    };
+  }
   if (typeof value !== "object" || value === null) return undefined;
   const source = value as Record<string, unknown>;
   const researchGoal = stringValue(source.researchGoal);
@@ -907,25 +998,23 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
         operation: "story_align_requirements",
         prompt: [
           "你是课程故事需求对齐引擎。你只负责把老师输入归一化为后续流程可直接消费的结构化需求；不创作方向、大纲或背景资料。",
-          "先按课程成功标准分类：真实人物、真实事件或真实历史的准确性决定成功时为 factual；否则学生理解、应用或体验理论概念决定成功时为 concept；其余以角色经历和情节结果为核心时为 narrative。故事包装不改变 factual 或 concept，知识只作兴趣素材时仍为 narrative。",
-          "planningMode 只判断是否需要比较不同核心方向。老师已经固定核心因果、特定真实历程或原作主线时为 follow_defined_plot；只有主题、人物、类型、知识素材或宽泛真实历史范围时为 explore_options。宽泛真实历史仍是 factual + faithful + observer，方向只能比较真实视角。",
-          "默认 0 题。只有来源或版本差异会改变内容、硬要求互相冲突、明确学习理论但可验证学习目标未知，或上一答案新激活必要条件时才提问。地点、配角、奇幻机制、人物如何进入、具体转折和结尾细节交给后续设计。",
-          "需要澄清时通常 1 题；同一轮最多返回 3 个当前已成立、彼此独立的阻塞问题。依赖上一答案的问题不得提前展示。不得因为轮数或成本自动采用推荐。",
-          "推荐必须满足老师明确目标的最低复杂度，并受课堂人物年龄、英语等级、章节数和英文容量约束；不能为了简单而降低目标。明确要求学习某个理论时，推荐必须形成可验证的理解或应用结果，不能降成只知道宽泛口号，也不机械要求记忆整个分类体系。",
+          "按课程成功标准分类：准确讲述真实人物、事件或历史为 factual；理解或应用理论概念为 concept；其余以角色经历和情节结果为核心时为 narrative。故事包装不改变 factual 或 concept，知识只作素材时仍为 narrative。",
+          "planningMode 只判断是否还需比较核心方向。老师已明确主角或团队、要解决的问题、主要行动和结果方向，或指定真实历程、原作主线时用 follow_defined_plot；只有主题、人物、类型、知识素材或宽泛历史范围时用 explore_options。fixedPlot 应归纳老师已经给出的完整核心因果，不能因输入没有分章或细节就判为未固定。",
+      "如果作品版本、真实事件、人物或主题范围尚不确定，且不同选择会改变背景搜索对象或主线，不得先做宽泛搜索：返回 needs_clarification，先提问并给出推荐，让老师选择；主题明确、老师确认后才准备背景资料。同一作品存在小说、电影、电视剧或游戏等跨媒介叙事版本且老师未指定时，默认先确认版本；只有版本差异不影响老师指定的讲述范围时才可跳过。",
+          "默认 0 题。只问会改变课程核心或背景目标的阻塞项；地点、配角、进入方式、机制、具体转折和表达细节交给后续设计。通常 1 题，同一轮最多返回 3 个彼此独立的问题；依赖上一答案的问题不得提前问，也不得静默采用推荐。",
+          "推荐必须满足老师目标，并适配人物年龄、英语等级、章节数和正文容量；理论学习必须形成可验证的理解或应用结果。",
           ...classroomParticipationRules,
           "把“故事是否忠实”和“课堂人物是否进入”分开判断。storyMode 只能是 faithful 或 new_story；classroomPresence 只能是 observer、participant 或 absent。",
-          "忠实讲述原作、真实人物传记或历史事实时使用 faithful + observer：课堂人物默认进入场景但只观察、记录、见证或彼此交流，不承担剧情贡献，也不能影响原作或史实的关键事件、因果、转折和结局。只有老师明确要求课堂人物不进入时才使用 absent。",
+          "忠实讲述原作、人物传记或历史事实时使用 faithful + observer：课堂人物只观察、记录、见证或彼此交流，不影响既定事件、因果和结局；只有老师明确要求课堂人物不进入时才使用 absent。",
           "适龄删减或弱化成熟、成人、亲密关系内容，只改变呈现尺度，不等于改变原作剧情。只要关键事件、人物关系发展、因果和结局保持不变，继续使用 faithful + observer；按原作剧情讲述时，原作主线视为已经明确，planningMode 使用 follow_defined_plot。",
           "重新判断时必须结合完整对话继承已经确认的故事使用方式。不得仅因老师回答了内容边界问题就改成 explore_options；只有老师明确新增剧情、改变关键事件或结局，或让课堂人物影响原作人物和事件时，才按新要求重新判断 storyMode 和 planningMode。",
-          "原创故事、改编原作、让课堂人物影响事件，或要求改变原作/史实关键因果与结局时使用 new_story + participant。即使保留原作角色、世界观或部分经典情节，只要产生新的行动和因果，也属于新故事。禁止 faithful + participant。",
-          "人物传记与真实历史使用同一规则：事实讲述属于 faithful；让课堂人物参与并推动新事件属于 new_story。不要根据课堂人物是否进入来判断故事模式。",
-          "后续在 new_story 中根据实际人数自动设计单人、双人或团队行动；在 faithful 中只设计不改变因果的观察、记录、见证和彼此交流。人物身份、相遇方式、任务、冲突、奇幻机制和结局由后续方向与大纲决定，不要向老师追问。",
+          "原创或改编故事、课堂人物推动事件、改变原作或史实因果时使用 new_story + participant；保留原作角色或世界观但产生新行动和因果仍是新故事。禁止 faithful + participant。人物身份、任务、冲突和细节由后续设计。",
           "老师明确提及 IP 或作品时，视为希望实际使用其中的原作人物；老师同时提出老师和学生经历新冒险时，默认理解为使用原作世界或核心人物创作新剧情，不追问是复述原作还是新编，也不主动提供只参考主题、氛围或风格的选项。",
-          "老师未点名原作人物时，不要求老师列人物名单；后续根据背景资料选择与故事最相关的最小核心角色集合。只有版本歧义、点名人物冲突或其他差异会实质改变故事时，才需要确认。",
+          "老师未点名原作人物时，不要求列人物名单；后续选择最小核心角色集合。版本歧义或点名冲突会实质改变内容时必须先确认。",
           "narrative 和 concept 的 requiredNamedCharacters 只逐个保存老师明确点名且要求出场的外部角色原名；不放入 Step 1 师生、团队、机构、作品名或推测角色。真实人物只进入 factual.subjects。",
           "fixedPlot 是老师已经固定的核心因果的一段简洁归纳；没有固定主线时为 null，不要补写老师未决定的触发、转折或结局。new_story + follow_defined_plot 必须有 fixedPlot。",
           "additionalConstraints 只保存没有被其他字段表达的老师要求；preferred 只放老师明确偏好，不放你的建议或系统适龄政策。所有数组必须存在。concept 在 ready 时必须至少有一个 learningTarget，每项包含 concept 和 expectedUnderstanding。",
-          "needs_clarification 只返回 {status, provisionalBriefKind?, resolvedRequirements, questions}。每题字段为 id,label,impact,answerMode,options?,allowCustom,recommendedOptionId?,recommendationReason?；选择题必须有 2-3 个选项和属于现有选项的推荐，纯文本只用于名称、版本、链接或精确来源。ID 必须稳定且唯一。",
+      "needs_clarification 必须是合法 JSON，只返回 {status,provisionalBriefKind?,resolvedRequirements:string[],questions}。每题={id:string,label:string,impact:string,answerMode:'single_choice'|'multi_choice'|'text',options?:{id:string,label:string}[],recommendedOptionId?:string,recommendationReason?:string}；选择题必须有 2-3 个选项和属于现有选项的推荐，纯文本只用于名称、版本、链接或精确来源。ID 必须稳定且唯一。",
           "ready_for_confirmation 只返回 {status,planningMode,storyMode,classroomPresence,brief}。brief 必须是 narrative、concept、factual 三种联合结构之一。不要返回 summary、assistantMessage、工作流字段或数据库字段。",
           "narrative brief={kind,objective,sourceRequirements:[{name,useInCourse}],requiredNamedCharacters,fixedPlot,additionalConstraints:{required,preferred,excluded}}。",
           "concept brief={kind,objective,learningTargets:[{concept,expectedUnderstanding}],assumedPriorKnowledge,sourceRequirements,requiredNamedCharacters,fixedPlot,additionalConstraints}。",
@@ -980,10 +1069,11 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           "只补足写作所需的主线设计；brief 中的目标、来源使用、固定因果、事实边界、点名角色和约束都是最高优先级。",
           "忠实讲述只能整理既定事件，课堂人物只旁观、记录、见证或彼此交流，不能新增会改变原作或史实因果的行动。",
           "新故事根据课堂人物数量形成单人、双人或团队结构。老师明确要求每名学生有高光时，角色作用必须分别推进同一个共同目标，不能拆成互不相关的小任务。",
+          "所有自然语言字段提到课堂人物时，逐字使用人物快照中的 englishName；程序不会改写自由文本姓名。",
           "classroomRoles 只使用提供的 personId，不得重复；除非课堂人物明确不进入，否则必须逐个包含所有课堂人物。课堂人物不进入时返回空数组。mayExpand 只能列出后续可以创作补充、且不会改变已确认需求的部分。",
           "只返回 JSON：{protagonistStructure,classroomRoles:[{personId,roleInStory}],incitingEvent,goal,mainObstacle,progression,endingDirection,mustKeep:string[],mayExpand:string[]}。",
           ...alignmentContextPrompt(input),
-          `<requirement_brief>${JSON.stringify(input.requirementBrief)}</requirement_brief>`,
+          `<requirement_brief>${JSON.stringify(briefForPrompt(input))}</requirement_brief>`,
           `<references>${JSON.stringify(input.references)}</references>`,
           "<current_task>",
           input.task,
@@ -1007,18 +1097,16 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
         operation: "story_prepare_background",
         prompt: [
           "你是一名儿童故事背景资料编辑，负责为后续故事创作准备准确、必要且简洁的背景知识。",
-          "老师已经确认了大体创作需求。不要重新判断、追问或改变老师的故事诉求。",
-          "判断后续创作是否需要人物事实、原作角色、人物关系、世界设定或其他背景知识；完全原创且不依赖外部对象时返回 not_needed。",
-          "如果需要，优先使用你已有且有把握的知识直接整理；只有当已有知识不足以准确支持故事创作时，才返回 external_required，并说明缺少什么。",
-          "只整理本次故事会使用的对象、版本、人物和必要关系，不做百科式介绍，不扩展到无关人物、支线、时期或作品。",
+          "老师已确认创作方向；不要重新判断、追问或改变需求。完全原创且不依赖外部对象时返回 not_needed；需要资料时优先使用你已有且有把握的知识，只有当已有知识不足以准确创作时才返回 external_required。",
+          "只整理当前方向会使用的对象、版本、人物、关系和规则，不做百科式扩展。",
           "老师明确点名的原作角色全部保留。老师未点名原作角色时，最多整理 4 个原作候选角色，只选择足以支持后续方向设计的核心人物；候选角色不代表都会进入最终故事。",
-          "内容突出可直接用于故事创作的人物特点、关系、重要事实和世界规则。不确定的信息不能猜测，也不能混合不同版本。",
           ...confirmedReferenceRules(input),
           "不生成故事方向或故事大纲，不实际执行联网搜索。",
           "external_required 的 reason 会直接展示给老师：只用一句中文具体说明缺少哪项背景信息，不描述你的知识、能力或内部判断。",
           ...teacherFacingReplyRules,
-          "只返回 JSON。三种协议：{status:'not_needed',reason}；{status:'ready',references:[{name,type,sourceStatus,summary,usableFacts,avoidTopics,adaptationBoundary}]}；{status:'external_required',reason,researchPlan}。",
-          ...contextPrompt(input),
+          "只返回 JSON。协议：{status:'not_needed',reason}；{status:'ready',references:[{name,type,sourceStatus,summary,usableFacts:string[],avoidTopics:string[],adaptationBoundary}]}；{status:'external_required',reason,researchPlan:{researchGoal,packets:[{title,subjects:[{name,context?}],researchQuestions:string[],storyUseGoals:string[]}]}}。external_required 至少返回 1 个完整 packet，不得把 researchPlan 简写成字符串数组。",
+          "ready 中 type 只能是 real_person, historical_person, public_figure, ip, game_character, fictional_character, other；sourceStatus 只能是 confirmed 或 insufficient。",
+          ...backgroundContextPrompt(input),
           "<current_task>",
           input.task,
           "</current_task>",
@@ -1027,7 +1115,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       const parsed = parseJson<Record<string, unknown>>(text, "背景知识准备失败，请重试");
       if (parsed.status === "not_needed") return { status: "not_needed", reason: stringValue(parsed.reason) || "当前故事不依赖外部背景知识。" };
       if (parsed.status === "external_required") {
-        const researchPlan = normalizeResearchPlan(parsed.researchPlan);
+        const researchPlan = normalizeResearchPlan(parsed.researchPlan, input);
         if (!researchPlan) throw new Error("背景知识缺口没有完整生成，请重试");
         return { status: "external_required", reason: stringValue(parsed.reason) || "需要补充外部资料。", researchPlan };
       }
@@ -1082,13 +1170,13 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           input.storyMode === "faithful"
             ? "只保留已确认讲述范围内实际存在且理解事件所必需的人物；不得为了凑角色数量新增人物，也不得用角色上限删除既定事件不可缺少的人物。老师明确点名且资料确认的人物全部保留。"
             : "使用已有作品但老师未点名具体原作人物时，根据已确认参考资料选择最适合当前方向的核心角色，默认最多 2 个；核心冲突需要更多角色时按需增加。老师明确点名的原作角色全部保留，老师和学生不计入该上限。具名团队、不可分割的群像或老师明确要求的完整群体按整体保留。",
-          input.storyMode === "faithful"
-            ? "保持老师指定的讲述类型和最新反馈，所有人物行为、事件关系和结果都必须来自已确认内容。"
-            : "保持老师指定的故事类型和最新反馈，让人物行动、世界规则与解决方式形成完整因果。",
+          ...(input.storyMode === "faithful"
+            ? ["保持老师指定的讲述类型和最新反馈，所有人物行为、事件关系和结果都必须来自已确认内容。"]
+            : []),
           ...directionSetDiversityRules(input),
           input.storyMode === "faithful"
             ? "优先选择准确、清楚、适龄且符合课程容量的讲述视角，不以意外性或戏剧性覆盖事实。"
-            : "优先选择有趣、意外、因果连贯且符合课程容量的方向，再提炼课堂价值。",
+            : "优先选择有趣、意外且符合课程容量的方向，再提炼课堂价值。",
           ...directionContextPrompt(input),
           "<current_task>",
           input.task,
@@ -1117,9 +1205,9 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           "必须保留老师没有要求改变的内容，并继续遵守已确认需求和背景资料。不要修改其他方向，不生成章节大纲。",
           "返回一份完整新版 JSON，字段为 title, hook, storyHighlight, growthCore, mainCharacters, whyFits，不返回修改说明。",
           ...directionCardWritingRules(input),
-          input.storyMode === "faithful"
-            ? "修改后仍只调整叙事视角、事实焦点、讲述范围或表达清晰度，不新增任务、冲突、行动、因果或结局。"
-            : "修改后让核心问题、主要行动和独特之处形成完整因果，并继续符合老师最新要求。",
+          ...(input.storyMode === "faithful"
+            ? ["修改后仍只调整叙事视角、事实焦点、讲述范围或表达清晰度，不新增任务、冲突、行动、因果或结局。"]
+            : []),
           "把“必须出场的点名角色”完整保留在新版 mainCharacters 中；hook 只点出理解该方向所必需的角色，点名角色较多时允许使用老师已确认的团队称呼。旧数据没有该数组时，从已确认创作理解中提取逐个写明的角色。",
           ...directionClassroomRules(input),
           ...confirmedReferenceRules(input),
@@ -1154,6 +1242,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           "不得改变故事标题、整体主线、角色名单、其他章节及章节数量。修改必须承接上一章并能自然推动下一章；如果老师的要求无法在不影响这些内容的情况下完成，返回 {status:'requires_outline_revision',reason}。",
           "可以修改本章标题、剧情概述、出场角色和知识点建议。只返回 JSON：成功时 {status:'ready',chapter:{order,title:{zh,en},whatHappens,characterIds,recommendedKnowledgePointKeys,knowledgePointRecommendationSummary}}。",
           "characterIds 只能逐字复制当前大纲角色 id；recommendedKnowledgePointKeys 只能使用全课可选知识点短键。",
+          "whatHappens 提到课堂人物时，逐字使用人物快照中的 englishName；程序不会改写自然语言姓名。",
           ...chapterRevisionNarrativeRules(input),
           "修改知识点建议时仍需从全课分布判断：先完成本章故事，再只推荐与既有剧情自然适配且能在同一语境中共存的知识点；通常推荐 2 个、最多 3 个，只有确实找不到自然组合时才保留 1 个。不得为知识点新增道具、规则、人物行为或支线，不为平均分配强行组合。knowledgePointRecommendationSummary 用一条精简中文逐个引用对应 KP 短键并说明使用语境；多个知识点还要说明如何自然配合，无法说明时不要同时推荐。",
           ...confirmedReferenceRules(input),
@@ -1180,14 +1269,13 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       const title = bilingualChapterTitle(chapter.title);
       const whatHappens = proseValue(chapter.whatHappens);
       if (!title || !whatHappens) throw new StoryOutlineResponseError("章节修改返回的内容结构不完整，请重试本步");
-      const normalizedWhatHappens = canonicalizeClassroomNames(whatHappens, input.coursePeople);
-      enforceChineseGenerationMax(normalizedWhatHappens, policy.chinese.chapterOverview.hardMax, "单章概述");
+      enforceChineseGenerationMax(whatHappens, policy.chinese.chapterOverview.hardMax, "单章概述");
       return {
         status: "ready" as const,
         chapter: {
           order: Number(chapter.order) || input.chapterOrder,
           title,
-          whatHappens: normalizedWhatHappens,
+          whatHappens,
           characterIds: stringArray(chapter.characterIds),
           recommendedKnowledgePointIds,
           knowledgePointRecommendationSummary: normalizeKnowledgePointSummary(chapter.knowledgePointRecommendationSummary, options),
@@ -1258,7 +1346,11 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       selectedKnowledgePoints?: StoryPromptContext["selectedKnowledgePoints"];
     }) => {
       const policy = resolvedStoryPolicy(input);
-      const referenceOptions = storyReferenceOptions(input.references);
+      const referenceOptions = relevantStoryReferenceOptions(
+        storyReferenceOptions(input.references),
+        input.selectedDirection,
+        input.requirementBrief,
+      );
       const referenceByKey = new Map(referenceOptions.map((reference) => [reference.key, reference]));
       const knowledgePointCoverageTarget = Math.min(knowledgePointOptions(input).length, input.chapterCount * 2);
       const { text } = await client().generateOutline({
@@ -1274,8 +1366,8 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           ...outlineNarrativeRules(input),
           ...contentPriorityRules(input),
           "summary 使用 2–3 个自然短句，按故事自身顺序讲清起点、关键发展和最终结果；故事没有某类环节时不要强行补齐。每句都有清楚的行动者、具体动作或局面变化，不得用“情况发生变化”“重新判断”“经历挑战”“大家共同努力”等抽象概括替代关键事件。老师只读 summary 就应能快速复述主线。",
-          "每章 whatHappens 写成 1–2 个自然短句，语义完整优先于凑固定句数。只保留本章最必要的 2–3 个关键事件，讲清承接局面、主要行动和直接结果；每句话只表达一个主要事件，不显示结构标签，也不把命令、发现、选择、移动和结果塞进同一句。大纲只规定核心事件，不写正式对话或环境描写。",
-          `中文篇幅不设强制下限，不得填充。summary 推荐不超过 ${policy.chinese.outlineSummary.recommendedMax} 字、生成上限 ${policy.chinese.outlineSummary.hardMax} 字；每章 whatHappens 推荐不超过 ${policy.chinese.chapterOverview.recommendedMax} 字、生成上限 ${policy.chinese.chapterOverview.hardMax} 字。超出推荐值时先删除重复修饰，不能程序截断；超过生成上限会整步失败，不得截断保存。`,
+          "每章 whatHappens 默认写成 1 个自然短句，必要时最多 2 句。只保留一条清楚的因果链：本章决定性行动及其直接结果；仅在缺少承接信息会无法理解行动时，补充最小必要局面。2–3 个事件是结构上限而非目标。大纲只规定核心事件，不写正式对话或环境描写。",
+          `中文展示容量不设强制下限，不得填充。summary 推荐不超过 ${policy.chinese.outlineSummary.recommendedMax} 单位、生成上限 ${policy.chinese.outlineSummary.hardMax} 单位；每章 whatHappens 推荐不超过 ${policy.chinese.chapterOverview.recommendedMax} 单位、生成上限 ${policy.chinese.chapterOverview.hardMax} 单位。汉字和全角字符按 1 个展示单位、ASCII 字符按 0.5 个展示单位、空白不计。超出推荐值时先删次要修饰，保留决定性行动和直接结果；不得截断保存。`,
           "任何新地点、物品、规则、路线关系或信息首次出现时立刻说明它与当前任务的关系，不能先使用后解释；避免“连接处”“上方区域”“另一边”“旧痕迹”等只有作者知道所指的表达。相邻章节不得重复同一种“发现信息—重新选择路线—继续前进”或其他相同动作模板；每章承担不同功能并造成不同类型的局面变化。",
           "先在不考虑知识点的情况下完成故事概括和全部章节剧情，再从全课视角根据已经形成的自然语境匹配知识点。不得为使用某个知识点新增道具、规则、人物行为或支线；summary 和 whatHappens 不得出现语法、知识点或教学安排说明。",
           "只返回 JSON 对象，字段为 title, summary, characters, chapters。故事 title 和章节 title 返回中英文双语对象 {zh,en}；英文标题应简洁、自然并忠实对应中文标题。面向老师展示的说明使用中文，但课堂人物名称按下述规则使用人物快照英文名。",
@@ -1332,8 +1424,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       if (!title || !summary || !parsed.chapters.length) {
         throw new StoryOutlineResponseError("故事大纲返回的内容结构不完整，请重试本步");
       }
-      const normalizedSummary = canonicalizeClassroomNames(summary, input.coursePeople);
-      enforceChineseGenerationMax(normalizedSummary, policy.chinese.outlineSummary.hardMax, "整体概要");
+      enforceChineseGenerationMax(summary, policy.chinese.outlineSummary.hardMax, "整体概要");
       const options = knowledgePointOptions(input);
       const resolveKnowledgePointIds = (values: string[] = []) => [...new Set(values.flatMap((value) => {
         const normalized = value.trim().toLowerCase();
@@ -1385,8 +1476,8 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           sourceType: normalizedSourceType,
           sourcePersonId: normalizedSourceType === "person" ? person!.personId : null,
           sourceReferenceId: normalizedSourceType === "referenced" ? reference!.id : null,
-          roleInStory: canonicalizeClassroomNames(roleInStory, input.coursePeople),
-          shortDescription: canonicalizeClassroomNames(roleInStory, input.coursePeople),
+          roleInStory,
+          shortDescription: roleInStory,
           shouldAppearInImages: true,
         };
       });
@@ -1417,20 +1508,19 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
         const recommendedKeys = stringArray(chapter.recommendedKnowledgePointKeys).length
           ? stringArray(chapter.recommendedKnowledgePointKeys)
           : stringArray(chapter.recommendedKnowledgePointIds);
-        const normalizedWhatHappens = canonicalizeClassroomNames(whatHappens, input.coursePeople);
-        enforceChineseGenerationMax(normalizedWhatHappens, policy.chinese.chapterOverview.hardMax, `第 ${order} 章概述`);
+        enforceChineseGenerationMax(whatHappens, policy.chinese.chapterOverview.hardMax, `第 ${order} 章概述`);
         return {
           order,
           title: chapterTitle,
-          storyGoal: normalizedWhatHappens,
+          storyGoal: whatHappens,
           keyEvents: [characterActions, mainlineProgress, ...keyEvents]
             .filter(Boolean)
-            .map((item) => canonicalizeClassroomNames(item, input.coursePeople)),
-          setting: canonicalizeClassroomNames(proseValue(chapter.setting), input.coursePeople),
-          endingHook: canonicalizeClassroomNames(proseValue(chapter.endingHook), input.coursePeople),
-          whatHappens: normalizedWhatHappens,
-          characterActions: canonicalizeClassroomNames(characterActions, input.coursePeople),
-          mainlineProgress: canonicalizeClassroomNames(mainlineProgress, input.coursePeople),
+            .map((item) => item.trim()),
+          setting: proseValue(chapter.setting),
+          endingHook: proseValue(chapter.endingHook),
+          whatHappens,
+          characterActions,
+          mainlineProgress,
           characterKeys: chapterKeys,
           characterIds: [],
           recommendedKnowledgePointIds: resolveKnowledgePointIds(recommendedKeys),
@@ -1439,8 +1529,8 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       });
       return {
         title,
-        summary: normalizedSummary,
-        storyHook: canonicalizeClassroomNames(proseValue(parsed.storyHook), input.coursePeople),
+        summary,
+        storyHook: proseValue(parsed.storyHook),
         characters,
         chapters,
       };

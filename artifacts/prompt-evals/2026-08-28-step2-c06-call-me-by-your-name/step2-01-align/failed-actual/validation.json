@@ -1,0 +1,14 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "alignRequirements"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 2,
+  "result": null,
+  "error": {
+    "name": "Error",
+    "message": "故事大纲服务连接失败，请稍后重试",
+    "stack": "Error: 故事大纲服务连接失败，请稍后重试\n    at request (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\story-outline-provider.ts:212:15)\n    at async Object.alignRequirements (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\story-outline-deps.ts:1044:28)\n    at async main (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\scripts\\prompt-eval\\run-manual-ai-operation.ts:98:14)"
+  }
+}

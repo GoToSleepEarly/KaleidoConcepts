@@ -1,0 +1,7 @@
+{
+  "threadId": "01a048e0-33bd-71f2-941b-b58699324245",
+  "hostId": "local",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": "medium",
+  "result": "pass_after_global_12_percent_validation_tolerance"
+}
