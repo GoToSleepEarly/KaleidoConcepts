@@ -4,6 +4,7 @@ import {
   chineseTextLength,
   defaultStoryComplexity,
   englishWordRangesForTarget,
+  normalizeStoryChapterCount,
   storyLengthPolicy,
   validateTeacherChapterWordCount,
 } from "@/lib/domain/story-length-policy";
@@ -13,7 +14,7 @@ describe("story length policy", () => {
     expect(storyLengthPolicy(undefined, undefined)).toMatchObject({
       englishLevel: "A2",
       storyComplexity: "clear_linear",
-      english: { chapterTargetWords: 120 },
+      english: { chapterTargetWords: 90 },
     });
   });
 
@@ -26,59 +27,67 @@ describe("story length policy", () => {
     expect(defaultStoryComplexity("C2")).toBe("layered");
   });
 
-  it("calibrates one shared English target from CEFR and complexity", () => {
-    expect(storyLengthPolicy("Starter", "clear_linear").english.chapterTargetWords).toBe(80);
-    expect(storyLengthPolicy("A2", "clear_linear").english.chapterTargetWords).toBe(120);
-    expect(storyLengthPolicy("B1", "conflict_driven").english.chapterTargetWords).toBe(170);
-    expect(storyLengthPolicy("C1", "layered").english.chapterTargetWords).toBe(240);
-    expect(storyLengthPolicy("C2", "layered").english.chapterTargetWords).toBe(260);
+  it("normalizes legacy chapter counts only when starting a new operation", () => {
+    expect(normalizeStoryChapterCount(1)).toBe(3);
+    expect(normalizeStoryChapterCount(4)).toBe(4);
+    expect(normalizeStoryChapterCount(8)).toBe(5);
   });
 
-  it("derives the same generation range for Step 2 defaults and any Step 4 teacher target", () => {
-    for (const [level, complexity, target, generationRange] of [
-      ["Starter", "clear_linear", 80, [70, 90]],
-      ["B1", "conflict_driven", 170, [150, 200]],
-      ["C2", "layered", 260, [230, 300]],
+  it("calibrates one shared English target from CEFR and complexity", () => {
+    expect(storyLengthPolicy("Starter", "clear_linear").english.chapterTargetWords).toBe(70);
+    expect(storyLengthPolicy("A2", "clear_linear").english.chapterTargetWords).toBe(90);
+    expect(storyLengthPolicy("B1", "conflict_driven").english.chapterTargetWords).toBe(130);
+    expect(storyLengthPolicy("B2", "conflict_driven").english.chapterTargetWords).toBe(150);
+    expect(storyLengthPolicy("C1", "layered").english.chapterTargetWords).toBe(180);
+    expect(storyLengthPolicy("C2", "layered").english.chapterTargetWords).toBe(180);
+  });
+
+  it("separates the AI expected range from the wider deterministic acceptance range", () => {
+    for (const [level, complexity, target, generationRange, validationRange] of [
+      ["Starter", "clear_linear", 70, [60, 80], [60, 85]],
+      ["B2", "conflict_driven", 150, [135, 165], [130, 180]],
+      ["C2", "layered", 180, [160, 200], [155, 210]],
     ] as const) {
-      expect(storyLengthPolicy(level, complexity).english).toMatchObject({ chapterTargetWords: target, generationRange });
-      expect(englishWordRangesForTarget(target).generationRange).toEqual(generationRange);
+      expect(storyLengthPolicy(level, complexity).english).toMatchObject({ chapterTargetWords: target, generationRange, validationRange });
+      expect(englishWordRangesForTarget(target)).toMatchObject({ generationRange, validationRange });
     }
-    expect(englishWordRangesForTarget(90)).toEqual({ generationRange: [80, 100], aimRange: [83, 90] });
   });
 
   it("counts Unicode code points without whitespace for Chinese generation validation", () => {
     expect(chineseTextLength("开端。\n 结果方向")).toBe(7);
   });
 
-  it("lets complexity raise capacity without forcing it to be used", () => {
+  it("lets complexity raise capacity without exceeding the two-paragraph ceiling", () => {
     const clear = storyLengthPolicy("A2", "clear_linear");
     const layered = storyLengthPolicy("A2", "layered");
     expect(layered.english.chapterTargetWords).toBeGreaterThan(clear.english.chapterTargetWords);
-    expect(layered.chinese.directionOverview.recommendedMax).toBeGreaterThan(clear.chinese.directionOverview.recommendedMax);
+    expect(layered.english.chapterTargetWords).toBeLessThanOrEqual(180);
     expect(clear.chinese.directionOverview).not.toHaveProperty("minimum");
   });
 
-  it("provides recommended, generation, teacher-adjustment, and hard boundaries", () => {
-    const policy = storyLengthPolicy("B2", "conflict_driven");
+  it("derives Chinese capacity from the English target and the confirmed three-to-five chapter count", () => {
+    const policy = storyLengthPolicy("B2", "conflict_driven", 5);
     expect(policy.english).toMatchObject({
-      chapterTargetWords: 190,
-      generationRange: [170, 220],
-      teacherRecommendedRange: [160, 230],
-      hardRange: [60, 360],
+      chapterTargetWords: 150,
+      generationRange: [135, 165],
+      validationRange: [130, 180],
+      teacherRecommendedRange: [130, 170],
+      hardRange: [60, 180],
     });
     expect(policy.chinese).toEqual({
-      directionOverview: { recommendedMax: 95, hardMax: 140 },
-      outlineSummary: { recommendedMax: 130, hardMax: 190 },
-      chapterOverview: { recommendedMax: 80, hardMax: 120 },
+      directionOverview: { recommendedMax: 70, hardMax: 90 },
+      outlineSummary: { recommendedMax: 90, hardMax: 115 },
+      chapterOverview: { recommendedMax: 55, hardMax: 70 },
     });
+    expect(storyLengthPolicy("A2", "clear_linear", 3).chinese.outlineSummary).toEqual({ recommendedMax: 70, hardMax: 95 });
   });
 
-  it("warns outside the recommended range and only blocks extreme values", () => {
-    expect(validateTeacherChapterWordCount(159, "B2", "conflict_driven")).toEqual({ status: "warning_low", recommendedRange: [160, 230], hardRange: [60, 360] });
-    expect(validateTeacherChapterWordCount(231, "B2", "conflict_driven")).toEqual({ status: "warning_high", recommendedRange: [160, 230], hardRange: [60, 360] });
-    expect(validateTeacherChapterWordCount(190, "B2", "conflict_driven")).toEqual({ status: "ok", recommendedRange: [160, 230], hardRange: [60, 360] });
+  it("warns outside the recommended target range and blocks configuration above 180", () => {
+    expect(validateTeacherChapterWordCount(129, "B2", "conflict_driven")).toEqual({ status: "warning_low", recommendedRange: [130, 170], hardRange: [60, 180] });
+    expect(validateTeacherChapterWordCount(171, "B2", "conflict_driven")).toEqual({ status: "warning_high", recommendedRange: [130, 170], hardRange: [60, 180] });
+    expect(validateTeacherChapterWordCount(150, "B2", "conflict_driven")).toEqual({ status: "ok", recommendedRange: [130, 170], hardRange: [60, 180] });
     expect(validateTeacherChapterWordCount(59, "B2", "conflict_driven").status).toBe("blocked");
-    expect(validateTeacherChapterWordCount(361, "B2", "conflict_driven").status).toBe("blocked");
+    expect(validateTeacherChapterWordCount(181, "B2", "conflict_driven").status).toBe("blocked");
   });
 
 });

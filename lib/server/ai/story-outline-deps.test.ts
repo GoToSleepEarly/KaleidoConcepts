@@ -47,7 +47,7 @@ describe("createStoryOutlineGenerationDeps", () => {
   test("rejects generated and revised Chinese story fields beyond the configured generation maximum", async () => {
     const deps = createStoryOutlineGenerationDeps();
     const shared = {
-      chapterCount: 1,
+      chapterCount: 3,
       coursePeople: [],
       conversationHistory: [],
       references: [],
@@ -55,33 +55,33 @@ describe("createStoryOutlineGenerationDeps", () => {
       currentOutline: null,
       englishLevel: "A2",
       storyComplexity: "clear_linear" as const,
-      lengthPolicy: storyLengthPolicy("A2", "clear_linear"),
+      lengthPolicy: storyLengthPolicy("A2", "clear_linear", 3),
     };
-    const direction = { title: "方向", hook: "长".repeat(121), storyHighlight: "亮点", growthCore: "合作", mainCharacters: ["Mia"], whyFits: "匹配要求" };
+    const direction = { title: "方向", hook: "长".repeat(91), storyHighlight: "亮点", growthCore: "合作", mainCharacters: ["Mia"], whyFits: "匹配要求" };
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify([direction, direction, direction]) });
-    await expect(deps.generateDirections({ ...shared, task: "生成方向" })).rejects.toThrow("方向概要超过 120 字生成上限");
+    await expect(deps.generateDirections({ ...shared, task: "生成方向" })).rejects.toThrow("方向概要超过 90 字生成上限");
 
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify(direction) });
-    await expect(deps.reviseDirection({ ...shared, task: "修改方向", direction: { title: "旧方向" } })).rejects.toThrow("方向概要超过 120 字生成上限");
+    await expect(deps.reviseDirection({ ...shared, task: "修改方向", direction: { title: "旧方向" } })).rejects.toThrow("方向概要超过 90 字生成上限");
 
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
       title: { zh: "故事", en: "Story" },
-      summary: "长".repeat(161),
+      summary: "长".repeat(96),
       characters: [],
-      chapters: [{ order: 1, title: { zh: "第一章", en: "Chapter One" }, whatHappens: "行动产生结果。", characterKeys: [] }],
+      chapters: [1, 2, 3].map((order) => ({ order, title: { zh: `第${order}章`, en: `Chapter ${order}` }, whatHappens: "行动产生结果。", characterKeys: [] })),
     }) });
-    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).rejects.toThrow("整体概要超过 160 字生成上限");
+    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).rejects.toThrow("整体概要超过 95 字生成上限");
 
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
       title: { zh: "故事", en: "Story" },
       summary: "角色完成任务。",
       characters: [],
-      chapters: [{ order: 1, title: { zh: "第一章", en: "Chapter One" }, whatHappens: "长".repeat(101), characterKeys: [] }],
+      chapters: [1, 2, 3].map((order) => ({ order, title: { zh: `第${order}章`, en: `Chapter ${order}` }, whatHappens: order === 1 ? "长".repeat(46) : "行动产生结果。", characterKeys: [] })),
     }) });
-    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).rejects.toThrow("第 1 章概述超过 100 字生成上限");
+    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).rejects.toThrow("第 1 章概述超过 45 字生成上限");
 
-    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({ status: "ready", chapter: { order: 1, title: { zh: "第一章", en: "Chapter One" }, whatHappens: "长".repeat(101), characterIds: [] } }) });
-    await expect(deps.reviseChapter({ ...shared, task: "修改章节", chapterOrder: 1 })).rejects.toThrow("单章概述超过 100 字生成上限");
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({ status: "ready", chapter: { order: 1, title: { zh: "第一章", en: "Chapter One" }, whatHappens: "长".repeat(46), characterIds: [] } }) });
+    await expect(deps.reviseChapter({ ...shared, task: "修改章节", chapterOrder: 1 })).rejects.toThrow("单章概述超过 45 字生成上限");
   });
 
   test("converts response-only KP keys to knowledge point labels in the saved recommendation summary", async () => {
@@ -908,7 +908,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     const prompt = input!.prompt;
     expect(prompt).toContain("AI 自行新增的原创角色最多 1 个");
     expect(prompt).toContain("每个角色都必须服务核心叙事");
-    expect(prompt).toContain("summary 使用 3–4 个自然短句");
+    expect(prompt).toContain("summary 使用 2–3 个自然短句");
     expect(prompt).toContain("内部检查连续状态");
     expect(prompt).toContain("本章结果必须改变下一章成立时的局面");
     expect(prompt).toContain("失踪角色在被找到前不能行动");
@@ -1136,7 +1136,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("方向卡用于快速选择主线，不是营销文案");
     expect(prompt).toContain("最高验收标准");
     expect(prompt).toContain("读一遍后就能用一句话讲清整个故事设计");
-    expect(prompt).toContain("2–3 个短句说明开端、主要发展和结果方向");
+    expect(prompt).toContain("2 个短句说明开端、主要发展和结果方向");
     expect(prompt).toContain("按最自然的顺序组织");
     expect(prompt).toContain("每个 hook 只呈现一个决定性故事引擎");
     expect(prompt).toContain("辅助规则、逐人分工、阶段任务和具体解法由大纲展开");
@@ -1191,7 +1191,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(directionPrompt).toContain("方向卡用于快速选择主线，不是营销文案");
     expect(directionPrompt).toContain("最高验收标准");
     expect(directionPrompt).toContain("读一遍后就能用一句话讲清整个故事设计");
-    expect(directionPrompt).toContain("2–3 个短句说明开端、主要发展和结果方向");
+    expect(directionPrompt).toContain("2 个短句说明开端、主要发展和结果方向");
     expect(directionPrompt).toContain("按最自然的顺序组织");
     expect(directionPrompt).toContain("每个 hook 只呈现一个决定性故事引擎");
     expect(directionPrompt).toContain("辅助规则、逐人分工、阶段任务和具体解法由大纲展开");
@@ -1225,7 +1225,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     });
 
     const chapterPrompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
-    expect(chapterPrompt).toContain("使用 2–4 个自然短句");
+    expect(chapterPrompt).toContain("使用 1–2 个自然短句");
     expect(chapterPrompt).toContain("语义完整优先于凑固定句数");
     expect(chapterPrompt).toContain("首次出现时说明它与当前任务的关系");
     expect(chapterPrompt).toContain("本章结果必须改变下一章成立时的局面");
@@ -1255,7 +1255,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("不要套用固定的“受挫—调整—成功”框架");
     expect(prompt).toContain("不预设行动路径数量、转折次数或计划改变次数");
     expect(prompt).toContain("保留会改变人物决定、升级冲突或影响结果的事件");
-    expect(prompt).toContain("summary 使用 3–4 个自然短句");
+    expect(prompt).toContain("summary 使用 2–3 个自然短句");
     expect(prompt).toContain("首次出现时立刻说明它与当前任务的关系");
     expect(prompt).toContain("语义完整优先于凑固定句数");
     expect(prompt).toContain("同一种“发现信息—重新选择路线—继续前进”");

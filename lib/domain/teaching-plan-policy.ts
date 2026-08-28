@@ -24,13 +24,12 @@ export function grammarExerciseTotal(counts: GrammarExerciseCounts) {
   return counts.optionCloze + counts.wordForm;
 }
 
-export function minimumReadingParagraphCount(targetWordCount: number, config: ReadingExerciseConfig) {
-  const wordPages = targetWordCount <= 90 ? 1 : targetWordCount <= 150 ? 2 : targetWordCount <= 200 ? 3 : targetWordCount <= 260 ? 4 : targetWordCount <= 320 ? 5 : 6;
-  return Math.max(wordPages, Math.ceil(readingExerciseTotal(config) / 5));
+export function minimumReadingParagraphCount(targetWordCount: number) {
+  return targetWordCount <= 90 ? 1 : 2;
 }
 
-export function readingPageCount(targetWordCount: number, config: ReadingExerciseConfig, paragraphCount?: number) {
-  return Math.max(minimumReadingParagraphCount(targetWordCount, config), paragraphCount ?? 0);
+export function readingPageCount(targetWordCount: number, paragraphCount?: number) {
+  return Math.min(2, Math.max(minimumReadingParagraphCount(targetWordCount), paragraphCount ?? 0));
 }
 
 export function balancedPageSizes(total: number, pageCapacity = 5) {

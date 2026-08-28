@@ -33,11 +33,11 @@ function state(): TeachingPlanState {
       englishLevel: "B1",
       storyComplexity: "conflict_driven",
       chinese: {
-        directionOverview: { recommendedMax: 95, hardMax: 140 },
-        outlineSummary: { recommendedMax: 130, hardMax: 190 },
-        chapterOverview: { recommendedMax: 80, hardMax: 120 },
+        directionOverview: { recommendedMax: 70, hardMax: 90 },
+        outlineSummary: { recommendedMax: 80, hardMax: 105 },
+        chapterOverview: { recommendedMax: 45, hardMax: 55 },
       },
-      english: { chapterTargetWords: 170, generationRange: [150, 200], teacherRecommendedRange: [140, 210], hardRange: [60, 360] },
+      english: { chapterTargetWords: 130, generationRange: [115, 145], validationRange: [110, 155], teacherRecommendedRange: [110, 150], hardRange: [60, 180] },
     },
     plan: {
       courseId: "course-1",
@@ -98,7 +98,7 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.getByLabelText("第 1 章章节练习选项填空数量")).toHaveValue(5);
     expect(screen.getByText(/AI 推荐：适合用过去时/)).toBeInTheDocument();
     expect(screen.getByLabelText("第 1 章目标词数")).toHaveAttribute("min", "60");
-    expect(screen.getByLabelText("第 1 章目标词数")).toHaveAttribute("max", "360");
+    expect(screen.getByLabelText("第 1 章目标词数")).toHaveAttribute("max", "180");
     expect(screen.queryByText(/当前难度推荐/)).not.toBeInTheDocument();
     expect(screen.queryByText("部分配置保留了你的修改。")).not.toBeInTheDocument();
   });
@@ -225,10 +225,10 @@ describe("CourseTeachingPlanWorkspace", () => {
     render(<CourseTeachingPlanWorkspace initialState={state()} />);
 
     fireEvent.click(screen.getByRole("tab", { name: /章节/ }));
-    fireEvent.change(screen.getByLabelText("第 1 章目标词数"), { target: { value: "120" } });
+    fireEvent.change(screen.getByLabelText("第 1 章目标词数"), { target: { value: "100" } });
     expect(screen.getByText(/低于推荐范围，可能无法完整表达本章事件/)).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("第 1 章目标词数"), { target: { value: "220" } });
+    fireEvent.change(screen.getByLabelText("第 1 章目标词数"), { target: { value: "160" } });
     expect(screen.getByText(/高于推荐范围，可能增加学生阅读负担；调高词数不会增加剧情复杂度/)).toBeInTheDocument();
   });
 

@@ -96,7 +96,7 @@ export function buildTeachingPlanDraft(input: {
       return {
         outlineChapterId: chapter.id,
         targetWordCount,
-        paragraphCount: minimumReadingParagraphCount(targetWordCount, readingExercises),
+        paragraphCount: minimumReadingParagraphCount(targetWordCount),
         knowledgePointIds: chapter.recommendedKnowledgePointIds,
         readingExerciseMode: "interactive",
         readingExercises,
@@ -147,7 +147,9 @@ export function validateTeachingPlanForConfirm(plan: TeachingPlan, outlineChapte
 
   for (const [index, chapter] of plan.chapters.entries()) {
     const label = `第 ${index + 1} 章`;
-    if (chapter.targetWordCount === null || chapter.targetWordCount < MIN_CHAPTER_TARGET_WORD_COUNT || chapter.targetWordCount > MAX_CHAPTER_TARGET_WORD_COUNT) {
+    if (chapter.targetWordCount === null
+      || chapter.targetWordCount < MIN_CHAPTER_TARGET_WORD_COUNT
+      || chapter.targetWordCount > MAX_CHAPTER_TARGET_WORD_COUNT) {
       throw new TeachingPlanValidationError(`${label}目标词数需在 ${MIN_CHAPTER_TARGET_WORD_COUNT}-${MAX_CHAPTER_TARGET_WORD_COUNT} 之间。`);
     }
     if (!chapter.knowledgePointIds.length) {

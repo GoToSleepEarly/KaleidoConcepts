@@ -382,7 +382,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
                       </div>
                       <div className="mt-2 space-y-1 text-xs font-medium text-muted-foreground">
                         <div>
-                          {chapter.targetWordCount ? `${chapter.targetWordCount} 词 · ${readingPageCount(chapter.targetWordCount, chapter.readingExercises, chapter.paragraphCount)} 个正文段落` : "词数未设置"} · {chapter.knowledgePointIds.length} 个知识点
+                          {chapter.targetWordCount ? `${chapter.targetWordCount} 词 · ${readingPageCount(chapter.targetWordCount, chapter.paragraphCount)} 个正文段落` : "词数未设置"} · {chapter.knowledgePointIds.length} 个知识点
                         </div>
                         <div>
                           {chapter.readingExerciseMode === "interactive" ? `边读边练 ${readingExerciseTotal(chapter.readingExercises)} 题` : `完整阅读 ${readingExerciseTotal(chapter.readingExercises)} 题`} · {chapter.chapterPractice.enabled ? `章节练习 ${grammarExerciseTotal(chapter.chapterPractice.grammar)} 题 / ${practicePageCount(chapter.chapterPractice.grammar)} 页` : "无章节练习"}
@@ -589,7 +589,7 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, lengthPolicy,
                         return {
                           ...current,
                           targetWordCount,
-                          paragraphCount: minimumReadingParagraphCount(targetWordCount, current.readingExercises),
+                          paragraphCount: minimumReadingParagraphCount(targetWordCount),
                           touched: {
                             ...current.touched,
                             targetWordCount: true,
@@ -765,7 +765,7 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, lengthPolicy,
               onChange((current) => ({
                 ...current,
                 readingExercises,
-                paragraphCount: minimumReadingParagraphCount(current.targetWordCount ?? 90, readingExercises),
+                paragraphCount: minimumReadingParagraphCount(current.targetWordCount ?? 90),
                 touched: { ...current.touched, readingExercises: true },
               }))
             }

@@ -52,7 +52,7 @@ describe("teaching plan validation", () => {
     expect(draft.chapters).toHaveLength(2);
     expect(draft.chapters[0]).toMatchObject({
       outlineChapterId: "chapter-1",
-      targetWordCount: 170,
+      targetWordCount: 130,
       knowledgePointIds: ["grammar-1"],
       readingExerciseMode: "interactive",
       readingExercises: { enabled: true, grammar: { optionCloze: 4, wordForm: 3 }, vocabulary: { chineseHint: 3 } },
@@ -95,8 +95,8 @@ describe("teaching plan validation", () => {
       updatedAt: "2026-08-20T00:00:00.000Z",
     });
 
-    expect(b1Draft.chapters.every((chapter) => chapter.targetWordCount === 170)).toBe(true);
-    expect(a2Draft.chapters.every((chapter) => chapter.targetWordCount === 120)).toBe(true);
+    expect(b1Draft.chapters.every((chapter) => chapter.targetWordCount === 130)).toBe(true);
+    expect(a2Draft.chapters.every((chapter) => chapter.targetWordCount === 90)).toBe(true);
   });
 
   test("accepts a complete teaching plan", () => {
@@ -151,22 +151,22 @@ describe("teaching plan validation", () => {
     expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id))).not.toThrow();
   });
 
-  test("accepts teacher targets from 60 to 360 and rejects only extreme values", () => {
+  test("accepts teacher targets from 60 to 180 while generation validation may tolerate more", () => {
     expect(() => validateTeachingPlanForConfirm(completePlan({
       chapters: completePlan().chapters.map((chapter, index) => index === 0 ? { ...chapter, targetWordCount: 59 } : chapter),
     }), outlineChapters.map((chapter) => chapter.id)))
-      .toThrow(new TeachingPlanValidationError("第 1 章目标词数需在 60-360 之间。"));
+      .toThrow(new TeachingPlanValidationError("第 1 章目标词数需在 60-180 之间。"));
 
     expect(() => validateTeachingPlanForConfirm(completePlan({
-      chapters: completePlan().chapters.map((chapter, index) => index === 1 ? { ...chapter, targetWordCount: 360 } : chapter),
+      chapters: completePlan().chapters.map((chapter, index) => index === 1 ? { ...chapter, targetWordCount: 180 } : chapter),
     }), outlineChapters.map((chapter) => chapter.id))).not.toThrow();
 
     const plan = completePlan({
-      chapters: completePlan().chapters.map((chapter, index) => index === 1 ? { ...chapter, targetWordCount: 361 } : chapter),
+      chapters: completePlan().chapters.map((chapter, index) => index === 1 ? { ...chapter, targetWordCount: 181 } : chapter),
     });
 
     expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id)))
-      .toThrow(new TeachingPlanValidationError("第 2 章目标词数需在 60-360 之间。"));
+      .toThrow(new TeachingPlanValidationError("第 2 章目标词数需在 60-180 之间。"));
   });
 
   test("allows optional正文 types but requires at least one grammar question", () => {

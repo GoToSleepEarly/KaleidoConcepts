@@ -176,7 +176,7 @@ function normalizeChapters(value: unknown): TeachingPlan["chapters"] {
     return {
       outlineChapterId: typeof chapter.outlineChapterId === "string" ? chapter.outlineChapterId : "",
       targetWordCount,
-      paragraphCount: minimumReadingParagraphCount(targetWordCount ?? 90, readingExercises),
+      paragraphCount: minimumReadingParagraphCount(targetWordCount ?? 90),
       knowledgePointIds: Array.isArray(chapter.knowledgePointIds) ? chapter.knowledgePointIds.filter((id): id is string => typeof id === "string") : [],
       readingExerciseMode: touched.readingExerciseMode === true ? savedReadingMode : "interactive",
       readingExercises,
@@ -333,6 +333,7 @@ export async function getTeachingPlanState(db: TeachingPlanDb, courseId: string)
     lengthPolicy: storyLengthPolicy(
       course.englishLevel as EnglishLevel,
       course.storySetting?.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel),
+      toOutlineState(outline).chapters.length,
     ),
   };
 }
@@ -355,7 +356,7 @@ export async function saveTeachingPlan(db: TeachingPlanDb, courseId: string, pla
     confirmedAt: null,
     chapters: plan.chapters.map((chapter) => ({
       ...chapter,
-      paragraphCount: minimumReadingParagraphCount(chapter.targetWordCount ?? 90, chapter.readingExercises),
+      paragraphCount: minimumReadingParagraphCount(chapter.targetWordCount ?? 90),
       touched: { ...chapter.touched, paragraphCount: false },
     })),
   };

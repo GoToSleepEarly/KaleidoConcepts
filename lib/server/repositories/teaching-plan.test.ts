@@ -128,7 +128,7 @@ describe("teaching plan repository", () => {
     expect(state.plan.status).toBe("draft");
     expect(state.plan.mainIdeaTargetWordCount).toBe(120);
     expect(state.plan.englishLevel).toBe("B1");
-    expect(state.plan.chapters[0]).toMatchObject({ targetWordCount: 170, knowledgePointIds: ["grammar-1"], readingExerciseMode: "interactive", chapterPractice: { enabled: false, grammar: { optionCloze: 5, wordForm: 5 } } });
+    expect(state.plan.chapters[0]).toMatchObject({ targetWordCount: 130, knowledgePointIds: ["grammar-1"], readingExerciseMode: "interactive", chapterPractice: { enabled: false, grammar: { optionCloze: 5, wordForm: 5 } } });
     expect(state.plan.chapters.map((chapter) => chapter.outlineChapterId)).toEqual(["outline-chapter-1", "outline-chapter-2"]);
     expect(state.plan.afterClassPractice.knowledgePointIds).toEqual(["grammar-1", "grammar-2"]);
     expect(state.outline.chapters[0]).toMatchObject({
@@ -179,7 +179,7 @@ describe("teaching plan repository", () => {
     const reset = await resetTeachingPlan(db, "course-1");
 
     expect(reset.status).toBe("draft");
-    expect(reset.chapters[0]).toMatchObject({ targetWordCount: 170, knowledgePointIds: ["grammar-1"] });
+    expect(reset.chapters[0]).toMatchObject({ targetWordCount: 130, knowledgePointIds: ["grammar-1"] });
     expect(reset.confirmedAt).toBeNull();
     expect(db.state.course.currentStage).toBe("content");
     expect(db.state.contentExists).toBe(true);

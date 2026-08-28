@@ -5,6 +5,7 @@ import {
   applyChapterTemplateRepairs,
   buildReadingTemplatePrompt,
   compileChapterTemplate,
+  paragraphWordBudgets,
   parseReadingTemplatePayload,
   repairFullyResolvesChapter,
   requiredChapterSlotIds,
@@ -24,6 +25,13 @@ const requirements: ChapterTemplateRequirements = {
     { key: "KP2", label: "Must" },
   ],
 };
+
+test("allows a small natural imbalance between two paragraphs while keeping the chapter total strict", () => {
+  expect(paragraphWordBudgets(150, 2)).toEqual([
+    { paragraphIndex: 0, preferredRange: [67, 83], acceptedRange: [60, 95] },
+    { paragraphIndex: 1, preferredRange: [67, 83], acceptedRange: [60, 95] },
+  ]);
+});
 
 function validChapter(): GeneratedChapterTemplate {
   return {

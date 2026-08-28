@@ -227,7 +227,7 @@ describe("course content repository", () => {
         create: vi.fn(async ({ data }: { data: Omit<(typeof messages)[number], "id" | "createdAt"> }) => { const message = { id: `m${messages.length + 1}`, createdAt: now, ...data }; messages.push(message); return message; }),
       },
     } as unknown as CourseContentDb;
-    const generatedText = `${Array.from({ length: 48 }, (_, index) => `word${index + 1}`).join(" ")} `;
+    const generatedText = `${Array.from({ length: 49 }, (_, index) => `word${index + 1}`).join(" ")} `;
     const generateReading = vi.fn(async () => ({
       envelopeError: null,
       chapters: [{ outlineChapterId: "chapter-1", generated: { outlineChapterId: "chapter-1", paragraphs: [{ template: `${generatedText}{{WF1}}` }], slots: [{ id: "WF1", kind: "wordForm" as const, knowledgePointKey: "KP1", answer: "found", cue: "find" }] }, parseError: null }],
@@ -280,7 +280,7 @@ describe("course content repository", () => {
       courseContentChatMessage: { findUnique: vi.fn(async () => null), findMany: vi.fn(async () => []), create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "message-1", createdAt: now, ...data })) },
       aiGenerationLog: { create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "ai-log", ...data })) },
     } as unknown as CourseContentDb;
-    const words = Array.from({ length: 48 }, (_, index) => `word${index + 1}`).join(" ");
+    const words = Array.from({ length: 49 }, (_, index) => `word${index + 1}`).join(" ");
     const generatedChapter = (id: string, template: string) => ({ outlineChapterId: id, paragraphs: [{ template }], slots: [{ id: "WF1", kind: "wordForm" as const, knowledgePointKey: "KP1", answer: "found", cue: "find" }] });
     const chapter1 = generatedChapter("chapter-1", `${words} {{WF1}}`);
     const chapter2 = generatedChapter("chapter-2", `${words} stayed`);

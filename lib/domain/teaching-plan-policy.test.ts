@@ -11,10 +11,11 @@ import {
 
 describe("teaching plan policy", () => {
   it("reads recommendations from CEFR and story complexity without duration", () => {
-    expect(recommendedChapterWordCount("A2", "clear_linear")).toBe(120);
-    expect(recommendedChapterWordCount("B1", "conflict_driven")).toBe(170);
-    expect(recommendedChapterWordCount("C1", "layered")).toBe(240);
-    expect(recommendedChapterWordCount("C2", "layered")).toBe(260);
+    expect(recommendedChapterWordCount("A2", "clear_linear")).toBe(90);
+    expect(recommendedChapterWordCount("B1", "conflict_driven")).toBe(130);
+    expect(recommendedChapterWordCount("B2", "conflict_driven")).toBe(150);
+    expect(recommendedChapterWordCount("C1", "layered")).toBe(180);
+    expect(recommendedChapterWordCount("C2", "layered")).toBe(180);
   });
 
   it("starts grammar practice with five option cloze and five word-form questions", () => {
@@ -25,11 +26,10 @@ describe("teaching plan policy", () => {
     expect(defaultReadingExerciseConfig()).toEqual({ enabled: true, grammar: { optionCloze: 4, wordForm: 3 }, vocabulary: { chineseHint: 3 } });
   });
 
-  it("derives transparent正文 page counts from both words and exercise density", () => {
-    expect(readingPageCount(90, defaultReadingExerciseConfig())).toBe(2);
-    expect(readingPageCount(120, defaultReadingExerciseConfig())).toBe(2);
-    expect(readingPageCount(180, defaultReadingExerciseConfig())).toBe(3);
-    expect(readingPageCount(90, { enabled: true, grammar: { optionCloze: 2, wordForm: 1 }, vocabulary: { chineseHint: 2 } })).toBe(1);
+  it("derives at most two正文 paragraphs from words alone, never exercise density", () => {
+    expect(readingPageCount(90, 1)).toBe(1);
+    expect(readingPageCount(100, 2)).toBe(2);
+    expect(readingPageCount(180, 2)).toBe(2);
   });
 
   it("balances practice pages without creating a one-item tail", () => {

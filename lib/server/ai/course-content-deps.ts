@@ -147,8 +147,8 @@ export function buildReadingPromptContext(input: CourseContentPromptInput) {
         title: replaceNames(outline.title),
         summary: replaceNames(outline.summary),
         targetWordCount,
-        acceptedWordCountRange: wordCountPolicy.generationRange,
-        generationAimRange: wordCountPolicy.aimRange,
+        acceptedWordCountRange: wordCountPolicy.validationRange,
+        generationAimRange: wordCountPolicy.generationRange,
         paragraphCount,
         grammarPoints: selectedPoints(plan.knowledgePointIds, points),
         ...(knowledgePointUsagePlan ? { knowledgePointUsagePlan } : {}),
@@ -279,7 +279,7 @@ export function buildPromptQuestions(input: CourseContentPromptInput, questions:
 export function buildReadingRepairRequirements(input: CourseContentPromptInput, failedChapters: CourseContentChapter[]) {
   return failedChapters.map((chapter) => {
     const targetWordCount = input.plan.chapters.find((item) => item.outlineChapterId === chapter.outlineChapterId)?.targetWordCount ?? chapter.targetWordCount;
-    const { generationRange: acceptedRange, aimRange } = englishWordRangesForTarget(targetWordCount);
+    const { validationRange: acceptedRange, generationRange: aimRange } = englishWordRangesForTarget(targetWordCount);
     const currentWordCount = englishWordCount(chapter.paragraphs.map(buildCleanParagraphText).join(" "));
     const base = { outlineChapterId: chapter.outlineChapterId, currentWordCount, targetWordCount, acceptedRange, aimRange };
     if (currentWordCount < acceptedRange[0]) return {

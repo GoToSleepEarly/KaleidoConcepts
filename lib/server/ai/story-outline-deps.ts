@@ -110,10 +110,10 @@ type StoryPromptContext = {
   onFormatRepair?: () => Promise<void>;
 };
 
-function resolvedStoryPolicy(input: Pick<StoryPromptContext, "englishLevel" | "storyComplexity" | "lengthPolicy">) {
+function resolvedStoryPolicy(input: Pick<StoryPromptContext, "englishLevel" | "storyComplexity" | "lengthPolicy" | "chapterCount">) {
   if (input.lengthPolicy) return input.lengthPolicy;
   const level = (input.englishLevel ?? "A2") as EnglishLevel;
-  return storyLengthPolicy(level, input.storyComplexity ?? defaultStoryComplexity(level));
+  return storyLengthPolicy(level, input.storyComplexity ?? defaultStoryComplexity(level), input.chapterCount);
 }
 
 function enforceChineseGenerationMax(value: string, generationMax: number, label: string) {
@@ -341,7 +341,7 @@ function confirmedReferenceRules(input: Pick<StoryPromptContext, "storyMode">) {
 
 const directionCardBaseRules = [
   "方向卡的最高验收标准：不了解创作过程的老师读一遍后就能用一句话讲清整个故事设计或讲述方案，包括被讲述的对象、核心内容、主要讲述路径，以及这个方向最独特的地方。",
-  "方向卡用于快速选择主线，不是营销文案。hook 是老师可快速读懂的故事概要，按最自然的顺序组织，用 2–3 个短句说明开端、主要发展和结果方向；可以交代结果方向，不以隐藏结果制造悬念。",
+  "方向卡用于快速选择主线，不是营销文案。hook 是老师可快速读懂的故事概要，按最自然的顺序组织，用 2 个短句说明开端、主要发展和结果方向；可以交代结果方向，不以隐藏结果制造悬念。",
   "mainCharacters 完整记录具体角色和需要保持视觉一致性的具名群体，但只能是 JSON 字符串数组，每一项只写一个名称；不得返回对象，不得把已经逐人列出的课堂成员再用“学生队”“师生团队”“英雄战队”等课堂团队称呼作为额外角色重复放入 mainCharacters。这里的具名群体只指外部作品真实存在且老师明确要求的团队。hook 可以使用自然的团队称呼表达共同参与。",
 ];
 
@@ -432,13 +432,13 @@ function outlineGenreRules(input: Pick<StoryPromptContext, "storyMode">) {
 function chapterRevisionNarrativeRules(input: Pick<StoryPromptContext, "storyMode">) {
   if (input.storyMode === "faithful") {
     return [
-      "这是忠实讲述的章节修改。whatHappens 使用 2–4 个自然短句，只按已确认资料讲清本章既定事件及其与相邻章节的真实时间或因果关系，不新增或改变事实、原作事件、人物行为、转折或结局。",
+      "这是忠实讲述的章节修改。whatHappens 使用 1–2 个自然短句，只按已确认资料讲清本章既定事件及其与相邻章节的真实时间或因果关系，不新增或改变事实、原作事件、人物行为、转折或结局。",
       "不得为了增强戏剧性新增地点、物品、规则、线索、任务、障碍或解决方案；资料没有支持的心理动机和对话不能写成事实。",
       "课堂人物只观察、记录、见证或彼此交流，不采访、提醒或帮助原作与历史人物，不承担推动、解决或改变事件的贡献。",
     ];
   }
   return [
-    "whatHappens 仍是一个自然的故事段落，使用 2–4 个自然短句，语义完整优先于凑固定句数。自然讲清承接的具体局面、本章必要行动和行动造成的直接结果，不显示结构标签；每句话只表达一个主要事件。本章结果必须改变下一章成立时的局面，但不预设行动数量或转折结构，也不把命令、发现、选择、移动、多人分工和多个转折压进同一句。",
+    "whatHappens 仍是一个自然的故事段落，使用 1–2 个自然短句，语义完整优先于凑固定句数。自然讲清承接的具体局面、本章必要行动和行动造成的直接结果，不显示结构标签；每句话只表达一个主要事件。本章结果必须改变下一章成立时的局面，但不预设行动数量或转折结构，也不把命令、发现、选择、移动、多人分工和多个转折压进同一句。",
     "本章新增的地点、物品、规则、路线关系或信息必须在首次出现时说明它与当前任务的关系，不能使用只有作者知道所指的模糊位置词。检查相邻章节的动作结构，不得重复同一种“发现信息—重新选择路线—继续前进”或其他相同模板。",
     "修改前检查当前大纲中的人物位置、关键物品归属和已知线索。失踪角色在被找到前不能行动，未取得的物品不能被使用或交付，新规则必须先被发现或验证；修改后必须自然承接上一章，并为下一章提供成立的原因或条件。不得增加万能道具或无关支线。最后一章不需要引出下一章，但必须完成开头建立的同一项核心任务，并使用前文已经建立的信息、行动或规则解决核心问题。",
   ];
@@ -1257,8 +1257,8 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
             : "首先保证老师能够快速读懂故事。完整保留已选方向的核心任务、主要冲突、主要角色或群体、故事亮点和成长方向，但允许删除、合并或简化方向中不必要的道具、规则和解释，不要求逐字扩写方向文案。",
           ...outlineNarrativeRules(input),
           ...contentPriorityRules(input),
-          "summary 使用 3–4 个自然短句，按故事自身顺序讲清起点、关键发展、决定性行动和最终结果；故事没有某类环节时不要强行补齐。每句都有清楚的行动者、具体动作或局面变化，不得用“情况发生变化”“重新判断”“经历挑战”“大家共同努力”等抽象概括替代关键事件。老师只读 summary 就应能快速复述主线。",
-          "每章 whatHappens 写成 2–4 个自然短句，语义完整优先于凑固定句数。讲清从上一章承接的具体局面、本章必要行动、这些行动造成的直接结果，以及结果怎样影响后续；每句话只表达一个主要事件，不显示结构标签，也不把命令、发现、选择、移动和结果塞进同一句。大纲只规定核心事件，不写正式对话或环境描写。",
+          "summary 使用 2–3 个自然短句，按故事自身顺序讲清起点、关键发展和最终结果；故事没有某类环节时不要强行补齐。每句都有清楚的行动者、具体动作或局面变化，不得用“情况发生变化”“重新判断”“经历挑战”“大家共同努力”等抽象概括替代关键事件。老师只读 summary 就应能快速复述主线。",
+          "每章 whatHappens 写成 1–2 个自然短句，语义完整优先于凑固定句数。只保留本章最必要的 2–3 个关键事件，讲清承接局面、主要行动和直接结果；每句话只表达一个主要事件，不显示结构标签，也不把命令、发现、选择、移动和结果塞进同一句。大纲只规定核心事件，不写正式对话或环境描写。",
           `中文篇幅不设强制下限，不得填充。summary 推荐不超过 ${policy.chinese.outlineSummary.recommendedMax} 字、生成上限 ${policy.chinese.outlineSummary.hardMax} 字；每章 whatHappens 推荐不超过 ${policy.chinese.chapterOverview.recommendedMax} 字、生成上限 ${policy.chinese.chapterOverview.hardMax} 字。超出推荐值时先删除重复修饰，不能程序截断；超过生成上限会整步失败，不得截断保存。`,
           "任何新地点、物品、规则、路线关系或信息首次出现时立刻说明它与当前任务的关系，不能先使用后解释；避免“连接处”“上方区域”“另一边”“旧痕迹”等只有作者知道所指的表达。相邻章节不得重复同一种“发现信息—重新选择路线—继续前进”或其他相同动作模板；每章承担不同功能并造成不同类型的局面变化。",
           "先在不考虑知识点的情况下完成故事概括和全部章节剧情，再从全课视角根据已经形成的自然语境匹配知识点。不得为使用某个知识点新增道具、规则、人物行为或支线；summary 和 whatHappens 不得出现语法、知识点或教学安排说明。",

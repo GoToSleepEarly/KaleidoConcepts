@@ -12,6 +12,7 @@ import { CourseCreateSteps, courseStageStep } from "@/features/courses/component
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
 import type { CourseSourceReference, CourseStoryChatAction, CourseStoryMessageInput, CourseStoryOutline, CourseStoryOutlineState, CourseStoryDirection, PresetOption, StoryComplexity, StoryWritingProvider } from "@/lib/contracts/api";
+import { normalizeStoryChapterCount } from "@/lib/domain/story-length-policy";
 import { cn } from "@/lib/utils";
 import { createRequestId } from "@/lib/utils/request-id";
 
@@ -80,7 +81,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const [mobileView, setMobileView] = useState<"chat" | "result">("chat");
   const [message, setMessage] = useState("");
   const [randomSupplement, setRandomSupplement] = useState("");
-  const [chapterCount, setChapterCount] = useState(initialState.settings.chapterCount);
+  const [chapterCount, setChapterCount] = useState(() => normalizeStoryChapterCount(initialState.settings.chapterCount));
   const [writingProvider, setWritingProvider] = useState<StoryWritingProvider>(initialState.settings.writingProvider);
   const [storyComplexity, setStoryComplexity] = useState<StoryComplexity>(initialState.settings.storyComplexity);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -166,7 +167,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
         if (!active || requestInFlight.current || settingsSaveInFlight.current || !isCourseStoryOutlineState(nextState)) return;
         if (JSON.stringify(nextState) === JSON.stringify(stateRef.current)) return;
         applyNextState(nextState);
-        setChapterCount(nextState.settings.chapterCount);
+        setChapterCount(normalizeStoryChapterCount(nextState.settings.chapterCount));
         setWritingProvider(nextState.settings.writingProvider);
         setStoryComplexity(nextState.settings.storyComplexity);
         const operationRunning = nextState.operation?.status === "running";

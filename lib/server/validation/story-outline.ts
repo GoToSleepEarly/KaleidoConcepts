@@ -8,7 +8,7 @@ export const storyWritingProviderSchema = z.union([
 export const storyComplexitySchema = z.enum(["clear_linear", "conflict_driven", "layered"]);
 
 export const storyOutlineSettingsSchema = z.object({
-  chapterCount: z.number().int().min(1).max(8),
+  chapterCount: z.number().int().min(3).max(5),
   writingProvider: storyWritingProviderSchema,
   storyComplexity: storyComplexitySchema,
 });
@@ -68,7 +68,7 @@ export const storyOutlineMessageSchema = z.object({
   ]).optional(),
   expectedStateRevision: z.number().int().min(0).optional(),
   researchPlan: researchPlanSchema.optional(),
-  chapterCount: z.number().int().min(1).max(8).optional(),
+  chapterCount: z.number().int().min(3).max(5).optional(),
   writingProvider: storyWritingProviderSchema.optional(),
   storyComplexity: storyComplexitySchema.optional(),
   requestId: z.string().uuid().optional(),
@@ -135,20 +135,26 @@ const chapterSchema = z.object({
   knowledgePointRecommendationSummary: z.string().optional(),
 });
 
+const newStoryOutlineSchema = z.object({
+  id: z.string().optional(),
+  courseId: z.string().optional(),
+  chapterCount: z.number().int().min(3).max(5),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  writingProvider: storyWritingProviderSchema,
+  sourceReferences: z.array(sourceReferenceSchema),
+  characters: z.array(characterSchema),
+  chapters: z.array(chapterSchema).min(3).max(5),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+}).superRefine((outline, context) => {
+  if (outline.chapters.length !== outline.chapterCount) {
+    context.addIssue({ code: "custom", message: "章节数量必须与章节设置一致", path: ["chapters"] });
+  }
+});
+
 export const storyOutlineSaveSchema = z.object({
-  outline: z.object({
-    id: z.string().optional(),
-    courseId: z.string().optional(),
-    chapterCount: z.number().int().min(1).max(8),
-    title: z.string().min(1),
-    summary: z.string().min(1),
-    writingProvider: storyWritingProviderSchema,
-    sourceReferences: z.array(sourceReferenceSchema),
-    characters: z.array(characterSchema),
-    chapters: z.array(chapterSchema).min(1),
-    createdAt: z.string().optional(),
-    updatedAt: z.string().optional(),
-  }),
+  outline: newStoryOutlineSchema,
   preserveDownstream: z.boolean().optional(),
 });
 

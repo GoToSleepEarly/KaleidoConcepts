@@ -18,7 +18,7 @@ describe("story complexity regression fixture", () => {
     const constructed = storyComplexityRegressionCases.filter((item) => item.origin === "constructed");
 
     expect(historical.map((item) => item.label).sort()).toEqual([...historicalStoryRegressionLabels].sort());
-    expect(constructed).toHaveLength(13);
+    expect(constructed).toHaveLength(15);
     expect(new Set(storyComplexityRegressionCases.map((item) => item.id)).size).toBe(storyComplexityRegressionCases.length);
   });
 
@@ -30,8 +30,9 @@ describe("story complexity regression fixture", () => {
     expect(values("englishLevel")).toEqual(new Set(["Starter", "A1", "A2", "B1", "B2", "C1"]));
     expect(values("storyComplexity")).toEqual(new Set(["clear_linear", "conflict_driven", "layered"]));
     expect(values("participantPattern")).toEqual(new Set(["single", "ensemble", "eight_students"]));
-    expect(storyComplexityRegressionCases.some((item) => item.chapterCount === 1)).toBe(true);
-    expect(storyComplexityRegressionCases.some((item) => item.chapterCount === 8)).toBe(true);
+    expect(storyComplexityRegressionCases.every((item) => item.chapterCount >= 3 && item.chapterCount <= 5)).toBe(true);
+    expect(storyComplexityRegressionCases.some((item) => item.chapterCount === 3)).toBe(true);
+    expect(storyComplexityRegressionCases.some((item) => item.chapterCount === 5)).toBe(true);
 
     const tags = new Set(storyComplexityRegressionCases.flatMap((item) => item.tags));
     for (const requiredTag of ["gravity", "photosynthesis", "emotion_regulation", "peer_conflict", "failure_recovery", "self_efficacy", "information_heavy", "event_light", "many_events", "simple_mainline", "abstract_emotion", "real_history", "multi_perspective", "each_contributes"]) {
@@ -50,20 +51,20 @@ describe("story complexity regression fixture", () => {
 
   test("keeps Chinese samples below hard caps without imposing a minimum", () => {
     for (const item of storyComplexityRegressionCases) {
-      const policy = storyLengthPolicy(item.englishLevel, item.storyComplexity);
+      const policy = storyLengthPolicy(item.englishLevel, item.storyComplexity, item.chapterCount);
       expect(visibleLength(item.sample.hook), `${item.id} hook`).toBeLessThanOrEqual(policy.chinese.directionOverview.hardMax);
       expect(visibleLength(item.sample.summary), `${item.id} summary`).toBeLessThanOrEqual(policy.chinese.outlineSummary.hardMax);
       expect(visibleLength(item.sample.chapterWhatHappens), `${item.id} chapter`).toBeLessThanOrEqual(policy.chinese.chapterOverview.hardMax);
     }
   });
 
-  test("uses the same per-chapter English capacity for one and eight chapters", () => {
+  test("keeps per-chapter English capacity independent from the three-to-five chapter count", () => {
     for (const item of storyComplexityRegressionCases) {
-      const policy = storyLengthPolicy(item.englishLevel, item.storyComplexity);
-      expect(item.sample.estimatedEnglishWordsPerChapter, item.id).toBeGreaterThanOrEqual(policy.english.generationRange[0] - 20);
-      expect(item.sample.estimatedEnglishWordsPerChapter, item.id).toBeLessThanOrEqual(policy.english.generationRange[1]);
+      const policy = storyLengthPolicy(item.englishLevel, item.storyComplexity, item.chapterCount);
+      expect(item.sample.estimatedEnglishWordsPerChapter, item.id).toBeGreaterThanOrEqual(policy.english.validationRange[0]);
+      expect(item.sample.estimatedEnglishWordsPerChapter, item.id).toBeLessThanOrEqual(policy.english.validationRange[1]);
     }
-    expect(storyLengthPolicy("B1", "conflict_driven").english.chapterTargetWords).toBe(170);
+    expect(storyLengthPolicy("B1", "conflict_driven").english.chapterTargetWords).toBe(130);
   });
 
   test("records a separate task-local semantic review for every auditable sample", () => {

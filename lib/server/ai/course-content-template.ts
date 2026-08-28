@@ -131,8 +131,10 @@ function distributeRange(range: [number, number], count: number) {
 export function paragraphWordBudgets(targetWordCount: number, paragraphCount: number) {
   if (!Number.isInteger(paragraphCount) || paragraphCount < 1) return [];
   const policy = englishWordRangesForTarget(targetWordCount);
-  const preferred = distributeRange(policy.aimRange, paragraphCount);
-  const accepted = distributeRange(policy.generationRange, paragraphCount);
+  const preferred = distributeRange(policy.generationRange, paragraphCount);
+  const accepted = distributeRange(policy.validationRange, paragraphCount).map(([lower, upper]) => (
+    paragraphCount === 1 ? [lower, upper] : [Math.max(1, lower - 5), upper + 5]
+  ) as [number, number]);
   return preferred.map((preferredRange, paragraphIndex) => ({ paragraphIndex, preferredRange, acceptedRange: accepted[paragraphIndex] }));
 }
 
@@ -210,7 +212,7 @@ export function compileChapterTemplate(generated: GeneratedChapterTemplate, requ
   });
   const cleanText = cleanParagraphs.join(" ");
   const wordCount = englishWordCount(cleanText);
-  const [minimumWords, maximumWords] = englishWordRangesForTarget(requirements.targetWordCount).generationRange;
+  const [minimumWords, maximumWords] = englishWordRangesForTarget(requirements.targetWordCount).validationRange;
   if (wordCount < minimumWords || wordCount > maximumWords) issues.push({ code: "word_count", message: `正文词数应为 ${minimumWords}–${maximumWords}，实际 ${wordCount}` });
 
   return { paragraphs, cleanText, wordCount, paragraphWordCounts, issues: [...new Map(issues.map((issue) => [issueKey(issue), issue])).values()] };
