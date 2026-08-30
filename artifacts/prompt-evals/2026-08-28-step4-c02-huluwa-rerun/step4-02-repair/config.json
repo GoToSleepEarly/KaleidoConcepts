@@ -1,0 +1,614 @@
+{
+  "scope": "content",
+  "method": "repairReading",
+  "args": [
+    {
+      "course": {
+        "id": "cmstu97yg0000rkvoe5c2ki8e",
+        "title": "葫芦娃救爷爷的故事",
+        "durationMinutes": 60,
+        "currentStage": "content",
+        "staleFromStage": "content",
+        "englishLevel": "B1",
+        "storyComplexity": "conflict_driven",
+        "knowledgePointIds": [
+          "cmsg22n8w000ar0vol4n8kqfc",
+          "cmsg22n8x000br0vo6c5a1nfy",
+          "cmspypvk700189svoqwl2gtlw",
+          "cmsg22n8z000cr0voijia0ldt",
+          "cmspypvkd00199svoblejg4x4",
+          "cmspypvkh001a9svol7w09hf0",
+          "cmspypvkl001b9svo1kkhsvmv",
+          "cmspypvko001c9svo0wypiw9b",
+          "cmspypvkr001d9svonkk6x288"
+        ]
+      },
+      "outline": {
+        "id": "cmsu9kz3l000s8gvoyc4sktux",
+        "title": "宝葫芦里的反向山谷 / The Reverse Valley in the Magic Gourd",
+        "summary": "夏天和林老师在老爷爷的小院里遇到宝葫芦失控，七兄弟和老爷爷一起被吸进反向山谷，出口还被蛇精封住。山谷有一条特殊规则：每个本领都必须先帮助同伴，才会变成能点亮出口的七色印记。队伍在夏天的提醒和林老师的安排下，改掉各自硬闯的习惯，把本领变成互相配合的步骤，一枚一枚集齐印记。最后，七色印记按正确顺序放回宝葫芦口，大家带着老爷爷回到小院，蛇精的咒语也失效了。",
+        "chapters": [
+          {
+            "id": "cmsu9kz48000t8gvo6ip8vpb3",
+            "order": 1,
+            "title": "掉进反向山谷 / Falling into the Reverse Valley",
+            "summary": "宝葫芦把大家吸进反向山谷后，出口立刻缩紧，蛇精的咒语让每一次硬闯都更危险。林老师让夏天先别催着兄弟们冲，夏天带着大娃去扶起断裂的石桥，三娃在旁边挡住滚石。石桥被扶稳后，第一枚七色印记亮了起来，大家也第一次看懂了山谷的规则。",
+            "recommendedKnowledgePointIds": [
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "knowledgePointRecommendationSummary": "适合用过去式描述被吸进山谷、第一次找到规则和印记亮起的经过。"
+          },
+          {
+            "id": "cmsu9kz48000u8gvo13knwv1u",
+            "order": 2,
+            "title": "学会先帮人 / Learning to Help First",
+            "summary": "前方的路变成又窄又热的石缝，谁先冲都会被风吹散。二娃先找出风口和安全路，五娃再把热石上的火苗压下去，林老师让夏天把队伍分成两组跟进。大家穿过石缝时，第二和第三枚印记一起出现，通往山谷中心的路被打开了。",
+            "recommendedKnowledgePointIds": [
+              "cmsg22n8x000br0vo6c5a1nfy",
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "knowledgePointRecommendationSummary": "可以自然练习正在发生的动作和随后发生的结果，描述找路、灭火和前进。"
+          },
+          {
+            "id": "cmsu9kz48000v8gvoyonaompl",
+            "order": 3,
+            "title": "荆棘石台 / The Thorny Stone Platform",
+            "summary": "山谷中心外围着荆棘网，老爷爷被困在高台上，直接冲进去只会把网越收越紧。六娃先隐身进去把绳子递给老爷爷，四娃再按他的指点烧开一条安全口子。老爷爷回到队伍身边，还认出石台上的刻纹，提醒大家出口需要按七枚印记的顺序排放。",
+            "recommendedKnowledgePointIds": [
+              "cmsg22n8z000cr0voijia0ldt",
+              "cmsg22n8x000br0vo6c5a1nfy"
+            ],
+            "knowledgePointRecommendationSummary": "适合用过去式和进行时描述潜入、救援和正在变化的荆棘状态。"
+          },
+          {
+            "id": "cmsu9kz48000w8gvoua2vqif2",
+            "order": 4,
+            "title": "宝葫芦换了用法 / A New Way to Use the Gourd",
+            "summary": "蛇精开始反向念咒，最后两枚印记被拉到葫芦边上，谁只想硬收都会被弹回来。七娃不再把宝葫芦当成抓人的工具，而是让三娃顶住反弹、大娃稳住葫芦口，自己把葫芦口对准空出的岩缝。宝葫芦没有吞掉队伍，反而把第六和第七枚印记送回大家手里，七枚印记终于集齐。",
+            "recommendedKnowledgePointIds": [
+              "cmsg22n8x000br0vo6c5a1nfy",
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "knowledgePointRecommendationSummary": "可以自然练习正在进行的反咒、配合动作和结果变化，突出七娃改变用法。"
+          },
+          {
+            "id": "cmsu9kz48000x8gvon6cymvbo",
+            "order": 5,
+            "title": "七色印记开门 / The Seven Marks Open the Door",
+            "summary": "七枚印记都到齐了，可出口还会根据“先帮谁、后用谁”的顺序重新排列，顺序错了就会再缩回去。夏天举着印记提醒顺序，林老师让七兄弟依次把自己最先帮助同伴的那一步放进出口图案里。七色光门打开后，大家带着老爷爷回到小院，蛇精的咒语也跟着散开了。",
+            "recommendedKnowledgePointIds": [
+              "cmsg22n8w000ar0vol4n8kqfc",
+              "cmspypvkd00199svoblejg4x4"
+            ],
+            "knowledgePointRecommendationSummary": "适合用一般现在时说明出口规则，也可以用将来时表达大家接下来要回到小院。"
+          }
+        ]
+      },
+      "knowledgePoints": [
+        {
+          "id": "cmsg22n8w000ar0vol4n8kqfc",
+          "label": "Present Simple",
+          "labelZh": "一般现在时",
+          "category": "时态"
+        },
+        {
+          "id": "cmsg22n8x000br0vo6c5a1nfy",
+          "label": "Present Continuous",
+          "labelZh": "现在进行时",
+          "category": "时态"
+        },
+        {
+          "id": "cmspypvk700189svoqwl2gtlw",
+          "label": "Past Continuous",
+          "labelZh": "过去进行时",
+          "category": "时态"
+        },
+        {
+          "id": "cmsg22n8z000cr0voijia0ldt",
+          "label": "Past Simple",
+          "labelZh": "一般过去时",
+          "category": "时态"
+        },
+        {
+          "id": "cmspypvkd00199svoblejg4x4",
+          "label": "Future with Will",
+          "labelZh": "will 表将来",
+          "category": "时态"
+        },
+        {
+          "id": "cmspypvkh001a9svol7w09hf0",
+          "label": "Future with Be Going To",
+          "labelZh": "be going to 表将来",
+          "category": "时态"
+        },
+        {
+          "id": "cmspypvkl001b9svo1kkhsvmv",
+          "label": "Present Perfect",
+          "labelZh": "现在完成时",
+          "category": "时态"
+        },
+        {
+          "id": "cmspypvko001c9svo0wypiw9b",
+          "label": "Past Perfect",
+          "labelZh": "过去完成时",
+          "category": "时态"
+        },
+        {
+          "id": "cmspypvkr001d9svonkk6x288",
+          "label": "Present Perfect Continuous",
+          "labelZh": "现在完成进行时",
+          "category": "时态"
+        }
+      ],
+      "plan": {
+        "courseId": "cmstu97yg0000rkvoe5c2ki8e",
+        "status": "confirmed",
+        "englishLevel": "B1",
+        "mainIdeaTargetWordCount": 120,
+        "chapters": [
+          {
+            "outlineChapterId": "cmsu9kz48000t8gvo6ip8vpb3",
+            "targetWordCount": 120,
+            "paragraphCount": 2,
+            "knowledgePointIds": [
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "readingExerciseMode": "complete",
+            "readingExercises": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 4,
+                "wordForm": 3
+              },
+              "vocabulary": {
+                "chineseHint": 3
+              }
+            },
+            "chapterPractice": {
+              "enabled": false,
+              "grammar": {
+                "optionCloze": 5,
+                "wordForm": 5
+              }
+            },
+            "touched": {
+              "targetWordCount": true,
+              "paragraphCount": false,
+              "knowledgePointIds": false,
+              "readingExerciseMode": true,
+              "readingExercises": false,
+              "chapterPractice": true
+            }
+          },
+          {
+            "outlineChapterId": "cmsu9kz48000u8gvo13knwv1u",
+            "targetWordCount": 120,
+            "paragraphCount": 2,
+            "knowledgePointIds": [
+              "cmsg22n8x000br0vo6c5a1nfy",
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "readingExerciseMode": "interactive",
+            "readingExercises": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 4,
+                "wordForm": 3
+              },
+              "vocabulary": {
+                "chineseHint": 3
+              }
+            },
+            "chapterPractice": {
+              "enabled": false,
+              "grammar": {
+                "optionCloze": 5,
+                "wordForm": 5
+              }
+            },
+            "touched": {
+              "targetWordCount": true,
+              "paragraphCount": false,
+              "knowledgePointIds": false,
+              "readingExerciseMode": false,
+              "readingExercises": false,
+              "chapterPractice": false
+            }
+          },
+          {
+            "outlineChapterId": "cmsu9kz48000v8gvoyonaompl",
+            "targetWordCount": 120,
+            "paragraphCount": 2,
+            "knowledgePointIds": [
+              "cmsg22n8z000cr0voijia0ldt",
+              "cmsg22n8x000br0vo6c5a1nfy"
+            ],
+            "readingExerciseMode": "interactive",
+            "readingExercises": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 4,
+                "wordForm": 3
+              },
+              "vocabulary": {
+                "chineseHint": 3
+              }
+            },
+            "chapterPractice": {
+              "enabled": false,
+              "grammar": {
+                "optionCloze": 5,
+                "wordForm": 5
+              }
+            },
+            "touched": {
+              "targetWordCount": true,
+              "paragraphCount": false,
+              "knowledgePointIds": false,
+              "readingExerciseMode": false,
+              "readingExercises": false,
+              "chapterPractice": false
+            }
+          },
+          {
+            "outlineChapterId": "cmsu9kz48000w8gvoua2vqif2",
+            "targetWordCount": 120,
+            "paragraphCount": 2,
+            "knowledgePointIds": [
+              "cmsg22n8x000br0vo6c5a1nfy",
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "readingExerciseMode": "interactive",
+            "readingExercises": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 4,
+                "wordForm": 3
+              },
+              "vocabulary": {
+                "chineseHint": 3
+              }
+            },
+            "chapterPractice": {
+              "enabled": false,
+              "grammar": {
+                "optionCloze": 5,
+                "wordForm": 5
+              }
+            },
+            "touched": {
+              "targetWordCount": true,
+              "paragraphCount": false,
+              "knowledgePointIds": false,
+              "readingExerciseMode": false,
+              "readingExercises": false,
+              "chapterPractice": false
+            }
+          },
+          {
+            "outlineChapterId": "cmsu9kz48000x8gvon6cymvbo",
+            "targetWordCount": 120,
+            "paragraphCount": 2,
+            "knowledgePointIds": [
+              "cmsg22n8w000ar0vol4n8kqfc",
+              "cmspypvkd00199svoblejg4x4"
+            ],
+            "readingExerciseMode": "interactive",
+            "readingExercises": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 4,
+                "wordForm": 3
+              },
+              "vocabulary": {
+                "chineseHint": 3
+              }
+            },
+            "chapterPractice": {
+              "enabled": false,
+              "grammar": {
+                "optionCloze": 5,
+                "wordForm": 5
+              }
+            },
+            "touched": {
+              "targetWordCount": true,
+              "paragraphCount": false,
+              "knowledgePointIds": false,
+              "readingExerciseMode": false,
+              "readingExercises": false,
+              "chapterPractice": false
+            }
+          }
+        ],
+        "afterClassPractice": {
+          "enabled": true,
+          "touched": {
+            "knowledgePointIds": false,
+            "practice": true
+          },
+          "practice": {
+            "enabled": true,
+            "grammar": {
+              "optionCloze": 5,
+              "wordForm": 5
+            }
+          },
+          "knowledgePointIds": [
+            "cmsg22n8z000cr0voijia0ldt",
+            "cmsg22n8x000br0vo6c5a1nfy",
+            "cmsg22n8w000ar0vol4n8kqfc",
+            "cmspypvkd00199svoblejg4x4"
+          ],
+          "vocabularyReviewEnabled": true
+        },
+        "updatedAt": "2026-08-24T16:15:26.728Z",
+        "confirmedAt": "2026-08-24T16:15:26.724Z"
+      },
+      "lengthPolicy": {
+        "englishLevel": "B1",
+        "storyComplexity": "conflict_driven",
+        "chinese": {
+          "directionOverview": {
+            "recommendedMax": 70,
+            "hardMax": 90
+          },
+          "outlineSummary": {
+            "recommendedMax": 90,
+            "hardMax": 115
+          },
+          "chapterOverview": {
+            "recommendedMax": 45,
+            "hardMax": 55
+          }
+        },
+        "english": {
+          "chapterTargetWords": 130,
+          "generationRange": [
+            115,
+            145
+          ],
+          "validationRange": [
+            110,
+            155
+          ],
+          "teacherRecommendedRange": [
+            110,
+            150
+          ],
+          "hardRange": [
+            60,
+            180
+          ]
+        }
+      },
+      "promptPeople": [
+        {
+          "role": "teacher",
+          "chineseName": "林老师",
+          "englishName": "Ms. Lin"
+        },
+        {
+          "role": "student",
+          "chineseName": "夏天",
+          "englishName": "Summer"
+        }
+      ],
+      "promptCharacters": [
+        {
+          "displayName": "林老师",
+          "englishName": "林老师",
+          "roleInStory": "带领夏天提醒队伍按顺序行动，帮大家把山谷规则变成可执行的步骤，但不替葫芦娃完成任务。",
+          "shortDescription": "带领夏天提醒队伍按顺序行动，帮大家把山谷规则变成可执行的步骤，但不替葫芦娃完成任务。"
+        },
+        {
+          "displayName": "夏天",
+          "englishName": "夏天",
+          "roleInStory": "负责传递林老师的提醒、观察队伍状态，并在关键时刻带着大家确认印记顺序。",
+          "shortDescription": "负责传递林老师的提醒、观察队伍状态，并在关键时刻带着大家确认印记顺序。"
+        },
+        {
+          "displayName": "老爷爷",
+          "englishName": "老爷爷",
+          "roleInStory": "作为被困的关键人物，先提醒大家稳住节奏，后提供出口顺序线索，推动救援完成。",
+          "shortDescription": "作为被困的关键人物，先提醒大家稳住节奏，后提供出口顺序线索，推动救援完成。"
+        },
+        {
+          "displayName": "蛇精",
+          "englishName": "蛇精",
+          "roleInStory": "在山谷外念咒制造收缩压力，也是最后一关的反作用力来源。",
+          "shortDescription": "在山谷外念咒制造收缩压力，也是最后一关的反作用力来源。"
+        },
+        {
+          "displayName": "大娃",
+          "englishName": "大娃",
+          "roleInStory": "先用力量帮同伴搬开障碍、稳住通路，再把自己的本领变成支撑队伍前进的办法。",
+          "shortDescription": "先用力量帮同伴搬开障碍、稳住通路，再把自己的本领变成支撑队伍前进的办法。"
+        },
+        {
+          "displayName": "二娃",
+          "englishName": "二娃",
+          "roleInStory": "先找出风口和安全路线，再把侦察结果变成带队穿过危险区域的关键帮助。",
+          "shortDescription": "先找出风口和安全路线，再把侦察结果变成带队穿过危险区域的关键帮助。"
+        },
+        {
+          "displayName": "三娃",
+          "englishName": "三娃",
+          "roleInStory": "用防御力挡住反弹和碎石，为同伴创造可以安全出手和前进的空间。",
+          "shortDescription": "用防御力挡住反弹和碎石，为同伴创造可以安全出手和前进的空间。"
+        },
+        {
+          "displayName": "四娃",
+          "englishName": "四娃",
+          "roleInStory": "在确认同伴位置后再用火清除荆棘和热障碍，负责打开安全通路。",
+          "shortDescription": "在确认同伴位置后再用火清除荆棘和热障碍，负责打开安全通路。"
+        },
+        {
+          "displayName": "五娃",
+          "englishName": "五娃",
+          "roleInStory": "先用水灭火、降温，再和四娃配合完成通路，让队伍能继续向前。",
+          "shortDescription": "先用水灭火、降温，再和四娃配合完成通路，让队伍能继续向前。"
+        },
+        {
+          "displayName": "六娃",
+          "englishName": "六娃",
+          "roleInStory": "先隐身进入危险处救出老爷爷、取回线索，再把自己最灵活的本领用在救援上。",
+          "shortDescription": "先隐身进入危险处救出老爷爷、取回线索，再把自己最灵活的本领用在救援上。"
+        },
+        {
+          "displayName": "七娃",
+          "englishName": "七娃",
+          "roleInStory": "把宝葫芦从只会吞人的工具改成传递印记和打开出口的关键法宝。",
+          "shortDescription": "把宝葫芦从只会吞人的工具改成传递印记和打开出口的关键法宝。"
+        }
+      ]
+    },
+    "quickrouter_gpt",
+    [
+      {
+        "current": {
+          "outlineChapterId": "cmsu9kz48000x8gvon6cymvbo",
+          "paragraphs": [
+            {
+              "template": "The team carried all seven marks to the shrinking exit, but its colors kept changing places. Grandpa showed Summer the carved pattern. Summer lifted the marks and said, \"The door {{OC1}} each helpful act, not each brother's usual place.\" Ms. Lin added, \"If everyone follows that order, the pattern {{OC2}} complete.\" The brothers {{WF1}} around the glowing {{VOC1}} and remembered whom they had helped first."
+            },
+            {
+              "template": "One by one, the seven brothers {{WF2}} their marks into the matching spaces. Summer checked every step and said, \"The colors {{OC3}} in the right order now. We {{OC4}} home together.\" The final mark clicked into the {{VOC2}}, and a seven-colored gate opened. Everyone {{WF3}} Grandpa through it and returned safely to his courtyard. Behind them, the Reverse Valley faded, the Snake Spirit's {{VOC3}} broke apart, and the magic gourd became quiet again."
+            }
+          ],
+          "slots": [
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP1",
+              "answer": "follows",
+              "distractors": [
+                "follow",
+                "is following"
+              ]
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP5",
+              "answer": "will become",
+              "distractors": [
+                "becomes",
+                "is becoming"
+              ]
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP1",
+              "answer": "match",
+              "distractors": [
+                "matches",
+                "are matching"
+              ]
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP5",
+              "answer": "will return",
+              "distractors": [
+                "return",
+                "are returning"
+              ]
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "gathered",
+              "cue": "gather"
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "placed",
+              "cue": "place"
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "guided",
+              "cue": "guide"
+            },
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "pattern",
+              "canonicalForm": "pattern",
+              "meaningZh": "图案"
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "exit",
+              "canonicalForm": "exit",
+              "meaningZh": "出口"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "spell",
+              "canonicalForm": "spell",
+              "meaningZh": "咒语"
+            }
+          ]
+        },
+        "requirements": {
+          "outlineChapterId": "cmsu9kz48000x8gvon6cymvbo",
+          "narrativeTense": "past",
+          "paragraphCount": 2,
+          "targetWordCount": 120,
+          "optionClozeCount": 4,
+          "wordFormCount": 3,
+          "vocabularyCount": 3,
+          "grammarPoints": [
+            {
+              "key": "KP1",
+              "label": "Present Simple",
+              "category": "时态"
+            },
+            {
+              "key": "KP5",
+              "label": "Future with Will",
+              "category": "时态"
+            }
+          ]
+        },
+        "issues": [
+          {
+            "code": "knowledge_point",
+            "target": "WF1",
+            "message": "WF1 使用了未允许的知识点"
+          },
+          {
+            "code": "knowledge_point",
+            "target": "WF2",
+            "message": "WF2 使用了未允许的知识点"
+          },
+          {
+            "code": "knowledge_point",
+            "target": "WF3",
+            "message": "WF3 使用了未允许的知识点"
+          }
+        ],
+        "parseError": null
+      }
+    ],
+    {
+      "current": {
+        "text": "When a magic gourd pulled Summer, Ms. Lin, Grandpa, and the seven brothers into the Reverse Valley, they discovered that strength alone could not open the shrinking exit. The valley turned each brother's power into a colored mark only after that power helped a companion. Big Brother supported a bridge, Second Brother found a safe route, and Third Brother blocked danger. Fourth and Fifth Brothers controlled fire and water, while Sixth Brother rescued Grandpa from a thorny platform. Seventh Brother changed the gourd from a tool for capturing others into a tool that returned the final marks. With Summer observing the team, Ms. Lin organizing their steps, and Grandpa explaining the carved order, the brothers placed all seven marks correctly. Their cooperation opened the gate, brought everyone home, and ended the Snake Spirit's spell."
+      },
+      "issues": [
+        "Main Idea 词数应为 110–130，实际 134"
+      ]
+    }
+  ]
+}

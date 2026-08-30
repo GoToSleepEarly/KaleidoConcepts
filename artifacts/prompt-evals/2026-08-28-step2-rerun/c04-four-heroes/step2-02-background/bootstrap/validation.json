@@ -1,0 +1,13 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "prepareBackgroundKnowledge"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "status": "not_needed",
+    "reason": "这是不依赖外部作品或事实的原创故事。"
+  },
+  "error": null
+}

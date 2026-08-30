@@ -1,0 +1,18 @@
+{
+  "case": "C05",
+  "source": "docs/frontend/course-create-story-outline.md historical regression case",
+  "teacherQuestion": "用故事讲 MBTI，学生学习到理论",
+  "chapterCount": 4,
+  "englishLevel": "B1",
+  "storyComplexity": "conflict_driven",
+  "coursePeople": [
+    { "personId": "teacher-zhao", "role": "teacher", "chineseName": "赵老师", "englishName": "Ms. Zhao", "age": 34, "gender": "female" },
+    { "personId": "student-mia", "role": "student", "chineseName": "米娅", "englishName": "Mia", "age": 12, "gender": "female" },
+    { "personId": "student-ben", "role": "student", "chineseName": "本", "englishName": "Ben", "age": 12, "gender": "male" }
+  ],
+  "selectedKnowledgePoints": [
+    { "id": "kp-past", "label": "Past Simple", "category": "Grammar" },
+    { "id": "kp-comparatives", "label": "Comparatives", "category": "Grammar" },
+    { "id": "kp-modals", "label": "Modals for suggestions", "category": "Grammar" }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "scope": "story",
+  "method": "alignRequirements",
+  "args": [{
+    "task": "给学生讲一下二战的某个故事",
+    "replyContext": "initial",
+    "chapterCount": 5,
+    "englishLevel": "C1",
+    "storyComplexity": "layered",
+    "coursePeople": [
+      { "personId": "teacher-wang", "role": "teacher", "chineseName": "王老师", "englishName": "Mr. Wang", "age": 40, "gender": "male" },
+      { "personId": "student-mei", "role": "student", "chineseName": "梅", "englishName": "May", "age": 16, "gender": "female" },
+      { "personId": "student-jun", "role": "student", "chineseName": "俊", "englishName": "Jay", "age": 16, "gender": "male" }
+    ],
+    "conversationHistory": [{ "role": "teacher", "content": "给学生讲一下二战的某个故事" }],
+    "references": [], "selectedDirection": null, "currentDirections": [], "currentOutline": null
+  }],
+  "bootstrapResponses": ["{\"status\":\"ready_for_confirmation\",\"planningMode\":\"explore_options\",\"storyMode\":\"faithful\",\"classroomPresence\":\"observer\",\"brief\":{\"kind\":\"factual\",\"objective\":\"选择一个适合学生的二战真实故事并依据史实讲述\",\"factualFocus\":\"二战中的一个真实事件及其影响\",\"sourceRequirements\":[],\"requiredNamedCharacters\":[],\"fixedPlot\":null,\"additionalConstraints\":{\"required\":[],\"preferred\":[],\"excluded\":[]}}}"]
+}

@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 
-import type { CourseContentChapter, CourseContentPart, CourseContentPhase, CourseContentState, CourseContentStatus, CourseGrammarQuestion, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
-import { buildCleanParagraphText, collectVocabularyMatching, courseContentQuestionPageSize, paginateBalanced, stableShuffle, validateGrammarCoverage, validateParagraphParts } from "@/lib/domain/course-content";
+import type { CourseContentChapter, CourseContentPart, CourseContentPhase, CourseContentState, CourseContentStatus, CourseGrammarQuestion, StoryContentIntent, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
+import { buildCleanParagraphText, collectVocabularyMatching, courseContentQuestionPageSize, englishWordCount, paginateBalanced, stableShuffle, validateGrammarCoverage, validateParagraphParts } from "@/lib/domain/course-content";
 import { furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
 import { englishWordRangesForTarget } from "@/lib/domain/story-length-policy";
 import { readingPageCount } from "@/lib/domain/teaching-plan-policy";
+import { storyContentIntentFromAlignmentDetails } from "@/lib/domain/story-content-intent";
 import { buildPromptParts, buildPromptQuestions, buildReadingTemplateRequirements, mainIdeaWordCountPolicy, type CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
 import {
   STEP4_CONTENT_CONTRACT_VERSION,
@@ -59,6 +60,7 @@ export class CourseContentSupersededError extends Error { constructor(message = 
 const mainIdeaTitle = "Main Idea Reading Practice";
 const operationLeaseMs = 90_000;
 const operationHeartbeatMs = 25_000;
+export const courseContentSemanticRepairAttempts = 1;
 
 function leaseDeadline(now = new Date()) { return new Date(now.getTime() + operationLeaseMs); }
 
@@ -66,11 +68,11 @@ function inTransaction<T>(db: CourseContentDb, callback: (tx: CourseContentDb) =
   return db.$transaction ? db.$transaction((tx) => callback(tx as CourseContentDb)) : callback(db);
 }
 
-function sourceRevision(input: TeachingPlanState) {
-  return createHash("sha256").update(JSON.stringify({ contractVersion: STEP4_CONTENT_CONTRACT_VERSION, outline: input.outline, plan: input.plan })).digest("hex");
+function sourceRevision(input: TeachingPlanState & { contentIntent?: StoryContentIntent }) {
+  return createHash("sha256").update(JSON.stringify({ contractVersion: STEP4_CONTENT_CONTRACT_VERSION, outline: input.outline, plan: input.plan, contentIntent: input.contentIntent })).digest("hex");
 }
 
-function wordCount(text: string) { return (text.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) ?? []).length; }
+const wordCount = englishWordCount;
 
 export function requiresExerciseAi(plan: TeachingPlanState["plan"]) {
   const hasQuestions = (grammar: { optionCloze: number; wordForm: number }) => grammar.optionCloze > 0 || grammar.wordForm > 0;
@@ -108,7 +110,7 @@ function normalizeTemplateChapter(
   requirements: ChapterTemplateRequirements,
   parseError?: string | null,
 ): { chapter: CourseContentChapter; draft: GeneratedChapterTemplate | null; structuredIssues: ChapterTemplateIssue[] } {
-  const keyMap = pointKeyMap(state);
+  const keyMap = new Map(requirements.grammarPoints.flatMap((point) => point.knowledgePointId ? [[point.key, point.knowledgePointId] as const] : []));
   const outlineChapter = state.outline.chapters.find((chapter) => chapter.id === requirements.outlineChapterId)!;
   const planChapter = state.plan.chapters.find((chapter) => chapter.outlineChapterId === requirements.outlineChapterId)!;
   const compiled = generated ? compileChapterTemplate(generated, requirements) : null;
@@ -211,12 +213,14 @@ export function exerciseQuestionIssues(
 async function prerequisite(db: CourseContentDb, courseId: string) {
   const state = await getTeachingPlanState(db, courseId);
   if (state.plan.status !== "confirmed") throw new CourseContentPrerequisiteError();
-  const [people, characters] = await Promise.all([
+  const [course, people, characters] = await Promise.all([
+    db.course.findUnique({ where: { id: courseId }, include: { storySetting: true } }),
     db.coursePerson?.findMany ? db.coursePerson.findMany({ where: { courseId }, orderBy: { role: "asc" } }) : [],
     db.courseCharacter?.findMany ? db.courseCharacter.findMany({ where: { courseId }, orderBy: { createdAt: "asc" } }) : [],
   ]);
   return {
     ...state,
+    contentIntent: storyContentIntentFromAlignmentDetails(course?.storySetting?.alignmentDetails),
     promptPeople: people.map((person) => ({ role: person.role, chineseName: person.chineseNameSnapshot, englishName: person.englishNameSnapshot })),
     promptCharacters: characters.map((character) => ({ displayName: character.displayName, englishName: character.englishName, roleInStory: character.roleInStory, shortDescription: character.shortDescription })),
   };
@@ -435,7 +439,7 @@ async function recordContentAiUsage(
   operation: ClaimedOperation,
   writingProvider: StoryWritingProvider,
   idempotencyKey: string,
-  callType: "initial" | "repair",
+  callType: "candidate" | "final" | "repair",
   usage: unknown,
   targetCount: number,
   diagnostics: Record<string, unknown> = {},
@@ -472,10 +476,10 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
       : null;
     const generatedReading = reusableChapters ? null : await deps.generateReading(state, current.writingProvider);
     await updateOwnedContent(db, courseId, operation, { phase: "validating_chapters" });
-    const knowledgePointKeyById = new Map(state.knowledgePoints.map((point, index) => [point.id, `KP${index + 1}`]));
     let chapterResults = reusableChapters
       ? reusableChapters.map((chapter) => {
           const requirement = requirementById.get(chapter.outlineChapterId)!;
+          const knowledgePointKeyById = new Map(requirement.grammarPoints.flatMap((point) => point.knowledgePointId ? [[point.knowledgePointId, point.key] as const] : []));
           const messages = validateChapter(state, chapter);
           return {
             chapter: { ...chapter, validationIssues: messages },
@@ -497,7 +501,10 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
       const mainIdeaPolicy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? 120);
       const firstPassMainIdeaCount = wordCount(mainIdeaRaw.text);
       const firstPassMainIdeaValid = firstPassMainIdeaCount >= mainIdeaPolicy.acceptedRange[0] && firstPassMainIdeaCount <= mainIdeaPolicy.acceptedRange[1];
-      await recordContentAiUsage(db, courseId, operation, current.writingProvider, idempotencyKey, "initial", generatedReading.usage, requirements.length, {
+      await recordContentAiUsage(db, courseId, operation, current.writingProvider, idempotencyKey, "candidate", generatedReading.candidateUsage, requirements.length, {
+        phase: "candidate_positions",
+      });
+      await recordContentAiUsage(db, courseId, operation, current.writingProvider, idempotencyKey, "final", generatedReading.usage, requirements.length, {
         validChapterCount: firstPassValidChapterCount,
         mainIdeaValid: firstPassMainIdeaValid,
         firstPassReady: firstPassValidChapterCount === requirements.length && firstPassMainIdeaValid,
@@ -506,15 +513,22 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
     await updateOwnedContent(db, courseId, operation, { chapters, mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle } });
 
     const failed = chapterResults.filter((result) => result.structuredIssues.length || validateChapter(state, result.chapter).length);
-    if (failed.length) {
-      await updateOwnedContent(db, courseId, operation, { phase: "repairing_chapters", chapters: chapters.map((chapter) => ({ ...chapter, validationIssues: validateChapter(state, chapter) })) });
-      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${failed.length} 个章节需要修复：${failed.map((item) => `第 ${item.chapter.order} 章（${[...item.structuredIssues.map((issue) => issue.message), ...validateChapter(state, item.chapter)].filter((message, index, all) => all.indexOf(message) === index).join("；")}）`).join("；")}。正在统一修复失败位置。` });
+    const mainIdeaPolicy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? 120);
+    let mainIdeaCount = wordCount(mainIdeaRaw.text);
+    const mainIdeaIssue = mainIdeaCount < mainIdeaPolicy.acceptedRange[0] || mainIdeaCount > mainIdeaPolicy.acceptedRange[1]
+      ? `Main Idea 词数应为 ${mainIdeaPolicy.acceptedRange[0]}–${mainIdeaPolicy.acceptedRange[1]}，实际 ${mainIdeaCount}`
+      : null;
+    if (failed.length || mainIdeaIssue) {
+      const phase = failed.length ? "repairing_chapters" : "repairing_main_idea";
+      await updateOwnedContent(db, courseId, operation, { phase, chapters: chapters.map((chapter) => ({ ...chapter, validationIssues: validateChapter(state, chapter) })) });
+      const chapterDetails = failed.map((item) => `第 ${item.chapter.order} 章（${[...item.structuredIssues.map((issue) => issue.message), ...validateChapter(state, item.chapter)].filter((message, index, all) => all.indexOf(message) === index).join("；")}）`);
+      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${[...chapterDetails, ...(mainIdeaIssue ? [mainIdeaIssue.replaceAll("Main Idea", "课后阅读")] : [])].join("；")}。正在一次统一修复全部失败位置。` });
       const repairBundle = await deps.repairReading(state, current.writingProvider, failed.map((item) => ({
         current: item.draft,
         requirements: item.requirement,
         issues: item.structuredIssues.length ? item.structuredIssues : validateChapter(state, item.chapter).map((message) => ({ code: "part_structure" as const, message })),
         parseError: item.parseError,
-      })));
+      })), mainIdeaIssue ? { current: mainIdeaRaw.text ? { text: mainIdeaRaw.text } : null, issues: [mainIdeaIssue] } : undefined);
       await updateOwnedContent(db, courseId, operation, { phase: "validating_chapters" });
       chapterResults = chapterResults.map((result) => {
         if (!failed.some((item) => item.chapter.outlineChapterId === result.chapter.outlineChapterId)) return result;
@@ -538,25 +552,17 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
         const result = chapterResults.find((item) => item.chapter.outlineChapterId === failedItem.chapter.outlineChapterId);
         return result && !result.structuredIssues.length && !validateChapter(state, result.chapter).length;
       }).length;
-      await recordContentAiUsage(db, courseId, operation, current.writingProvider, idempotencyKey, "repair", repairBundle.usage, failed.length, { resolvedChapterCount });
+      if (mainIdeaIssue && repairBundle.mainIdea) mainIdeaRaw = repairBundle.mainIdea;
+      mainIdeaCount = wordCount(mainIdeaRaw.text);
+      await recordContentAiUsage(db, courseId, operation, current.writingProvider, idempotencyKey, "repair", repairBundle.usage, failed.length + (mainIdeaIssue ? 1 : 0), { resolvedChapterCount, mainIdeaResolved: !mainIdeaIssue || (mainIdeaCount >= mainIdeaPolicy.acceptedRange[0] && mainIdeaCount <= mainIdeaPolicy.acceptedRange[1]) });
       chapters = chapterResults.map((result) => result.chapter);
-      await updateOwnedContent(db, courseId, operation, { chapters });
+      await updateOwnedContent(db, courseId, operation, { chapters, mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle } });
     }
 
     const remaining = chapterResults.map((result) => ({ ...result.chapter, validationIssues: [...new Set([...result.structuredIssues.map((issue) => issue.message), ...validateChapter(state, result.chapter)])] }));
     await updateOwnedContent(db, courseId, operation, { chapters: remaining });
     if (remaining.some((chapter) => chapter.validationIssues.length)) throw new Error("部分章节一次最小修复后仍未通过校验，请重试失败章节");
     await updateOwnedContent(db, courseId, operation, { phase: "validating_main_idea" });
-    const mainIdeaPolicy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? 120);
-    let mainIdeaCount = wordCount(mainIdeaRaw.text);
-    if (mainIdeaCount < mainIdeaPolicy.acceptedRange[0] || mainIdeaCount > mainIdeaPolicy.acceptedRange[1]) {
-      const issue = `Main Idea 词数应为 ${mainIdeaPolicy.acceptedRange[0]}–${mainIdeaPolicy.acceptedRange[1]}，实际 ${mainIdeaCount}`;
-      await updateOwnedContent(db, courseId, operation, { phase: "repairing_main_idea" });
-      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检查发现课后阅读需要修复：${issue.replaceAll("Main Idea", "课后阅读")}。正在单独修复课后阅读。` });
-      mainIdeaRaw = await deps.repairMainIdea(current.writingProvider, state.course.englishLevel, { text: mainIdeaRaw.text }, [issue], mainIdeaPolicy.targetWordCount);
-      mainIdeaCount = wordCount(mainIdeaRaw.text);
-      await updateOwnedContent(db, courseId, operation, { phase: "validating_main_idea", mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle } });
-    }
     if (mainIdeaCount < mainIdeaPolicy.acceptedRange[0] || mainIdeaCount > mainIdeaPolicy.acceptedRange[1]) throw new Error(`课后阅读一次修复后词数仍应为 ${mainIdeaPolicy.acceptedRange[0]}–${mainIdeaPolicy.acceptedRange[1]}，实际 ${mainIdeaCount}`);
     const needsExerciseAi = requiresExerciseAi(state.plan);
     const localExercises = needsExerciseAi ? { chapters: remaining, homework: null } : locallyAssembledExercises(state, remaining);
@@ -597,7 +603,7 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
     await updateOwnedContent(db, courseId, operation, { phase: "validating_exercises" });
     const keys = pointKeyMap(state);
     const homeworkPlan = state.plan.afterClassPractice;
-    for (let round = 0; round <= 2; round += 1) {
+    for (let round = 0; round <= courseContentSemanticRepairAttempts; round += 1) {
       const failedTargets: Array<{ id: string; label: string; issues: string[] }> = [];
       const chapters = (content.chapters as CourseContentChapter[]).map((chapter) => {
         const plan = state.plan.chapters.find((item) => item.outlineChapterId === chapter.outlineChapterId)!;
@@ -618,7 +624,7 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
         await finishOperation(db, courseId, operation, { status: "ready", phase: null, chapters, homework, exercisesStale: false, contentVersion: { increment: 1 }, errorMessage: null }, { status: "succeeded" });
         return getCourseContentState(db, courseId);
       }
-      if (round === 2) throw new Error(`练习连续两次修复后仍未通过：${failedTargets.map((target) => `${target.label}（${target.issues.join("；")}）`).join("；")}`);
+      if (round === courseContentSemanticRepairAttempts) throw new Error(`练习一次修复后仍未通过：${failedTargets.map((target) => `${target.label}（${target.issues.join("；")}）`).join("；")}`);
       await updateOwnedContent(db, courseId, operation, { phase: "repairing_chapters" });
       await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${failedTargets.length} 个练习区域需要修复：${failedTargets.map((target) => `${target.label}（${target.issues.join("；")}）`).join("；")}。正在统一修复。` });
       const repaired = await deps.repairExercises(state, content.writingProvider, failedTargets, generated, cleanChapters);

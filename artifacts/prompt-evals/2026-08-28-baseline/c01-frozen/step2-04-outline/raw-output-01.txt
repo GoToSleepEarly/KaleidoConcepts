@@ -1,0 +1,17 @@
+{
+  "title": { "zh": "会听方向的冰桥", "en": "The Ice Bridge That Listened" },
+  "summary": "Elsa发现魔法冰桥会随听到的方向改变路线，Ms. Lin带Summer和Dawn与Anna前去营救被困船队。Summer和Dawn依据路标依次发出准确指令，使冰桥抵达港口并引导船队安全回航。",
+  "characters": [
+    { "key": "C1", "displayName": "林老师", "englishName": "Ms. Lin", "sourceType": "person", "sourcePersonId": "teacher-lin", "roleInStory": "带领孩子们观察冰桥变化、核对路标，并让他们独立决定方向。" },
+    { "key": "C2", "displayName": "夏天", "englishName": "Summer", "sourceType": "person", "sourcePersonId": "student-xiatian", "roleInStory": "辨认被积雪遮住的港口路标，给出改变冰桥路线的关键指令。" },
+    { "key": "C3", "displayName": "晨曦", "englishName": "Dawn", "sourceType": "person", "sourcePersonId": "student-chenxi", "roleInStory": "根据灯塔与船队的位置判断最后方向，帮助冰桥准确抵达船队。" },
+    { "key": "C4", "displayName": "艾莎", "englishName": "Elsa", "sourceType": "referenced", "sourceReferenceKey": "R02", "roleInStory": "发现冰桥会响应方向指令，并用魔法维持桥面稳定，却不能替队伍选择路线。" },
+    { "key": "C5", "displayName": "安娜", "englishName": "Anna", "sourceType": "referenced", "sourceReferenceKey": "R03", "roleInStory": "陪伴队伍踏上冰桥，及时制止混乱指令并协助观察前方险情。" }
+  ],
+  "chapters": [
+    { "order": 1, "title": { "zh": "转向的冰桥", "en": "The Turning Ice Bridge" }, "whatHappens": "船队被浮冰困在峡湾外。Elsa发现冰桥会按听到的方向转弯，众人决定用它开路。", "characterKeys": ["C1", "C2", "C3", "C4", "C5"], "recommendedKnowledgePointKeys": ["KP1"], "knowledgePointRecommendationSummary": "KP1用于讲述船队遇险及Elsa发现冰桥规则的已发生事件。" },
+    { "order": 2, "title": { "zh": "雪中的路标", "en": "The Sign in the Snow" }, "whatHappens": "冰桥来到岔口，Anna阻止众人同时喊方向。Summer扫开积雪，按港口路标指向右方。", "characterKeys": ["C1", "C2", "C4", "C5"], "recommendedKnowledgePointKeys": ["KP2"], "knowledgePointRecommendationSummary": "KP2用于描述众人正在观察冰桥、清理积雪和寻找路标。" },
+    { "order": 3, "title": { "zh": "灯塔的答案", "en": "The Lighthouse Shows the Way" }, "whatHappens": "冰桥转向右方，却仍偏离船队。Dawn比较灯塔与船只的位置，指挥冰桥向左靠近。", "characterKeys": ["C1", "C3", "C4", "C5"], "recommendedKnowledgePointKeys": ["KP1", "KP2"], "knowledgePointRecommendationSummary": "KP2描述船队正在等待的位置，KP1说明冰桥刚才转错及Dawn随后修正的动作。" },
+    { "order": 4, "title": { "zh": "通往港口的路", "en": "The Road to the Harbor" }, "whatHappens": "Ms. Lin核对港口方向，Summer和Dawn依次发出最后指令。冰桥抵达船队，引导船只安全回港。", "characterKeys": ["C1", "C2", "C3", "C4", "C5"], "recommendedKnowledgePointKeys": ["KP1"], "knowledgePointRecommendationSummary": "KP1用于回顾孩子们给出指令、冰桥抵达船队和船只回港的完整结果。" }
+  ]
+}

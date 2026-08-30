@@ -1,0 +1,60 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateDirections"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": [
+    {
+      "title": "敦刻尔克：撤退中的等待",
+      "hook": "课程沿1940年敦刻尔克撤退的时间线，观察被困部队、海军与民用船只如何共同完成撤离。Mr. Wang、May和Jay只记录海滩等待、救援秩序及撤退保住兵力却未扭转法国战局的结果。",
+      "storyHighlight": "从撤退而非胜利理解战略选择。",
+      "growthCore": "同理心",
+      "whyFits": "史实因果完整，适合C1多层讨论。",
+      "mainCharacters": [
+        "Mr. Wang",
+        "May",
+        "Jay",
+        "敦刻尔克撤退中的盟军与救援者"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "课程沿1940年敦刻尔克撤退的时间线，观察被困部队、海军与民用船只如何共同完成撤离。Mr. Wang、May和Jay只记录海滩等待、救援秩序及撤退保住兵力却未扭转法国战局的结果。"
+    },
+    {
+      "title": "安妮·弗兰克：藏身处的记录",
+      "hook": "课程依据安妮·弗兰克藏身、写作、被捕及日记保存出版的真实时间线讲述经历。Mr. Wang、May和Jay作为旁观者比较日常文字与历史结果，不接触人物或改变结局。",
+      "storyHighlight": "个人文字与宏大历史形成对照。",
+      "growthCore": "同理心",
+      "whyFits": "适合C1证据与视角分析。",
+      "mainCharacters": [
+        "Mr. Wang",
+        "May",
+        "Jay",
+        "安妮·弗兰克",
+        "奥托·弗兰克",
+        "米普·吉斯"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "课程依据安妮·弗兰克藏身、写作、被捕及日记保存出版的真实时间线讲述经历。Mr. Wang、May和Jay作为旁观者比较日常文字与历史结果，不接触人物或改变结局。"
+    },
+    {
+      "title": "布莱切利园：集体破译",
+      "hook": "课程梳理波兰密码学成果、布莱切利园团队与图灵参与的密码分析如何共同支持Ultra情报。Mr. Wang、May和Jay只观察试验、协作与保密限制，并理解破译是重要贡献而非单独决定战争的力量。",
+      "storyHighlight": "纠正孤胆天才神话，突出知识积累与团队系统。",
+      "growthCore": "独立判断",
+      "whyFits": "信息层次丰富，适合5章C1课程。",
+      "mainCharacters": [
+        "Mr. Wang",
+        "May",
+        "Jay",
+        "艾伦·图灵",
+        "布莱切利园密码分析团队",
+        "波兰密码学家"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "课程梳理波兰密码学成果、布莱切利园团队与图灵参与的密码分析如何共同支持Ultra情报。Mr. Wang、May和Jay只观察试验、协作与保密限制，并理解破译是重要贡献而非单独决定战争的力量。"
+    }
+  ],
+  "error": null
+}

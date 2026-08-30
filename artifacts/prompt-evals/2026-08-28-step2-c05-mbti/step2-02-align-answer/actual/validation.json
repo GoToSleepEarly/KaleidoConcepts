@@ -1,0 +1,48 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "alignRequirements"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "status": "ready_for_confirmation",
+    "planningMode": "explore_options",
+    "storyMode": "new_story",
+    "classroomPresence": "participant",
+    "requiredNamedCharacters": [],
+    "brief": {
+      "kind": "concept",
+      "objective": "通过故事帮助学生理解 MBTI 的四组人格偏好维度",
+      "learningTargets": [
+        {
+          "concept": "MBTI 四组维度",
+          "expectedUnderstanding": "学生能够说明 E–I、S–N、T–F、J–P 各自关注的偏好差异，并结合故事中的行为示例进行辨别"
+        }
+      ],
+      "assumedPriorKnowledge": [],
+      "sourceRequirements": [
+        {
+          "name": "MBTI 四组维度",
+          "useInCourse": "作为故事中的核心理论学习内容"
+        }
+      ],
+      "requiredNamedCharacters": [],
+      "fixedPlot": null,
+      "additionalConstraints": {
+        "required": [
+          "赵老师、Mia 和 Ben 全部参与故事",
+          "共 4 章",
+          "英语难度为 B1"
+        ],
+        "preferred": [],
+        "excluded": []
+      }
+    },
+    "assistantMessage": "我已经整理好创作理解，请确认。",
+    "resolvedUnderstanding": [],
+    "unresolvedIssues": [],
+    "questions": []
+  },
+  "error": null
+}

@@ -1,0 +1,18 @@
+{
+  "scope": "story", "method": "generateDirections",
+  "args": [{
+    "task": "根据老师当前要求和已确认资料生成 3 个故事方向。",
+    "requirementBrief": { "kind": "narrative", "objective": "陈老师带领安安、小博、可可和大卫组成超级英雄战队，五人合力击败怪兽，四名学生各自拥有关键高光时刻。", "sourceRequirements": [], "requiredNamedCharacters": [], "fixedPlot": null, "additionalConstraints": { "required": ["陈老师和四名学生全部参与故事", "四名学生组成超级英雄战队", "由陈老师带领团队", "团队最终合力击败怪兽", "安安、小博、可可和大卫每人都有高光时刻", "全篇共4章", "英文难度为A2"], "preferred": [], "excluded": [] } },
+    "planningMode": "explore_options", "storyMode": "new_story", "classroomPresence": "participant", "chapterCount": 4, "englishLevel": "A2", "storyComplexity": "conflict_driven",
+    "coursePeople": [
+      { "personId": "teacher-chen", "role": "teacher", "chineseName": "陈老师", "englishName": "Mr. Chen", "age": 35, "gender": "male" },
+      { "personId": "student-an", "role": "student", "chineseName": "安安", "englishName": "Ann", "age": 11, "gender": "female" },
+      { "personId": "student-ben", "role": "student", "chineseName": "小博", "englishName": "Ben", "age": 11, "gender": "male" },
+      { "personId": "student-cara", "role": "student", "chineseName": "可可", "englishName": "Cara", "age": 11, "gender": "female" },
+      { "personId": "student-dan", "role": "student", "chineseName": "大卫", "englishName": "Dan", "age": 11, "gender": "male" }
+    ],
+    "conversationHistory": [{ "role": "teacher", "content": "四名学生组成超级英雄战队，在老师带领下合力击败怪兽，每人都有高光" }, { "role": "teacher", "content": "我确认这份创作理解。" }],
+    "references": [], "selectedDirection": null, "currentDirections": [], "currentOutline": null
+  }],
+  "bootstrapResponses": ["[{\"title\":\"失衡的能量核心\",\"hook\":\"怪兽夺走城市能源核心，Mr. Chen带领Ann、Ben、Cara和Dan追击。四人依次发挥能力稳定核心并合力击退怪兽，让城市恢复供电。\",\"storyHighlight\":\"四种能力必须按正确顺序配合。\",\"growthCore\":\"合作\",\"mainCharacters\":[\"Mr. Chen\",\"Ann\",\"Ben\",\"Cara\",\"Dan\",\"能量怪兽\"],\"whyFits\":\"四章能容纳四名学生的关键行动。\"},{\"title\":\"会复制能力的怪兽\",\"hook\":\"怪兽复制四名学生的能力，让单独攻击全部失效。Mr. Chen帮助团队交换策略，四人组合能力封住怪兽并保护城市。\",\"storyHighlight\":\"怪兽复制单项能力却无法复制合作。\",\"growthCore\":\"灵活调整\",\"mainCharacters\":[\"Mr. Chen\",\"Ann\",\"Ben\",\"Cara\",\"Dan\",\"复制怪兽\"],\"whyFits\":\"冲突清楚且每人能推动共同结果。\"},{\"title\":\"沉睡的城市护盾\",\"hook\":\"怪兽逼近时城市护盾无法启动，四名学生必须分别修复四个连接点。Mr. Chen协调行动，四人完成各自任务后共同启动护盾并击退怪兽。\",\"storyHighlight\":\"四个连接点把个人高光汇成同一结果。\",\"growthCore\":\"责任感\",\"mainCharacters\":[\"Mr. Chen\",\"Ann\",\"Ben\",\"Cara\",\"Dan\",\"巨石怪兽\"],\"whyFits\":\"单一主线适合A2和四章结构。\"}]"]
+}

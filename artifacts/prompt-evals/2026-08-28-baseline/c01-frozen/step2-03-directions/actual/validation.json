@@ -1,0 +1,59 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateDirections"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": [
+    {
+      "title": "会听方向的冰桥",
+      "hook": "艾莎发现峡湾冰桥会按听到的方向改变路线，Ms. Lin带Summer和Dawn与安娜寻找被困船队。他们读懂沿途路标，用准确指令把冰桥引向港口。",
+      "storyHighlight": "冰桥把英语方向词变成真实道路，每次表达都会直接改变探险路线。",
+      "growthCore": "独立判断：孩子们先观察路标和环境，再决定该相信哪条方向指令。",
+      "whyFits": "保留阿伦黛尔、冰雪魔法及全员参与；单一路线适合4章，方向词和简短指令符合A2难度。",
+      "mainCharacters": [
+        "Ms. Lin",
+        "Summer",
+        "Dawn",
+        "艾莎",
+        "安娜"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "艾莎发现峡湾冰桥会按听到的方向改变路线，Ms. Lin带Summer和Dawn与安娜寻找被困船队。他们读懂沿途路标，用准确指令把冰桥引向港口。"
+    },
+    {
+      "title": "雪宝的夏日雪云",
+      "hook": "雪宝意外放出一朵跟随笑声降雪的魔法云，阿伦黛尔的夏日集市很快被积雪盖住。Ms. Lin带Summer和Dawn陪他寻找安静的雪山，让云在那里安全消散。",
+      "storyHighlight": "魔法云追着笑声移动，雪宝越想逗大家开心，队伍越要改变行动方式。",
+      "growthCore": "情绪识别：孩子们理解快乐没有错，也能根据环境选择更合适的表达方式。",
+      "whyFits": "符合《冰雪奇缘》的幽默与魔法规则，课堂人物共同推动结果；动作、天气和情绪词便于4章A2英语讲述。",
+      "mainCharacters": [
+        "Ms. Lin",
+        "Summer",
+        "Dawn",
+        "雪宝",
+        "安娜"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "雪宝意外放出一朵跟随笑声降雪的魔法云，阿伦黛尔的夏日集市很快被积雪盖住。Ms. Lin带Summer和Dawn陪他寻找安静的雪山，让云在那里安全消散。"
+    },
+    {
+      "title": "极光寄错的愿望",
+      "hook": "艾莎造出的极光信使会把画在冰片上的愿望送到对应地点，却把三张冰片送错了。Ms. Lin带Summer和Dawn跟随安娜交换归位，让三个愿望在阿伦黛尔实现。",
+      "storyHighlight": "每张冰片同时显示愿望图案和目的地线索，交换顺序决定队伍下一站。",
+      "growthCore": "同理心：孩子们从图案和线索理解陌生人的真正需要，而不是替他们决定愿望。",
+      "whyFits": "以阿伦黛尔和艾莎魔法展开全新探险，三名课堂人物持续参与；三次送达形成清楚的4章结构，地点与需求表达适合A2。",
+      "mainCharacters": [
+        "Ms. Lin",
+        "Summer",
+        "Dawn",
+        "艾莎",
+        "安娜"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "艾莎造出的极光信使会把画在冰片上的愿望送到对应地点，却把三张冰片送错了。Ms. Lin带Summer和Dawn跟随安娜交换归位，让三个愿望在阿伦黛尔实现。"
+    }
+  ],
+  "error": null
+}

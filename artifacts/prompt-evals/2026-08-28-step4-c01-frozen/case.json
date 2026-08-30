@@ -1,0 +1,17 @@
+{
+  "case": "S4-C01",
+  "source": "历史数据库已确认 Step3/Step4 课程",
+  "courseId": "cmsymeh150000igvohme2cmxs",
+  "title": "冰雪奇缘",
+  "englishLevel": "B2",
+  "storyComplexity": "conflict_driven",
+  "chapterCount": 3,
+  "scope": "Step4 正文、正文嵌入题、Main Idea；按生产配置判断是否调用练习 AI",
+  "databaseMutation": false,
+  "expectedAiCalls": {
+    "reading": 1,
+    "repair": "0 or 1",
+    "exercises": 0
+  },
+  "note": "历史学生英文名为数字 2，作为遗留脏数据压力样本保留。"
+}

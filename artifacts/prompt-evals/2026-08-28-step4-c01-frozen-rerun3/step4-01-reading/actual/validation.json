@@ -1,0 +1,315 @@
+{
+  "config": {
+    "scope": "content",
+    "method": "generateReading"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "envelopeError": null,
+    "mainIdea": {
+      "text": "When the remote rope of North Mountain’s warning bell broke, Anna, Elsa, Ms. Lin, and 2 had to cross an echo bridge before a blizzard reached Arendelle. The bridge turned spoken directions into real paths, so their competing commands created dangerous forks. Anna’s quick step and Elsa’s magical rescue moved them farther from the tower. On a stable platform, they stopped competing and shared observations one at a time. Anna identified a crack, Elsa found firm ground, and 2 located the tower. After everyone confirmed one direction, the bridge formed a straight route. At the tower, they followed another shared plan: Elsa freed the hammer, 2 watched the wind, and Anna and Ms. Lin pulled at the signal. Their united action warned the kingdom in time."
+    },
+    "mainIdeaError": null,
+    "chapters": [
+      {
+        "outlineChapterId": "cmsysedkt00118gvo1i5r86fc",
+        "generated": {
+          "outlineChapterId": "cmsysedkt00118gvo1i5r86fc",
+          "paragraphs": [
+            {
+              "template": "The remote rope {{OC1}} during the bitter cold, so the North Mountain warning bell could not ring. Anna {{WF1}} the group onto the {{VOC1}} before the blizzard arrived. While snow {{OC2}} across the narrow path, Elsa protected everyone with an icy shield. Ahead, the pale bridge curved over a deep valley and waited for a spoken direction."
+            },
+            {
+              "template": "Anna {{OC3}} “Forward!” while Elsa {{OC4}} everyone to turn left, and Ms. Lin shouted, “Stop!” The bridge {{WF2}} under their competing voices and split into spinning forks. Anna stepped first, but her path swung away. Elsa quickly {{WF3}} an ice bridge beneath her; however, the new {{VOC2}} also drifted from the tower. They returned to the only stable {{VOC3}} and fell silent."
+            }
+          ],
+          "slots": [
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP3",
+              "answer": "snapped",
+              "distractors": [
+                "was snapping",
+                "snaps"
+              ]
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP3",
+              "answer": "led",
+              "cue": "lead"
+            },
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "echo bridge",
+              "canonicalForm": "echo bridge",
+              "meaningZh": "回声桥"
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP4",
+              "answer": "was sweeping",
+              "distractors": [
+                "swept",
+                "is sweeping"
+              ]
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP3",
+              "answer": "cried",
+              "distractors": [
+                "was crying",
+                "cries"
+              ]
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP4",
+              "answer": "was warning",
+              "distractors": [
+                "warned",
+                "is warning"
+              ]
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "was turning",
+              "cue": "turn"
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP3",
+              "answer": "formed",
+              "cue": "form"
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "foothold",
+              "canonicalForm": "foothold",
+              "meaningZh": "落脚处"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "platform",
+              "canonicalForm": "platform",
+              "meaningZh": "平台"
+            }
+          ]
+        },
+        "parseError": null
+      },
+      {
+        "outlineChapterId": "cmsysedkt00128gvo46fyqzle",
+        "generated": {
+          "outlineChapterId": "cmsysedkt00128gvo46fyqzle",
+          "paragraphs": [
+            {
+              "template": "On the central platform, Elsa lowered her hands. “My magic {{OC1}} our footing, but it cannot choose our direction. The bridge {{OC2}} because we gave different orders.” Ms. Lin asked them to speak in turn. Anna said, “I {{OC3}} a wide {{VOC1}} ahead.” Elsa added, “The right-hand section {{WF1}} the most stable.” Then everyone waited for 2."
+            },
+            {
+              "template": "As the snow {{OC4}}, 2 studied the view and pointed right. “I {{WF2}} the tower beyond that {{VOC2}},” 2 said. Ms. Lin replied, “We {{WF3}} all the evidence now.” Together, they confirmed one command: “Forward and right!” The bridge stopped dividing and became a straight route. Elsa reinforced its {{VOC3}}, and all four reached the bell tower safely."
+            }
+          ],
+          "slots": [
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP7",
+              "answer": "has protected",
+              "distractors": [
+                "protected",
+                "is protecting"
+              ]
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP2",
+              "answer": "is still turning",
+              "distractors": [
+                "has still turned",
+                "still turned"
+              ]
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP7",
+              "answer": "have noticed",
+              "distractors": [
+                "noticed",
+                "am noticing"
+              ]
+            },
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "crack",
+              "canonicalForm": "crack",
+              "meaningZh": "裂缝"
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP2",
+              "answer": "is looking",
+              "cue": "look"
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP2",
+              "answer": "is clearing",
+              "distractors": [
+                "has cleared",
+                "cleared"
+              ]
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP7",
+              "answer": "have found",
+              "cue": "find"
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "ridge",
+              "canonicalForm": "ridge",
+              "meaningZh": "山脊"
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP7",
+              "answer": "have gathered",
+              "cue": "gather"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "edges",
+              "canonicalForm": "edge",
+              "meaningZh": "边缘"
+            }
+          ]
+        },
+        "parseError": null
+      },
+      {
+        "outlineChapterId": "cmsysedkt00138gvofq0j3kel",
+        "generated": {
+          "outlineChapterId": "cmsysedkt00138gvofq0j3kel",
+          "paragraphs": [
+            {
+              "template": "Inside the tower, ice trapped the emergency hammer in its {{VOC1}}, while stronger gusts shook the walls. Elsa explained the shared plan: “I {{OC1}} the ice first. Anna and Ms. Lin {{OC2}} the {{VOC2}}, but they will wait.” 2 watched the storm through the window and said, “I {{WF1}} when the strongest gust has passed.”"
+            },
+            {
+              "template": "Anna answered, “At your signal, we {{OC3}} together, and Elsa {{WF2}} the frozen frame.” 2 looked toward Arendelle. “The bell {{OC4}} everyone, and the residents {{WF3}} shelter before the blizzard arrives.” Elsa cleared the ice, and the others waited. When the wind weakened, 2 gave the agreed {{VOC3}}. Anna and Ms. Lin pulled, and the warning bell rang across the kingdom."
+            }
+          ],
+          "slots": [
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "bracket",
+              "canonicalForm": "bracket",
+              "meaningZh": "支架"
+            },
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP6",
+              "answer": "am going to remove",
+              "distractors": [
+                "will remove",
+                "am removing"
+              ]
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP6",
+              "answer": "are going to hold",
+              "distractors": [
+                "will hold",
+                "are holding"
+              ]
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "pulling rope",
+              "canonicalForm": "pulling rope",
+              "meaningZh": "拉索"
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP6",
+              "answer": "am going to signal",
+              "cue": "signal"
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP5",
+              "answer": "will pull",
+              "distractors": [
+                "are going to pull",
+                "pull"
+              ]
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP5",
+              "answer": "will steady",
+              "cue": "steady"
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP5",
+              "answer": "will warn",
+              "distractors": [
+                "is going to warn",
+                "warns"
+              ]
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP5",
+              "answer": "will reach",
+              "cue": "reach"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "signal",
+              "canonicalForm": "signal",
+              "meaningZh": "信号"
+            }
+          ]
+        },
+        "parseError": null
+      }
+    ]
+  },
+  "error": null
+}

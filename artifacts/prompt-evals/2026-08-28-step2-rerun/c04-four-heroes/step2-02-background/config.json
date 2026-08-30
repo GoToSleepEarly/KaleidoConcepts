@@ -1,0 +1,19 @@
+{
+  "scope": "story", "method": "prepareBackgroundKnowledge",
+  "args": [{
+    "task": "根据老师确认的创作理解，为后续故事生成准备一次必要背景知识。",
+    "confirmedRequirement": "{\"kind\":\"narrative\",\"objective\":\"陈老师带领安安、小博、可可和大卫组成超级英雄战队，五人合力击败怪兽，四名学生各自拥有关键高光时刻。\",\"sourceRequirements\":[],\"requiredNamedCharacters\":[],\"fixedPlot\":null,\"additionalConstraints\":{\"required\":[\"陈老师和四名学生全部参与故事\",\"四名学生组成超级英雄战队\",\"由陈老师带领团队\",\"团队最终合力击败怪兽\",\"安安、小博、可可和大卫每人都有高光时刻\",\"全篇共4章\",\"英文难度为A2\"],\"preferred\":[],\"excluded\":[]}}",
+    "requirementBrief": { "kind": "narrative", "objective": "陈老师带领安安、小博、可可和大卫组成超级英雄战队，五人合力击败怪兽，四名学生各自拥有关键高光时刻。", "sourceRequirements": [], "requiredNamedCharacters": [], "fixedPlot": null, "additionalConstraints": { "required": ["陈老师和四名学生全部参与故事", "四名学生组成超级英雄战队", "由陈老师带领团队", "团队最终合力击败怪兽", "安安、小博、可可和大卫每人都有高光时刻", "全篇共4章", "英文难度为A2"], "preferred": [], "excluded": [] } },
+    "planningMode": "explore_options", "storyMode": "new_story", "classroomPresence": "participant", "chapterCount": 4, "englishLevel": "A2", "storyComplexity": "conflict_driven",
+    "coursePeople": [
+      { "personId": "teacher-chen", "role": "teacher", "chineseName": "陈老师", "englishName": "Mr. Chen", "age": 35, "gender": "male" },
+      { "personId": "student-an", "role": "student", "chineseName": "安安", "englishName": "Ann", "age": 11, "gender": "female" },
+      { "personId": "student-ben", "role": "student", "chineseName": "小博", "englishName": "Ben", "age": 11, "gender": "male" },
+      { "personId": "student-cara", "role": "student", "chineseName": "可可", "englishName": "Cara", "age": 11, "gender": "female" },
+      { "personId": "student-dan", "role": "student", "chineseName": "大卫", "englishName": "Dan", "age": 11, "gender": "male" }
+    ],
+    "conversationHistory": [{ "role": "teacher", "content": "四名学生组成超级英雄战队，在老师带领下合力击败怪兽，每人都有高光" }, { "role": "teacher", "content": "我确认这份创作理解。" }],
+    "references": [], "selectedDirection": null, "currentDirections": [], "currentOutline": null
+  }],
+  "bootstrapResponses": ["{\"status\":\"not_needed\",\"reason\":\"这是不依赖外部作品或事实的原创故事。\"}"]
+}

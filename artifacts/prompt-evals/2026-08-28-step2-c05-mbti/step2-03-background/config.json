@@ -1,0 +1,39 @@
+{
+  "scope": "story",
+  "method": "prepareBackgroundKnowledge",
+  "args": [{
+    "task": "根据老师确认的创作理解，为后续故事生成准备一次必要背景知识。",
+    "confirmedRequirement": "{\"kind\":\"concept\",\"objective\":\"通过故事帮助学生理解 MBTI 的四组人格偏好维度\",\"learningTargets\":[{\"concept\":\"MBTI 四组维度\",\"expectedUnderstanding\":\"学生能够说明 E–I、S–N、T–F、J–P 各自关注的偏好差异，并结合故事中的行为示例进行辨别\"}],\"assumedPriorKnowledge\":[],\"sourceRequirements\":[{\"name\":\"MBTI 四组维度\",\"useInCourse\":\"作为故事中的核心理论学习内容\"}],\"requiredNamedCharacters\":[],\"fixedPlot\":null,\"additionalConstraints\":{\"required\":[\"赵老师、Mia 和 Ben 全部参与故事\",\"共 4 章\",\"英语难度为 B1\"],\"preferred\":[],\"excluded\":[]}}",
+    "requirementBrief": {
+      "kind": "concept",
+      "objective": "通过故事帮助学生理解 MBTI 的四组人格偏好维度",
+      "learningTargets": [{ "concept": "MBTI 四组维度", "expectedUnderstanding": "学生能够说明 E–I、S–N、T–F、J–P 各自关注的偏好差异，并结合故事中的行为示例进行辨别" }],
+      "assumedPriorKnowledge": [],
+      "sourceRequirements": [{ "name": "MBTI 四组维度", "useInCourse": "作为故事中的核心理论学习内容" }],
+      "requiredNamedCharacters": [],
+      "fixedPlot": null,
+      "additionalConstraints": { "required": ["赵老师、Mia 和 Ben 全部参与故事", "共 4 章", "英语难度为 B1"], "preferred": [], "excluded": [] }
+    },
+    "storyMode": "new_story",
+    "classroomPresence": "participant",
+    "chapterCount": 4,
+    "englishLevel": "B1",
+    "storyComplexity": "conflict_driven",
+    "coursePeople": [
+      { "personId": "teacher-zhao", "role": "teacher", "chineseName": "赵老师", "englishName": "Ms. Zhao", "age": 34, "gender": "female" },
+      { "personId": "student-mia", "role": "student", "chineseName": "米娅", "englishName": "Mia", "age": 12, "gender": "female" },
+      { "personId": "student-ben", "role": "student", "chineseName": "本", "englishName": "Ben", "age": 12, "gender": "male" }
+    ],
+    "conversationHistory": [
+      { "role": "teacher", "content": "用故事讲 MBTI，学生学习到理论" },
+      { "role": "assistant", "content": "还需要确认几个会影响故事方向的问题。" },
+      { "role": "teacher", "content": "我的回答：\nMBTI 学习重点：理解四组维度" },
+      { "role": "assistant", "content": "我已经整理好创作理解，请确认。" },
+      { "role": "teacher", "content": "我确认这份创作理解。" }
+    ],
+    "references": [],
+    "selectedDirection": null,
+    "currentDirections": [],
+    "currentOutline": null
+  }]
+}

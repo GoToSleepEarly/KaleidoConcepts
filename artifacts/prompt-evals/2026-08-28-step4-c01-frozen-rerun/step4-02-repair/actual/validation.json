@@ -1,0 +1,29 @@
+{
+  "config": {
+    "scope": "content",
+    "method": "repairReading"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "contractVersion": "step4.content.v2",
+    "repairs": [
+      {
+        "kind": "paragraph",
+        "outlineChapterId": "cmsysedkt00138gvofq0j3kel",
+        "paragraphIndex": 1,
+        "template": "Student 2 watched the snow outside and said, “The next gust {{OC3}} soon. After it passes, I {{WF2}} the signal.” When the wind weakened, 2 called, “Now!” Anna and Ms. Lin {{OC4}} together. Elsa promised, “I {{WF3}} the icy frame,” and immediately did so. The hammer struck, and its clear {{VOC3}} crossed Arendelle. Residents would reach shelter before the blizzard arrived.",
+        "slots": [
+          {
+            "id": "WF3",
+            "kind": "wordForm",
+            "knowledgePointKey": "KP5",
+            "answer": "will steady",
+            "cue": "steady"
+          }
+        ]
+      }
+    ]
+  },
+  "error": null
+}

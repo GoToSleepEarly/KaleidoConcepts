@@ -1,0 +1,52 @@
+{
+  "scope": "story",
+  "method": "alignRequirements",
+  "args": [
+    {
+      "task": "根据《冰雪奇缘》，创造一个奇幻探险故事",
+      "replyContext": "initial",
+      "chapterCount": 4,
+      "englishLevel": "A2",
+      "storyComplexity": "clear_linear",
+      "coursePeople": [
+        {
+          "personId": "teacher-lin",
+          "role": "teacher",
+          "chineseName": "林老师",
+          "englishName": "Ms. Lin",
+          "age": 32,
+          "gender": "female"
+        },
+        {
+          "personId": "student-xiatian",
+          "role": "student",
+          "chineseName": "夏天",
+          "englishName": "Summer",
+          "age": 10,
+          "gender": "female"
+        },
+        {
+          "personId": "student-chenxi",
+          "role": "student",
+          "chineseName": "晨曦",
+          "englishName": "Dawn",
+          "age": 10,
+          "gender": "male"
+        }
+      ],
+      "conversationHistory": [
+        {
+          "role": "teacher",
+          "content": "根据《冰雪奇缘》，创造一个奇幻探险故事"
+        }
+      ],
+      "references": [],
+      "selectedDirection": null,
+      "currentDirections": [],
+      "currentOutline": null
+    }
+  ],
+  "bootstrapResponses": [
+    "{\"status\":\"ready_for_confirmation\",\"planningMode\":\"explore_options\",\"storyMode\":\"new_story\",\"classroomPresence\":\"participant\",\"brief\":{\"kind\":\"narrative\",\"objective\":\"使用《冰雪奇缘》的原作世界或核心人物，与林老师、夏天和晨曦共同经历新的奇幻探险\",\"sourceRequirements\":[{\"name\":\"《冰雪奇缘》\",\"useInCourse\":\"使用原作世界或核心人物创作全新剧情\"}],\"requiredNamedCharacters\":[],\"fixedPlot\":null,\"additionalConstraints\":{\"required\":[],\"preferred\":[],\"excluded\":[]}}}"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "scope": "story", "method": "prepareBackgroundKnowledge",
+  "args": [{
+    "task": "根据老师确认的创作理解，为后续故事生成准备一次必要背景知识。",
+    "confirmedRequirement": "{\"kind\":\"narrative\",\"objective\":\"以《小马宝莉》的世界和核心角色为基础，为李老师、Ivy 和 Leo 创作一个共同参与的儿童冒险故事。\",\"sourceRequirements\":[{\"name\":\"《小马宝莉》\",\"useInCourse\":\"使用原作世界及与故事最相关的核心角色，创作新的冒险情节。\"}],\"requiredNamedCharacters\":[],\"fixedPlot\":null,\"additionalConstraints\":{\"required\":[\"共4章\",\"英文难度为A2\",\"内容适合9至10岁儿童\",\"李老师、Ivy 和 Leo 全部参与故事\"],\"preferred\":[],\"excluded\":[]}}",
+    "requirementBrief": { "kind": "narrative", "objective": "以《小马宝莉》的世界和核心角色为基础，为李老师、Ivy 和 Leo 创作一个共同参与的儿童冒险故事。", "sourceRequirements": [{ "name": "《小马宝莉》", "useInCourse": "使用原作世界及与故事最相关的核心角色，创作新的冒险情节。" }], "requiredNamedCharacters": [], "fixedPlot": null, "additionalConstraints": { "required": ["共4章", "英文难度为A2", "内容适合9至10岁儿童", "李老师、Ivy 和 Leo 全部参与故事"], "preferred": [], "excluded": [] } },
+    "planningMode": "explore_options", "storyMode": "new_story", "classroomPresence": "participant", "chapterCount": 4, "englishLevel": "A2", "storyComplexity": "clear_linear",
+    "coursePeople": [
+      { "personId": "teacher-li", "role": "teacher", "chineseName": "李老师", "englishName": "Ms. Li", "age": 31, "gender": "female" },
+      { "personId": "student-yutong", "role": "student", "chineseName": "雨桐", "englishName": "Ivy", "age": 9, "gender": "female" },
+      { "personId": "student-hao", "role": "student", "chineseName": "浩然", "englishName": "Leo", "age": 10, "gender": "male" }
+    ],
+    "conversationHistory": [{ "role": "teacher", "content": "根据《小马宝莉》，创造一个儿童冒险故事" }, { "role": "teacher", "content": "我确认这份创作理解。" }],
+    "references": [], "selectedDirection": null, "currentDirections": [], "currentOutline": null
+  }],
+  "bootstrapResponses": ["{\"status\":\"ready\",\"references\":[{\"name\":\"《小马宝莉》核心设定\",\"type\":\"other\",\"sourceStatus\":\"confirmed\",\"summary\":\"小马利亚是以友谊和魔法为核心的幻想世界。\",\"usableFacts\":[\"暮光闪闪善于组织和魔法\",\"苹果嘉儿诚实可靠\"],\"avoidTopics\":[],\"adaptationBoundary\":\"使用核心角色创作适龄新事件，不复写原作剧情。\"}]}"]
+}

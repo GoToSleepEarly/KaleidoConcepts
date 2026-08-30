@@ -1,0 +1,361 @@
+{
+  "scope": "content",
+  "method": "generateReading",
+  "args": [
+    {
+      "course": {
+        "id": "cmsixk5la0000rkvoyegkdmfu",
+        "title": "美人鱼的故事",
+        "durationMinutes": 60,
+        "currentStage": "preview",
+        "staleFromStage": null,
+        "englishLevel": "B1",
+        "storyComplexity": "conflict_driven",
+        "knowledgePointIds": [
+          "cmsg22n8x000br0vo6c5a1nfy",
+          "cmsg22n8z000cr0voijia0ldt",
+          "cmsg22n8w000ar0vol4n8kqfc"
+        ]
+      },
+      "outline": {
+        "id": "cmsiyvppa000al4vo6xp7gt6f",
+        "title": "夏天的珊瑚花园任务",
+        "summary": "夏天在海边捡到会发光的贝壳后变成美人鱼，进入一座正在褪色的珊瑚花园。他一路清理垃圾、为小鱼找到新家、把光贝壳送到珊瑚中心，帮助花园重新恢复颜色。",
+        "chapters": [
+          {
+            "id": "cmsiyvppn000bl4vos5qcqbh6",
+            "order": 1,
+            "title": "进入珊瑚花园",
+            "summary": "夏天捡到发光贝壳后变成美人鱼，跟着海流进入珊瑚花园，发现许多珊瑚正在褪色，于是决定先找出最紧急的麻烦。",
+            "recommendedKnowledgePointIds": [
+              "cmsg22n8x000br0vo6c5a1nfy"
+            ],
+            "knowledgePointRecommendationSummary": "可在描述贝壳正在发光、珊瑚正在变色时自然使用。"
+          },
+          {
+            "id": "cmsiyvppn000cl4voay135far",
+            "order": 2,
+            "title": "清理海底",
+            "summary": "他看见塑料袋缠住珊瑚枝，就躲开小鱼，把垃圾拉走，清出一条小路，让海草和珊瑚重新呼吸。",
+            "recommendedKnowledgePointIds": [
+              "cmsg22n8w000ar0vol4n8kqfc"
+            ],
+            "knowledgePointRecommendationSummary": "可在说海底常见物品和海洋生物习性时自然使用。"
+          },
+          {
+            "id": "cmsiyvppn000dl4vo5abvfpjx",
+            "order": 3,
+            "title": "找到新家",
+            "summary": "沿着小路前进时，夏天发现小鱼没有藏身处，他用贝壳和海草搭出新家，帮助它们安全停下。",
+            "recommendedKnowledgePointIds": [
+              "cmsg22n8w000ar0vol4n8kqfc"
+            ],
+            "knowledgePointRecommendationSummary": "可在描述小鱼需要什么、海草能做什么时自然使用。"
+          },
+          {
+            "id": "cmsiyvppn000el4vo4pfbt1dh",
+            "order": 4,
+            "title": "穿过暗流",
+            "summary": "忽然暗流冲来，光贝壳差点被卷走，夏天必须选择绕开礁石还是借流前进。他稳住方向，赶往珊瑚中心。",
+            "recommendedKnowledgePointIds": [
+              "cmsg22n8x000br0vo6c5a1nfy",
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "knowledgePointRecommendationSummary": "可在描述暗流正在逼近和他刚刚做出的选择时自然使用。"
+          },
+          {
+            "id": "cmsiyvppn000fl4vomlau1u37",
+            "order": 5,
+            "title": "恢复颜色",
+            "summary": "夏天把光贝壳放进珊瑚中心，颜色慢慢回到每片珊瑚上。任务完成后，他记住自己做过的帮助，也回到海边。",
+            "recommendedKnowledgePointIds": [
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "knowledgePointRecommendationSummary": "可在回顾已经完成的三个任务时自然使用。"
+          }
+        ]
+      },
+      "knowledgePoints": [
+        {
+          "id": "cmsg22n8x000br0vo6c5a1nfy",
+          "label": "Present Continuous",
+          "labelZh": "现在进行时",
+          "category": "时态"
+        },
+        {
+          "id": "cmsg22n8z000cr0voijia0ldt",
+          "label": "Past Simple",
+          "labelZh": "一般过去时",
+          "category": "时态"
+        },
+        {
+          "id": "cmsg22n8w000ar0vol4n8kqfc",
+          "label": "Present Simple",
+          "labelZh": "一般现在时",
+          "category": "时态"
+        }
+      ],
+      "plan": {
+        "courseId": "cmsixk5la0000rkvoyegkdmfu",
+        "status": "confirmed",
+        "englishLevel": "B1",
+        "mainIdeaTargetWordCount": 120,
+        "chapters": [
+          {
+            "outlineChapterId": "cmsiyvppn000bl4vos5qcqbh6",
+            "targetWordCount": 100,
+            "paragraphCount": 2,
+            "knowledgePointIds": [
+              "cmsg22n8x000br0vo6c5a1nfy",
+              "cmsg22n9b000kr0vot7qndb9q"
+            ],
+            "readingExerciseMode": "complete",
+            "readingExercises": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 4,
+                "wordForm": 3
+              },
+              "vocabulary": {
+                "chineseHint": 3
+              }
+            },
+            "chapterPractice": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 5,
+                "wordForm": 5
+              }
+            },
+            "touched": {
+              "targetWordCount": false,
+              "paragraphCount": false,
+              "knowledgePointIds": true,
+              "readingExerciseMode": true,
+              "readingExercises": true,
+              "chapterPractice": true
+            }
+          },
+          {
+            "outlineChapterId": "cmsiyvppn000cl4voay135far",
+            "targetWordCount": 100,
+            "paragraphCount": 2,
+            "knowledgePointIds": [
+              "cmsg22n8w000ar0vol4n8kqfc"
+            ],
+            "readingExerciseMode": "interactive",
+            "readingExercises": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 4,
+                "wordForm": 3
+              },
+              "vocabulary": {
+                "chineseHint": 3
+              }
+            },
+            "chapterPractice": {
+              "enabled": false,
+              "grammar": {
+                "optionCloze": 5,
+                "wordForm": 5
+              }
+            },
+            "touched": {
+              "targetWordCount": false,
+              "paragraphCount": false,
+              "knowledgePointIds": false,
+              "readingExerciseMode": false,
+              "readingExercises": false,
+              "chapterPractice": false
+            }
+          },
+          {
+            "outlineChapterId": "cmsiyvppn000dl4vo5abvfpjx",
+            "targetWordCount": 100,
+            "paragraphCount": 2,
+            "knowledgePointIds": [
+              "cmsg22n8w000ar0vol4n8kqfc"
+            ],
+            "readingExerciseMode": "interactive",
+            "readingExercises": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 4,
+                "wordForm": 3
+              },
+              "vocabulary": {
+                "chineseHint": 3
+              }
+            },
+            "chapterPractice": {
+              "enabled": false,
+              "grammar": {
+                "optionCloze": 5,
+                "wordForm": 5
+              }
+            },
+            "touched": {
+              "targetWordCount": false,
+              "paragraphCount": false,
+              "knowledgePointIds": false,
+              "readingExerciseMode": false,
+              "readingExercises": false,
+              "chapterPractice": false
+            }
+          },
+          {
+            "outlineChapterId": "cmsiyvppn000el4vo4pfbt1dh",
+            "targetWordCount": 100,
+            "paragraphCount": 2,
+            "knowledgePointIds": [
+              "cmsg22n8x000br0vo6c5a1nfy",
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "readingExerciseMode": "interactive",
+            "readingExercises": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 4,
+                "wordForm": 3
+              },
+              "vocabulary": {
+                "chineseHint": 3
+              }
+            },
+            "chapterPractice": {
+              "enabled": false,
+              "grammar": {
+                "optionCloze": 5,
+                "wordForm": 5
+              }
+            },
+            "touched": {
+              "targetWordCount": false,
+              "paragraphCount": false,
+              "knowledgePointIds": false,
+              "readingExerciseMode": false,
+              "readingExercises": false,
+              "chapterPractice": false
+            }
+          },
+          {
+            "outlineChapterId": "cmsiyvppn000fl4vomlau1u37",
+            "targetWordCount": 100,
+            "paragraphCount": 2,
+            "knowledgePointIds": [
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "readingExerciseMode": "interactive",
+            "readingExercises": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 4,
+                "wordForm": 3
+              },
+              "vocabulary": {
+                "chineseHint": 3
+              }
+            },
+            "chapterPractice": {
+              "enabled": false,
+              "grammar": {
+                "optionCloze": 5,
+                "wordForm": 5
+              }
+            },
+            "touched": {
+              "targetWordCount": false,
+              "paragraphCount": false,
+              "knowledgePointIds": false,
+              "readingExerciseMode": false,
+              "readingExercises": false,
+              "chapterPractice": false
+            }
+          }
+        ],
+        "afterClassPractice": {
+          "enabled": true,
+          "touched": {
+            "knowledgePointIds": true,
+            "practice": true
+          },
+          "practice": {
+            "enabled": true,
+            "grammar": {
+              "optionCloze": 5,
+              "wordForm": 5
+            }
+          },
+          "knowledgePointIds": [
+            "cmsg22n8x000br0vo6c5a1nfy",
+            "cmsg22n9b000kr0vot7qndb9q",
+            "cmsg22n8w000ar0vol4n8kqfc",
+            "cmsg22n8z000cr0voijia0ldt"
+          ],
+          "vocabularyReviewEnabled": true
+        },
+        "updatedAt": "2026-08-12T13:20:54.840Z",
+        "confirmedAt": "2026-08-12T13:20:54.831Z"
+      },
+      "lengthPolicy": {
+        "englishLevel": "B1",
+        "storyComplexity": "conflict_driven",
+        "chinese": {
+          "directionOverview": {
+            "recommendedMax": 70,
+            "hardMax": 90
+          },
+          "outlineSummary": {
+            "recommendedMax": 90,
+            "hardMax": 115
+          },
+          "chapterOverview": {
+            "recommendedMax": 45,
+            "hardMax": 55
+          }
+        },
+        "english": {
+          "chapterTargetWords": 130,
+          "generationRange": [
+            115,
+            145
+          ],
+          "validationRange": [
+            110,
+            155
+          ],
+          "teacherRecommendedRange": [
+            110,
+            150
+          ],
+          "hardRange": [
+            60,
+            180
+          ]
+        }
+      },
+      "promptPeople": [
+        {
+          "role": "teacher",
+          "chineseName": "林老师",
+          "englishName": "Ms. Lin"
+        },
+        {
+          "role": "student",
+          "chineseName": "夏天",
+          "englishName": "Summer"
+        }
+      ],
+      "promptCharacters": [
+        {
+          "displayName": "夏天",
+          "englishName": "夏天",
+          "roleInStory": "主角",
+          "shortDescription": "海边捡到发光贝壳后变成美人鱼的学生。"
+        }
+      ]
+    },
+    "quickrouter_gpt"
+  ]
+}

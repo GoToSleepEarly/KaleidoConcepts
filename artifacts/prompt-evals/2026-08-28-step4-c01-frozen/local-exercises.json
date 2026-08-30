@@ -1,0 +1,42 @@
+{
+  "aiCallRequired": false,
+  "productionResultStatus": "ready",
+  "vocabularyMatching": [
+    {
+      "canonicalForm": "turn",
+      "meaningZh": "转动"
+    },
+    {
+      "canonicalForm": "foothold",
+      "meaningZh": "落脚处"
+    },
+    {
+      "canonicalForm": "platform",
+      "meaningZh": "平台"
+    },
+    {
+      "canonicalForm": "stable",
+      "meaningZh": "稳固的"
+    },
+    {
+      "canonicalForm": "instruction",
+      "meaningZh": "指令"
+    },
+    {
+      "canonicalForm": "route",
+      "meaningZh": "路线"
+    },
+    {
+      "canonicalForm": "bracket",
+      "meaningZh": "支架"
+    },
+    {
+      "canonicalForm": "plan",
+      "meaningZh": "计划"
+    },
+    {
+      "canonicalForm": "signal",
+      "meaningZh": "信号"
+    }
+  ]
+}

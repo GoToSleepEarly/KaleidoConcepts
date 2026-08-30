@@ -1,0 +1,17 @@
+{
+  "title": { "zh": "会听方向的冰桥", "en": "The Ice Bridge That Listened" },
+  "summary": "Elsa发现冰桥会随方向词转弯，Ms. Lin带Summer和Dawn与Anna去接被困船队。孩子们依据路牌、灯塔和钟声判断方向，Anna引船跟随，Elsa稳住冰桥，船队最终抵达港口。",
+  "characters": [
+    { "key": "C1", "displayName": "林老师", "englishName": "Ms. Lin", "sourceType": "person", "sourcePersonId": "teacher-lin", "roleInStory": "Ms. Lin组织队伍依次发出指令，提醒Summer和Dawn先观察再决定，但不替他们选择方向。" },
+    { "key": "C2", "displayName": "夏天", "englishName": "Summer", "sourceType": "person", "sourcePersonId": "student-xiatian", "roleInStory": "Summer通过对照路牌和灯塔判断路线，为冰桥给出第一个关键方向。" },
+    { "key": "C3", "displayName": "晨曦", "englishName": "Dawn", "sourceType": "person", "sourcePersonId": "student-chenxi", "roleInStory": "Dawn观察冰脊旁的安全缺口，在道路受阻时独立确定新的前进方向。" },
+    { "key": "C4", "displayName": "艾莎", "englishName": "Elsa", "sourceType": "referenced", "sourceReferenceKey": "R02", "roleInStory": "Elsa创造并稳定冰桥，让方向指令能够改变桥的路线，但把路线判断交给孩子们。" },
+    { "key": "C5", "displayName": "安娜", "englishName": "Anna", "sourceType": "referenced", "sourceReferenceKey": "R03", "roleInStory": "Anna保护探险队并联络船队，使船只能够及时跟随冰桥开出的安全路线。" }
+  ],
+  "chapters": [
+    { "order": 1, "title": { "zh": "冰桥转弯了", "en": "The Ice Bridge Turns" }, "whatHappens": "Elsa用冰桥接上被困船队。Anna说出向左时桥面转弯，Ms. Lin便安排每次一人指路。", "characterKeys": ["C1", "C4", "C5"], "recommendedKnowledgePointKeys": ["KP2"], "knowledgePointRecommendationSummary": "KP2用于描述冰桥正在转弯及船队正在等待的现场状态。" },
+    { "order": 2, "title": { "zh": "灯塔在左边", "en": "The Lighthouse on the Left" }, "whatHappens": "Summer对照路牌和左侧红灯塔，独立给出方向。冰桥左转，船队进入未冻水道。", "characterKeys": ["C2", "C4", "C5"], "recommendedKnowledgePointKeys": ["KP1"], "knowledgePointRecommendationSummary": "KP1用于讲述Summer观察路牌、作出判断及冰桥转弯的连续动作。" },
+    { "order": 3, "title": { "zh": "冰脊旁的缺口", "en": "The Gap by the Ice Ridge" }, "whatHappens": "冰脊挡路，Anna固定绳索，Elsa挡住落冰。Dawn指向右侧缺口，冰桥转入安全水道。", "characterKeys": ["C3", "C4", "C5"], "recommendedKnowledgePointKeys": ["KP1", "KP2"], "knowledgePointRecommendationSummary": "KP2描述落冰和船队的即时状态，KP1承接Dawn完成判断后冰桥转向的结果。" },
+    { "order": 4, "title": { "zh": "直达阿伦黛尔", "en": "Straight to Arendelle" }, "whatHappens": "听见前方港口钟声，Ms. Lin请孩子确认。两人决定直行，Anna引船跟随，Elsa将冰桥接上港口。", "characterKeys": ["C1", "C2", "C3", "C4", "C5"], "recommendedKnowledgePointKeys": ["KP1"], "knowledgePointRecommendationSummary": "KP1用于回顾孩子们确认方向、船队跟随并抵达港口的最终过程。" }
+  ]
+}

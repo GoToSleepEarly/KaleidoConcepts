@@ -1,0 +1,25 @@
+{
+  "scope": "story",
+  "method": "alignRequirements",
+  "args": [{
+    "task": "我的回答：\nMBTI 学习重点：理解四组维度",
+    "chapterCount": 4,
+    "englishLevel": "B1",
+    "storyComplexity": "conflict_driven",
+    "coursePeople": [
+      { "personId": "teacher-zhao", "role": "teacher", "chineseName": "赵老师", "englishName": "Ms. Zhao", "age": 34, "gender": "female" },
+      { "personId": "student-mia", "role": "student", "chineseName": "米娅", "englishName": "Mia", "age": 12, "gender": "female" },
+      { "personId": "student-ben", "role": "student", "chineseName": "本", "englishName": "Ben", "age": 12, "gender": "male" }
+    ],
+    "conversationHistory": [
+      { "role": "teacher", "content": "用故事讲 MBTI，学生学习到理论" },
+      { "role": "assistant", "content": "还需要确认几个会影响故事方向的问题。" },
+      { "role": "teacher", "content": "我的回答：\nMBTI 学习重点：理解四组维度" }
+    ],
+    "references": [],
+    "selectedDirection": null,
+    "currentDirections": [],
+    "currentOutline": null,
+    "requiredQuestionIds": []
+  }]
+}

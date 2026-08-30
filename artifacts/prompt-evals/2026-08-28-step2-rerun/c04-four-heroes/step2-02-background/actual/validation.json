@@ -1,0 +1,13 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "prepareBackgroundKnowledge"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "status": "not_needed",
+    "reason": "故事为完全原创，所需人物、关系、冲突与结局均已明确，不依赖外部背景知识。"
+  },
+  "error": null
+}

@@ -1,0 +1,12 @@
+{
+  "index": 1,
+  "url": "https://api.quickrouter.ai/v1/responses",
+  "operation": "alignRequirements",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": null,
+  "maxOutputTokens": null,
+  "prompt": "修复需求对齐响应，使其满足协议；保留老师已表达的目标和所有真正阻塞项。\n允许合并同义问题并把当前问题数收敛到最多 3 个；不得截断阻塞项、静默采用推荐、重命名重复 ID 或改变推荐语义。\nneeds_clarification schema: {status,provisionalBriefKind?,resolvedRequirements:string[],questions:1..3}。ready_for_confirmation schema: {status,planningMode,storyMode,classroomPresence,brief}。\nparseError: AI 返回的需求对齐结构不完整，自动修复后仍未通过。\n<raw_output>\n{\"status\":\"ready_for_confirmation\",\"planningMode\":\"explore_options\",\"storyMode\":\"faithful\",\"classroomPresence\":\"observer\",\"brief\":{\"kind\":\"factual\",\"objective\":\"选择一个适合学生的二战真实故事并依据史实讲述\",\"factualFocus\":\"二战中的一个真实事件及其影响\",\"sourceRequirements\":[],\"requiredNamedCharacters\":[],\"fixedPlot\":null,\"additionalConstraints\":{\"required\":[],\"preferred\":[],\"excluded\":[]}}}\n</raw_output>",
+  "promptSha256": "f536e3f9b250aa03676cd935b52db8c07faf933c72f3b01afea6438688d851ce",
+  "promptCharacters": 709,
+  "promptUtf8Bytes": 1001
+}

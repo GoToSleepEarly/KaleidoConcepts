@@ -1,0 +1,19 @@
+{
+  "scope": "story",
+  "method": "alignRequirements",
+  "args": [{
+    "task": "根据《小马宝莉》，创造一个儿童冒险故事",
+    "replyContext": "initial",
+    "chapterCount": 4,
+    "englishLevel": "A2",
+    "storyComplexity": "clear_linear",
+    "coursePeople": [
+      { "personId": "teacher-li", "role": "teacher", "chineseName": "李老师", "englishName": "Ms. Li", "age": 31, "gender": "female" },
+      { "personId": "student-yutong", "role": "student", "chineseName": "雨桐", "englishName": "Ivy", "age": 9, "gender": "female" },
+      { "personId": "student-hao", "role": "student", "chineseName": "浩然", "englishName": "Leo", "age": 10, "gender": "male" }
+    ],
+    "conversationHistory": [{ "role": "teacher", "content": "根据《小马宝莉》，创造一个儿童冒险故事" }],
+    "references": [], "selectedDirection": null, "currentDirections": [], "currentOutline": null
+  }],
+  "bootstrapResponses": ["{\"status\":\"ready_for_confirmation\",\"planningMode\":\"explore_options\",\"storyMode\":\"new_story\",\"classroomPresence\":\"participant\",\"brief\":{\"kind\":\"narrative\",\"objective\":\"使用《小马宝莉》的世界或核心角色创作儿童冒险故事\",\"sourceRequirements\":[{\"name\":\"《小马宝莉》\",\"useInCourse\":\"使用作品世界或核心角色创作新剧情\"}],\"requiredNamedCharacters\":[],\"fixedPlot\":null,\"additionalConstraints\":{\"required\":[],\"preferred\":[],\"excluded\":[]}}}"]
+}

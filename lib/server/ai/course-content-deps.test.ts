@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import type { TeachingPlanState } from "@/lib/contracts/api";
+import type { StoryContentIntent, TeachingPlanState } from "@/lib/contracts/api";
 import { englishWordRangesForTarget, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import {
   buildExercisePromptContext,
@@ -39,9 +39,11 @@ const input = {
     { role: "student", chineseName: "小明", englishName: "Milo" },
   ],
   promptCharacters: [{ displayName: "地图守护者", englishName: "Map Guardian", roleInStory: "阻止小明找到地图", shortDescription: "守护错误路线的角色" }],
+  contentIntent: { kind: "concept", storyMode: "new_story", classroomPresence: "participant", objective: "理解地图如何帮助人定位", learningTargets: [{ concept: "地图方向", expectedUnderstanding: "能够用地图判断基本方向" }], assumedPriorKnowledge: [], sourceRequirements: [], required: [], excluded: ["不要把地图写成万能魔法"] },
 } as TeachingPlanState & {
   promptPeople: Array<{ role: "teacher" | "student"; chineseName: string; englishName: string }>;
   promptCharacters: Array<{ displayName: string; englishName: string; roleInStory: string; shortDescription: string }>;
+  contentIntent: StoryContentIntent;
 };
 
 describe("course content prompt contexts", () => {
@@ -58,14 +60,24 @@ describe("course content prompt contexts", () => {
     const withSource = structuredClone(input);
     withSource.knowledgePoints[0] = { id: "kp1", label: "Present perfect and past", category: "Present perfect and past", bookTitle: "English Grammar in Use", edition: "Fifth Edition", officialLevel: "B1–B2", unitStart: 13, unitEnd: 14, units: [{ unitNumber: 13, officialTitle: "Present perfect and past 1" }, { unitNumber: 14, officialTitle: "Present perfect and past 2" }] };
 
+    expect(buildReadingPromptContext(withSource)).toMatchObject({
+      grammarSource: {
+        bookTitle: "English Grammar in Use",
+        edition: "Fifth Edition",
+        officialLevel: "B1–B2",
+      },
+    });
     expect(buildReadingPromptContext(withSource).chapters[0].grammarPoints[0]).toMatchObject({
       label: "Present perfect and past",
-      bookTitle: "English Grammar in Use",
-      edition: "Fifth Edition",
-      officialLevel: "B1–B2",
       unitStart: 13,
       unitEnd: 14,
+      sourceUnits: [{ unitNumber: 13, officialTitle: "Present perfect and past 1" }, { unitNumber: 14, officialTitle: "Present perfect and past 2" }],
     });
+  });
+
+  test("passes the confirmed content intent to the first reading prompt", () => {
+    const context = buildReadingTemplatePromptContext(input);
+    expect(context.contentIntent).toEqual(input.contentIntent);
   });
 
   test("provides minimal unambiguous examples for every generated exercise shape", () => {
@@ -85,9 +97,9 @@ describe("course content prompt contexts", () => {
     expect(rules).toContain("叙事基准时态");
     expect(rules).toContain("时间线");
     expect(rules).toContain("先在内部形成");
-    expect(rules).toContain("禁止先指定知识点答案或词形");
-    expect(rules).toContain("主谓一致");
-    expect(rules).toContain("拼接完整 clean text");
+    expect(rules).toContain("禁止先定答案再倒推句子");
+    expect(rules).toContain("回填全部 grammar answer");
+    expect(rules).toContain("只有一个正确答案");
   });
 
   test("makes story continuity and readable prose higher priority than exercise placement", () => {
@@ -123,6 +135,7 @@ describe("course content prompt contexts", () => {
     expect(context).toEqual({
       storyTitle: "Milo的冒险",
       storySummary: "Milo必须找回地图，才能带大家安全回家。",
+      contentIntent: input.contentIntent,
       englishLevel: "A2",
       cefrWritingProfile: cefrWritingProfile("A2"),
       storyComplexity: "clear_linear",
@@ -185,12 +198,13 @@ describe("course content prompt contexts", () => {
 
     expect(requirements).toEqual([{
       outlineChapterId: "ch1",
+      narrativeTense: "past",
       paragraphCount: 2,
       targetWordCount: 90,
       optionClozeCount: 2,
       wordFormCount: 1,
       vocabularyCount: 2,
-      grammarPoints: [{ key: "KP1", label: "一般过去时" }],
+      grammarPoints: [{ key: "G1", label: "一般过去时", knowledgePointId: "kp1" }],
     }]);
     expect(context.chapters[0]?.requirements).toEqual(requirements[0]);
     expect(context.chapters[0]?.knowledgePointUsagePlan).toBe("一般过去时：用于描述Milo已经完成的开门动作。");
@@ -212,8 +226,9 @@ describe("course content prompt contexts", () => {
     expect(context).toEqual({
       englishLevel: "A2",
       cefrWritingProfile: cefrWritingProfile("A2"),
-      chapters: [{ id: "ch1", title: "Milo出发", cleanText: "Milo opened the door.", grammarPoints: [{ key: "KP1", label: "一般过去时" }], counts: { optionCloze: 3, wordForm: 2 } }],
-      homework: { enabled: true, grammarPoints: [{ key: "KP1", label: "一般过去时" }], counts: { optionCloze: 2, wordForm: 2 } },
+      knowledgePoints: [{ key: "KP1", label: "一般过去时" }],
+      chapters: [{ id: "ch1", title: "Milo出发", cleanText: "Milo opened the door.", knowledgePointKeys: ["KP1"], counts: { optionCloze: 3, wordForm: 2 } }],
+      homework: { enabled: true, knowledgePointKeys: ["KP1"], counts: { optionCloze: 2, wordForm: 2 } },
     });
     expect(JSON.stringify(context)).not.toContain("paragraphCount");
   });

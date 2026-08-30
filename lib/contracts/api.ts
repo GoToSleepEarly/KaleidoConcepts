@@ -234,6 +234,20 @@ export type StoryRequirementBrief =
       additionalConstraints: StoryAdditionalConstraints;
     };
 
+export type StoryContentIntent = {
+  kind: StoryRequirementBrief["kind"];
+  storyMode: "faithful" | "new_story";
+  classroomPresence: "observer" | "participant" | "absent";
+  objective: string;
+  learningTargets?: Array<{ concept: string; expectedUnderstanding: string }>;
+  assumedPriorKnowledge?: string[];
+  factualFocus?: string;
+  subjects?: Array<{ name: string; kind: "person" | "event" | "topic" }>;
+  sourceRequirements: StorySourceRequirement[];
+  required: string[];
+  excluded: string[];
+};
+
 export type StoryMainlineCard = {
   status: "pending_confirmation" | "confirmed";
   protagonistStructure: string;

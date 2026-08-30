@@ -1,0 +1,26 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "prepareBackgroundKnowledge"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "status": "ready",
+    "references": [
+      {
+        "name": "《小马宝莉》核心设定",
+        "type": "other",
+        "sourceStatus": "confirmed",
+        "summary": "小马利亚是以友谊和魔法为核心的幻想世界。",
+        "usableFacts": [
+          "暮光闪闪善于组织和魔法",
+          "苹果嘉儿诚实可靠"
+        ],
+        "avoidTopics": [],
+        "adaptationBoundary": "使用核心角色创作适龄新事件，不复写原作剧情。"
+      }
+    ]
+  },
+  "error": null
+}

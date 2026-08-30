@@ -1,0 +1,158 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateOutline"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "title": "海岸线上的等待 / Waiting on the Shore",
+    "summary": "德军快速推进，将大批盟军压至敦刻尔克海岸，英国随即实施“发电机行动”。Mr. Wang、May和Jay见证士兵在等待与空袭中登上海军及民用船只，约33.8万人撤往英国。撤离保存了大量兵力，却以遗弃重型装备为代价，也未能扭转法国战败的结局。",
+    "storyHook": "",
+    "characters": [
+      {
+        "key": "C1",
+        "displayName": "王老师",
+        "englishName": "Mr. Wang",
+        "sourceType": "person",
+        "sourcePersonId": "teacher-wang",
+        "sourceReferenceId": null,
+        "roleInStory": "在敦刻尔克海岸观察并记录盟军受困和撤离过程，不影响历史事件。",
+        "shortDescription": "在敦刻尔克海岸观察并记录盟军受困和撤离过程，不影响历史事件。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C2",
+        "displayName": "梅",
+        "englishName": "May",
+        "sourceType": "person",
+        "sourcePersonId": "student-mei",
+        "sourceReferenceId": null,
+        "roleInStory": "在Mr. Wang带领下见证海滩上的等待、空袭与登船秩序。",
+        "shortDescription": "在Mr. Wang带领下见证海滩上的等待、空袭与登船秩序。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C3",
+        "displayName": "俊",
+        "englishName": "Jay",
+        "sourceType": "person",
+        "sourcePersonId": "student-jun",
+        "sourceReferenceId": null,
+        "roleInStory": "与Mr. Wang和May一同观察撤离规模及其未能改变法国战局的结果。",
+        "shortDescription": "与Mr. Wang和May一同观察撤离规模及其未能改变法国战局的结果。",
+        "shouldAppearInImages": true
+      }
+    ],
+    "chapters": [
+      {
+        "order": 1,
+        "title": "被逼向海岸 / Driven to the Shore",
+        "storyGoal": "德军突破法国防线并快速推进，大批英法及其他盟军部队因此被困在敦刻尔克海岸。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "德军突破法国防线并快速推进，大批英法及其他盟军部队因此被困在敦刻尔克海岸。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-perfect",
+          "kp-passive"
+        ],
+        "knowledgePointRecommendationSummary": "用Past Perfect回顾盟军此前已失去退路的背景，并以Passive Voice描述部队被压向海岸的局面。"
+      },
+      {
+        "order": 2,
+        "title": "撤离开始 / The Evacuation Begins",
+        "storyGoal": "为保存兵力，英国于1940年5月26日启动“发电机行动”，海岸上的士兵开始等待撤离。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "为保存兵力，英国于1940年5月26日启动“发电机行动”，海岸上的士兵开始等待撤离。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-passive"
+        ],
+        "knowledgePointRecommendationSummary": "用Passive Voice自然说明撤离行动被启动以及士兵被安排登船。"
+      },
+      {
+        "order": 3,
+        "title": "空袭下的船只 / Boats Under Air Attack",
+        "storyGoal": "在空袭威胁下，海军舰艇和大量民用船只协助运送等待中的士兵，撤离人数持续增加。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "在空袭威胁下，海军舰艇和大量民用船只协助运送等待中的士兵，撤离人数持续增加。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-passive"
+        ],
+        "knowledgePointRecommendationSummary": "用Passive Voice突出士兵被不同船只运走的过程，使叙述重心落在撤离行动上。"
+      },
+      {
+        "order": 4,
+        "title": "跨越海峡 / Across the Channel",
+        "storyGoal": "截至6月4日，约33.8万名盟军军人已被撤往英国，大量人员由此得以保存。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "截至6月4日，约33.8万名盟军军人已被撤往英国，大量人员由此得以保存。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-perfect",
+          "kp-passive"
+        ],
+        "knowledgePointRecommendationSummary": "用Past Perfect概括截至行动结束已完成的撤离，并以Passive Voice说明人员被送往英国的结果。"
+      },
+      {
+        "order": 5,
+        "title": "撤离之后 / After the Evacuation",
+        "storyGoal": "盟军虽保存了大量兵力，却遗弃了许多重型装备；这次撤离没有扭转法国战局，法国随后战败。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "盟军虽保存了大量兵力，却遗弃了许多重型装备；这次撤离没有扭转法国战局，法国随后战败。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-perfect"
+        ],
+        "knowledgePointRecommendationSummary": "用Past Perfect回顾撤离结束前已经付出的装备损失，并衔接法国随后战败的结果。"
+      }
+    ]
+  },
+  "error": null
+}

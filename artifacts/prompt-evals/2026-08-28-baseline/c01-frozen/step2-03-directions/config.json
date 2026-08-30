@@ -1,0 +1,84 @@
+{
+  "scope": "story",
+  "method": "generateDirections",
+  "args": [
+    {
+      "task": "根据老师当前要求和已确认资料生成 3 个故事方向。",
+      "requirementBrief": {
+        "kind": "narrative",
+        "objective": "以《冰雪奇缘》的世界或核心人物为基础，让林老师、夏天和晨曦共同参与一场全新的奇幻探险。",
+        "sourceRequirements": [{ "name": "《冰雪奇缘》", "useInCourse": "使用原作世界或核心人物创作新的冒险情节" }],
+        "requiredNamedCharacters": [],
+        "fixedPlot": null,
+        "additionalConstraints": {
+          "required": ["全篇共4章", "英语难度为A2", "林老师、夏天和晨曦全部参与故事"],
+          "preferred": [],
+          "excluded": []
+        }
+      },
+      "planningMode": "explore_options",
+      "storyMode": "new_story",
+      "classroomPresence": "participant",
+      "chapterCount": 4,
+      "englishLevel": "A2",
+      "storyComplexity": "clear_linear",
+      "coursePeople": [
+        { "personId": "teacher-lin", "role": "teacher", "chineseName": "林老师", "englishName": "Ms. Lin", "age": 32, "gender": "female" },
+        { "personId": "student-xiatian", "role": "student", "chineseName": "夏天", "englishName": "Summer", "age": 10, "gender": "female" },
+        { "personId": "student-chenxi", "role": "student", "chineseName": "晨曦", "englishName": "Dawn", "age": 10, "gender": "male" }
+      ],
+      "conversationHistory": [
+        { "role": "teacher", "content": "根据《冰雪奇缘》，创造一个奇幻探险故事" },
+        { "role": "teacher", "content": "我确认这份创作理解。" }
+      ],
+      "references": [
+        {
+          "id": "ref-world",
+          "name": "《冰雪奇缘》（2013年动画电影）世界设定",
+          "type": "other",
+          "sourceStatus": "confirmed",
+          "summary": "故事主要发生在北欧风格的阿伦黛尔王国。这里存在真实魔法，冰雪可以被创造并塑形成道路、建筑或生命，但魔法失控也会危及王国。",
+          "usableFacts": ["阿伦黛尔由王室治理，城市、城堡、峡湾和雪山可作为探险地点", "魔法能够制造冰雪、改变环境，也可能带来需要合作解决的危机", "真诚的爱、勇气与互助是化解危机的重要主题"],
+          "avoidTopics": ["不引入续集新增的魔法森林、元素精灵及相关身世设定", "不照搬原电影的冰封王国主线"],
+          "adaptationBoundary": "可在阿伦黛尔设计全新、线性的奇幻探险，但应保留魔法有后果、危机靠勇气与关爱解决的基本规则。"
+        },
+        {
+          "id": "ref-elsa",
+          "name": "艾莎（Elsa）",
+          "type": "other",
+          "sourceStatus": "confirmed",
+          "summary": "阿伦黛尔女王，拥有创造和控制冰雪的魔法。她沉静、负责，曾因害怕伤害别人而压抑力量，后来学会以爱更好地控制魔法。",
+          "usableFacts": ["可以制造雪、冰桥、冰墙和冰建筑", "面对危险时会优先保护他人", "强烈情绪可能影响魔法的稳定", "与安娜是姐妹，深爱并信任安娜"],
+          "avoidTopics": ["不要让她无缘无故伤害同伴", "不要把她写成冷酷反派", "不要赋予她与冰雪无关的新能力"],
+          "adaptationBoundary": "可让艾莎帮助开启道路、保护队伍或处理魔法危机，但不能让她的力量轻易解决全部问题。"
+        },
+        {
+          "id": "ref-anna",
+          "name": "安娜（Anna）",
+          "type": "other",
+          "sourceStatus": "confirmed",
+          "summary": "艾莎的妹妹，开朗、勇敢、行动力强，重视家人与朋友。她没有魔法，却常凭坚持、同理心和勇气推动问题解决。",
+          "usableFacts": ["愿意主动接近陌生人并鼓励伙伴", "遇到困难时很少放弃", "会在关键时刻保护亲友", "与艾莎关系亲密，能够理解并支持姐姐"],
+          "avoidTopics": ["不要给她冰雪魔法", "不要把她写成只会等待救援的人"],
+          "adaptationBoundary": "适合陪林老师和两名学生探索、沟通并作出勇敢选择，贡献应来自行动与情感力量。"
+        },
+        {
+          "id": "ref-olaf",
+          "name": "雪宝（Olaf）",
+          "type": "other",
+          "sourceStatus": "confirmed",
+          "summary": "由艾莎的魔法创造并获得生命的雪人，天真、友善、爱说话，对温暖和夏天充满好奇，常用幽默缓和紧张气氛。",
+          "usableFacts": ["身体由雪组成，部件可以分开后重新装回", "乐于帮助朋友，容易与孩子建立友谊", "语言和行为可提供轻松幽默", "需要魔法帮助才能安全面对炎热环境"],
+          "avoidTopics": ["不要把他写成恶意捣乱者", "不要忽略高温对雪人身体的影响", "不要让幽默破坏危险场景的基本逻辑"],
+          "adaptationBoundary": "可作为儿童角色的向导和伙伴，以简单幽默支持A2英语表达，但不应取代学生完成核心任务。"
+        }
+      ],
+      "selectedDirection": null,
+      "currentDirections": [],
+      "currentOutline": null
+    }
+  ],
+  "bootstrapResponses": [
+    "[{\"title\":\"失控的冰桥\",\"hook\":\"阿伦黛尔的冰桥突然不断延伸，林老师、Summer 和 Dawn 与艾莎一起寻找失控原因。他们合作关闭被误触的魔法机关，让道路恢复安全。\",\"storyHighlight\":\"沿着会变化的冰桥寻找线索。\",\"growthCore\":\"合作\",\"mainCharacters\":[\"Ms. Lin\",\"Summer\",\"Dawn\",\"艾莎（Elsa）\"],\"whyFits\":\"单一任务线适合 A2 和四章容量。\"},{\"title\":\"消失的冬日灯光\",\"hook\":\"王国的冬日灯光接连熄灭，林老师、Summer 和 Dawn 跟随安娜检查冰灯。他们找到被雪覆盖的能量通道并恢复庆典。\",\"storyHighlight\":\"用观察和行动修复冰灯。\",\"growthCore\":\"坚持\",\"mainCharacters\":[\"Ms. Lin\",\"Summer\",\"Dawn\",\"安娜（Anna）\"],\"whyFits\":\"行动直观，适合儿童英语表达。\"},{\"title\":\"雪宝的夏日地图\",\"hook\":\"雪宝发现一张会融化的探险地图，林老师、Summer 和 Dawn 必须在图案消失前找到终点。他们分工记住路线，并把地图安全带回城堡。\",\"storyHighlight\":\"会融化的地图带来清楚的时间目标。\",\"growthCore\":\"分工\",\"mainCharacters\":[\"Ms. Lin\",\"Summer\",\"Dawn\",\"雪宝（Olaf）\"],\"whyFits\":\"幽默、线性且适合四章短故事。\"}]"
+  ]
+}

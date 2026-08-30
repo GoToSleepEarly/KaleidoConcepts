@@ -1,0 +1,162 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateOutline"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "title": "会移动的彩虹路 / The Moving Rainbow Road",
+    "summary": "彩虹路不断改变方向，送往学校的书车被困，Ivy发现道路转向前会闪出不同颜色。Leo和Ms. Li记录颜色对应的方向，Twilight Sparkle稳住书车，Rainbow Dash按记录引路。大家跟随最后一轮颜色安全抵达学校。",
+    "storyHook": "",
+    "characters": [
+      {
+        "key": "C1",
+        "displayName": "李老师",
+        "englishName": "Ms. Li",
+        "sourceType": "person",
+        "sourcePersonId": "teacher-li",
+        "sourceReferenceId": null,
+        "roleInStory": "Ms. Li组织观察并记录颜色规律，帮助学生把发现整理成可执行的路线。",
+        "shortDescription": "Ms. Li组织观察并记录颜色规律，帮助学生把发现整理成可执行的路线。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C2",
+        "displayName": "雨桐",
+        "englishName": "Ivy",
+        "sourceType": "person",
+        "sourcePersonId": "student-yutong",
+        "sourceReferenceId": null,
+        "roleInStory": "Ivy最先发现颜色与道路转向有关，并在书车前进时依次报告颜色。",
+        "shortDescription": "Ivy最先发现颜色与道路转向有关，并在书车前进时依次报告颜色。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C3",
+        "displayName": "浩然",
+        "englishName": "Leo",
+        "sourceType": "person",
+        "sourcePersonId": "student-hao",
+        "sourceReferenceId": null,
+        "roleInStory": "Leo通过连续观察确认每种颜色对应的方向，并把颜色信号转成行进指令。",
+        "shortDescription": "Leo通过连续观察确认每种颜色对应的方向，并把颜色信号转成行进指令。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C4",
+        "displayName": "暮光闪闪",
+        "englishName": "Twilight Sparkle",
+        "sourceType": "referenced",
+        "sourcePersonId": null,
+        "sourceReferenceId": "pony-twilight",
+        "roleInStory": "Twilight Sparkle确认道路无法被魔法固定，并在行进中稳住书车和书本。",
+        "shortDescription": "Twilight Sparkle确认道路无法被魔法固定，并在行进中稳住书车和书本。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C5",
+        "displayName": "云宝黛西",
+        "englishName": "Rainbow Dash",
+        "sourceType": "referenced",
+        "sourcePersonId": null,
+        "sourceReferenceId": "pony-rainbow",
+        "roleInStory": "Rainbow Dash根据团队整理的路线引导书车，把速度用于及时通过移动的路口。",
+        "shortDescription": "Rainbow Dash根据团队整理的路线引导书车，把速度用于及时通过移动的路口。",
+        "shouldAppearInImages": true
+      }
+    ],
+    "chapters": [
+      {
+        "order": 1,
+        "title": "不停转向的路 / The Turning Road",
+        "storyGoal": "彩虹路不断转向，书车被困；Twilight Sparkle无法固定道路，Ivy发现颜色总在转向前闪亮。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "彩虹路不断转向，书车被困；Twilight Sparkle无法固定道路，Ivy发现颜色总在转向前闪亮。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C2",
+          "C4"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-simple",
+          "kp-directions"
+        ],
+        "knowledgePointRecommendationSummary": "Past Simple叙述书车被困和Ivy的发现；Prepositions of place and movement表达书车在路上及道路转向。"
+      },
+      {
+        "order": 2,
+        "title": "颜色指方向 / Colors Show the Way",
+        "storyGoal": "Leo核对三个路口，确认红色直行、黄色左转、蓝色右转；Ms. Li把规律记成路线表。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "Leo核对三个路口，确认红色直行、黄色左转、蓝色右转；Ms. Li把规律记成路线表。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C3"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-simple",
+          "kp-directions"
+        ],
+        "knowledgePointRecommendationSummary": "Past Simple叙述观察和记录的过程；Prepositions of place and movement自然表达直行、左转和右转。"
+      },
+      {
+        "order": 3,
+        "title": "跟着彩虹前进 / Following the Rainbow",
+        "storyGoal": "Ivy依次报出颜色，Leo给出方向，Rainbow Dash按路线表引导书车，Twilight Sparkle稳住书本。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "Ivy依次报出颜色，Leo给出方向，Rainbow Dash按路线表引导书车，Twilight Sparkle稳住书本。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C2",
+          "C3",
+          "C4",
+          "C5"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-simple",
+          "kp-directions"
+        ],
+        "knowledgePointRecommendationSummary": "Past Simple串联团队已经完成的动作；Prepositions of place and movement描述书车沿路线前进和转弯。"
+      },
+      {
+        "order": 4,
+        "title": "书车到学校 / The Books Reach School",
+        "storyGoal": "最后一次变色时，Ms. Li核对顺序，Rainbow Dash带书车转过正确路口，大家把书送到学校。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "最后一次变色时，Ms. Li核对顺序，Rainbow Dash带书车转过正确路口，大家把书送到学校。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-simple",
+          "kp-directions"
+        ],
+        "knowledgePointRecommendationSummary": "Past Simple叙述任务完成的结果；Prepositions of place and movement表达书车转过路口并到达学校。"
+      }
+    ]
+  },
+  "error": null
+}

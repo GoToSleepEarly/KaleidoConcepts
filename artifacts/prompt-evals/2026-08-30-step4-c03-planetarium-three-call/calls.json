@@ -1,0 +1,83 @@
+{
+  "case": "Grammar in Use B1 / community planetarium / five chapters",
+  "model": "gpt-5.6-sol",
+  "configuredProductionPath": [
+    "call-01-candidates",
+    "call-02-finalize-medium",
+    "call-03-exercises"
+  ],
+  "calls": [
+    {
+      "id": "call-01-candidates",
+      "purpose": "生成正文、Main Idea 与候选作答位置，不生成选项干扰项",
+      "threadId": "01a04b22-f3d4-7163-af70-36cc718330f8",
+      "turnId": "01a04b23-035b-7471-aa87-48f8689503cb",
+      "reasoningEffort": "low",
+      "durationMs": 54753,
+      "promptCharacters": 8354,
+      "outputCharacters": 8840,
+      "contractPass": true
+    },
+    {
+      "id": "call-02-finalize",
+      "purpose": "Low 正文题审核定稿对照实验",
+      "threadId": "01a04b25-0773-79e1-b412-9482aef20e6b",
+      "turnId": "01a04b25-0e00-7520-adf7-d8a891de4d47",
+      "reasoningEffort": "low",
+      "durationMs": 59173,
+      "promptCharacters": 16463,
+      "outputCharacters": 9617,
+      "contractPass": false,
+      "failure": "第 4 章声明 WF3 但正文遗漏对应 marker"
+    },
+    {
+      "id": "call-03-repair",
+      "purpose": "Low 审核失败后的生产式最小修复",
+      "threadId": "01a04b27-aa09-7361-92e5-e46a3eed3475",
+      "turnId": "01a04b27-af32-7b43-bac0-b05558b4fbbe",
+      "reasoningEffort": "low",
+      "durationMs": 11885,
+      "promptCharacters": 4920,
+      "outputCharacters": 685,
+      "contractPass": false,
+      "failure": "补回 WF3，但该段达到 73 词，超过当时 70 词硬上限"
+    },
+    {
+      "id": "call-02-finalize-medium",
+      "purpose": "与 Low 使用同一候选、同一 Prompt 的 Medium 审核定稿",
+      "threadId": "01a04b29-a050-73f2-a675-0d2cc3f29759",
+      "turnId": "01a04b29-a689-7d41-8475-197ec6780326",
+      "reasoningEffort": "medium",
+      "durationMs": 101737,
+      "promptCharacters": 16463,
+      "outputCharacters": 9756,
+      "contractPass": true,
+      "manualKnowledgePointBinding": "35/35"
+    },
+    {
+      "id": "call-03-exercises",
+      "purpose": "基于确认后纯正文生成五章练习与课后练习",
+      "threadId": "01a04b30-0745-7f42-a8d5-73ef48c68a5e",
+      "turnId": "01a04b30-0e7f-7373-903f-32417a6e1752",
+      "reasoningEffort": "medium",
+      "durationMs": 46376,
+      "promptCharacters": 8328,
+      "outputCharacters": 4853,
+      "contractPass": true,
+      "manualEnglishAndAnswerCorrectness": "25/25",
+      "manualStrictUniqueAnswerQuality": "24/25"
+    }
+  ],
+  "configuredPathTotals": {
+    "durationMs": 202866,
+    "promptCharacters": 33145,
+    "outputCharacters": 23449,
+    "totalCharacters": 56594
+  },
+  "allExperimentalCallsTotals": {
+    "durationMs": 273924,
+    "promptCharacters": 54528,
+    "outputCharacters": 33751,
+    "totalCharacters": 88279
+  }
+}

@@ -1,0 +1,44 @@
+[
+  {
+    "stage": "reading_and_main_idea",
+    "threadId": "01a04942-9621-7873-8af8-00ec492edef3",
+    "turnId": "01a04942-9977-7c01-bdc1-b35a2cc9c9a2",
+    "model": "gpt-5.6-sol",
+    "thinking": "low",
+    "promptCharacters": 8371,
+    "promptUtf8Bytes": 12076,
+    "outputCharacters": 9748,
+    "outputUtf8Bytes": 9886,
+    "durationMs": 64445,
+    "structuralFirstPassReady": true,
+    "manualContentFirstPassReady": false
+  },
+  {
+    "stage": "chapter_and_homework_exercises",
+    "threadId": "01a04945-d1d3-7520-b2c7-0c23fa455104",
+    "turnId": "01a04945-d4e6-72e0-890e-75b0423100ed",
+    "model": "gpt-5.6-sol",
+    "thinking": "low",
+    "promptCharacters": 8162,
+    "promptUtf8Bytes": 9790,
+    "outputCharacters": 4779,
+    "outputUtf8Bytes": 4779,
+    "durationMs": 38473,
+    "structuralFirstPassReady": true,
+    "manualContentFirstPassReady": false
+  },
+  {
+    "stage": "reading_and_main_idea_ab_medium",
+    "threadId": "01a04959-6ff5-71b2-b849-a3cc92b1ebc1",
+    "turnId": "01a04959-74e1-7c50-baaf-c403b0314cdf",
+    "model": "gpt-5.6-sol",
+    "thinking": "medium",
+    "promptCharacters": 8371,
+    "promptUtf8Bytes": 12076,
+    "outputCharacters": 9592,
+    "outputUtf8Bytes": 9711,
+    "durationMs": 294388,
+    "structuralFirstPassReady": true,
+    "manualContentFirstPassReady": false
+  }
+]

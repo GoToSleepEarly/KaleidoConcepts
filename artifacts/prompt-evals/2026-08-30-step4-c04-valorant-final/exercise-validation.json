@@ -1,0 +1,28 @@
+{
+  "firstPassReady": true,
+  "chapters": [
+    {
+      "id": "cmsx9i834000duwvo24ja8mmb",
+      "pass": true,
+      "issues": [],
+      "questionCount": 4
+    },
+    {
+      "id": "cmsx9i834000euwvo8y18uioe",
+      "pass": true,
+      "issues": [],
+      "questionCount": 4
+    },
+    {
+      "id": "cmsx9i834000fuwvowoyht2re",
+      "pass": true,
+      "issues": [],
+      "questionCount": 4
+    }
+  ],
+  "homework": {
+    "pass": true,
+    "issues": [],
+    "questionCount": 5
+  }
+}

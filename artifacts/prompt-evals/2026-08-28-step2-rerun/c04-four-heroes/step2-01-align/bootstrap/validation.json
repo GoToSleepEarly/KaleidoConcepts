@@ -1,0 +1,36 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "alignRequirements"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "status": "ready_for_confirmation",
+    "planningMode": "follow_defined_plot",
+    "storyMode": "new_story",
+    "classroomPresence": "participant",
+    "requiredNamedCharacters": [],
+    "brief": {
+      "kind": "narrative",
+      "objective": "四名学生在陈老师带领下组成超级英雄战队并共同击败怪兽",
+      "sourceRequirements": [],
+      "requiredNamedCharacters": [],
+      "fixedPlot": "四名学生组成超级英雄战队，在陈老师带领下各自发挥关键作用，最终合力击败怪兽。",
+      "additionalConstraints": {
+        "required": [
+          "四名学生全部参与",
+          "每名学生都有推进共同目标的高光行动",
+          "陈老师带领团队"
+        ],
+        "preferred": [],
+        "excluded": []
+      }
+    },
+    "assistantMessage": "我已经整理好创作理解，请确认。",
+    "resolvedUnderstanding": [],
+    "unresolvedIssues": [],
+    "questions": []
+  },
+  "error": null
+}

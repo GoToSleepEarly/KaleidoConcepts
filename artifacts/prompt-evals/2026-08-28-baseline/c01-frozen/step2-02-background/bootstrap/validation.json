@@ -1,0 +1,27 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "prepareBackgroundKnowledge"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "status": "ready",
+    "references": [
+      {
+        "name": "《冰雪奇缘》核心设定",
+        "type": "ip",
+        "sourceStatus": "confirmed",
+        "summary": "阿伦黛尔王国中，艾莎拥有冰雪魔法，安娜重视家人与行动。",
+        "usableFacts": [
+          "艾莎能创造和控制冰雪",
+          "安娜勇敢主动并重视家人",
+          "阿伦黛尔是核心王国场景"
+        ],
+        "avoidTopics": [],
+        "adaptationBoundary": "只借用世界和核心人物创作新事件，不复写原作主线。"
+      }
+    ]
+  },
+  "error": null
+}

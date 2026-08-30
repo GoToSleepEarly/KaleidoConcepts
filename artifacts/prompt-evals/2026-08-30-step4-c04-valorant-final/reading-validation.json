@@ -1,0 +1,62 @@
+{
+  "envelopeError": null,
+  "firstPassReady": true,
+  "chapters": [
+    {
+      "outlineChapterId": "cmsx9i834000duwvo24ja8mmb",
+      "pass": true,
+      "wordCount": 108,
+      "paragraphWordCounts": [
+        55,
+        53
+      ],
+      "cleanParagraphs": [
+        "At night, Ms. Lin and ZiXuan arrived at the harbor training ground. They were escorting a Radianite safety box with Jett and Sage. Jett was watching the path, and Sage was walking beside the precious cargo. While the team was moving toward the control console, a dark figure suddenly stepped out from behind a crane.",
+        "Mirror Guard copied Jett's fast dash and rushed past Sage. It grabbed the box before anyone could stop it. Ms. Lin saw that the Guard was copying the most recent move. Jett was turning back when the Boss carried the box under the harbor tower. The team followed it to the tower controls."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "cmsx9i834000euwvo8y18uioe",
+      "pass": true,
+      "wordCount": 108,
+      "paragraphWordCounts": [
+        52,
+        56
+      ],
+      "cleanParagraphs": [
+        "Under the tower, the team found Mirror Guard beside the safety box. Sage tried to move closer, but the Guard used a copied shield. ZiXuan watched carefully. “It copies the last clear ability,” he said. “Now it is blocking our path, and we are watching what it does.” He opened his notebook.",
+        "ZiXuan wrote down each copied move. Ms. Lin said, “We stop before each move, but the Guard is waiting for our next action. ZiXuan is recording each move, and I check every line.” Their notes showed the Guard's fixed rule: it copied only the latest clear ability. Now the team could give it a false target."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "cmsx9i834000fuwvowoyht2re",
+      "pass": true,
+      "wordCount": 103,
+      "paragraphWordCounts": [
+        48,
+        55
+      ],
+      "cleanParagraphs": [
+        "Mirror Guard began connecting the safety box to the tower program to control the harbor cranes. The team used ZiXuan's notes to understand its plan. Jett stepped forward to fake a dash toward an empty path. The Boss copied her false move and rushed away from the box.",
+        "Sage raised her real wall to block the Boss. Ms. Lin moved forward with ZiXuan to reach the console. ZiXuan used his notes to find the correct switch, and Ms. Lin pressed it to shut down the copying program. The team recovered the safety box. The cranes stopped moving, and the harbor was safe again."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    }
+  ],
+  "mainIdea": {
+    "pass": true,
+    "wordCount": 103,
+    "acceptedRange": [
+      90,
+      110
+    ],
+    "text": "Ms. Lin and ZiXuan joined Jett and Sage to escort a Radianite safety box through a harbor training ground. Mirror Guard copied Jett's dash, stole the box, and took it under the tower. When the Guard also copied Sage's shield, ZiXuan recorded each move and learned that it copied only the latest clear ability. The team used his notes to plan a trick. Jett made a false dash, so the Guard moved the wrong way. Sage then raised a real wall while Ms. Lin and ZiXuan shut down the copying program, recovered the box, stopped the cranes, and made the harbor safe again.",
+    "parseError": null
+  },
+  "exerciseAiRequired": true
+}

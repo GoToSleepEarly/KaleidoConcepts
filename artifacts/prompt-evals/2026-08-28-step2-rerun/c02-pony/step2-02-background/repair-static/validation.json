@@ -1,0 +1,34 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "prepareBackgroundKnowledge"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "status": "external_required",
+    "reason": "需确认《小马宝莉》的具体版本（如《友谊就是魔法》或《新世代》），以免混用不同世界设定和角色关系。",
+    "researchPlan": {
+      "researchGoal": "补足《小马宝莉》中与当前故事直接相关的必要资料",
+      "packets": [
+        {
+          "title": "《小马宝莉》",
+          "subjects": [
+            {
+              "name": "《小马宝莉》"
+            }
+          ],
+          "researchQuestions": [
+            "确认本次故事采用的《小马宝莉》版本",
+            "整理该版本中最多4名与儿童冒险最相关的核心角色、人物关系和世界规则",
+            "标明可改编范围及应避免混入的其他版本设定"
+          ],
+          "storyUseGoals": [
+            "准确支持已确认目标：以《小马宝莉》的世界和核心角色为基础，为李老师、Ivy 和 Leo 创作一个共同参与的儿童冒险故事。"
+          ]
+        }
+      ]
+    }
+  },
+  "error": null
+}

@@ -1,0 +1,108 @@
+{
+  "envelopeError": null,
+  "firstPassReady": false,
+  "chapters": [
+    {
+      "outlineChapterId": "cmsu9kz48000t8gvo6ip8vpb3",
+      "pass": true,
+      "wordCount": 122,
+      "paragraphWordCounts": [
+        55,
+        67
+      ],
+      "cleanParagraphs": [
+        "The magic gourd suddenly pulled everyone into the Reverse Valley. Above them, the Snake Spirit began a spell, and the rocky exit quickly shrank. Big Brother rushed toward it, but the ground shook harder. Ms. Lin asked Summer to slow the team down. Summer noticed a broken stone bridge ahead and called Big Brother over.",
+        "Big Brother lifted the heavy bridge while Summer guided its loose end into place. Rolling stones fell down the slope, so Third Brother raised his strong body and blocked them. The others crossed the steady bridge safely. A bright red mark then appeared above Big Brother's hands. Grandpa pointed at its light, and everyone understood the valley's rule: a power worked only after it helped a companion."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "cmsu9kz48000u8gvo13knwv1u",
+      "pass": true,
+      "wordCount": 130,
+      "paragraphWordCounts": [
+        59,
+        71
+      ],
+      "cleanParagraphs": [
+        "Beyond the bridge, the path narrowed into a hot stone crack. Strong wind threw anyone who moved alone toward the walls. Second Brother studied the dust and found the hidden air vents. He called, \"The wind is blowing harder near the left wall, but the middle path is safe.\" Fifth Brother saw small flames dancing across the hot stones.",
+        "Fifth Brother said, \"I am cooling the stones now, so wait behind me.\" He poured water over the flames and cooled the narrow passage. Following Ms. Lin's plan, Summer divided everyone into two groups. Second Brother led the first group along the safe route, and Fifth Brother protected the second. When all of them crossed the crack, two new marks appeared together, and a stone doorway opened toward the valley's center."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "cmsu9kz48000v8gvoyonaompl",
+      "pass": true,
+      "wordCount": 139,
+      "paragraphWordCounts": [
+        62,
+        77
+      ],
+      "cleanParagraphs": [
+        "At the valley's center, a tight net of thorns surrounded a high stone platform. Grandpa was trapped above it. When Big Brother stepped forward, the vines closed closer. Sixth Brother became invisible and slipped through a small opening. From inside, he called, \"The thorns are tightening around Grandpa, so nobody should push the net.\" Then he threw a rope up to Grandpa.",
+        "Sixth Brother guided Grandpa toward the safe side and showed Fourth Brother where to aim. Fourth Brother said, \"I am burning only the empty gap.\" After checking everyone's position, he burned a narrow opening through the thorns. Sixth Brother lowered Grandpa safely, and another two marks shone. Grandpa then recognized carved lines on the stone platform. The ancient pattern showed that all seven marks had to enter the exit in the order of the brothers' helpful acts."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "cmsu9kz48000w8gvoua2vqif2",
+      "pass": true,
+      "wordCount": 140,
+      "paragraphWordCounts": [
+        66,
+        74
+      ],
+      "cleanParagraphs": [
+        "Near the exit, the Snake Spirit chanted her spell backward. The last two marks flew toward the magic gourd, and anyone who grabbed them was thrown back. Seventh Brother raised the gourd, but he did not use it to capture anyone. He shouted, \"The spell is pulling the marks toward us. We need to turn its force into help!\" Third Brother stood in front of him.",
+        "Third Brother blocked the returning force while Big Brother held the mouth of the gourd steady. Seventh Brother said, \"I am pointing the gourd toward that open crack now.\" He carefully turned it away from the team. Instead of swallowing his companions, the gourd sent the two marks through the opening and into their hands. The sixth and seventh marks glowed beside the others, and the team finally held the complete seven-color set."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "cmsu9kz48000x8gvon6cymvbo",
+      "pass": false,
+      "wordCount": 141,
+      "paragraphWordCounts": [
+        66,
+        75
+      ],
+      "cleanParagraphs": [
+        "The team carried all seven marks to the shrinking exit, but its colors kept changing places. Grandpa showed Summer the carved pattern. Summer lifted the marks and said, \"The door follows each helpful act, not each brother's usual place.\" Ms. Lin added, \"If everyone follows that order, the pattern will become complete.\" The brothers gathered around the glowing pattern and remembered whom they had helped first.",
+        "One by one, the seven brothers placed their marks into the matching spaces. Summer checked every step and said, \"The colors match in the right order now. We will return home together.\" The final mark clicked into the exit, and a seven-colored gate opened. Everyone guided Grandpa through it and returned safely to his courtyard. Behind them, the Reverse Valley faded, the Snake Spirit's spell broke apart, and the magic gourd became quiet again."
+      ],
+      "structuredIssues": [
+        {
+          "code": "knowledge_point",
+          "target": "WF1",
+          "message": "WF1 使用了未允许的知识点"
+        },
+        {
+          "code": "knowledge_point",
+          "target": "WF2",
+          "message": "WF2 使用了未允许的知识点"
+        },
+        {
+          "code": "knowledge_point",
+          "target": "WF3",
+          "message": "WF3 使用了未允许的知识点"
+        }
+      ],
+      "domainIssues": []
+    }
+  ],
+  "mainIdea": {
+    "pass": false,
+    "wordCount": 134,
+    "acceptedRange": [
+      110,
+      130
+    ],
+    "text": "When a magic gourd pulled Summer, Ms. Lin, Grandpa, and the seven brothers into the Reverse Valley, they discovered that strength alone could not open the shrinking exit. The valley turned each brother's power into a colored mark only after that power helped a companion. Big Brother supported a bridge, Second Brother found a safe route, and Third Brother blocked danger. Fourth and Fifth Brothers controlled fire and water, while Sixth Brother rescued Grandpa from a thorny platform. Seventh Brother changed the gourd from a tool for capturing others into a tool that returned the final marks. With Summer observing the team, Ms. Lin organizing their steps, and Grandpa explaining the carved order, the brothers placed all seven marks correctly. Their cooperation opened the gate, brought everyone home, and ended the Snake Spirit's spell.",
+    "parseError": null
+  },
+  "exerciseAiRequired": true
+}

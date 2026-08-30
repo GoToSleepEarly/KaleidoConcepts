@@ -1,0 +1,62 @@
+{
+  "envelopeError": null,
+  "firstPassReady": true,
+  "chapters": [
+    {
+      "outlineChapterId": "cmsysedkt00118gvo1i5r86fc",
+      "pass": true,
+      "wordCount": 123,
+      "paragraphWordCounts": [
+        59,
+        64
+      ],
+      "cleanParagraphs": [
+        "The remote rope snapped during the bitter cold, so the North Mountain warning bell could not ring. Anna led the group onto the echo bridge before the blizzard arrived. While snow was sweeping across the narrow path, Elsa protected everyone with an icy shield. Ahead, the pale bridge curved over a deep valley and waited for a spoken direction.",
+        "Anna cried “Forward!” while Elsa was warning everyone to turn left, and Ms. Lin shouted, “Stop!” The bridge was turning under their competing voices and split into spinning forks. Anna stepped first, but her path swung away. Elsa quickly formed an ice bridge beneath her; however, the new foothold also drifted from the tower. They returned to the only stable platform and fell silent."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "cmsysedkt00128gvo46fyqzle",
+      "pass": true,
+      "wordCount": 121,
+      "paragraphWordCounts": [
+        62,
+        59
+      ],
+      "cleanParagraphs": [
+        "On the central platform, Elsa lowered her hands. “My magic has protected our footing, but it cannot choose our direction. The bridge is still turning because we gave different orders.” Ms. Lin asked them to speak in turn. Anna said, “I have noticed a wide crack ahead.” Elsa added, “The right-hand section is looking the most stable.” Then everyone waited for 2.",
+        "As the snow is clearing, 2 studied the view and pointed right. “I have found the tower beyond that ridge,” 2 said. Ms. Lin replied, “We have gathered all the evidence now.” Together, they confirmed one command: “Forward and right!” The bridge stopped dividing and became a straight route. Elsa reinforced its edges, and all four reached the bell tower safely."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "cmsysedkt00138gvofq0j3kel",
+      "pass": true,
+      "wordCount": 127,
+      "paragraphWordCounts": [
+        64,
+        63
+      ],
+      "cleanParagraphs": [
+        "Inside the tower, ice trapped the emergency hammer in its bracket, while stronger gusts shook the walls. Elsa explained the shared plan: “I am going to remove the ice first. Anna and Ms. Lin are going to hold the pulling rope, but they will wait.” 2 watched the storm through the window and said, “I am going to signal when the strongest gust has passed.”",
+        "Anna answered, “At your signal, we will pull together, and Elsa will steady the frozen frame.” 2 looked toward Arendelle. “The bell will warn everyone, and the residents will reach shelter before the blizzard arrives.” Elsa cleared the ice, and the others waited. When the wind weakened, 2 gave the agreed signal. Anna and Ms. Lin pulled, and the warning bell rang across the kingdom."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    }
+  ],
+  "mainIdea": {
+    "pass": true,
+    "wordCount": 126,
+    "acceptedRange": [
+      110,
+      130
+    ],
+    "text": "When the remote rope of North Mountain’s warning bell broke, Anna, Elsa, Ms. Lin, and 2 had to cross an echo bridge before a blizzard reached Arendelle. The bridge turned spoken directions into real paths, so their competing commands created dangerous forks. Anna’s quick step and Elsa’s magical rescue moved them farther from the tower. On a stable platform, they stopped competing and shared observations one at a time. Anna identified a crack, Elsa found firm ground, and 2 located the tower. After everyone confirmed one direction, the bridge formed a straight route. At the tower, they followed another shared plan: Elsa freed the hammer, 2 watched the wind, and Anna and Ms. Lin pulled at the signal. Their united action warned the kingdom in time.",
+    "parseError": null
+  },
+  "exerciseAiRequired": false
+}

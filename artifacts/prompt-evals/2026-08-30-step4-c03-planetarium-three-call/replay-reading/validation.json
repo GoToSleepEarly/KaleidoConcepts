@@ -1,0 +1,513 @@
+{
+  "config": {
+    "scope": "content",
+    "method": "generateReading"
+  },
+  "suppliedResponseCount": 2,
+  "capturedRequestCount": 2,
+  "result": {
+    "envelopeError": null,
+    "mainIdea": {
+      "text": "After a storm stopped the community planetarium’s control system, Noah, Ms. Rivera, Mina, and Dr. Hall used evidence and safety rules to solve the problem. They first checked an old duty log, confirmed the correct entry procedure, and found a wet fuse box. Once the console had power, changing voltage readings and a motionless cooling fan showed them what to repair next. The team cleaned the damaged area, reconnected the fan, and reported which tasks were complete before attempting a low-power test. They also cleared the dome track, checked the emergency stop button, and moved a ladder instead of rushing. Finally, the sensor passed and the dome opened safely. The event began on time, while a star chart lesson remained ready as a practical backup plan."
+    },
+    "mainIdeaError": null,
+    "chapters": [
+      {
+        "outlineChapterId": "new-grammar-ch1",
+        "generated": {
+          "outlineChapterId": "new-grammar-ch1",
+          "paragraphs": [
+            {
+              "template": "Noah and Ms. Rivera {{OC1}} at the community planetarium before the evening event. After the storm, they {{WF1}} that the main power was off and the control room was {{VOC1}}. Noah {{OC2}} an old duty log, which listed a spare key inside a desk near the entrance."
+            },
+            {
+              "template": "Ms. Rivera {{WF2}} Dr. Hall before they used the key. He {{OC3}} the safety procedure, and they followed each step before entering. Inside, Noah {{WF3}} water marks beside the controls. They {{OC4}} a wet {{VOC2}} box below the console and left it untouched until they could bring dry {{VOC3}}."
+            }
+          ],
+          "slots": [
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "arrived",
+              "distractors": [
+                "arrive",
+                "have arrived"
+              ]
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "found",
+              "distractors": [
+                "finds",
+                "has found"
+              ]
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "confirmed",
+              "distractors": [
+                "confirms",
+                "has confirmed"
+              ]
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "discovered",
+              "distractors": [
+                "discover",
+                "have discovered"
+              ]
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "noticed",
+              "cue": "notice"
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "called",
+              "cue": "call"
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "saw",
+              "cue": "see"
+            },
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "locked",
+              "canonicalForm": "locked",
+              "meaningZh": "锁着的"
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "fuse",
+              "canonicalForm": "fuse",
+              "meaningZh": "保险丝"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "tools",
+              "canonicalForm": "tool",
+              "meaningZh": "工具"
+            }
+          ]
+        },
+        "parseError": null
+      },
+      {
+        "outlineChapterId": "new-grammar-ch2",
+        "generated": {
+          "outlineChapterId": "new-grammar-ch2",
+          "paragraphs": [
+            {
+              "template": "After the fuse box dried, the console came back on, but the dome stayed still. Noah watched the numbers and said, “The voltage {{OC1}} right now, and the warning lights {{WF1}}.” Ms. Rivera checked the manual, which explained how the cooling system normally {{OC2}} during a safe {{VOC1}}."
+            },
+            {
+              "template": "She pointed to the fan. “It usually {{WF2}} before the dome motor starts, but it {{OC3}} now.” Noah {{VOC2}} the changing readings instead of pressing the start button again. “The console {{OC4}} us useful evidence at this moment,” he said. “We {{WF3}} to repair the fan first and avoid forcing the {{VOC3}}.”"
+            }
+          ],
+          "slots": [
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "is changing",
+              "distractors": [
+                "changes",
+                "changed"
+              ]
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "works",
+              "distractors": [
+                "is working",
+                "worked"
+              ]
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "is not turning",
+              "distractors": [
+                "does not turn",
+                "did not turn"
+              ]
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "is giving",
+              "distractors": [
+                "gives",
+                "gave"
+              ]
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "are flashing",
+              "cue": "flash"
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "turns",
+              "cue": "turn"
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "are choosing",
+              "cue": "choose"
+            },
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "startup",
+              "canonicalForm": "startup",
+              "meaningZh": "启动过程"
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "recorded",
+              "canonicalForm": "record",
+              "meaningZh": "记录"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "motor",
+              "canonicalForm": "motor",
+              "meaningZh": "电动机"
+            }
+          ]
+        },
+        "parseError": null
+      },
+      {
+        "outlineChapterId": "new-grammar-ch3",
+        "generated": {
+          "outlineChapterId": "new-grammar-ch3",
+          "paragraphs": [
+            {
+              "template": "Mina arrived with dry cloths and other tools. Working together, the three team members cleaned the fuse box and reconnected the fan. Noah then reported their progress: “We {{OC1}} the wet area, and we {{WF1}} the loose cable. Mina {{OC2}} the fan twice, so its latest result is {{VOC1}}.”"
+            },
+            {
+              "template": "He added, “The warning lights {{WF2}} flashing, but the dome sensor {{OC3}} yet.” Ms. Rivera compared his report with the current readings. “You {{OC4}} enough evidence for a low-power test,” she said. “However, we {{WF3}} the sensor check, so the dome cannot move yet.” The team prepared the {{VOC2}} carefully and kept the emergency {{VOC3}} nearby."
+            }
+          ],
+          "slots": [
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "have dried",
+              "distractors": [
+                "dried",
+                "are drying"
+              ]
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "has tested",
+              "distractors": [
+                "tested",
+                "is testing"
+              ]
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "has not responded",
+              "distractors": [
+                "did not respond",
+                "is not responding"
+              ]
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "have collected",
+              "distractors": [
+                "collected",
+                "are collecting"
+              ]
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "have secured",
+              "cue": "secure"
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "have stopped",
+              "cue": "stop"
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "have not completed",
+              "cue": "complete"
+            },
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "stable",
+              "canonicalForm": "stable",
+              "meaningZh": "稳定的"
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "test",
+              "canonicalForm": "test",
+              "meaningZh": "测试"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "instructions",
+              "canonicalForm": "instruction",
+              "meaningZh": "操作说明"
+            }
+          ]
+        },
+        "parseError": null
+      },
+      {
+        "outlineChapterId": "new-grammar-ch4",
+        "generated": {
+          "outlineChapterId": "new-grammar-ch4",
+          "paragraphs": [
+            {
+              "template": "Before the test, Dr. Hall joined them by video and stated the safety requirements. “You {{OC1}} clear the dome track, and everyone {{WF1}} stand behind the yellow line. Noah, you {{OC2}} confirm the emergency stop button.” The team followed his {{VOC1}} and checked each area in order."
+            },
+            {
+              "template": "Mina noticed a maintenance ladder beside the track. “We {{WF2}} move that first,” she said. Noah agreed: “The track {{OC3}} be completely clear, even if the event begins soon.” They paused the test and carried the {{VOC2}} away. After another inspection, Ms. Rivera said, “We {{OC4}} keep everyone behind the line and continue watching the safety lights.” Noah stayed near the emergency {{VOC3}}."
+            }
+          ],
+          "slots": [
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "have to",
+              "distractors": [
+                "can",
+                "might"
+              ]
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "must",
+              "distractors": [
+                "could",
+                "may"
+              ]
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "has to",
+              "distractors": [
+                "can",
+                "might"
+              ]
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "must",
+              "distractors": [
+                "could",
+                "may"
+              ]
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "has to",
+              "cue": "have to"
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "must",
+              "cue": "must"
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "have to",
+              "cue": "have to"
+            },
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "instructions",
+              "canonicalForm": "instruction",
+              "meaningZh": "指示"
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "ladder",
+              "canonicalForm": "ladder",
+              "meaningZh": "梯子"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "button",
+              "canonicalForm": "button",
+              "meaningZh": "按钮"
+            }
+          ]
+        },
+        "parseError": null
+      },
+      {
+        "outlineChapterId": "new-grammar-ch5",
+        "generated": {
+          "outlineChapterId": "new-grammar-ch5",
+          "paragraphs": [
+            {
+              "template": "Before the final test, Noah compared two realistic plans. “If the sensor {{OC1}}, we {{WF1}} the planetarium as planned. If it {{OC2}} again, we will hold a small star chart lesson instead.” Mina arranged the charts as a {{VOC1}}. Ms. Rivera added, “If we {{WF2}} speed over safety, we would risk the whole event.”"
+            },
+            {
+              "template": "The sensor passed, and the dome opened smoothly. If the reading {{OC3}} outside the safe range, Noah knew they would stop immediately. Because it remained stable, visitors entered on time and looked up at the clear {{VOC2}}. The team kept the star chart lesson ready; if conditions {{WF3}}, they would use it. Noah said, “If another storm {{OC4}}, our {{VOC3}} will help us respond safely.”"
+            }
+          ],
+          "slots": [
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "passes",
+              "distractors": [
+                "passed",
+                "would pass"
+              ]
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "fails",
+              "distractors": [
+                "failed",
+                "would fail"
+              ]
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "went",
+              "distractors": [
+                "goes",
+                "will go"
+              ]
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "G1",
+              "answer": "comes",
+              "distractors": [
+                "came",
+                "will come"
+              ]
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "will open",
+              "cue": "open"
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "chose",
+              "cue": "choose"
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "G1",
+              "answer": "changed",
+              "cue": "change"
+            },
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "backup",
+              "canonicalForm": "backup",
+              "meaningZh": "备用方案"
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "sky",
+              "canonicalForm": "sky",
+              "meaningZh": "天空"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "records",
+              "canonicalForm": "record",
+              "meaningZh": "记录"
+            }
+          ]
+        },
+        "parseError": null
+      }
+    ]
+  },
+  "error": null
+}

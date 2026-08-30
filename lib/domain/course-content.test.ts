@@ -5,6 +5,7 @@ import {
   buildCleanParagraphText,
   buildInteractiveParagraphText,
   collectVocabularyMatching,
+  englishWordCount,
   vocabularyExerciseHint,
   validateGrammarCoverage,
   validateParagraphParts,
@@ -24,6 +25,10 @@ const paragraph: CourseContentParagraph = {
 };
 
 describe("course content domain", () => {
+  test("counts standard hyphenated compounds as one English word", () => {
+    expect(englishWordCount("The star-map lesson wasn't ready.")).toBe(5);
+  });
+
   test("compiles the same parts into clean and interactive reading", () => {
     expect(buildCleanParagraphText(paragraph)).toBe("Yesterday, Mia found the hidden door and decided to look after the fox.");
     expect(buildInteractiveParagraphText(paragraph)).toBe("Yesterday, Mia ______ (find) the hidden door and decided to ____ ____ (照顾，4+5个字母) the fox.");

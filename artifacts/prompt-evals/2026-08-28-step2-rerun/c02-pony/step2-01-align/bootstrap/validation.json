@@ -1,0 +1,37 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "alignRequirements"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "status": "ready_for_confirmation",
+    "planningMode": "explore_options",
+    "storyMode": "new_story",
+    "classroomPresence": "participant",
+    "requiredNamedCharacters": [],
+    "brief": {
+      "kind": "narrative",
+      "objective": "使用《小马宝莉》的世界或核心角色创作儿童冒险故事",
+      "sourceRequirements": [
+        {
+          "name": "《小马宝莉》",
+          "useInCourse": "使用作品世界或核心角色创作新剧情"
+        }
+      ],
+      "requiredNamedCharacters": [],
+      "fixedPlot": null,
+      "additionalConstraints": {
+        "required": [],
+        "preferred": [],
+        "excluded": []
+      }
+    },
+    "assistantMessage": "我已经整理好创作理解，请确认。",
+    "resolvedUnderstanding": [],
+    "unresolvedIssues": [],
+    "questions": []
+  },
+  "error": null
+}

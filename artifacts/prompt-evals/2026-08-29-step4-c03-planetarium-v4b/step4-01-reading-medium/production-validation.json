@@ -1,0 +1,100 @@
+{
+  "envelopeError": null,
+  "firstPassReady": false,
+  "chapters": [
+    {
+      "outlineChapterId": "new-grammar-ch1",
+      "pass": true,
+      "wordCount": 101,
+      "paragraphWordCounts": [
+        48,
+        53
+      ],
+      "cleanParagraphs": [
+        "On the evening after the storm, Noah and Ms. Rivera arrived at the community planetarium to prepare for visitors. They checked the main power switch, but nothing happened. The control-room door stayed locked, so Noah opened the old duty log and carefully searched its pages for instructions.",
+        "The log showed that staff hid a spare key behind the ticket desk during a 2019 drill. Noah found it, while Ms. Rivera called Dr. Hall and explained the problem. After Dr. Hall confirmed the safety procedure, they unlocked the door, entered the room, and discovered a fuse box that storm water had soaked."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "new-grammar-ch2",
+      "pass": true,
+      "wordCount": 106,
+      "paragraphWordCounts": [
+        49,
+        57
+      ],
+      "cleanParagraphs": [
+        "When the console received power again, its indicator lights flashed, but the dome did not move. Noah watched the display and said, “The voltage is changing right now.” Ms. Rivera studied the numbers beside him. “The system usually keeps a steady level,” she replied, “so this reading needs attention.”",
+        "Noah compared the live reading with the operating guide. The cooling fan was silent. “It is not turning now, although it runs whenever the console works normally,” he reported. A healthy fan moves air every minute. Ms. Rivera pointed to the warning. They decided to repair the fan first because forcing the dome could damage the motor."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "new-grammar-ch3",
+      "pass": true,
+      "wordCount": 104,
+      "paragraphWordCounts": [
+        48,
+        56
+      ],
+      "cleanParagraphs": [
+        "Mina arrived with dry cloths and a small tool kit. Together, the three cleaned the wet fuse box and reconnected the cooling fan. When the console lights returned, Noah gave an update: “We have dried the box, and Mina has reconnected the fan. The warning light has disappeared.”",
+        "He checked the list and continued, “We have also tested the main switch, but we have not checked the dome sensor yet.” Ms. Rivera reviewed the latest results. “The repairs have made a low-power test safe,” she said. “However, the sensor has not proved that the track is clear, so we still need another check.”"
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "new-grammar-ch4",
+      "pass": true,
+      "wordCount": 103,
+      "paragraphWordCounts": [
+        49,
+        54
+      ],
+      "cleanParagraphs": [
+        "Dr. Hall joined by video and stated the safety rules. “The dome track has to be empty before any test. Everyone must stand behind the yellow line, and Noah has to confirm the emergency stop button.” The team listened carefully because rushing could damage the machine or hurt someone.",
+        "They cleared loose tools and moved behind the line. Before Noah could begin, Mina noticed a maintenance ladder beside the track. “We must pause the test,” Noah said. They had to move the ladder to a safe storage area, and then Noah had to check the emergency button again before the test could continue."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "new-grammar-ch5",
+      "pass": false,
+      "wordCount": 106,
+      "paragraphWordCounts": [
+        52,
+        54
+      ],
+      "cleanParagraphs": [
+        "Before the formal test, Noah compared the real backup plan with an imaginary improvement. “If the sensor passes, we will open the planetarium as planned. If it fails again, we will teach a small star-chart lesson instead. If we had a second dome, we would test it, but we do not.”",
+        "The team kept the star-chart materials ready and began the test. The sensor passed, so the dome opened smoothly and safely. Noah smiled. “If visitors arrive on time, they will see the real sky through the opening.” The team welcomed them as scheduled, while keeping the star-chart lesson available as a backup."
+      ],
+      "structuredIssues": [
+        {
+          "code": "part_structure",
+          "target": "paragraph-new-grammar-ch5-2",
+          "message": "词汇答案暂不支持连字符或缩写"
+        }
+      ],
+      "domainIssues": [
+        "词汇答案暂不支持连字符或缩写"
+      ]
+    }
+  ],
+  "mainIdea": {
+    "pass": true,
+    "wordCount": 125,
+    "acceptedRange": [
+      110,
+      130
+    ],
+    "text": "After a storm cut power at the planetarium, Noah and Ms. Rivera used the duty log to enter the locked control room safely. They found a wet fuse box, restored power, and studied readings instead of forcing the dome. Mina helped dry the box and reconnect the cooling fan, while Noah reported which repairs had been completed and which problem remained. Guided by Dr. Hall, the team followed safety rules, stopped when they found a ladder near the track, and moved it away. Noah prepared two plans: open the dome if the sensor passed, or teach a star-chart lesson if it failed. The sensor passed, the dome opened safely, and visitors arrived on time, but the team kept the lesson ready as a backup.",
+    "parseError": null
+  },
+  "exerciseAiRequired": true
+}

@@ -20,7 +20,7 @@ type DbCourse = {
   lifecycleStatus?: "draft" | "published" | "archived";
   englishLevel?: EnglishLevel | null;
   knowledgePointIds?: unknown;
-  storySetting?: { storyComplexity?: StoryComplexity | null } | null;
+  storySetting?: { storyComplexity?: StoryComplexity | null; alignmentDetails?: unknown } | null;
 };
 
 type DbOutlineChapter = {

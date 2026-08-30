@@ -1,0 +1,182 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateOutline"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "title": "消失的城市声音 / The City's Missing Sounds",
+    "summary": "吞声怪兽把全城声音锁进四枚声核，Mr. Chen带领Ann、Ben、Cara和Dan组成英雄战队。四名学生分别找回钟声、汽笛、流水声和鼓声，并发现不同声音合奏能击破静音护盾。Mr. Chen指挥四人同时发声，怪兽吐回全城声音并认输。",
+    "storyHook": "",
+    "characters": [
+      {
+        "key": "C1",
+        "displayName": "陈老师",
+        "englishName": "Mr. Chen",
+        "sourceType": "person",
+        "sourcePersonId": "teacher-chen",
+        "sourceReferenceId": null,
+        "roleInStory": "带领四名学生追踪声核，根据学生发现的信息组织最终合奏。",
+        "shortDescription": "带领四名学生追踪声核，根据学生发现的信息组织最终合奏。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C2",
+        "displayName": "安安",
+        "englishName": "Ann",
+        "sourceType": "person",
+        "sourcePersonId": "student-an",
+        "sourceReferenceId": null,
+        "roleInStory": "找回钟声并验证声核能够削弱吞声怪兽。",
+        "shortDescription": "找回钟声并验证声核能够削弱吞声怪兽。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C3",
+        "displayName": "小博",
+        "englishName": "Ben",
+        "sourceType": "person",
+        "sourcePersonId": "student-ben",
+        "sourceReferenceId": null,
+        "roleInStory": "利用轨道振动找回汽笛声，并帮助团队逃出静音车站。",
+        "shortDescription": "利用轨道振动找回汽笛声，并帮助团队逃出静音车站。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C4",
+        "displayName": "可可",
+        "englishName": "Cara",
+        "sourceType": "person",
+        "sourcePersonId": "student-cara",
+        "sourceReferenceId": null,
+        "roleInStory": "找回流水声，并发现错开不同声音的节奏可以穿透怪兽的防御。",
+        "shortDescription": "找回流水声，并发现错开不同声音的节奏可以穿透怪兽的防御。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C5",
+        "displayName": "大卫",
+        "englishName": "Dan",
+        "sourceType": "person",
+        "sourcePersonId": "student-dan",
+        "sourceReferenceId": null,
+        "roleInStory": "突破静音风找回最后的鼓声，使四声合奏得以完成。",
+        "shortDescription": "突破静音风找回最后的鼓声，使四声合奏得以完成。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C6",
+        "displayName": "吞声怪兽",
+        "englishName": "Sound Eater",
+        "sourceType": "original",
+        "sourcePersonId": null,
+        "sourceReferenceId": null,
+        "roleInStory": "把城市声音锁进四枚声核，并用静音力量阻止英雄战队取回它们。",
+        "shortDescription": "把城市声音锁进四枚声核，并用静音力量阻止英雄战队取回它们。",
+        "shouldAppearInImages": true
+      }
+    ],
+    "chapters": [
+      {
+        "order": 1,
+        "title": "钟楼第一声 / The First Bell",
+        "storyGoal": "吞声怪兽把城市声音锁进四枚声核；Mr. Chen组队，Ann敲响钟楼声核，让怪兽首次变弱。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "吞声怪兽把城市声音锁进四枚声核；Mr. Chen组队，Ann敲响钟楼声核，让怪兽首次变弱。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5",
+          "C6"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-simple"
+        ],
+        "knowledgePointRecommendationSummary": "Past Simple用于叙述怪兽夺走声音、团队成立和Ann找回钟声的连续行动。"
+      },
+      {
+        "order": 2,
+        "title": "静音车站 / The Silent Station",
+        "storyGoal": "怪兽用静音墙困住团队；Ben启动轨道振动，震开汽笛声核并打通车站出口。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "怪兽用静音墙困住团队；Ben启动轨道振动，震开汽笛声核并打通车站出口。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5",
+          "C6"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-can"
+        ],
+        "knowledgePointRecommendationSummary": "can / can't用于说明团队不能穿过静音墙，但Ben能用轨道振动打开出口。"
+      },
+      {
+        "order": 3,
+        "title": "桥下的回响 / Echoes Under the Bridge",
+        "storyGoal": "怪兽反弹钟声和汽笛；Cara错开两声的节奏，击穿防御并从桥下唤回流水声。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "怪兽反弹钟声和汽笛；Cara错开两声的节奏，击穿防御并从桥下唤回流水声。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5",
+          "C6"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-simple",
+          "kp-can"
+        ],
+        "knowledgePointRecommendationSummary": "Past Simple叙述Cara改变节奏的经过，can / can't说明单一声音不能突破防御、错开的声音可以突破。"
+      },
+      {
+        "order": 4,
+        "title": "四声合奏 / The Four-Sound Finale",
+        "storyGoal": "Dan顶住静音风，敲开体育场的鼓声核；Mr. Chen按Cara发现的节奏指挥四人合声，怪兽吐回全城声音并认输。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "Dan顶住静音风，敲开体育场的鼓声核；Mr. Chen按Cara发现的节奏指挥四人合声，怪兽吐回全城声音并认输。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5",
+          "C6"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-simple",
+          "kp-can"
+        ],
+        "knowledgePointRecommendationSummary": "Past Simple叙述Dan取回鼓声和怪兽认输的结果，can / can't说明四种声音合奏能够击破静音护盾。"
+      }
+    ]
+  },
+  "error": null
+}

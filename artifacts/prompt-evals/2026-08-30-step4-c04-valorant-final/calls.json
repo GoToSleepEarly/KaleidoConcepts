@@ -1,0 +1,26 @@
+{
+  "configuredPath": {
+    "model": "gpt-5.6-sol",
+    "calls": [
+      { "call": 1, "purpose": "reading candidates", "reasoningEffort": "low", "promptCharacters": 6553, "outputCharacters": 5345, "durationMs": 50437, "firstPass": true },
+      { "call": 2, "purpose": "English final review", "reasoningEffort": "high", "promptCharacters": 8521, "outputCharacters": 4630, "durationMs": 120170, "firstPass": true },
+      { "call": 3, "purpose": "chapter and homework exercises", "reasoningEffort": "medium", "promptCharacters": 4999, "outputCharacters": 3097, "durationMs": 42289, "firstPass": true }
+    ],
+    "totals": { "promptCharacters": 20073, "outputCharacters": 13072, "characters": 33145, "durationMs": 212896 },
+    "firstPassCalls": "3/3",
+    "endToEndFirstPass": true
+  },
+  "experiments": [
+    {
+      "call": "2M",
+      "purpose": "same-candidate Medium review A/B",
+      "reasoningEffort": "medium",
+      "promptCharacters": 8521,
+      "outputCharacters": 5022,
+      "durationMs": 98302,
+      "programValidation": true,
+      "manualValidation": false,
+      "issue": "OC3 accepted both copied and was copying in context; production review raised to High"
+    }
+  ]
+}

@@ -15,6 +15,7 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "preset:export": "tsx scripts/export-preset-data.ts",
     "step4:export-case": "tsx scripts/export-step4-case.ts",
+    "check": "pnpm test && pnpm build",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "test:watch": "vitest"

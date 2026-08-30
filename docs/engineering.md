@@ -62,9 +62,8 @@ pnpm dev:preview
 ```bash
 pnpm prisma:migrate --name change_name
 pnpm prisma:generate
-pnpm test
-pnpm lint
-pnpm build
+pnpm exec prisma validate
+pnpm check
 ```
 
 生产环境只允许执行：
@@ -197,11 +196,31 @@ pm2 restart pbl-studio
 pnpm install
 pnpm prisma:generate
 pnpm prisma:deploy
+pnpm check       # 默认代码门禁：全量测试 + 生产构建（构建已包含 ESLint 和 TypeScript 检查）
 pnpm test
 pnpm lint
 pnpm build
 pnpm dev:preview # 本地完整环境：启动 Embedded PostgreSQL、执行迁移和种子后启动 Next.js
 pnpm dev         # 仅启动 Next.js，要求 DATABASE_URL 指向的数据库已经运行
 ```
+
+## 验证门禁
+
+默认只保留一个代码门禁：
+
+```bash
+pnpm check
+```
+
+它顺序执行全量 Vitest 和 Next.js 生产构建。生产构建已经包含 ESLint 与 TypeScript 检查，因此最终验收不再额外重复执行 `pnpm lint` 和 `pnpm exec tsc --noEmit`。开发过程中仍可对修改文件运行定向测试或 ESLint，但不作为第二套最终门禁。
+
+以下检查仅在对应范围发生变化时增加：
+
+- 修改 `prisma/schema.prisma` 或 migration：`pnpm exec prisma validate`，并验证 migration 部署或恢复路径。
+- 修改 UI 布局、交互、PDF 或响应式行为：只检查受影响的真实浏览器流程。
+- 只修改文档：不运行应用构建，只执行文本与差异检查。
+- 修改部署脚本：运行对应脚本测试和部署流程检查。
+
+`git diff --check`、中文编码检查和目标文件静态检查属于提交前的低成本卫生检查，不与 `pnpm check` 组合成多套重复门禁。
 
 `dev:preview` 会验证 PostgreSQL 是否真正可查询，不以端口监听代替健康状态。默认端口被占用时，脚本自动选择相邻可用端口；Windows 存在本项目数据库的残留进程或共享内存时，只终止命令行明确指向 `.local/postgres-app` 的旧 `postgres.exe` 后重试。数据库正常退出使用 `pg_ctl fast`，整个恢复过程不会删除或重建本地数据库目录。

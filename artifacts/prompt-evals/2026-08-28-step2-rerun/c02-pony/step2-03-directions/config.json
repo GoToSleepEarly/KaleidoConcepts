@@ -1,0 +1,23 @@
+{
+  "scope": "story", "method": "generateDirections",
+  "args": [{
+    "task": "根据老师当前要求和已确认资料生成 3 个故事方向。",
+    "requirementBrief": { "kind": "narrative", "objective": "以《小马宝莉》的世界和核心角色为基础，为李老师、Ivy 和 Leo 创作一个共同参与的儿童冒险故事。", "sourceRequirements": [{ "name": "《小马宝莉》", "useInCourse": "使用原作世界及与故事最相关的核心角色，创作新的冒险情节。" }], "requiredNamedCharacters": [], "fixedPlot": null, "additionalConstraints": { "required": ["共4章", "英文难度为A2", "内容适合9至10岁儿童", "李老师、Ivy 和 Leo 全部参与故事"], "preferred": [], "excluded": [] } },
+    "planningMode": "explore_options", "storyMode": "new_story", "classroomPresence": "participant", "chapterCount": 4, "englishLevel": "A2", "storyComplexity": "clear_linear",
+    "coursePeople": [
+      { "personId": "teacher-li", "role": "teacher", "chineseName": "李老师", "englishName": "Ms. Li", "age": 31, "gender": "female" },
+      { "personId": "student-yutong", "role": "student", "chineseName": "雨桐", "englishName": "Ivy", "age": 9, "gender": "female" },
+      { "personId": "student-hao", "role": "student", "chineseName": "浩然", "englishName": "Leo", "age": 10, "gender": "male" }
+    ],
+    "conversationHistory": [{ "role": "teacher", "content": "根据《小马宝莉》，创造一个儿童冒险故事" }, { "role": "teacher", "content": "我确认这份创作理解。" }],
+    "references": [
+      { "id": "pony-world", "name": "《小马宝莉：友谊就是魔法》的小马利亚与小马谷", "type": "other", "sourceStatus": "confirmed", "summary": "故事采用《小马宝莉：友谊就是魔法》动画版设定。小马利亚是由小马及多种神奇生物共同生活的魔法世界；小马谷是核心角色生活和展开日常冒险的重要地点。", "usableFacts": ["友谊、合作、诚实、善良和互相理解是解决困难的核心力量。", "魔法可以存在，但任务仍应通过团队合作完成。", "李老师、Ivy和Leo可作为访客进入小马谷，并与小马角色共同冒险。"], "adaptationBoundary": "可创作全新地点、任务和轻度危险，但不能改变小马利亚以友谊与合作为核心的基本规则。" },
+      { "id": "pony-twilight", "name": "暮光闪闪（Twilight Sparkle）", "type": "other", "sourceStatus": "confirmed", "summary": "聪明、爱读书、擅长魔法并重视友谊的紫色独角兽；在较后阶段成为天角兽公主。", "usableFacts": ["适合发现线索、解释魔法规则和组织团队。", "遇到问题时倾向于阅读、调查和制定计划。", "关心朋友，会逐渐认识到合作比独自解决问题更有效。"], "adaptationBoundary": "可让她指导或协助课堂人物，但不应让她凭强大魔法独自解决全部困难。" },
+      { "id": "pony-rainbow", "name": "云宝黛西（Rainbow Dash）", "type": "other", "sourceStatus": "confirmed", "summary": "速度很快、勇敢自信且忠于朋友的蓝色飞马，有时会因为急于行动而显得冲动。", "usableFacts": ["适合飞行侦察、快速救援和承担勇气任务。", "非常看重忠诚，不会在朋友遇到困难时离开。", "冲动可以造成小麻烦，并通过听取同伴意见得到改善。"], "adaptationBoundary": "可以展现速度与勇气，但不能用单纯的速度跳过合作、思考和成长过程。" },
+      { "id": "pony-fluttershy", "name": "柔柔（Fluttershy）", "type": "other", "sourceStatus": "confirmed", "summary": "温柔、害羞、善于照顾动物的黄色飞马；面对保护朋友或小动物的需要时能够表现出坚定勇气。", "usableFacts": ["适合与迷路、受惊或需要帮助的动物沟通。", "能用耐心和善意缓和冲突。", "她的勇气通常来自帮助他人，而不是追求冒险。"], "adaptationBoundary": "保持她温和而有原则的性格；她可以害怕，但会为了伙伴采取必要行动。" },
+      { "id": "pony-pinkie", "name": "碧琪（Pinkie Pie）", "type": "other", "sourceStatus": "confirmed", "summary": "活泼、乐观、喜欢派对并善于让大家开心的粉色陆马，也十分重视朋友的感受。", "usableFacts": ["适合鼓励团队、缓解紧张和设计简单有趣的庆祝活动。", "常能注意到朋友是否不开心，并主动提供支持。", "幽默可以推动情节，但她也能认真帮助伙伴。"], "adaptationBoundary": "可保留夸张喜剧感，但行动必须服务于团队任务，不能让故事失去清晰的线性因果。" }
+    ],
+    "selectedDirection": null, "currentDirections": [], "currentOutline": null
+  }],
+  "bootstrapResponses": ["[{\"title\":\"迷路的友谊邮车\",\"hook\":\"小马谷的友谊邮车被魔法岔路困住，Ms. Li带Ivy和Leo与暮光闪闪寻找正确路线。他们根据朋友留下的标记修复路牌，让邮车把信件全部送达。\",\"storyHighlight\":\"友谊信息变成可观察的路线标记。\",\"growthCore\":\"合作\",\"mainCharacters\":[\"Ms. Li\",\"Ivy\",\"Leo\",\"暮光闪闪（Twilight Sparkle）\"],\"whyFits\":\"线性寻找任务适合A2和四章。\"},{\"title\":\"被风吹散的庆典旗帜\",\"hook\":\"强风吹散小马谷庆典旗帜，Ms. Li、Ivy和Leo与云宝黛西沿风向寻找。团队按颜色收回旗帜并重新装好，让庆典按时开始。\",\"storyHighlight\":\"速度必须与孩子们的观察配合。\",\"growthCore\":\"耐心\",\"mainCharacters\":[\"Ms. Li\",\"Ivy\",\"Leo\",\"云宝黛西（Rainbow Dash）\"],\"whyFits\":\"动作直观且结果明确。\"},{\"title\":\"害怕回家的小动物\",\"hook\":\"一群小动物被陌生响声吓得不敢回家，Ms. Li带Ivy和Leo与柔柔寻找声音来源。他们安抚动物并移走发声的旧风铃，让动物安全回到森林。\",\"storyHighlight\":\"先理解害怕再解决环境原因。\",\"growthCore\":\"同理心\",\"mainCharacters\":[\"Ms. Li\",\"Ivy\",\"Leo\",\"柔柔（Fluttershy）\"],\"whyFits\":\"适龄、温和并适合基础情绪词。\"}]"]
+}

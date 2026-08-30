@@ -1,0 +1,62 @@
+{
+  "envelopeError": null,
+  "firstPassReady": true,
+  "chapters": [
+    {
+      "outlineChapterId": "cmsysedkt00118gvo1i5r86fc",
+      "pass": true,
+      "wordCount": 122,
+      "paragraphWordCounts": [
+        58,
+        64
+      ],
+      "cleanParagraphs": [
+        "The remote rope broke in the bitter cold, leaving the North Mountain warning bell silent. Before the blizzard arrived, Anna, Elsa, Ms. Lin, and student 2 stepped onto the echoing Snow Bridge to reach the tower and strike its emergency hammer. Anna urged them to move ahead when Elsa pointed left and Ms. Lin called for everyone to stop.",
+        "While three different instructions were echoing across the bridge, its surface was splitting into spinning paths. Anna rushed onto one route, but it suddenly turned away. Elsa created an ice crossing beneath her, yet that new foothold also shifted from the tower. The four companions retreated to the only steady platform at the center and realized that competing commands made every road more dangerous."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "cmsysedkt00128gvo46fyqzle",
+      "pass": true,
+      "wordCount": 121,
+      "paragraphWordCounts": [
+        59,
+        62
+      ],
+      "cleanParagraphs": [
+        "On the central platform, Elsa lowered her hands. “My magic has protected our feet, but it cannot choose our direction,” she said. Ms. Lin noted, “Different commands have caused this confusion. Now the bridge is still turning, so let us speak one at a time.” Anna identified a crack ahead, while Elsa described the most stable section of snow.",
+        "As the storm is clearing, student 2 watched through a brief opening and pointed right. “I have seen the tower beyond that ridge,” 2 said. After everyone has confirmed the evidence, they gave one shared instruction: “Turn right.” The bridge has stopped dividing and formed a straight route. Elsa strengthened its edges while the group was crossing, and all four reached the tower safely."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "cmsysedkt00138gvofq0j3kel",
+      "pass": true,
+      "wordCount": 128,
+      "paragraphWordCounts": [
+        65,
+        63
+      ],
+      "cleanParagraphs": [
+        "Inside the tower, ice trapped the emergency hammer against its frame, and fierce gusts shook the walls. Elsa explained the agreed plan: “I am going to clear the ice, and Anna and Ms. Lin are going to hold the rope until 2 signals.” Anna promised, “I will not pull early.” Together, she and Ms. Lin took the rope while Elsa began to release the frozen support.",
+        "Student 2 watched the snow outside and said, “The next gust will end soon. After it passes, I will give the signal.” When the wind weakened, 2 called, “Now!” Anna and Ms. Lin will pull together. Elsa promised, “I will steady the icy frame,” and immediately did so. The hammer struck, and its clear warning crossed Arendelle. Residents would reach shelter before the blizzard arrived."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    }
+  ],
+  "mainIdea": {
+    "pass": true,
+    "wordCount": 129,
+    "acceptedRange": [
+      110,
+      130
+    ],
+    "text": "When the remote rope of Arendelle’s North Mountain warning bell broke, Anna, Elsa, Ms. Lin, and student 2 had to cross an echoing snow bridge before a blizzard arrived. The bridge turned spoken directions into real paths, so their conflicting commands split the road and trapped them at its center. Elsa discovered that magic could protect their footing but could not choose the correct way. Ms. Lin asked everyone to report observations in turn, and student 2 confirmed the tower’s position. After the group agreed on one instruction, the bridge formed a safe route, which Elsa supported. At the tower, they followed another shared plan: Elsa freed and steadied the hammer, Anna and Ms. Lin pulled together, and 2 chose the right moment. Their united action warned Arendelle in time.",
+    "parseError": null
+  },
+  "exerciseAiRequired": false
+}

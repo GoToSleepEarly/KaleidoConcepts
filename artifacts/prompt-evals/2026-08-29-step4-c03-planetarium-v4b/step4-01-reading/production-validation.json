@@ -1,0 +1,97 @@
+{
+  "envelopeError": null,
+  "firstPassReady": false,
+  "chapters": [
+    {
+      "outlineChapterId": "new-grammar-ch1",
+      "pass": false,
+      "wordCount": 94,
+      "paragraphWordCounts": [
+        44,
+        50
+      ],
+      "cleanParagraphs": [
+        "After the storm, Noah and Ms. Rivera arrived at the community planetarium for the evening event. They found that the control-room door was locked and the main power was off. Noah opened an old duty record and carefully searched its pages for instructions.",
+        "The record revealed the location of a spare key behind a storage cabinet. Ms. Rivera contacted Dr. Hall, who explained the safe entry procedure. After he gave permission, they retrieved the key, unlocked the door, and stepped inside. There, Noah discovered a water-soaked fuse box beside the silent console."
+      ],
+      "structuredIssues": [
+        {
+          "code": "word_count",
+          "message": "正文词数应为 95–130，实际 94"
+        }
+      ],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "new-grammar-ch2",
+      "pass": true,
+      "wordCount": 103,
+      "paragraphWordCounts": [
+        50,
+        53
+      ],
+      "cleanParagraphs": [
+        "After they safely restored power, lights on the console began flashing, but the dome remained still. Noah watched the voltage display and said, “The reading is changing every few seconds, and the warning light is blinking now.” Ms. Rivera compared these live signals with the operating guide beside the monitor.",
+        "“During normal operation, the voltage stays steady, and the cooling fan runs continuously,” she explained. “But the fan is not turning now.” Noah listened beside the vent and confirmed that no air was moving. Because the system needs to stay cool, they are not forcing the start command and inspected the fan instead."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "new-grammar-ch3",
+      "pass": true,
+      "wordCount": 117,
+      "paragraphWordCounts": [
+        50,
+        67
+      ],
+      "cleanParagraphs": [
+        "Mina arrived with dry cloths, a small air blower, and safe repair tools. Together, the students cleaned the fuse box and reconnected the cooling fan while Ms. Rivera checked each step. When the fan started, Noah reported, “We have dried the wet area, and Mina has secured the loose cable.”",
+        "He continued, “The fan has started again, and we have checked every connection on our list. However, the dome sensor has not sent a clear signal yet.” These current results gave Ms. Rivera useful evidence. “The repairs have made the main system ready for a low-power test,” she said, “but the sensor has needed further inspection before we move the dome.” Mina prepared the testing equipment."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "new-grammar-ch4",
+      "pass": true,
+      "wordCount": 116,
+      "paragraphWordCounts": [
+        48,
+        68
+      ],
+      "cleanParagraphs": [
+        "Before the low-power test, Dr. Hall joined them by video and stated the safety requirements. “You have to clear the dome track, and everyone must stand behind the yellow line,” he said. “Noah has to confirm that the emergency stop button works before anybody starts the test.”",
+        "The team followed his checklist instead of rushing. Mina inspected one side of the track while Noah had to inspect the other. Then Ms. Rivera noticed a maintenance ladder beside the rail. “We must pause the test,” Noah said. They moved it to the storage area and checked the track again. Only after the route was clear could they continue. Everyone had to remain behind the safety line."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "new-grammar-ch5",
+      "pass": true,
+      "wordCount": 116,
+      "paragraphWordCounts": [
+        48,
+        68
+      ],
+      "cleanParagraphs": [
+        "Before the final test, Noah compared their practical plans. “If the sensor passes this time, we will open the planetarium as planned,” he said. “If it fails again, we will hold a small star-chart lesson instead.” Ms. Rivera kept the charts ready as a realistic backup plan.",
+        "Noah also considered an imaginary situation: “If we had no backup materials, we would disappoint our visitors.” Then Mina activated the sensor test. When the green signal appeared, Noah said, “If the display shows green, the track is safe.” The dome would open smoothly and safely. Although the sensor passed, the team would keep the star-chart lesson as a reserve and welcomed the first visitors on time."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    }
+  ],
+  "mainIdea": {
+    "pass": true,
+    "wordCount": 126,
+    "acceptedRange": [
+      110,
+      130
+    ],
+    "text": "After a storm stopped the community planetarium’s control system, Noah, Ms. Rivera, Mina, and Dr. Hall used evidence and safety rules to solve the problem. They first consulted an old record and obtained permission before entering the locked control room. Instead of forcing the dome to move, they compared live readings with normal operating behavior and traced the warning to a stopped cooling fan. After drying the fuse box and reconnecting the fan, they reviewed what had been repaired and identified the sensor as the remaining concern. The team then completed every safety requirement and removed a ladder blocking the track. They prepared a star-chart lesson in case the sensor failed. The sensor passed, the dome opened safely, and the event began on time.",
+    "parseError": null
+  },
+  "exerciseAiRequired": true
+}

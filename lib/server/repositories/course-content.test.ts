@@ -1,9 +1,12 @@
 import { describe, expect, test, vi } from "vitest";
 
 import type { CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
-import { CourseContentConflictError, exerciseQuestionIssues, generateCourseExercises, generateCourseReading, modifyCourseContent, recoverStaleCourseContentOperation, requiresExerciseAi, resetCourseContent, type CourseContentDb } from "@/lib/server/repositories/course-content";
+import { CourseContentConflictError, courseContentSemanticRepairAttempts, exerciseQuestionIssues, generateCourseExercises, generateCourseReading, modifyCourseContent, recoverStaleCourseContentOperation, requiresExerciseAi, resetCourseContent, type CourseContentDb } from "@/lib/server/repositories/course-content";
 
 describe("course content repository", () => {
+  test("allows at most one semantic repair per generation stage", () => {
+    expect(courseContentSemanticRepairAttempts).toBe(1);
+  });
   test("skips the exercise AI stage when Step 3 has no grammar exercises", () => {
     const plan = {
       chapters: [{ chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } } }],
@@ -193,9 +196,9 @@ describe("course content repository", () => {
     expect(deleteContent).toHaveBeenCalled();
   });
 
-  test("generates chapters and Main Idea together, then repairs only an invalid Main Idea", async () => {
+  test("generates chapters and Main Idea together, then uses the one shared repair budget for an invalid Main Idea", async () => {
     const now = new Date("2026-08-10T00:00:00.000Z");
-    const course = { id: "course-1", title: "Hidden Door", durationMinutes: 30, currentStage: "content", englishLevel: "A2", knowledgePointIds: ["kp-1"] };
+    const course = { id: "course-1", title: "Hidden Door", durationMinutes: 30, currentStage: "content", englishLevel: "A2", knowledgePointIds: ["kp-1"], storySetting: { storyComplexity: "clear_linear", alignmentDetails: { schemaVersion: 2, requirement: { kind: "resolved", storyMode: "new_story", classroomPresence: "participant", brief: { kind: "concept", objective: "理解重力", learningTargets: [{ concept: "重力", expectedUnderstanding: "物体之间会相互吸引" }], assumedPriorKnowledge: [], sourceRequirements: [], requiredNamedCharacters: [], fixedPlot: null, additionalConstraints: { required: [], preferred: [], excluded: [] } } } } } };
     const outline = { id: "outline-1", title: "隐藏的门 / The Hidden Door", chapters: [{ id: "chapter-1", order: 1, title: "发光地图 / The Glowing Map", storyGoal: "Find it", keyEvents: ["Find it"], recommendedKnowledgePointIds: ["kp-1"] }] };
     const plan = { id: "plan-1", courseId: "course-1", status: "confirmed", englishLevel: "A2", chapters: [{ outlineChapterId: "chapter-1", targetWordCount: 50, paragraphCount: 1, knowledgePointIds: ["kp-1"], readingExerciseMode: "complete", readingExercises: { enabled: true, grammar: { optionCloze: 0, wordForm: 1 }, vocabulary: { chineseHint: 0 } }, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { targetWordCount: false, paragraphCount: false, knowledgePointIds: false, readingExerciseMode: false, readingExercises: false, chapterPractice: false } }], afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { knowledgePointIds: false, practice: false } }, updatedAt: now, confirmedAt: now };
     let content = { id: "content-1", courseId: "course-1", status: "empty", phase: null, writingProvider: "quickrouter_gpt", sourceRevision: "", contentVersion: 0, chapters: [] as unknown[], mainIdea: null as unknown, homework: null, exercisesStale: false, errorMessage: null as string | null, updatedAt: now };
@@ -230,14 +233,13 @@ describe("course content repository", () => {
     const generatedText = `${Array.from({ length: 49 }, (_, index) => `word${index + 1}`).join(" ")} `;
     const generateReading = vi.fn(async () => ({
       envelopeError: null,
-      chapters: [{ outlineChapterId: "chapter-1", generated: { outlineChapterId: "chapter-1", paragraphs: [{ template: `${generatedText}{{WF1}}` }], slots: [{ id: "WF1", kind: "wordForm" as const, knowledgePointKey: "KP1", answer: "found", cue: "find" }] }, parseError: null }],
+      chapters: [{ outlineChapterId: "chapter-1", generated: { outlineChapterId: "chapter-1", paragraphs: [{ template: `${generatedText}{{WF1}}` }], slots: [{ id: "WF1", kind: "wordForm" as const, knowledgePointKey: "G1", answer: "found", cue: "find" }] }, parseError: null }],
       mainIdea: { title: "Main Idea", text: Array(178).fill("summary").join(" ") },
       mainIdeaError: null,
     }));
-    const repairReading = vi.fn();
-    const repairMainIdea = vi.fn(async () => ({ title: "Main Idea", text: Array(120).fill("summary").join(" ") }));
+    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v4" as const, repairs: [], mainIdea: { text: Array(120).fill("summary").join(" ") } }));
     const generateExercises = vi.fn();
-    const deps = { generateReading, repairReading, repairMainIdea, generateExercises } as unknown as CourseContentGenerationDeps;
+    const deps = { generateReading, repairReading, generateExercises } as unknown as CourseContentGenerationDeps;
 
     const result = await generateCourseReading(db, "course-1", "request-1", deps);
     const exerciseResult = await generateCourseExercises(db, "course-1", "request-2", deps);
@@ -246,12 +248,13 @@ describe("course content repository", () => {
     expect(result.chapters[0]?.title).toBe("发光地图 / The Glowing Map");
     expect(exerciseResult.status).toBe("ready");
     expect(generateReading).toHaveBeenCalledTimes(1);
+    expect((generateReading.mock.calls as unknown[][])[0]?.[0]).toMatchObject({ contentIntent: { kind: "concept", objective: "理解重力", learningTargets: [{ expectedUnderstanding: "物体之间会相互吸引" }] } });
     expect(generateExercises).not.toHaveBeenCalled();
-    expect(repairReading).not.toHaveBeenCalled();
-    expect(repairMainIdea).toHaveBeenCalledTimes(1);
-    expect((repairMainIdea.mock.calls as unknown[][])[0]?.[1]).toBe("A2");
+    expect(repairReading).toHaveBeenCalledTimes(1);
+    expect((repairReading.mock.calls as unknown[][])[0]?.[2]).toEqual([]);
+    expect((repairReading.mock.calls as unknown[][])[0]?.[3]).toMatchObject({ issues: [expect.stringContaining("Main Idea")] });
     expect(result.mainIdea?.title).toBe("Main Idea Reading Practice");
-    expect(messages.some((message) => message.content.includes("正在单独修复课后阅读"))).toBe(true);
+    expect(messages.some((message) => message.content.includes("一次统一修复全部失败位置"))).toBe(true);
     expect(messages.map((message) => message.content)).toContain("我确认正文与课后阅读，请生成章节与课后练习。");
     expect(exerciseResult.messages.map((message) => message.content)).toEqual(messages.map((message) => message.content));
   });
@@ -281,15 +284,15 @@ describe("course content repository", () => {
       aiGenerationLog: { create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "ai-log", ...data })) },
     } as unknown as CourseContentDb;
     const words = Array.from({ length: 49 }, (_, index) => `word${index + 1}`).join(" ");
-    const generatedChapter = (id: string, template: string) => ({ outlineChapterId: id, paragraphs: [{ template }], slots: [{ id: "WF1", kind: "wordForm" as const, knowledgePointKey: "KP1", answer: "found", cue: "find" }] });
+    const generatedChapter = (id: string, template: string) => ({ outlineChapterId: id, paragraphs: [{ template }], slots: [{ id: "WF1", kind: "wordForm" as const, knowledgePointKey: "G1", answer: "found", cue: "find" }] });
     const chapter1 = generatedChapter("chapter-1", `${words} {{WF1}}`);
     const chapter2 = generatedChapter("chapter-2", `${words} stayed`);
     const generateReading = vi.fn(async () => ({ envelopeError: null, chapters: [
       { outlineChapterId: "chapter-1", generated: chapter1, parseError: null },
       { outlineChapterId: "chapter-2", generated: chapter2, parseError: null },
-    ], mainIdea: { text: Array(120).fill("summary").join(" ") }, mainIdeaError: null, usage: { inputTokens: 100, outputTokens: 80, visibleOutputTokens: 60, reasoningTokens: 20, totalTokens: 180 } }));
-    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v2" as const, repairs: [{ kind: "paragraph" as const, outlineChapterId: "chapter-2", paragraphIndex: 0, template: `${words} {{WF1}}`, slots: [] }], usage: { inputTokens: 40, outputTokens: 20, visibleOutputTokens: 15, reasoningTokens: 5, totalTokens: 60 } }));
-    const deps = { generateReading, repairReading, repairMainIdea: vi.fn() } as unknown as CourseContentGenerationDeps;
+    ], mainIdea: { text: Array(120).fill("summary").join(" ") }, mainIdeaError: null, candidateUsage: { inputTokens: 70, outputTokens: 50, visibleOutputTokens: 45, reasoningTokens: 5, totalTokens: 120 }, usage: { inputTokens: 100, outputTokens: 80, visibleOutputTokens: 60, reasoningTokens: 20, totalTokens: 180 } }));
+    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v4" as const, repairs: [{ kind: "paragraph" as const, outlineChapterId: "chapter-2", paragraphIndex: 0, template: `${words} {{WF1}}`, slots: [] }], usage: { inputTokens: 40, outputTokens: 20, visibleOutputTokens: 15, reasoningTokens: 5, totalTokens: 60 } }));
+    const deps = { generateReading, repairReading } as unknown as CourseContentGenerationDeps;
 
     const result = await generateCourseReading(db, "course-1", "request-1", deps);
 
@@ -299,7 +302,9 @@ describe("course content repository", () => {
     expect(Reflect.get((repairReading.mock.calls as unknown[][])[0]?.[2] as object, "0")).toMatchObject({ requirements: { outlineChapterId: "chapter-2" } });
     expect(result.chapters[0]?.paragraphs.flatMap((paragraph) => paragraph.parts).some((part) => part.type === "grammar" && part.answer === "found")).toBe(true);
     expect(result.chapters[1]?.validationIssues).toEqual([]);
-    expect(db.aiGenerationLog?.create).toHaveBeenCalledTimes(2);
+    expect(db.aiGenerationLog?.create).toHaveBeenCalledTimes(3);
+    expect(db.aiGenerationLog?.create).toHaveBeenCalledWith({ data: expect.objectContaining({ operation: "reading_v2_candidate", outputSnapshot: expect.objectContaining({ tokenUsage: expect.objectContaining({ totalTokens: 120 }), phase: "candidate_positions" }) }) });
+    expect(db.aiGenerationLog?.create).toHaveBeenCalledWith({ data: expect.objectContaining({ operation: "reading_v2_final", outputSnapshot: expect.objectContaining({ tokenUsage: expect.objectContaining({ totalTokens: 180 }), firstPassReady: false }) }) });
     expect(db.aiGenerationLog?.create).toHaveBeenCalledWith({ data: expect.objectContaining({ operation: "reading_v2_repair", outputSnapshot: expect.objectContaining({ tokenUsage: expect.objectContaining({ totalTokens: 60 }), resolvedChapterCount: 1 }) }) });
   });
 });

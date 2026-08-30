@@ -1,0 +1,17 @@
+{
+  "scope": "story", "method": "prepareBackgroundKnowledge",
+  "args": [{
+    "task": "根据老师确认的创作理解，为后续故事生成准备一次必要背景知识。",
+    "confirmedRequirement": "{\"kind\":\"factual\",\"subjects\":[{\"name\":\"第二次世界大战\",\"kind\":\"topic\"}],\"factualFocus\":\"选择二战中的一个真实人物经历或真实事件，准确呈现其历史背景、关键过程、因果关系与结果。王老师、梅和俊进入历史场景，以观察、记录、见证和彼此交流的方式参与，不影响史实。\",\"sourceRequirements\":[],\"additionalConstraints\":{\"required\":[\"共5章\",\"英语难度为C1\",\"王老师、梅和俊全部参与故事\",\"不同故事方向只能比较真实历史视角\"],\"preferred\":[],\"excluded\":[\"改变真实历史的关键事件、因果、转折或结局\",\"让课堂人物推动或影响历史事件\"]}}",
+    "requirementBrief": { "kind": "factual", "subjects": [{ "name": "第二次世界大战", "kind": "topic" }], "factualFocus": "选择二战中的一个真实人物经历或真实事件，准确呈现其历史背景、关键过程、因果关系与结果。王老师、梅和俊进入历史场景，以观察、记录、见证和彼此交流的方式参与，不影响史实。", "sourceRequirements": [], "additionalConstraints": { "required": ["共5章", "英语难度为C1", "王老师、梅和俊全部参与故事", "不同故事方向只能比较真实历史视角"], "preferred": [], "excluded": ["改变真实历史的关键事件、因果、转折或结局", "让课堂人物推动或影响历史事件"] } },
+    "planningMode": "explore_options", "storyMode": "faithful", "classroomPresence": "observer", "chapterCount": 5, "englishLevel": "C1", "storyComplexity": "layered",
+    "coursePeople": [
+      { "personId": "teacher-wang", "role": "teacher", "chineseName": "王老师", "englishName": "Mr. Wang", "age": 40, "gender": "male" },
+      { "personId": "student-mei", "role": "student", "chineseName": "梅", "englishName": "May", "age": 16, "gender": "female" },
+      { "personId": "student-jun", "role": "student", "chineseName": "俊", "englishName": "Jay", "age": 16, "gender": "male" }
+    ],
+    "conversationHistory": [{ "role": "teacher", "content": "给学生讲一下二战的某个故事" }, { "role": "teacher", "content": "我确认这份创作理解。" }],
+    "references": [], "selectedDirection": null, "currentDirections": [], "currentOutline": null
+  }],
+  "bootstrapResponses": ["{\"status\":\"ready\",\"references\":[{\"name\":\"二战真实事件候选范围\",\"type\":\"other\",\"sourceStatus\":\"confirmed\",\"summary\":\"可从平民、救援或关键历史事件选择适龄视角。\",\"usableFacts\":[\"事件必须依据公开史实\",\"课堂人物不改变历史\"],\"avoidTopics\":[],\"adaptationBoundary\":\"只忠实讲述可确认事实。\"}]}"]
+}

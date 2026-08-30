@@ -1,16 +1,20 @@
 import { z } from "zod";
 
-import type { CourseContentChapter, CourseContentPart, CourseGrammarQuestion, EnglishLevel, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
-import { buildCleanParagraphText } from "@/lib/domain/course-content";
+import type { CourseContentChapter, CourseContentPart, CourseGrammarQuestion, EnglishLevel, StoryContentIntent, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
+import { buildCleanParagraphText, englishWordCount } from "@/lib/domain/course-content";
 import { defaultStoryComplexity, englishWordRangesForTarget, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import { createStoryOutlineProvider } from "@/lib/server/ai/story-outline-provider";
 import type { AiProviderSettingsInput } from "@/lib/ai-gateway";
 import { devAiLog } from "@/lib/server/ai/dev-ai-log";
 import {
+  applyReadingReview,
   buildReadingTemplatePrompt,
+  buildReadingTemplateFinalizationPrompt,
   buildReadingTemplateRepairPrompt,
   chapterTemplateRepairBundleSchema,
   parseReadingTemplatePayload,
+  readingCandidateEnvelopeSchema,
+  readingReviewBundleSchema,
   type ChapterTemplateIssue,
   type ChapterTemplateRequirements,
   type GeneratedChapterTemplate,
@@ -18,7 +22,6 @@ import {
 } from "@/lib/server/ai/course-content-template";
 import {
   generatedExercisesSchema,
-  generatedMainIdeaSchema,
   generatedModificationSchema,
   parseAiJson,
 } from "@/lib/server/validation/course-content";
@@ -29,6 +32,7 @@ export type CourseContentPromptInput = Pick<TeachingPlanState, "course" | "outli
   lengthPolicy?: TeachingPlanState["lengthPolicy"];
   promptPeople?: CourseContentPromptPerson[];
   promptCharacters?: CourseContentPromptCharacter[];
+  contentIntent?: StoryContentIntent;
 };
 export type CleanChapterInput = { outlineChapterId: string; title: string; cleanText: string };
 export type ReadingTemplateRepairTarget = {
@@ -47,25 +51,25 @@ function replaceStoryCharacterNames(value: string, characters: CourseContentProm
 }
 
 function pointMap(input: CourseContentPromptInput) {
-  return new Map(input.knowledgePoints.map((point, index) => [point.id, {
+  return new Map(input.knowledgePoints.map((point, index) => [point.id, Object.fromEntries(Object.entries({
     key: `KP${index + 1}`,
     label: point.label,
     category: point.category,
-    bookTitle: point.bookTitle,
-    edition: point.edition,
-    officialLevel: point.officialLevel,
     unitStart: point.unitStart,
     unitEnd: point.unitEnd,
     sourceUnits: point.units,
-  }]));
+  }).filter(([, value]) => value !== undefined)) as { key: string; label: string; category?: string; unitStart?: number; unitEnd?: number; sourceUnits?: TeachingPlanState["knowledgePoints"][number]["units"] }]));
+}
+
+function grammarSource(input: CourseContentPromptInput) {
+  const point = input.knowledgePoints.find((candidate) => candidate.bookTitle && candidate.edition && candidate.officialLevel);
+  return point?.bookTitle && point.edition && point.officialLevel
+    ? { bookTitle: point.bookTitle, edition: point.edition, officialLevel: point.officialLevel }
+    : undefined;
 }
 
 function selectedPoints(ids: string[], points: ReturnType<typeof pointMap>) {
   return ids.map((id) => points.get(id)).filter((point): point is NonNullable<ReturnType<typeof pointMap> extends Map<string, infer T> ? T : never> => Boolean(point));
-}
-
-function englishWordCount(text: string) {
-  return (text.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) ?? []).length;
 }
 
 const CEFR_WRITING_PROFILES: Record<EnglishLevel, string> = {
@@ -85,6 +89,7 @@ export function cefrWritingProfile(level: string | undefined) {
 }
 
 export const cefrWritingQualityRules = [
+  "英语正确性是最高优先级：所有正文、题干、答案和答案回填后的完整句都必须语法、时态、主谓一致、单复数、代词、助动词、介词、语序和时间逻辑正确；不得为了题量、知识点覆盖、字数或故事表达保留错误英语。",
   "把 context.englishLevel 和 context.cefrWritingProfile 作为全部英文生成与改写的硬约束，而不是风格建议。",
   "CEFR 只改变表达方式：不得因此删除、增加、重排或改变上游核心事件、人物行动、因果关系和结局。",
   "低等级应删减非必要修饰、隐喻和心理描写，但仍要用完整句和明确连接词讲清行动、原因与结果；禁止用互不衔接的电报式短句伪装简单英语。",
@@ -117,6 +122,7 @@ export function buildReadingPromptContext(input: CourseContentPromptInput) {
   return {
     storyTitle: replaceNames(input.outline.title),
     storySummary: replaceNames(input.outline.summary ?? ""),
+    contentIntent: input.contentIntent,
     englishLevel: input.course.englishLevel,
     cefrWritingProfile: cefrWritingProfile(input.course.englishLevel),
     storyComplexity: lengthPolicy.storyComplexity,
@@ -131,6 +137,7 @@ export function buildReadingPromptContext(input: CourseContentPromptInput) {
         storyRole: replaceNames(role),
       };
     }),
+    ...(grammarSource(input) ? { grammarSource: grammarSource(input) } : {}),
     chapters: input.outline.chapters.map((outline) => {
       const plan = input.plan.chapters.find((chapter) => chapter.outlineChapterId === outline.id)!;
       const targetWordCount = plan.targetWordCount ?? 90;
@@ -167,14 +174,19 @@ export function buildReadingTemplateRequirements(input: CourseContentPromptInput
   const points = pointMap(input);
   return input.outline.chapters.map((outline) => {
     const plan = input.plan.chapters.find((chapter) => chapter.outlineChapterId === outline.id)!;
+    const grammarPoints = plan.knowledgePointIds.flatMap((knowledgePointId, index) => {
+      const point = points.get(knowledgePointId);
+      return point ? [{ ...point, key: `G${index + 1}`, knowledgePointId }] : [];
+    });
     return {
       outlineChapterId: outline.id,
+      narrativeTense: "past" as const,
       paragraphCount: plan.paragraphCount,
       targetWordCount: plan.targetWordCount ?? 90,
       optionClozeCount: plan.readingExercises.grammar.optionCloze,
       wordFormCount: plan.readingExercises.grammar.wordForm,
       vocabularyCount: plan.readingExercises.vocabulary.chineseHint,
-      grammarPoints: selectedPoints(plan.knowledgePointIds, points),
+      grammarPoints,
     };
   });
 }
@@ -185,12 +197,14 @@ export function buildReadingTemplatePromptContext(input: CourseContentPromptInpu
   return {
     storyTitle: context.storyTitle,
     storySummary: context.storySummary,
+    contentIntent: context.contentIntent,
     englishLevel: context.englishLevel ?? "",
     cefrWritingProfile: context.cefrWritingProfile,
     storyComplexity: context.storyComplexity,
     storyComplexityProfile: context.storyComplexityProfile,
     people: context.people,
     storyCharacters: context.storyCharacters,
+    ...(context.grammarSource ? { grammarSource: context.grammarSource } : {}),
     chapters: context.chapters.map((chapter) => ({
       id: chapter.id,
       order: chapter.order,
@@ -200,14 +214,6 @@ export function buildReadingTemplatePromptContext(input: CourseContentPromptInpu
       ...(chapter.knowledgePointUsagePlan ? { knowledgePointUsagePlan: chapter.knowledgePointUsagePlan } : {}),
     })),
     mainIdea: context.mainIdea,
-    qualityRules: [
-      ...readingStoryQualityRules,
-      optionOutputRule,
-      optionQualityRule,
-      wordFormOutputRule.replaceAll("baseForm", "cue"),
-      vocabularyQualityRule,
-      ...readingGrammarCoherenceRules,
-    ],
   };
 }
 
@@ -221,23 +227,30 @@ export function mainIdeaWordCountPolicy(targetWordCount: number) {
 
 export function buildExercisePromptContext(input: CourseContentPromptInput, cleanChapters: CleanChapterInput[]) {
   const points = pointMap(input);
+  const chapterSpecs = cleanChapters.flatMap((clean) => {
+    const plan = input.plan.chapters.find((chapter) => chapter.outlineChapterId === clean.outlineChapterId)!;
+    if (!plan.chapterPractice.enabled) return [];
+    return [{
+      id: clean.outlineChapterId,
+      title: clean.title,
+      cleanText: clean.cleanText,
+      knowledgePointKeys: selectedPoints(plan.knowledgePointIds, points).map((point) => point.key),
+      counts: { ...plan.chapterPractice.grammar },
+    }];
+  });
+  const homeworkKeys = input.plan.afterClassPractice.practice.enabled
+    ? selectedPoints(input.plan.afterClassPractice.knowledgePointIds, points).map((point) => point.key)
+    : [];
+  const usedKeys = new Set([...chapterSpecs.flatMap((chapter) => chapter.knowledgePointKeys), ...homeworkKeys]);
   return {
     englishLevel: input.course.englishLevel,
     cefrWritingProfile: cefrWritingProfile(input.course.englishLevel),
-    chapters: cleanChapters.flatMap((clean) => {
-      const plan = input.plan.chapters.find((chapter) => chapter.outlineChapterId === clean.outlineChapterId)!;
-      if (!plan.chapterPractice.enabled) return [];
-      return [{
-        id: clean.outlineChapterId,
-        title: clean.title,
-        cleanText: clean.cleanText,
-        grammarPoints: selectedPoints(plan.knowledgePointIds, points),
-        counts: { ...plan.chapterPractice.grammar },
-      }];
-    }),
+    ...(grammarSource(input) ? { grammarSource: grammarSource(input) } : {}),
+    knowledgePoints: [...points.values()].filter((point) => usedKeys.has(point.key)),
+    chapters: chapterSpecs,
     homework: {
       enabled: input.plan.afterClassPractice.practice.enabled,
-      grammarPoints: selectedPoints(input.plan.afterClassPractice.knowledgePointIds, points),
+      knowledgePointKeys: homeworkKeys,
       counts: input.plan.afterClassPractice.practice.enabled ? { ...input.plan.afterClassPractice.practice.grammar } : { optionCloze: 0, wordForm: 0 },
     },
   };
@@ -322,8 +335,8 @@ const schemaDescriptions = {
 } as const;
 
 const optionOutputRule = "选项填空必须返回 answer 和 distractors；distractors 恰好两个、互不重复且都不等于 answer。禁止返回 options，程序会把 answer 与 distractors 合并并打乱。";
-const optionQualityRule = "两个干扰项必须与答案属于相同词性或语法维度，在当前句子中具有合理迷惑性，但拼回完整句子后只能有 answer 一个正确答案；不要使用明显无关的随机词。";
-const wordFormOutputRule = "给词填空必须返回 answer 和 baseForm；baseForm 是题目括号中显示的提示词，answer 必须使完整句子语法正确。根据句法需要，answer 可以发生词形变化，也可以与 baseForm 相同；不要为了制造变化而写错句子。";
+const optionQualityRule = "两个干扰项必须与答案属于相同词性或语法维度；每项都必须是标准英语中真实存在、拼写正确的完整词形或结构，禁止虚构变形或残缺助动词、情态动词结构。分别把 answer 和每个 distractor 拼回 before+空格+after：只要干扰项在当前语法、时间线和语义中也成立，就先改写 before/after 提供决定性线索；不能把‘不如 answer 合适’当作错误，也不要使用明显无关的随机词。";
+const wordFormOutputRule = "给词填空必须返回 answer 和 baseForm；baseForm 是括号提示词，answer 必须使完整句正确且空格本身考查绑定知识点。构成目标语法的功能词、助动词或情态词必须包含在 answer 内，不得预先写进 before/after；若目标是 to + verb，answer 必须是完整的 'to verb'，不得把 to 放进 before 后只让学生照抄 verb。仅在句子其他位置出现知识点不算考查。answer 可按句法变化或与 baseForm 相同，不得为制造变化写错句子。";
 const questionPositionRule = "before 是空格前文本，after 是空格后文本；不得包含下划线、题号、括号提示或答案，程序会在两者之间插入空格和提示。";
 const vocabularyQualityRule = "词汇题选择对当前 CEFR 学生有复用价值、能脱离本句复习的实词或常用词组；不要选择人物名、地名、纯功能词、缩写、带连字符的词或同一 canonicalForm 的重复项目。canonicalForm 使用词典原形，meaningZh 必须对应当前语境。";
 
@@ -333,12 +346,9 @@ export const courseContentPromptExamples = {
 } as const;
 
 export const readingGrammarCoherenceRules = [
-  "正文整体语法和故事时间线优先于题目植入：不得为了覆盖知识点或凑题量，写出与上下文不一致的时态、语态或动词形式。",
-  "先结合章节剧情、grammarPoints 和可选 knowledgePointUsagePlan 确定连贯的语言语境和叙事基准时态；使用计划只是精简语境提示，不能覆盖实际句意和语法规则。",
-  "先在内部形成语法、时间和逻辑正确的 clean text，再从其中自然存在的结构设置题目锚点；禁止先指定知识点答案或词形，再倒推正文句子。",
-  "若知识点无法自然放入现有句子，必须改写该句及必要的局部语境来提供真实使用条件，不能只替换词形；任何语言结构变化都必须有语义或上下文依据。",
-  "每个 grammar answer 拼回句子后必须是唯一正确形式，并检查主谓一致、代词指代、单复数、时态与体、语序及前后逻辑。",
-  "输出前按 parts 顺序拼接完整 clean text，通读并校对整章；发现题目答案破坏语法或时间线时，先修正文语境，再输出结构化 parts。",
+  "英语正确性高于题目植入：先结合章节剧情、grammarPoints、官方 Unit 和可选 knowledgePointUsagePlan 确定叙事基准时态及真实使用语境，不得为了覆盖知识点或凑题量制造错误英语。",
+  "先在内部形成语法、时间和逻辑正确的 clean text，再从自然存在的结构设置题目锚点；知识点无法自然嵌入时改写局部语境，禁止先定答案再倒推句子。",
+  "输出前回填全部 grammar answer 并通读，确认每句语法与时间线正确、选项只有一个正确答案；不要输出检查过程。",
 ] as const;
 
 export const readingStoryQualityRules = [
@@ -397,8 +407,9 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
     schemaKey: keyof typeof schemaDescriptions,
     parseMessage: string,
     timeoutMs?: number,
+    options: { reasoningEffort?: "low" | "medium" | "high"; maxOutputTokens?: number } = {},
   ): Promise<z.output<Schema>> => {
-    let raw = await call(writingProvider, operation, prompt, timeoutMs);
+    let raw = await call(writingProvider, operation, prompt, timeoutMs, options);
     for (let round = 0; round <= courseContentFormatRepairAttempts; round += 1) {
       try { return parseAiJson(raw, schema, parseMessage); }
       catch (error) {
@@ -415,41 +426,32 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
   return {
     generateReading: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider) => {
       const requirements = buildReadingTemplateRequirements(input);
-      const response = await callWithUsage(writingProvider, "content_generate_reading_v2", buildReadingTemplatePrompt(buildReadingTemplatePromptContext(input)), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 6_500 });
-      const payload = parseAiJson(response.text, z.unknown(), "正文与课后阅读不是有效 JSON");
-      return { ...parseReadingTemplatePayload(payload, requirements), usage: response.usage };
+      const context = buildReadingTemplatePromptContext(input);
+      const candidateResponse = await callWithUsage(writingProvider, "content_generate_reading_candidates_v3", buildReadingTemplatePrompt(context), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 6_500 });
+      const candidateOutput = parseAiJson(candidateResponse.text, readingCandidateEnvelopeSchema, "正文候选结构无效");
+      const finalResponse = await callWithUsage(writingProvider, "content_finalize_reading_questions_v3", buildReadingTemplateFinalizationPrompt(candidateOutput, context), contentReadingTimeoutMs(), { reasoningEffort: "high", maxOutputTokens: 6_500 });
+      const review = parseAiJson(finalResponse.text, readingReviewBundleSchema, "正文题目审核结构无效");
+      const payload = applyReadingReview(candidateOutput, review);
+      return { ...parseReadingTemplatePayload(payload, requirements), candidateUsage: candidateResponse.usage, usage: finalResponse.usage };
     },
 
-    repairReading: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, targets: ReadingTemplateRepairTarget[]) => {
-      const lengthPolicy = resolvedLengthPolicy(input);
-      const response = await callWithUsage(writingProvider, "content_repair_reading_v2", buildReadingTemplateRepairPrompt(targets, {
-        storyComplexity: lengthPolicy.storyComplexity,
-        storyComplexityProfile: storyComplexityWritingProfile(lengthPolicy.storyComplexity),
-      }), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 3_000 });
+    repairReading: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, targets: ReadingTemplateRepairTarget[], mainIdeaTarget?: { current: { text: string } | null; issues: string[] }) => {
+      const response = await callWithUsage(writingProvider, "content_repair_reading_v2", buildReadingTemplateRepairPrompt(targets, buildReadingTemplatePromptContext(input), mainIdeaTarget), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 6_500 });
       return { ...parseAiJson(response.text, chapterTemplateRepairBundleSchema, "正文最小修复结构解析失败"), usage: response.usage };
     },
 
-    repairMainIdea: async (writingProvider: StoryWritingProvider, englishLevel: string | undefined, currentMainIdea: unknown, issues: unknown, targetWordCount = 120) => structuredCall(writingProvider, "content_repair_main_idea", jsonOnly([
-      "只修复课后阅读，不修改或返回正文。保持原意，严格遵守 wordCountPolicy。",
-      ...cefrWritingQualityRules,
-      "返回 {text}，不要返回标题。",
-    ], { englishLevel, cefrWritingProfile: cefrWritingProfile(englishLevel), currentMainIdea, issues, wordCountPolicy: mainIdeaWordCountPolicy(targetWordCount) }), generatedMainIdeaSchema, "mainIdea", "课后阅读修复结构解析失败"),
-
     generateExercises: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, cleanChapters: CleanChapterInput[]) => structuredCall(writingProvider, "content_generate_exercises", jsonOnly([
-      "生成章节练习和课后语法练习，返回 {chapters:[{outlineChapterId,questions:[]}],homeworkGrammar:[]}。",
-      "question 只能是 optionQuestion={type:'optionCloze',knowledgePointKey,before,after,answer,distractors:[string,string]} 或 wordFormQuestion={type:'wordForm',knowledgePointKey,before,after,answer,baseForm}，不得混用字段。",
+      "生成全部章节练习和课后语法练习，只返回 {chapters:[{outlineChapterId,questions}],homeworkGrammar} 的严格 JSON。knowledgePointKey 只能取所属目标 knowledgePointKeys；其定义和官方 Unit 统一见 context.knowledgePoints，每个目标知识点至少被一道题独立考查。",
+      "question 只能是 optionCloze={type,knowledgePointKey,before,after,answer,distractors:[两个]} 或 wordForm={type,knowledgePointKey,before,after,answer,baseForm}，不得混用字段。",
       optionOutputRule,
       optionQualityRule,
       wordFormOutputRule,
       questionPositionRule,
-      ...cefrWritingQualityRules,
+      "英语正确性最高：每个答案回填句必须在语法、时态与体、主谓一致、单复数、代词、助动词、介词、语序和时间逻辑上正确，并严格符合 englishLevel 与 cefrWritingProfile；不得为覆盖或题量保留错误英语。",
       courseContentPromptExamples.questions,
-      "章节练习只依据本章 cleanText 改编，不复制原句、不与原文冲突，并严格满足本章 grammarPoints 和 counts。",
-      "课后练习不得依赖正文，只依据 englishLevel、homework.grammarPoints 和 homework.counts。",
-      "所有题干和答案使用英文。题目应表达完整、自然且符合 englishLevel 的意思，不为考查语法而制造不合常理的情节。",
-      "knowledgePointKey 只能取所属目标 grammarPoints 中的 key；每个要求的语法点至少被一道题独立考查。",
-      "输出前逐目标核对 id、两种题量、语法点覆盖和全部必填字段；不要输出核对过程。",
-    ], buildExercisePromptContext(input, cleanChapters)), generatedExercisesSchema, "exercises", "练习结构解析失败"),
+      "章节题只依据本章 cleanText 改编，不复制原句、不与原文冲突；课后题不得依赖正文。所有题干和答案使用自然、完整、符合等级的英文，不为考语法制造不合常理的情节；严格满足各目标 counts。",
+      "输出前逐题回填 answer 和每个 distractor，再逐目标核对 ID、两种题量、知识点覆盖与必填字段；先修正全部问题，不输出核对过程。",
+    ], buildExercisePromptContext(input, cleanChapters)), generatedExercisesSchema, "exercises", "练习结构解析失败", undefined, { reasoningEffort: "medium" }),
 
     repairExercises: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, failedTargets: Array<{ id: string; issues: string[] }>, currentExercises: z.infer<typeof generatedExercisesSchema>, cleanChapters: CleanChapterInput[]) => {
       const context = buildExercisePromptContext(input, cleanChapters);
@@ -465,8 +467,8 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
         questionPositionRule,
         ...cefrWritingQualityRules,
         courseContentPromptExamples.questions,
-        "保持每个目标要求的 id、题量和 knowledgePointKey 覆盖；输出前核对全部必填字段，不要输出核对过程。",
-      ], { englishLevel: context.englishLevel, cefrWritingProfile: context.cefrWritingProfile, targets }), generatedExercisesSchema, "exercises", "练习修复结构解析失败");
+        "保持每个目标要求的 id、题量和 knowledgePointKeys 覆盖；知识点定义与官方 Unit 见 knowledgePoints。输出前核对全部必填字段，不要输出核对过程。",
+      ], { englishLevel: context.englishLevel, cefrWritingProfile: context.cefrWritingProfile, grammarSource: context.grammarSource, knowledgePoints: context.knowledgePoints, targets }), generatedExercisesSchema, "exercises", "练习修复结构解析失败");
     },
 
     modifyContent: async (writingProvider: StoryWritingProvider, targetType: string, target: unknown, instruction: string, constraints: unknown, relatedContext: Record<string, unknown>) => structuredCall(writingProvider, "content_modify_target", jsonOnly([

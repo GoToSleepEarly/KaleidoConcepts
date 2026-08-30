@@ -1,0 +1,26 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "prepareBackgroundKnowledge"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "status": "ready",
+    "references": [
+      {
+        "name": "二战真实事件候选范围",
+        "type": "other",
+        "sourceStatus": "confirmed",
+        "summary": "可从平民、救援或关键历史事件选择适龄视角。",
+        "usableFacts": [
+          "事件必须依据公开史实",
+          "课堂人物不改变历史"
+        ],
+        "avoidTopics": [],
+        "adaptationBoundary": "只忠实讲述可确认事实。"
+      }
+    ]
+  },
+  "error": null
+}

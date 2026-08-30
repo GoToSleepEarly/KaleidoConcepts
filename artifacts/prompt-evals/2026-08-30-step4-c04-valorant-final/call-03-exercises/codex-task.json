@@ -1,0 +1,10 @@
+{
+  "threadId": "01a0513a-021b-7b50-80a6-0cbf57a8361c",
+  "turnId": "01a0513a-04a0-7551-9309-f1ec938fe9ab",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": "medium",
+  "durationMs": 42289,
+  "promptPath": "../bootstrap-exercises/01-prompt.txt",
+  "promptCharacters": 4999,
+  "outputCharacters": 3097
+}

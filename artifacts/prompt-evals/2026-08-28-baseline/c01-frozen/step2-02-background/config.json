@@ -1,0 +1,53 @@
+{
+  "scope": "story",
+  "method": "prepareBackgroundKnowledge",
+  "args": [
+    {
+      "task": "根据老师确认的创作理解，为后续故事生成准备一次必要背景知识。",
+      "confirmedRequirement": "{\"kind\":\"narrative\",\"objective\":\"以《冰雪奇缘》的世界或核心人物为基础，让林老师、夏天和晨曦共同参与一场全新的奇幻探险。\",\"sourceRequirements\":[{\"name\":\"《冰雪奇缘》\",\"useInCourse\":\"使用原作世界或核心人物创作新的冒险情节\"}],\"requiredNamedCharacters\":[],\"fixedPlot\":null,\"additionalConstraints\":{\"required\":[\"全篇共4章\",\"英语难度为A2\",\"林老师、夏天和晨曦全部参与故事\"],\"preferred\":[],\"excluded\":[]}}",
+      "requirementBrief": {
+        "kind": "narrative",
+        "objective": "以《冰雪奇缘》的世界或核心人物为基础，让林老师、夏天和晨曦共同参与一场全新的奇幻探险。",
+        "sourceRequirements": [
+          {
+            "name": "《冰雪奇缘》",
+            "useInCourse": "使用原作世界或核心人物创作新的冒险情节"
+          }
+        ],
+        "requiredNamedCharacters": [],
+        "fixedPlot": null,
+        "additionalConstraints": {
+          "required": [
+            "全篇共4章",
+            "英语难度为A2",
+            "林老师、夏天和晨曦全部参与故事"
+          ],
+          "preferred": [],
+          "excluded": []
+        }
+      },
+      "planningMode": "explore_options",
+      "storyMode": "new_story",
+      "classroomPresence": "participant",
+      "chapterCount": 4,
+      "englishLevel": "A2",
+      "storyComplexity": "clear_linear",
+      "coursePeople": [
+        { "personId": "teacher-lin", "role": "teacher", "chineseName": "林老师", "englishName": "Ms. Lin", "age": 32, "gender": "female" },
+        { "personId": "student-xiatian", "role": "student", "chineseName": "夏天", "englishName": "Summer", "age": 10, "gender": "female" },
+        { "personId": "student-chenxi", "role": "student", "chineseName": "晨曦", "englishName": "Dawn", "age": 10, "gender": "male" }
+      ],
+      "conversationHistory": [
+        { "role": "teacher", "content": "根据《冰雪奇缘》，创造一个奇幻探险故事" },
+        { "role": "teacher", "content": "我确认这份创作理解。" }
+      ],
+      "references": [],
+      "selectedDirection": null,
+      "currentDirections": [],
+      "currentOutline": null
+    }
+  ],
+  "bootstrapResponses": [
+    "{\"status\":\"ready\",\"references\":[{\"name\":\"《冰雪奇缘》核心设定\",\"type\":\"ip\",\"sourceStatus\":\"confirmed\",\"summary\":\"阿伦黛尔王国中，艾莎拥有冰雪魔法，安娜重视家人与行动。\",\"usableFacts\":[\"艾莎能创造和控制冰雪\",\"安娜勇敢主动并重视家人\",\"阿伦黛尔是核心王国场景\"],\"avoidTopics\":[],\"adaptationBoundary\":\"只借用世界和核心人物创作新事件，不复写原作主线。\"}]}"
+  ]
+}

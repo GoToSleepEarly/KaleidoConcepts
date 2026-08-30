@@ -1,0 +1,28 @@
+[
+  {
+    "stage": "reading_and_main_idea_prompt_v4b_low",
+    "threadId": "01a04966-4b65-7ab2-9991-6818a6b6b799",
+    "turnId": "01a04966-4edf-74b0-962f-c656cd8464e7",
+    "model": "gpt-5.6-sol",
+    "thinking": "low",
+    "promptCharacters": 8462,
+    "outputCharacters": 9647,
+    "outputUtf8Bytes": 9780,
+    "durationMs": 56304,
+    "structuralFirstPassReady": false,
+    "manualContentFirstPassReady": false
+  },
+  {
+    "stage": "reading_and_main_idea_prompt_v4b_medium",
+    "threadId": "01a04968-162a-71d2-a94d-e8a736e965ba",
+    "turnId": "01a04968-1978-79e3-89a1-58f1fb6ff49d",
+    "model": "gpt-5.6-sol",
+    "thinking": "medium",
+    "promptCharacters": 8462,
+    "outputCharacters": 9464,
+    "outputUtf8Bytes": 9613,
+    "durationMs": 145002,
+    "structuralFirstPassReady": false,
+    "manualContentFirstPassReady": false
+  }
+]

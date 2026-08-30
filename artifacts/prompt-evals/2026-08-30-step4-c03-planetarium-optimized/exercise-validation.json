@@ -1,0 +1,40 @@
+{
+  "firstPassReady": true,
+  "chapters": [
+    {
+      "id": "new-grammar-ch1",
+      "pass": true,
+      "issues": [],
+      "questionCount": 4
+    },
+    {
+      "id": "new-grammar-ch2",
+      "pass": true,
+      "issues": [],
+      "questionCount": 4
+    },
+    {
+      "id": "new-grammar-ch3",
+      "pass": true,
+      "issues": [],
+      "questionCount": 4
+    },
+    {
+      "id": "new-grammar-ch4",
+      "pass": true,
+      "issues": [],
+      "questionCount": 4
+    },
+    {
+      "id": "new-grammar-ch5",
+      "pass": true,
+      "issues": [],
+      "questionCount": 4
+    }
+  ],
+  "homework": {
+    "pass": true,
+    "issues": [],
+    "questionCount": 5
+  }
+}

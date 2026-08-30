@@ -1,0 +1,14 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateOutline"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": null,
+  "error": {
+    "name": "StoryOutlineResponseError",
+    "message": "第 4 章概述超过 45 字生成上限（实际 49 字），请重试本步",
+    "stack": "StoryOutlineResponseError: 第 4 章概述超过 45 字生成上限（实际 49 字），请重试本步\n    at enforceChineseGenerationMax (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\story-outline-deps.ts:122:11)\n    at <anonymous> (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\story-outline-deps.ts:1421:9)\n    at Array.map (<anonymous>)\n    at Object.generateOutline (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\story-outline-deps.ts:1398:40)\n    at async main (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\scripts\\prompt-eval\\run-manual-ai-operation.ts:98:14)"
+  }
+}

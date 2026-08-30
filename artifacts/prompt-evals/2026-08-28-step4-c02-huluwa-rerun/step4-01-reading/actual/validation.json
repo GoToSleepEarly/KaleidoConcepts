@@ -1,0 +1,513 @@
+{
+  "config": {
+    "scope": "content",
+    "method": "generateReading"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "envelopeError": null,
+    "mainIdea": {
+      "text": "When a magic gourd pulled Summer, Ms. Lin, Grandpa, and the seven brothers into the Reverse Valley, they discovered that strength alone could not open the shrinking exit. The valley turned each brother's power into a colored mark only after that power helped a companion. Big Brother supported a bridge, Second Brother found a safe route, and Third Brother blocked danger. Fourth and Fifth Brothers controlled fire and water, while Sixth Brother rescued Grandpa from a thorny platform. Seventh Brother changed the gourd from a tool for capturing others into a tool that returned the final marks. With Summer observing the team, Ms. Lin organizing their steps, and Grandpa explaining the carved order, the brothers placed all seven marks correctly. Their cooperation opened the gate, brought everyone home, and ended the Snake Spirit's spell."
+    },
+    "mainIdeaError": null,
+    "chapters": [
+      {
+        "outlineChapterId": "cmsu9kz48000t8gvo6ip8vpb3",
+        "generated": {
+          "outlineChapterId": "cmsu9kz48000t8gvo6ip8vpb3",
+          "paragraphs": [
+            {
+              "template": "The magic gourd suddenly {{OC1}} everyone into the Reverse Valley. Above them, the Snake Spirit {{OC2}} a spell, and the rocky exit quickly {{WF1}}. Big Brother rushed toward it, but the ground shook harder. Ms. Lin asked Summer to slow the team down. Summer {{OC3}} a broken stone bridge ahead and called Big Brother over."
+            },
+            {
+              "template": "Big Brother {{WF2}} the heavy bridge while Summer guided its loose end into place. Rolling stones {{OC4}} down the slope, so Third Brother raised his strong body and blocked them. The others crossed the steady {{VOC1}} safely. A bright red {{VOC2}} then appeared above Big Brother's hands. Grandpa {{WF3}} at its light, and everyone understood the valley's {{VOC3}}: a power worked only after it helped a companion."
+            }
+          ],
+          "slots": [
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP4",
+              "answer": "pulled",
+              "distractors": [
+                "pulls",
+                "was pulling"
+              ]
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP4",
+              "answer": "began",
+              "distractors": [
+                "begins",
+                "was beginning"
+              ]
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP4",
+              "answer": "noticed",
+              "distractors": [
+                "notices",
+                "was noticing"
+              ]
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP4",
+              "answer": "fell",
+              "distractors": [
+                "fall",
+                "were falling"
+              ]
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "shrank",
+              "cue": "shrink"
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "lifted",
+              "cue": "lift"
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "pointed",
+              "cue": "point"
+            },
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "bridge",
+              "canonicalForm": "bridge",
+              "meaningZh": "桥"
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "mark",
+              "canonicalForm": "mark",
+              "meaningZh": "印记"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "rule",
+              "canonicalForm": "rule",
+              "meaningZh": "规则"
+            }
+          ]
+        },
+        "parseError": null
+      },
+      {
+        "outlineChapterId": "cmsu9kz48000u8gvo13knwv1u",
+        "generated": {
+          "outlineChapterId": "cmsu9kz48000u8gvo13knwv1u",
+          "paragraphs": [
+            {
+              "template": "Beyond the bridge, the path narrowed into a hot stone crack. Strong wind {{OC1}} anyone who moved alone toward the walls. Second Brother studied the dust and {{WF1}} the hidden air vents. He called, \"The wind {{OC2}} harder near the left wall, but the middle path is safe.\" Fifth Brother {{OC3}} small flames dancing across the hot stones."
+            },
+            {
+              "template": "Fifth Brother said, \"I {{OC4}} the stones now, so wait behind me.\" He {{WF2}} water over the flames and cooled the narrow {{VOC1}}. Following Ms. Lin's plan, Summer {{WF3}} everyone into two groups. Second Brother led the first group along the safe route, and Fifth Brother protected the second. When all of them crossed the {{VOC2}}, two new marks appeared together, and a stone {{VOC3}} opened toward the valley's center."
+            }
+          ],
+          "slots": [
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP4",
+              "answer": "threw",
+              "distractors": [
+                "throws",
+                "was throwing"
+              ]
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP2",
+              "answer": "is blowing",
+              "distractors": [
+                "blows",
+                "blew"
+              ]
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP4",
+              "answer": "saw",
+              "distractors": [
+                "sees",
+                "was seeing"
+              ]
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP2",
+              "answer": "am cooling",
+              "distractors": [
+                "cool",
+                "cooled"
+              ]
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "found",
+              "cue": "find"
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "poured",
+              "cue": "pour"
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "divided",
+              "cue": "divide"
+            },
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "passage",
+              "canonicalForm": "passage",
+              "meaningZh": "通道"
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "crack",
+              "canonicalForm": "crack",
+              "meaningZh": "裂缝"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "doorway",
+              "canonicalForm": "doorway",
+              "meaningZh": "门口"
+            }
+          ]
+        },
+        "parseError": null
+      },
+      {
+        "outlineChapterId": "cmsu9kz48000v8gvoyonaompl",
+        "generated": {
+          "outlineChapterId": "cmsu9kz48000v8gvoyonaompl",
+          "paragraphs": [
+            {
+              "template": "At the valley's center, a tight {{VOC1}} of thorns surrounded a high stone platform. Grandpa was trapped above it. When Big Brother stepped forward, the vines {{OC1}} closer. Sixth Brother {{WF1}} invisible and slipped through a small opening. From inside, he called, \"The thorns {{OC2}} around Grandpa, so nobody should push the net.\" Then he {{OC3}} a rope up to Grandpa."
+            },
+            {
+              "template": "Sixth Brother guided Grandpa toward the safe side and {{WF2}} Fourth Brother where to aim. Fourth Brother said, \"I {{OC4}} only the empty gap.\" After checking everyone's position, he burned a narrow opening through the {{VOC2}}. Sixth Brother lowered Grandpa safely, and another two marks shone. Grandpa then {{WF3}} carved lines on the stone platform. The ancient {{VOC3}} showed that all seven marks had to enter the exit in the order of the brothers' helpful acts."
+            }
+          ],
+          "slots": [
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP4",
+              "answer": "closed",
+              "distractors": [
+                "close",
+                "were closing"
+              ]
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP2",
+              "answer": "are tightening",
+              "distractors": [
+                "tighten",
+                "tightened"
+              ]
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP4",
+              "answer": "threw",
+              "distractors": [
+                "throws",
+                "was throwing"
+              ]
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP2",
+              "answer": "am burning",
+              "distractors": [
+                "burn",
+                "burned"
+              ]
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "became",
+              "cue": "become"
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "showed",
+              "cue": "show"
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "recognized",
+              "cue": "recognize"
+            },
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "net",
+              "canonicalForm": "net",
+              "meaningZh": "网"
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "thorns",
+              "canonicalForm": "thorn",
+              "meaningZh": "荆棘"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "pattern",
+              "canonicalForm": "pattern",
+              "meaningZh": "图案"
+            }
+          ]
+        },
+        "parseError": null
+      },
+      {
+        "outlineChapterId": "cmsu9kz48000w8gvoua2vqif2",
+        "generated": {
+          "outlineChapterId": "cmsu9kz48000w8gvoua2vqif2",
+          "paragraphs": [
+            {
+              "template": "Near the exit, the Snake Spirit {{OC1}} her spell backward. The last two marks flew toward the magic gourd, and anyone who grabbed them was thrown back. Seventh Brother raised the gourd, but he did not use it to capture anyone. He shouted, \"The spell {{OC2}} the marks toward us. We need to turn its force into help!\" Third Brother {{WF1}} in front of him."
+            },
+            {
+              "template": "Third Brother blocked the returning force while Big Brother {{OC3}} the mouth of the gourd steady. Seventh Brother said, \"I {{OC4}} the gourd toward that open crack now.\" He carefully {{WF2}} it away from the team. Instead of swallowing his companions, the gourd {{WF3}} the two marks through the {{VOC1}} and into their hands. The sixth and seventh {{VOC2}} glowed beside the others, and the team finally held the complete seven-color {{VOC3}}."
+            }
+          ],
+          "slots": [
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP4",
+              "answer": "chanted",
+              "distractors": [
+                "chants",
+                "was chanting"
+              ]
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP2",
+              "answer": "is pulling",
+              "distractors": [
+                "pulls",
+                "pulled"
+              ]
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP4",
+              "answer": "held",
+              "distractors": [
+                "holds",
+                "was holding"
+              ]
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP2",
+              "answer": "am pointing",
+              "distractors": [
+                "point",
+                "pointed"
+              ]
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "stood",
+              "cue": "stand"
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "turned",
+              "cue": "turn"
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "sent",
+              "cue": "send"
+            },
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "opening",
+              "canonicalForm": "opening",
+              "meaningZh": "开口"
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "marks",
+              "canonicalForm": "mark",
+              "meaningZh": "印记"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "set",
+              "canonicalForm": "set",
+              "meaningZh": "一整套"
+            }
+          ]
+        },
+        "parseError": null
+      },
+      {
+        "outlineChapterId": "cmsu9kz48000x8gvon6cymvbo",
+        "generated": {
+          "outlineChapterId": "cmsu9kz48000x8gvon6cymvbo",
+          "paragraphs": [
+            {
+              "template": "The team carried all seven marks to the shrinking exit, but its colors kept changing places. Grandpa showed Summer the carved pattern. Summer lifted the marks and said, \"The door {{OC1}} each helpful act, not each brother's usual place.\" Ms. Lin added, \"If everyone follows that order, the pattern {{OC2}} complete.\" The brothers {{WF1}} around the glowing {{VOC1}} and remembered whom they had helped first."
+            },
+            {
+              "template": "One by one, the seven brothers {{WF2}} their marks into the matching spaces. Summer checked every step and said, \"The colors {{OC3}} in the right order now. We {{OC4}} home together.\" The final mark clicked into the {{VOC2}}, and a seven-colored gate opened. Everyone {{WF3}} Grandpa through it and returned safely to his courtyard. Behind them, the Reverse Valley faded, the Snake Spirit's {{VOC3}} broke apart, and the magic gourd became quiet again."
+            }
+          ],
+          "slots": [
+            {
+              "id": "OC1",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP1",
+              "answer": "follows",
+              "distractors": [
+                "follow",
+                "is following"
+              ]
+            },
+            {
+              "id": "OC2",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP5",
+              "answer": "will become",
+              "distractors": [
+                "becomes",
+                "is becoming"
+              ]
+            },
+            {
+              "id": "OC3",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP1",
+              "answer": "match",
+              "distractors": [
+                "matches",
+                "are matching"
+              ]
+            },
+            {
+              "id": "OC4",
+              "kind": "optionCloze",
+              "knowledgePointKey": "KP5",
+              "answer": "will return",
+              "distractors": [
+                "return",
+                "are returning"
+              ]
+            },
+            {
+              "id": "WF1",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "gathered",
+              "cue": "gather"
+            },
+            {
+              "id": "WF2",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "placed",
+              "cue": "place"
+            },
+            {
+              "id": "WF3",
+              "kind": "wordForm",
+              "knowledgePointKey": "KP4",
+              "answer": "guided",
+              "cue": "guide"
+            },
+            {
+              "id": "VOC1",
+              "kind": "vocabulary",
+              "answer": "pattern",
+              "canonicalForm": "pattern",
+              "meaningZh": "图案"
+            },
+            {
+              "id": "VOC2",
+              "kind": "vocabulary",
+              "answer": "exit",
+              "canonicalForm": "exit",
+              "meaningZh": "出口"
+            },
+            {
+              "id": "VOC3",
+              "kind": "vocabulary",
+              "answer": "spell",
+              "canonicalForm": "spell",
+              "meaningZh": "咒语"
+            }
+          ]
+        },
+        "parseError": null
+      }
+    ]
+  },
+  "error": null
+}

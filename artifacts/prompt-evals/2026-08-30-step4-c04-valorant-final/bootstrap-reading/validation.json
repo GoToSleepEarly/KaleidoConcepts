@@ -1,0 +1,14 @@
+{
+  "config": {
+    "scope": "content",
+    "method": "generateReading"
+  },
+  "suppliedResponseCount": 0,
+  "capturedRequestCount": 1,
+  "result": null,
+  "error": {
+    "name": "Error",
+    "message": "课程内容服务连接失败，请稍后重试",
+    "stack": "Error: 课程内容服务连接失败，请稍后重试\n    at callWithUsage (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\course-content-deps.ts:392:13)\n    at async Object.generateReading (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\course-content-deps.ts:430:33)\n    at async main (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\scripts\\prompt-eval\\run-manual-ai-operation.ts:98:14)"
+  }
+}

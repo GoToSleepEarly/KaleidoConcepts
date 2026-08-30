@@ -1,0 +1,109 @@
+{
+  "envelopeError": null,
+  "firstPassReady": false,
+  "chapters": [
+    {
+      "outlineChapterId": "cmsysedkt00118gvo1i5r86fc",
+      "pass": true,
+      "wordCount": 119,
+      "paragraphWordCounts": [
+        54,
+        65
+      ],
+      "cleanParagraphs": [
+        "The remote rope of North Mountain's warning bell broke during the bitter cold. Anna, Elsa, Ms. Lin, and 2 stepped onto the turning Echo Bridge because they had to strike the emergency hammer before the blizzard arrived. While Anna was urging everyone forward, Elsa warned them left, and Ms. Lin called for an immediate stop.",
+        "As the three different directions were echoing across the bridge, its snowy surface split into spinning branches. Anna stepped onto one path too soon, so Elsa formed an ice span beneath her. Yet the new foothold drifted away from the tower with the confused paths. They retreated to the only stable platform at the center and realized that competing commands made every route more dangerous."
+      ],
+      "structuredIssues": [],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "cmsysedkt00128gvo46fyqzle",
+      "pass": false,
+      "wordCount": 115,
+      "paragraphWordCounts": [
+        59,
+        56
+      ],
+      "cleanParagraphs": [
+        "On the central platform, Elsa stopped building ice roads. “Magic has protected our feet, but it cannot choose for the bridge,” she said. Ms. Lin noted that their conflicting orders have caused the danger. She asked them to speak one at a time. Anna reported the crack ahead, while Elsa is checking which section is the most stable now.",
+        "As the snow is clearing, 2 spotted the bell tower on the right. The group has now organized every observation and agreed on one instruction: “Turn right.” After all four confirmed it, they spoke together. The bridge stopped dividing and became a straight route to the tower. Elsa is strengthening its edges while everyone is crossing safely."
+      ],
+      "structuredIssues": [
+        {
+          "code": "grammar_structure",
+          "target": "WF1",
+          "message": "WF1 的完整句未真实体现 Present Continuous"
+        },
+        {
+          "code": "grammar_structure",
+          "target": "WF2",
+          "message": "WF2 的完整句未真实体现 Present Perfect"
+        }
+      ],
+      "domainIssues": []
+    },
+    {
+      "outlineChapterId": "cmsysedkt00138gvofq0j3kel",
+      "pass": false,
+      "wordCount": 117,
+      "paragraphWordCounts": [
+        61,
+        56
+      ],
+      "cleanParagraphs": [
+        "Inside the tower, ice held the emergency hammer to its bracket, and violent gusts shook the ropes. Elsa said, “I am going to clear the ice first.” Anna answered, “Ms. Lin and I are going to wait until 2 gives the signal.” Following the shared plan, Elsa cleared the frozen metal, while Anna and Ms. Lin held the hammer rope without pulling.",
+        "2 watched the storm through the tower window. “The next lull will be our moment,” 2 predicted. When a fierce gust passed, 2 gave the agreed signal. Anna and Ms. Lin pulled together, and Elsa steadied the bracket. The bell will warn the people, who reached shelter before the blizzard. One confirmed voice proved stronger than several conflicting commands."
+      ],
+      "structuredIssues": [
+        {
+          "code": "option_quality",
+          "target": "OC1",
+          "message": "OC1 含有脱离上下文也不成立的残缺干扰项"
+        },
+        {
+          "code": "option_quality",
+          "target": "OC2",
+          "message": "OC2 含有脱离上下文也不成立的残缺干扰项"
+        },
+        {
+          "code": "option_quality",
+          "target": "OC3",
+          "message": "OC3 含有脱离上下文也不成立的残缺干扰项"
+        },
+        {
+          "code": "option_quality",
+          "target": "OC4",
+          "message": "OC4 含有脱离上下文也不成立的残缺干扰项"
+        },
+        {
+          "code": "grammar_structure",
+          "target": "WF1",
+          "message": "WF1 的完整句未真实体现 Future with Be Going To"
+        },
+        {
+          "code": "grammar_structure",
+          "target": "WF2",
+          "message": "WF2 的完整句未真实体现 Future with Be Going To"
+        },
+        {
+          "code": "grammar_structure",
+          "target": "WF3",
+          "message": "WF3 的完整句未真实体现 Future with Will"
+        }
+      ],
+      "domainIssues": []
+    }
+  ],
+  "mainIdea": {
+    "pass": true,
+    "wordCount": 127,
+    "acceptedRange": [
+      110,
+      130
+    ],
+    "text": "When the remote rope of North Mountain’s warning bell breaks before a blizzard, Anna, Elsa, Ms. Lin, and 2 cross an Echo Bridge that turns spoken directions into paths. Their simultaneous commands split the bridge, and Anna’s haste combined with Elsa’s magical repair leaves them stranded. They recover by stopping, listening, and sharing observations one at a time. Then 2 locates the tower. Together, they confirm one instruction, which the bridge obeys. Elsa then supports their chosen route instead of choosing it. At the tower, they follow another shared plan: Elsa clears the frozen hammer, Anna and Ms. Lin pull its rope, and 2 signals during a lull. The warning reaches Arendelle in time, proving that one voice built from everyone’s evidence can guide coordinated action.",
+    "parseError": null
+  },
+  "exerciseAiRequired": false
+}

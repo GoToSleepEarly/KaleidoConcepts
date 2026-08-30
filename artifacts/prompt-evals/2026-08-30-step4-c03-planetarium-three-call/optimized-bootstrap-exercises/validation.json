@@ -1,0 +1,14 @@
+{
+  "config": {
+    "scope": "content",
+    "method": "generateExercises"
+  },
+  "suppliedResponseCount": 0,
+  "capturedRequestCount": 1,
+  "result": null,
+  "error": {
+    "name": "Error",
+    "message": "课程内容服务连接失败，请稍后重试",
+    "stack": "Error: 课程内容服务连接失败，请稍后重试\n    at callWithUsage (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\course-content-deps.ts:396:13)\n    at async call (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\course-content-deps.ts:405:9)\n    at async structuredCall (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\course-content-deps.ts:416:15)\n    at async main (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\scripts\\prompt-eval\\run-manual-ai-operation.ts:98:14)"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "alignRequirements"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "status": "ready_for_confirmation",
+    "planningMode": "explore_options",
+    "storyMode": "new_story",
+    "classroomPresence": "participant",
+    "requiredNamedCharacters": [],
+    "brief": {
+      "kind": "narrative",
+      "objective": "使用《冰雪奇缘》的原作世界或核心人物，与林老师、夏天和晨曦共同经历新的奇幻探险",
+      "sourceRequirements": [
+        {
+          "name": "《冰雪奇缘》",
+          "useInCourse": "使用原作世界或核心人物创作全新剧情"
+        }
+      ],
+      "requiredNamedCharacters": [],
+      "fixedPlot": null,
+      "additionalConstraints": {
+        "required": [],
+        "preferred": [],
+        "excluded": []
+      }
+    },
+    "assistantMessage": "我已经整理好创作理解，请确认。",
+    "resolvedUnderstanding": [],
+    "unresolvedIssues": [],
+    "questions": []
+  },
+  "error": null
+}

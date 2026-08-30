@@ -1,0 +1,157 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateOutline"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "title": "海岸线上的等待 / Waiting on the Coast",
+    "summary": "德军快速推进迫使盟军退至敦刻尔克，英国启动发电机行动。Mr. Wang、May和Jay旁观海滩等待、舰船接运与空袭压力，记录约33.8万人撤往英国。撤退保存大量兵力，却遗弃重型装备，也未阻止法国随后战败。",
+    "storyHook": "",
+    "characters": [
+      {
+        "key": "C1",
+        "displayName": "王老师",
+        "englishName": "Mr. Wang",
+        "sourceType": "person",
+        "sourcePersonId": "teacher-wang",
+        "sourceReferenceId": null,
+        "roleInStory": "带学生按时间线观察并区分事实与评价。",
+        "shortDescription": "带学生按时间线观察并区分事实与评价。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C2",
+        "displayName": "梅",
+        "englishName": "May",
+        "sourceType": "person",
+        "sourcePersonId": "student-mei",
+        "sourceReferenceId": null,
+        "roleInStory": "记录海滩等待与撤离秩序。",
+        "shortDescription": "记录海滩等待与撤离秩序。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C3",
+        "displayName": "俊",
+        "englishName": "Jay",
+        "sourceType": "person",
+        "sourcePersonId": "student-jun",
+        "sourceReferenceId": null,
+        "roleInStory": "记录舰船协作和撤退结果。",
+        "shortDescription": "记录舰船协作和撤退结果。",
+        "shouldAppearInImages": true
+      }
+    ],
+    "chapters": [
+      {
+        "order": 1,
+        "title": "退向海岸 / Retreat to the Coast",
+        "storyGoal": "德军突破防线，盟军被迫退到敦刻尔克；课堂人物旁观并记录受困原因。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "德军突破防线，盟军被迫退到敦刻尔克；课堂人物旁观并记录受困原因。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-perfect"
+        ],
+        "knowledgePointRecommendationSummary": "Past Perfect用于连接先发生的突破与随后受困。"
+      },
+      {
+        "order": 2,
+        "title": "发电机行动 / Operation Dynamo",
+        "storyGoal": "英国启动发电机行动，海军舰艇和民用船只共同前往海岸接运部队。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "英国启动发电机行动，海军舰艇和民用船只共同前往海岸接运部队。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-passive"
+        ],
+        "knowledgePointRecommendationSummary": "Passive Voice用于突出行动和运输由不同力量共同执行。"
+      },
+      {
+        "order": 3,
+        "title": "海滩上的等待 / Waiting on the Beach",
+        "storyGoal": "部队在空袭压力下排队等待，船只持续接运，撤离人数不断增加。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "部队在空袭压力下排队等待，船只持续接运，撤离人数不断增加。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-passive"
+        ],
+        "knowledgePointRecommendationSummary": "Passive Voice用于描述部队被接运的过程。"
+      },
+      {
+        "order": 4,
+        "title": "跨越海峡 / Across the Channel",
+        "storyGoal": "约33.8万名盟军人员撤往英国，但大量重型装备被遗弃在法国。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "约33.8万名盟军人员撤往英国，但大量重型装备被遗弃在法国。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-perfect",
+          "kp-passive"
+        ],
+        "knowledgePointRecommendationSummary": "Past Perfect说明撤离前已受困，Passive Voice描述人员被撤往英国。"
+      },
+      {
+        "order": 5,
+        "title": "保存兵力的代价 / The Cost of Survival",
+        "storyGoal": "撤退保存大量兵力，却没有逆转法国战局；课堂人物比较成果、代价与局限。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "撤退保存大量兵力，却没有逆转法国战局；课堂人物比较成果、代价与局限。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-perfect"
+        ],
+        "knowledgePointRecommendationSummary": "Past Perfect用于回顾撤离已完成后仍存在的战略后果。"
+      }
+    ]
+  },
+  "error": null
+}

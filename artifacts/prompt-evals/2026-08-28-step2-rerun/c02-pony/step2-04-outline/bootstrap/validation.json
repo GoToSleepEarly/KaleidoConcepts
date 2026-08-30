@@ -1,0 +1,14 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateOutline"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": null,
+  "error": {
+    "name": "StoryOutlineResponseError",
+    "message": "引用角色 暮光闪闪 缺少有效 sourceReferenceKey",
+    "stack": "StoryOutlineResponseError: 引用角色 暮光闪闪 缺少有效 sourceReferenceKey\n    at <anonymous> (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\story-outline-deps.ts:1379:17)\n    at Array.map (<anonymous>)\n    at Object.generateOutline (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\story-outline-deps.ts:1343:44)\n    at async main (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\scripts\\prompt-eval\\run-manual-ai-operation.ts:98:14)"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateDirections"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": [
+    {
+      "title": "迷路的友谊邮车",
+      "hook": "小马谷的友谊邮车被魔法岔路困住，Ms. Li带Ivy和Leo与暮光闪闪寻找正确路线。他们根据朋友留下的标记修复路牌，让邮车把信件全部送达。",
+      "storyHighlight": "友谊信息变成可观察的路线标记。",
+      "growthCore": "合作",
+      "whyFits": "线性寻找任务适合A2和四章。",
+      "mainCharacters": [
+        "Ms. Li",
+        "Ivy",
+        "Leo",
+        "暮光闪闪（Twilight Sparkle）"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "小马谷的友谊邮车被魔法岔路困住，Ms. Li带Ivy和Leo与暮光闪闪寻找正确路线。他们根据朋友留下的标记修复路牌，让邮车把信件全部送达。"
+    },
+    {
+      "title": "被风吹散的庆典旗帜",
+      "hook": "强风吹散小马谷庆典旗帜，Ms. Li、Ivy和Leo与云宝黛西沿风向寻找。团队按颜色收回旗帜并重新装好，让庆典按时开始。",
+      "storyHighlight": "速度必须与孩子们的观察配合。",
+      "growthCore": "耐心",
+      "whyFits": "动作直观且结果明确。",
+      "mainCharacters": [
+        "Ms. Li",
+        "Ivy",
+        "Leo",
+        "云宝黛西（Rainbow Dash）"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "强风吹散小马谷庆典旗帜，Ms. Li、Ivy和Leo与云宝黛西沿风向寻找。团队按颜色收回旗帜并重新装好，让庆典按时开始。"
+    },
+    {
+      "title": "害怕回家的小动物",
+      "hook": "一群小动物被陌生响声吓得不敢回家，Ms. Li带Ivy和Leo与柔柔寻找声音来源。他们安抚动物并移走发声的旧风铃，让动物安全回到森林。",
+      "storyHighlight": "先理解害怕再解决环境原因。",
+      "growthCore": "同理心",
+      "whyFits": "适龄、温和并适合基础情绪词。",
+      "mainCharacters": [
+        "Ms. Li",
+        "Ivy",
+        "Leo",
+        "柔柔（Fluttershy）"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "一群小动物被陌生响声吓得不敢回家，Ms. Li带Ivy和Leo与柔柔寻找声音来源。他们安抚动物并移走发声的旧风铃，让动物安全回到森林。"
+    }
+  ],
+  "error": null
+}

@@ -1,0 +1,56 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateDirections"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": [
+    {
+      "title": "失控的冰桥",
+      "hook": "阿伦黛尔的冰桥突然不断延伸，Ms. Lin、Summer 和 Dawn 与艾莎一起寻找失控原因。他们合作关闭被误触的魔法机关，让道路恢复安全。",
+      "storyHighlight": "沿着会变化的冰桥寻找线索。",
+      "growthCore": "合作",
+      "whyFits": "单一任务线适合 A2 和四章容量。",
+      "mainCharacters": [
+        "Ms. Lin",
+        "Summer",
+        "Dawn",
+        "艾莎（Elsa）"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "阿伦黛尔的冰桥突然不断延伸，Ms. Lin、Summer 和 Dawn 与艾莎一起寻找失控原因。他们合作关闭被误触的魔法机关，让道路恢复安全。"
+    },
+    {
+      "title": "消失的冬日灯光",
+      "hook": "王国的冬日灯光接连熄灭，Ms. Lin、Summer 和 Dawn 跟随安娜检查冰灯。他们找到被雪覆盖的能量通道并恢复庆典。",
+      "storyHighlight": "用观察和行动修复冰灯。",
+      "growthCore": "坚持",
+      "whyFits": "行动直观，适合儿童英语表达。",
+      "mainCharacters": [
+        "Ms. Lin",
+        "Summer",
+        "Dawn",
+        "安娜（Anna）"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "王国的冬日灯光接连熄灭，Ms. Lin、Summer 和 Dawn 跟随安娜检查冰灯。他们找到被雪覆盖的能量通道并恢复庆典。"
+    },
+    {
+      "title": "雪宝的夏日地图",
+      "hook": "雪宝发现一张会融化的探险地图，Ms. Lin、Summer 和 Dawn 必须在图案消失前找到终点。他们分工记住路线，并把地图安全带回城堡。",
+      "storyHighlight": "会融化的地图带来清楚的时间目标。",
+      "growthCore": "分工",
+      "whyFits": "幽默、线性且适合四章短故事。",
+      "mainCharacters": [
+        "Ms. Lin",
+        "Summer",
+        "Dawn",
+        "雪宝（Olaf）"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "雪宝发现一张会融化的探险地图，Ms. Lin、Summer 和 Dawn 必须在图案消失前找到终点。他们分工记住路线，并把地图安全带回城堡。"
+    }
+  ],
+  "error": null
+}

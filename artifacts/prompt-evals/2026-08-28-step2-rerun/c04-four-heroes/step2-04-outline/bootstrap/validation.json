@@ -1,0 +1,179 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateOutline"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "title": "消失的城市声音 / The City's Lost Sounds",
+    "summary": "吞声怪兽夺走城市声音。Mr. Chen带领Ann、Ben、Cara和Dan分别找回四种关键声音，再合成声波让怪兽归还所有声音。",
+    "storyHook": "",
+    "characters": [
+      {
+        "key": "C1",
+        "displayName": "陈老师",
+        "englishName": "Mr. Chen",
+        "sourceType": "person",
+        "sourcePersonId": "teacher-chen",
+        "sourceReferenceId": null,
+        "roleInStory": "带领团队观察并协调四次行动。",
+        "shortDescription": "带领团队观察并协调四次行动。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C2",
+        "displayName": "安安",
+        "englishName": "Ann",
+        "sourceType": "person",
+        "sourcePersonId": "student-an",
+        "sourceReferenceId": null,
+        "roleInStory": "找回第一种关键声音。",
+        "shortDescription": "找回第一种关键声音。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C3",
+        "displayName": "小博",
+        "englishName": "Ben",
+        "sourceType": "person",
+        "sourcePersonId": "student-ben",
+        "sourceReferenceId": null,
+        "roleInStory": "找回第二种关键声音。",
+        "shortDescription": "找回第二种关键声音。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C4",
+        "displayName": "可可",
+        "englishName": "Cara",
+        "sourceType": "person",
+        "sourcePersonId": "student-cara",
+        "sourceReferenceId": null,
+        "roleInStory": "找回第三种关键声音。",
+        "shortDescription": "找回第三种关键声音。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C5",
+        "displayName": "大卫",
+        "englishName": "Dan",
+        "sourceType": "person",
+        "sourcePersonId": "student-dan",
+        "sourceReferenceId": null,
+        "roleInStory": "找回第四种关键声音并帮助合成声波。",
+        "shortDescription": "找回第四种关键声音并帮助合成声波。",
+        "shouldAppearInImages": true
+      },
+      {
+        "key": "C6",
+        "displayName": "吞声怪兽",
+        "englishName": "The Sound-Eating Monster",
+        "sourceType": "original",
+        "sourcePersonId": null,
+        "sourceReferenceId": null,
+        "roleInStory": "夺走城市声音并被组合声波克制。",
+        "shortDescription": "夺走城市声音并被组合声波克制。",
+        "shouldAppearInImages": true
+      }
+    ],
+    "chapters": [
+      {
+        "order": 1,
+        "title": "无声的城市 / The Silent City",
+        "storyGoal": "吞声怪兽夺走所有声音。Mr. Chen带领四名学生追踪它，并发现四种关键声音散落在城中。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "吞声怪兽夺走所有声音。Mr. Chen带领四名学生追踪它，并发现四种关键声音散落在城中。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5",
+          "C6"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-simple"
+        ],
+        "knowledgePointRecommendationSummary": "Past Simple适合回顾怪兽夺走声音的事件。"
+      },
+      {
+        "order": 2,
+        "title": "前两种声音 / The First Two Sounds",
+        "storyGoal": "Ann和Ben分别克服障碍，找回钟声和水声。团队确认单独的声音还不能让怪兽归还城市声音。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "Ann和Ben分别克服障碍，找回钟声和水声。团队确认单独的声音还不能让怪兽归还城市声音。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3",
+          "C6"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-can"
+        ],
+        "knowledgePointRecommendationSummary": "can / can't用于表达学生能够完成的行动。"
+      },
+      {
+        "order": 3,
+        "title": "最后两种声音 / The Last Two Sounds",
+        "storyGoal": "Cara和Dan各自找回风声与鼓声。四名学生把声音按正确顺序连接，准备共同反击。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "Cara和Dan各自找回风声与鼓声。四名学生把声音按正确顺序连接，准备共同反击。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5",
+          "C6"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-simple",
+          "kp-can"
+        ],
+        "knowledgePointRecommendationSummary": "Past Simple回顾行动，can / can't表达团队现在能够组合声音。"
+      },
+      {
+        "order": 4,
+        "title": "声音回来了 / The Sounds Return",
+        "storyGoal": "四名学生合成声波，吞声怪兽无法继续吞噬，只能吐回所有声音并认输。城市恢复，团队庆祝共同胜利。",
+        "keyEvents": [],
+        "setting": "",
+        "endingHook": "",
+        "whatHappens": "四名学生合成声波，吞声怪兽无法继续吞噬，只能吐回所有声音并认输。城市恢复，团队庆祝共同胜利。",
+        "characterActions": "",
+        "mainlineProgress": "",
+        "characterKeys": [
+          "C1",
+          "C2",
+          "C3",
+          "C4",
+          "C5",
+          "C6"
+        ],
+        "characterIds": [],
+        "recommendedKnowledgePointIds": [
+          "kp-past-simple"
+        ],
+        "knowledgePointRecommendationSummary": "Past Simple适合讲述怪兽认输和声音恢复的结果。"
+      }
+    ]
+  },
+  "error": null
+}

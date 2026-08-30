@@ -1,0 +1,60 @@
+{
+  "scope": "story",
+  "method": "generateOutline",
+  "args": [{
+    "task": "根据老师选择的故事方向生成完整故事大纲。",
+    "chapterCount": 4,
+    "writingProvider": "quickrouter_gpt",
+    "englishLevel": "B1",
+    "storyComplexity": "conflict_driven",
+    "requirementBrief": {
+      "kind": "concept",
+      "objective": "通过故事帮助学生理解 MBTI 的四组人格偏好维度",
+      "learningTargets": [{ "concept": "MBTI 四组维度", "expectedUnderstanding": "学生能够说明 E–I、S–N、T–F、J–P 各自关注的偏好差异，并结合故事中的行为示例进行辨别" }],
+      "assumedPriorKnowledge": [],
+      "sourceRequirements": [{ "name": "MBTI 四组维度", "useInCourse": "作为故事中的核心理论学习内容" }],
+      "requiredNamedCharacters": [],
+      "fixedPlot": null,
+      "additionalConstraints": { "required": ["赵老师、Mia 和 Ben 全部参与故事", "共 4 章", "英语难度为 B1"], "preferred": [], "excluded": [] }
+    },
+    "storyMode": "new_story",
+    "classroomPresence": "participant",
+    "coursePeople": [
+      { "personId": "teacher-zhao", "role": "teacher", "chineseName": "赵老师", "englishName": "Ms. Zhao", "age": 34, "gender": "female" },
+      { "personId": "student-mia", "role": "student", "chineseName": "米娅", "englishName": "Mia", "age": 12, "gender": "female" },
+      { "personId": "student-ben", "role": "student", "chineseName": "本", "englishName": "Ben", "age": 12, "gender": "male" }
+    ],
+    "conversationHistory": [],
+    "references": [{
+      "id": "ref-mbti-dimensions",
+      "name": "MBTI 四组人格偏好维度",
+      "type": "other",
+      "sourceStatus": "confirmed",
+      "summary": "MBTI 用四组二分维度描述人们较自然的注意、获取信息、做决定和安排生活的偏好。每个人都可能使用维度两端，偏好不等于能力，也没有优劣之分。",
+      "usableFacts": [
+        "E–I 关注精力和注意力的自然指向",
+        "S–N 关注获取信息时偏好具体事实还是联系与可能性",
+        "T–F 关注做决定时偏好逻辑一致性还是价值与人的影响",
+        "J–P 关注外部生活中偏好计划确定还是保持开放与灵活",
+        "单次行为只能作为辨别线索，不能据此断定固定类型"
+      ],
+      "avoidTopics": ["刻板印象", "优劣排序", "心理诊断", "永久贴标签"],
+      "adaptationBoundary": "用具体任务中的行为差异呈现四组偏好，强调两端都能完成任务且各有价值。"
+    }],
+    "selectedDirection": {
+      "title": "四扇偏好之门",
+      "hook": "Ms. Zhao、Mia 和 Ben 被困在一座会误读选择的体验馆。三人比较四组偏好在同一任务中的不同表现，修正判断并打开出口。",
+      "storyHighlight": "四扇门分别把注意、信息、决定和安排方式变成可观察的选择。",
+      "growthCore": "独立判断：一次行为只是线索，不能成为给人定型的标签。",
+      "mainCharacters": ["Ms. Zhao", "Mia", "Ben"],
+      "whyFits": "四章可各聚焦一组维度；场景行动具体，适合用 B1 英语辨别偏好差异。"
+    },
+    "currentDirections": [],
+    "currentOutline": null,
+    "selectedKnowledgePoints": [
+      { "id": "kp-past", "label": "Past Simple", "category": "Grammar" },
+      { "id": "kp-comparatives", "label": "Comparatives", "category": "Grammar" },
+      { "id": "kp-modals", "label": "Modals for suggestions", "category": "Grammar" }
+    ]
+  }]
+}

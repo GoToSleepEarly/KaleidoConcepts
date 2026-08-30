@@ -258,6 +258,8 @@ type ResolvedGrammarPoint = {
 
 AI 仍只返回 Prompt 内短键；服务端确定性映射为统一 `KnowledgePoint.id`。来源 Unit 是理解上下文，不是额外覆盖目标。
 
+Step 4 为降低重复输入，同一任务只传一次书名、版本和官方难度；各章节或练习目标只重复其实际使用的知识点标题、Unit 范围和来源 Unit。目录信息用于唤起模型已有语法知识，不扩展为系统维护的知识点定义、例句、反例或教材讲解。
+
 ## 旧课程兼容
 
 - 原 57 个语法点迁移为 `KnowledgePoint(source = "legacy")`，保留原 ID，确保旧正文、练习、预览和发布继续解析。

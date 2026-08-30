@@ -1,0 +1,57 @@
+[
+  {
+    "stage": "reading",
+    "threadId": "01a04921-30a9-7593-8f62-1e64fe10d593",
+    "model": "gpt-5.6-sol",
+    "thinking": "low",
+    "promptCharacters": 7708,
+    "promptUtf8Bytes": 12165,
+    "outputCharacters": 10199,
+    "outputUtf8Bytes": 10303,
+    "durationMs": 60992,
+    "firstPassReady": false,
+    "chapterPassCount": 4,
+    "chapterCount": 5
+  },
+  {
+    "stage": "reading_repair",
+    "threadId": "01a04925-30b6-7a40-b24b-870b02b3cd4c",
+    "model": "gpt-5.6-sol",
+    "thinking": "low",
+    "promptCharacters": 6575,
+    "promptUtf8Bytes": 9320,
+    "outputCharacters": 803,
+    "outputUtf8Bytes": 811,
+    "durationMs": 17159,
+    "firstPassReady": true,
+    "chapterPassCount": 5,
+    "chapterCount": 5
+  },
+  {
+    "stage": "reading_repair_repeat",
+    "threadId": "01a04924-f2ff-74c0-aed2-bc40575cfa96",
+    "model": "gpt-5.6-sol",
+    "thinking": "low",
+    "promptCharacters": 6575,
+    "promptUtf8Bytes": 9320,
+    "outputCharacters": 801,
+    "outputUtf8Bytes": 809,
+    "durationMs": 19431,
+    "firstPassReady": true,
+    "chapterPassCount": 5,
+    "chapterCount": 5,
+    "note": "A queued worktree task completed after the projectless task was started. Both outputs were recorded and validated; this repeat is experimental overhead, not part of the minimal production path."
+  },
+  {
+    "stage": "exercises",
+    "aiRequestMade": false,
+    "reason": "Prompt SHA-256 matched a previously recorded independent gpt-5.6-sol call byte-for-byte; its output was replayed through the production validator.",
+    "promptSha256": "7340ea5a27c62bac1145fdbda8389c151bd0df0994fb2b53d6f8129ca3d37243",
+    "sourceThreadId": "01a0491d-971e-7f12-8998-e8139a222ff7",
+    "promptCharacters": 2035,
+    "outputCharacters": 1684,
+    "firstPassReady": true,
+    "questionPassCount": 10,
+    "questionCount": 10
+  }
+]

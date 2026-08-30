@@ -1,0 +1,109 @@
+{
+  "config": {
+    "scope": "content",
+    "method": "generateExercises"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "chapters": [],
+    "homeworkGrammar": [
+      {
+        "type": "optionCloze",
+        "knowledgePointKey": "KP4",
+        "before": "Last Saturday, Emma ",
+        "after": " her grandparents in the countryside.",
+        "answer": "visited",
+        "distractors": [
+          "visits",
+          "will visit"
+        ]
+      },
+      {
+        "type": "optionCloze",
+        "knowledgePointKey": "KP2",
+        "before": "Please be quiet because the baby ",
+        "after": " now.",
+        "answer": "is sleeping",
+        "distractors": [
+          "sleeps",
+          "slept"
+        ]
+      },
+      {
+        "type": "optionCloze",
+        "knowledgePointKey": "KP1",
+        "before": "Daniel usually ",
+        "after": " his bike to school.",
+        "answer": "rides",
+        "distractors": [
+          "rode",
+          "is riding"
+        ]
+      },
+      {
+        "type": "optionCloze",
+        "knowledgePointKey": "KP5",
+        "before": "I think our team ",
+        "after": " the match tomorrow.",
+        "answer": "will win",
+        "distractors": [
+          "won",
+          "wins"
+        ]
+      },
+      {
+        "type": "optionCloze",
+        "knowledgePointKey": "KP4",
+        "before": "The students ",
+        "after": " their science project yesterday afternoon.",
+        "answer": "finished",
+        "distractors": [
+          "finish",
+          "will finish"
+        ]
+      },
+      {
+        "type": "wordForm",
+        "knowledgePointKey": "KP1",
+        "before": "My sister often ",
+        "after": " dinner for the whole family.",
+        "answer": "cooks",
+        "baseForm": "cook"
+      },
+      {
+        "type": "wordForm",
+        "knowledgePointKey": "KP2",
+        "before": "Look! The children ",
+        "after": " a snowman in the garden.",
+        "answer": "are building",
+        "baseForm": "build"
+      },
+      {
+        "type": "wordForm",
+        "knowledgePointKey": "KP4",
+        "before": "We ",
+        "after": " an interesting museum during our trip last week.",
+        "answer": "discovered",
+        "baseForm": "discover"
+      },
+      {
+        "type": "wordForm",
+        "knowledgePointKey": "KP5",
+        "before": "The weather forecast says it ",
+        "after": " colder tonight.",
+        "answer": "will become",
+        "baseForm": "become"
+      },
+      {
+        "type": "wordForm",
+        "knowledgePointKey": "KP2",
+        "before": "At the moment, I ",
+        "after": " for information about the school event.",
+        "answer": "am looking",
+        "baseForm": "look"
+      }
+    ]
+  },
+  "error": null
+}

@@ -1,0 +1,34 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "prepareBackgroundKnowledge"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "status": "external_required",
+    "reason": "尚未确定故事聚焦的二战真实人物或事件，无法在不扩展无关史实的前提下整理必要背景。",
+    "researchPlan": {
+      "researchGoal": "补足第二次世界大战中与当前故事直接相关的必要资料",
+      "packets": [
+        {
+          "title": "第二次世界大战",
+          "subjects": [
+            {
+              "name": "第二次世界大战"
+            }
+          ],
+          "researchQuestions": [
+            "先确定一个真实人物或事件及观察视角",
+            "核实其时间、地点、关键参与者、事件过程、因果关系与结果",
+            "整理课堂人物可见证但不可影响的历史场景边界"
+          ],
+          "storyUseGoals": [
+            "准确支持已确认目标：选择二战中的一个真实人物经历或真实事件，准确呈现其历史背景、关键过程、因果关系与结果。王老师、梅和俊进入历史场景，以观察、记录、见证和彼此交流的方式参与，不影响史实。"
+          ]
+        }
+      ]
+    }
+  },
+  "error": null
+}

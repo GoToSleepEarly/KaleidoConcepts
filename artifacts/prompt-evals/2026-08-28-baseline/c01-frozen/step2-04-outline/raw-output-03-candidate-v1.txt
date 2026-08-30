@@ -1,0 +1,95 @@
+{
+  "title": {
+    "zh": "会听方向的冰桥",
+    "en": "The Ice Bridge That Listened"
+  },
+  "summary": "阿伦黛尔船队被浮冰困在峡湾，艾莎发现魔法冰桥会按方向口令改变路线，Ms. Lin带Summer、Dawn和安娜登桥救援。Summer读路标，Dawn看港灯，Ms. Lin作出最后判断，冰桥抵达港口，安娜带船员安全上岸。",
+  "characters": [
+    {
+      "key": "C1",
+      "displayName": "林老师",
+      "englishName": "Ms. Lin",
+      "sourceType": "person",
+      "sourcePersonId": "teacher-lin",
+      "roleInStory": "带领Summer和Dawn观察路线，并在港口前作出决定性判断。"
+    },
+    {
+      "key": "C2",
+      "displayName": "夏天",
+      "englishName": "Summer",
+      "sourceType": "person",
+      "sourcePersonId": "student-xiatian",
+      "roleInStory": "读懂被雪遮住的路标，为冰桥选出通往港口的正确方向。"
+    },
+    {
+      "key": "C3",
+      "displayName": "晨曦",
+      "englishName": "Dawn",
+      "sourceType": "person",
+      "sourcePersonId": "student-chenxi",
+      "roleInStory": "在路标损坏后观察港口灯光，判断冰桥应继续直行。"
+    },
+    {
+      "key": "C4",
+      "displayName": "艾莎",
+      "englishName": "Elsa",
+      "sourceType": "referenced",
+      "sourceReferenceKey": "R02",
+      "roleInStory": "创造并维持会听方向口令的冰桥，让救援队能够穿过峡湾。"
+    },
+    {
+      "key": "C5",
+      "displayName": "安娜",
+      "englishName": "Anna",
+      "sourceType": "referenced",
+      "sourceReferenceKey": "R03",
+      "roleInStory": "陪伴队伍寻找船队，并在冰桥抵达港口后带领船员安全上岸。"
+    }
+  ],
+  "chapters": [
+    {
+      "order": 1,
+      "title": {
+        "zh": "转弯的冰桥",
+        "en": "The Turning Ice Bridge"
+      },
+      "whatHappens": "Elsa发现冰桥会随方向口令转向；Ms. Lin带Summer、Dawn和Anna登桥救船队。",
+      "characterKeys": ["C1", "C2", "C3", "C4", "C5"],
+      "recommendedKnowledgePointKeys": ["KP1"],
+      "knowledgePointRecommendationSummary": "KP1：叙述Elsa发现冰桥规则及队伍开始救援的动作。"
+    },
+    {
+      "order": 2,
+      "title": {
+        "zh": "雪下的路标",
+        "en": "The Sign Under the Snow"
+      },
+      "whatHappens": "Summer清雪读出港口在右侧，冰桥右转，避开通往雪山的左路。",
+      "characterKeys": ["C2", "C4"],
+      "recommendedKnowledgePointKeys": ["KP2"],
+      "knowledgePointRecommendationSummary": "KP2：描述冰桥正在右转以及队伍正在远离错误路线。"
+    },
+    {
+      "order": 3,
+      "title": {
+        "zh": "前方的港灯",
+        "en": "The Harbor Light Ahead"
+      },
+      "whatHappens": "第二块路标被风吹倒，Dawn看见前方港灯，指挥冰桥直行穿过峡湾。",
+      "characterKeys": ["C3", "C4"],
+      "recommendedKnowledgePointKeys": ["KP1", "KP2"],
+      "knowledgePointRecommendationSummary": "KP1叙述路标倒下，KP2描述港灯正在闪亮，两者共同支持Dawn的判断。"
+    },
+    {
+      "order": 4,
+      "title": {
+        "zh": "通往港口",
+        "en": "To the Harbor"
+      },
+      "whatHappens": "Ms. Lin判断码头在左侧，冰桥抵达港口，Anna带船员安全上岸。",
+      "characterKeys": ["C1", "C4", "C5"],
+      "recommendedKnowledgePointKeys": ["KP1"],
+      "knowledgePointRecommendationSummary": "KP1：叙述最后一次方向判断及船员获救的结果。"
+    }
+  ]
+}

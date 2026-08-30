@@ -1,0 +1,53 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "generateDirections"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": [
+    {
+      "title": "四扇偏好之门",
+      "hook": "Ms. Zhao、Mia 和 Ben 被困在一座会误读选择的体验馆。三人比较四组偏好在同一任务中的不同表现，修正判断并打开出口。",
+      "storyHighlight": "四扇门分别把注意、信息、决定和安排方式变成可观察的选择。",
+      "growthCore": "独立判断：一次行为只是线索，不能成为给人定型的标签。",
+      "whyFits": "四章可各聚焦一组维度；场景行动具体，适合用 B1 英语辨别偏好差异。",
+      "mainCharacters": [
+        "Ms. Zhao",
+        "Mia",
+        "Ben"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "Ms. Zhao、Mia 和 Ben 被困在一座会误读选择的体验馆。三人比较四组偏好在同一任务中的不同表现，修正判断并打开出口。"
+    },
+    {
+      "title": "一场两种办法的露营会",
+      "hook": "突来的天气变化让 Ms. Zhao、Mia 和 Ben 的露营会无法照原计划举行。三人借四组偏好比较各自的观察、判断与安排方式，组合出新方案并让活动顺利完成。",
+      "storyHighlight": "同一个真实难题允许多种有效路径，两端偏好都直接推动方案形成。",
+      "growthCore": "合作：理解彼此不同的自然偏好，并把差异转化为互补。",
+      "whyFits": "贴近日常生活，四组维度都有行为例子；单线任务适合四章和 B1 表达。",
+      "mainCharacters": [
+        "Ms. Zhao",
+        "Mia",
+        "Ben"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "突来的天气变化让 Ms. Zhao、Mia 和 Ben 的露营会无法照原计划举行。三人借四组偏好比较各自的观察、判断与安排方式，组合出新方案并让活动顺利完成。"
+    },
+    {
+      "title": "被贴错的性格标签",
+      "hook": "校园墙上的匿名性格卡只凭一次行为给 Ms. Zhao、Mia 和 Ben 下了结论。三人核对四类情境中的行为证据，证明偏好不是能力或定型，并改成帮助大家理解差异的展板。",
+      "storyHighlight": "从“猜类型”转向检查证据，让错误标签Ben身成为剧情问题。",
+      "growthCore": "同理心：在评价别人前，理解行为背后可能存在不同偏好。",
+      "whyFits": "直接回应 MBTI 的使用边界，四章可逐组核对；重复句型便于 B1 学生理解。",
+      "mainCharacters": [
+        "Ms. Zhao",
+        "Mia",
+        "Ben"
+      ],
+      "classroomValue": "",
+      "seedPrompt": "校园墙上的匿名性格卡只凭一次行为给 Ms. Zhao、Mia 和 Ben 下了结论。三人核对四类情境中的行为证据，证明偏好不是能力或定型，并改成帮助大家理解差异的展板。"
+    }
+  ],
+  "error": null
+}

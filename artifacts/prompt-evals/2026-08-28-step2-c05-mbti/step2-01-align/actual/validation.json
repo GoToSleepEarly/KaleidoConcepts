@@ -1,0 +1,50 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "alignRequirements"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": {
+    "status": "needs_clarification",
+    "planningMode": "explore_options",
+    "storyMode": "new_story",
+    "classroomPresence": "participant",
+    "requiredNamedCharacters": [],
+    "provisionalBriefKind": "concept",
+    "assistantMessage": "还需要确认几个会影响故事方向的问题。",
+    "resolvedUnderstanding": [],
+    "unresolvedIssues": [
+      "MBTI 学习重点"
+    ],
+    "questions": [
+      {
+        "id": "mbti_learning_focus",
+        "label": "MBTI 学习重点",
+        "impact": "决定故事需要讲解的理论范围以及最终可检验的学习成果。",
+        "answerMode": "single_choice",
+        "options": [
+          {
+            "id": "understand_four_dimensions",
+            "label": "理解四组维度",
+            "enablesTextInput": false
+          },
+          {
+            "id": "analyze_character_choices",
+            "label": "分析人物选择",
+            "enablesTextInput": false
+          },
+          {
+            "id": "apply_to_collaboration",
+            "label": "应用于团队合作",
+            "enablesTextInput": false
+          }
+        ],
+        "allowCustom": true,
+        "recommendedOptionId": "understand_four_dimensions",
+        "recommendationReason": "这是学习 MBTI 的必要基础，范围适合 12 岁、B1 英语和 4 章容量，也便于通过解释与举例验证理解。"
+      }
+    ]
+  },
+  "error": null
+}

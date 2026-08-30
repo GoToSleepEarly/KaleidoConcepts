@@ -1,0 +1,7 @@
+修复需求对齐响应，使其满足协议；保留老师已表达的目标和所有真正阻塞项。
+允许合并同义问题并把当前问题数收敛到最多 3 个；不得截断阻塞项、静默采用推荐、重命名重复 ID 或改变推荐语义。
+needs_clarification schema: {status,provisionalBriefKind?,resolvedRequirements:string[],questions:1..3}。ready_for_confirmation schema: {status,planningMode,storyMode,classroomPresence,brief}。
+parseError: AI 返回的需求对齐结构不完整，自动修复后仍未通过。
+<raw_output>
+{"status":"ready_for_confirmation","planningMode":"explore_options","storyMode":"faithful","classroomPresence":"observer","brief":{"kind":"factual","objective":"选择一个适合学生的二战真实故事并依据史实讲述","factualFocus":"二战中的一个真实事件及其影响","sourceRequirements":[],"requiredNamedCharacters":[],"fixedPlot":null,"additionalConstraints":{"required":[],"preferred":[],"excluded":[]}}}
+</raw_output>

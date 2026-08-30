@@ -1,0 +1,59 @@
+{
+  "scope": "story",
+  "method": "generateOutline",
+  "args": [
+    {
+      "task": "根据老师选择的故事方向生成完整故事大纲。",
+      "writingProvider": "quickrouter_gpt",
+      "requirementBrief": {
+        "kind": "narrative",
+        "objective": "以《冰雪奇缘》的世界或核心人物为基础，让林老师、夏天和晨曦共同参与一场全新的奇幻探险。",
+        "sourceRequirements": [{ "name": "《冰雪奇缘》", "useInCourse": "使用原作世界或核心人物创作新的冒险情节" }],
+        "requiredNamedCharacters": [],
+        "fixedPlot": null,
+        "additionalConstraints": {
+          "required": ["全篇共4章", "英语难度为A2", "林老师、夏天和晨曦全部参与故事"],
+          "preferred": [],
+          "excluded": []
+        }
+      },
+      "storyMode": "new_story",
+      "classroomPresence": "participant",
+      "chapterCount": 4,
+      "englishLevel": "A2",
+      "storyComplexity": "clear_linear",
+      "coursePeople": [
+        { "personId": "teacher-lin", "role": "teacher", "chineseName": "林老师", "englishName": "Ms. Lin", "age": 32, "gender": "female" },
+        { "personId": "student-xiatian", "role": "student", "chineseName": "夏天", "englishName": "Summer", "age": 10, "gender": "female" },
+        { "personId": "student-chenxi", "role": "student", "chineseName": "晨曦", "englishName": "Dawn", "age": 10, "gender": "male" }
+      ],
+      "conversationHistory": [
+        { "role": "teacher", "content": "根据《冰雪奇缘》，创造一个奇幻探险故事" },
+        { "role": "teacher", "content": "我确认这份创作理解。" }
+      ],
+      "references": [
+        { "id": "ref-world", "name": "《冰雪奇缘》（2013年动画电影）世界设定", "type": "other", "sourceStatus": "confirmed", "summary": "故事主要发生在北欧风格的阿伦黛尔王国。这里存在真实魔法，冰雪可以被创造并塑形成道路、建筑或生命，但魔法失控也会危及王国。", "usableFacts": ["阿伦黛尔由王室治理，城市、城堡、峡湾和雪山可作为探险地点", "魔法能够制造冰雪、改变环境，也可能带来需要合作解决的危机", "真诚的爱、勇气与互助是化解危机的重要主题"], "adaptationBoundary": "可在阿伦黛尔设计全新、线性的奇幻探险，但应保留魔法有后果、危机靠勇气与关爱解决的基本规则。" },
+        { "id": "ref-elsa", "name": "艾莎（Elsa）", "type": "other", "sourceStatus": "confirmed", "summary": "阿伦黛尔女王，拥有创造和控制冰雪的魔法。她沉静、负责，曾因害怕伤害别人而压抑力量，后来学会以爱更好地控制魔法。", "usableFacts": ["可以制造雪、冰桥、冰墙和冰建筑", "面对危险时会优先保护他人", "强烈情绪可能影响魔法的稳定", "与安娜是姐妹，深爱并信任安娜"], "adaptationBoundary": "可让艾莎帮助开启道路、保护队伍或处理魔法危机，但不能让她的力量轻易解决全部问题。" },
+        { "id": "ref-anna", "name": "安娜（Anna）", "type": "other", "sourceStatus": "confirmed", "summary": "艾莎的妹妹，开朗、勇敢、行动力强，重视家人与朋友。她没有魔法，却常凭坚持、同理心和勇气推动问题解决。", "usableFacts": ["愿意主动接近陌生人并鼓励伙伴", "遇到困难时很少放弃", "会在关键时刻保护亲友", "与艾莎关系亲密，能够理解并支持姐姐"], "adaptationBoundary": "适合陪林老师和两名学生探索、沟通并作出勇敢选择，贡献应来自行动与情感力量。" },
+        { "id": "ref-olaf", "name": "雪宝（Olaf）", "type": "other", "sourceStatus": "confirmed", "summary": "由艾莎的魔法创造并获得生命的雪人，天真、友善、爱说话，对温暖和夏天充满好奇，常用幽默缓和紧张气氛。", "usableFacts": ["身体由雪组成，部件可以分开后重新装回", "乐于帮助朋友，容易与孩子建立友谊", "语言和行为可提供轻松幽默", "需要魔法帮助才能安全面对炎热环境"], "adaptationBoundary": "可作为儿童角色的向导和伙伴，以简单幽默支持A2英语表达，但不应取代学生完成核心任务。" }
+      ],
+      "selectedDirection": {
+        "title": "会听方向的冰桥",
+        "hook": "艾莎发现峡湾冰桥会按听到的方向改变路线，Ms. Lin带Summer和Dawn与安娜寻找被困船队。他们读懂沿途路标，用准确指令把冰桥引向港口。",
+        "storyHighlight": "冰桥把英语方向词变成真实道路，每次表达都会直接改变探险路线。",
+        "growthCore": "独立判断：孩子们先观察路标和环境，再决定该相信哪条方向指令。",
+        "mainCharacters": ["Ms. Lin", "Summer", "Dawn", "艾莎", "安娜"],
+        "whyFits": "保留阿伦黛尔、冰雪魔法及全员参与；单一路线适合4章，方向词和简短指令符合A2难度。"
+      },
+      "currentDirections": [],
+      "currentOutline": null,
+      "selectedKnowledgePoints": [
+        { "id": "kp-past-simple", "label": "Past Simple", "category": "时态", "bookTitle": "Essential Grammar in Use", "edition": "4th", "officialLevel": "A1-A2", "unitStart": 10, "unitEnd": 12, "units": [{ "unitNumber": 10, "officialTitle": "was/were" }, { "unitNumber": 11, "officialTitle": "worked/got/went" }, { "unitNumber": 12, "officialTitle": "I didn't... Did you...?" }] },
+        { "id": "kp-present-continuous", "label": "Present Continuous", "category": "时态", "bookTitle": "Essential Grammar in Use", "edition": "4th", "officialLevel": "A1-A2", "unitStart": 3, "unitEnd": 4, "units": [{ "unitNumber": 3, "officialTitle": "I am doing" }, { "unitNumber": 4, "officialTitle": "Are you doing?" }] }
+      ]
+    }
+  ],
+  "bootstrapResponses": [
+    "{\"title\":{\"zh\":\"会听方向的冰桥\",\"en\":\"The Listening Ice Bridge\"},\"summary\":\"冰桥因错误指令把船队困在峡湾。Ms. Lin、Summer、Dawn、艾莎和安娜沿路标修正方向，最终让船队安全回港。\",\"characters\":[{\"key\":\"C1\",\"displayName\":\"林老师\",\"englishName\":\"Ms. Lin\",\"sourceType\":\"person\",\"sourcePersonId\":\"teacher-lin\",\"roleInStory\":\"带领学生观察风险，但让学生完成关键判断。\"},{\"key\":\"C2\",\"displayName\":\"夏天\",\"englishName\":\"Summer\",\"sourceType\":\"person\",\"sourcePersonId\":\"student-xiatian\",\"roleInStory\":\"观察路标图案并提出第一条正确方向。\"},{\"key\":\"C3\",\"displayName\":\"晨曦\",\"englishName\":\"Dawn\",\"sourceType\":\"person\",\"sourcePersonId\":\"student-chenxi\",\"roleInStory\":\"核对冰桥变化并修正最后一段路线。\"},{\"key\":\"C4\",\"displayName\":\"艾莎\",\"englishName\":\"Elsa\",\"sourceType\":\"referenced\",\"sourceReferenceKey\":\"R2\",\"roleInStory\":\"稳定冰桥，给团队留下判断路线的时间。\"},{\"key\":\"C5\",\"displayName\":\"安娜\",\"englishName\":\"Anna\",\"sourceType\":\"referenced\",\"sourceReferenceKey\":\"R3\",\"roleInStory\":\"与船队沟通并反馈前方情况。\"}],\"chapters\":[{\"order\":1,\"title\":{\"zh\":\"改变方向的冰桥\",\"en\":\"The Turning Bridge\"},\"whatHappens\":\"船队被不断转向的冰桥困住。艾莎暂时稳定桥面，团队发现冰桥会听从方向指令。\",\"characterKeys\":[\"C1\",\"C2\",\"C3\",\"C4\",\"C5\"],\"recommendedKnowledgePointKeys\":[\"KP2\"],\"knowledgePointRecommendationSummary\":\"KP2 用于描述冰桥正在改变方向。\"},{\"order\":2,\"title\":{\"zh\":\"路标的线索\",\"en\":\"Clues on the Signs\"},\"whatHappens\":\"Summer比较岸边路标，找到通向港口的标记。她给出第一条指令，冰桥转向正确水道。\",\"characterKeys\":[\"C1\",\"C2\",\"C3\",\"C4\"],\"recommendedKnowledgePointKeys\":[\"KP1\"],\"knowledgePointRecommendationSummary\":\"KP1 用于回顾Summer发现并选择路标的行动。\"},{\"order\":3,\"title\":{\"zh\":\"最后一个转弯\",\"en\":\"The Final Turn\"},\"whatHappens\":\"Dawn发现最后一块路标被冰遮住。他清理标记并修正指令，冰桥连接港口入口。\",\"characterKeys\":[\"C1\",\"C2\",\"C3\",\"C4\"],\"recommendedKnowledgePointKeys\":[\"KP1\",\"KP2\"],\"knowledgePointRecommendationSummary\":\"KP1 回顾Dawn的行动，KP2 描述冰桥正在连接港口。\"},{\"order\":4,\"title\":{\"zh\":\"安全回港\",\"en\":\"Safe at the Harbor\"},\"whatHappens\":\"安娜引导船队沿冰桥驶入港口。团队确认所有船只安全，艾莎让冰桥恢复普通路线。\",\"characterKeys\":[\"C1\",\"C2\",\"C3\",\"C4\",\"C5\"],\"recommendedKnowledgePointKeys\":[\"KP1\"],\"knowledgePointRecommendationSummary\":\"KP1 用于讲述船队安全回港的结果。\"}]}"
+  ]
+}

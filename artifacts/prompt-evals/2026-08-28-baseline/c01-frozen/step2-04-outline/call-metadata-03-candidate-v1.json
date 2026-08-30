@@ -1,0 +1,17 @@
+{
+  "callIndex": 6,
+  "stageCallIndex": 3,
+  "threadId": "01a04877-60f6-73f1-9036-abc9e88f3b19",
+  "turnId": "01a04877-6328-7480-8ebb-718115e0b8eb",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": "medium",
+  "durationMs": 59499,
+  "promptVersion": "candidate-v1",
+  "promptSha256": "aa350b62a15653c35607231ea99ed2fb1343fb6d7e94ba97c83482909959a2bf",
+  "promptCharacters": 6804,
+  "promptUtf8Bytes": 15242,
+  "outputCharacters": 2885,
+  "outputUtf8Bytes": 3725,
+  "programValidation": "passed",
+  "semanticReview": "needs_review"
+}

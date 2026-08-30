@@ -1,0 +1,306 @@
+{
+  "scope": "content",
+  "method": "generateReading",
+  "args": [
+    {
+      "course": {
+        "id": "cmsvp6m880001qcvoz99bw7zj",
+        "title": "瓦罗兰特的故事",
+        "durationMinutes": 30,
+        "currentStage": "preview",
+        "staleFromStage": "content",
+        "englishLevel": "A1",
+        "storyComplexity": "clear_linear",
+        "knowledgePointIds": [
+          "cmsg22n8z000cr0voijia0ldt",
+          "cmspypvk700189svoqwl2gtlw",
+          "cmsg22n8w000ar0vol4n8kqfc",
+          "cmsg22n8x000br0vo6c5a1nfy"
+        ]
+      },
+      "outline": {
+        "id": "cmsx9i82l000cuwvontzfte0z",
+        "title": "港口里的镜面 Boss / The Mirror Boss at the Harbor",
+        "summary": "林老师和子轩进入夜间港口训练场，和 Jett、Sage 一起护送辐能安全箱。镜面守卫偷走安全箱，并用复制最近动作的规则反击小队。子轩记录 Boss 复制的动作，林老师引导大家改变战斗节奏，Jett 和 Sage 用假动作与真正的屏障制造转折。最后小队夺回安全箱，关闭复制程序，港口吊塔恢复安全。",
+        "chapters": [
+          {
+            "id": "cmsx9i834000duwvo24ja8mmb",
+            "order": 1,
+            "title": "安全箱被抢走 / The Safety Box Is Taken",
+            "summary": "林老师和子轩来到港口训练场，和 Jett、Sage 护送辐能安全箱到控制台。镜面守卫突然出现，复制 Jett 的快速冲刺并抢走安全箱。小队发现 Boss 会模仿最近的动作，安全箱现在被带到吊塔下方。",
+            "recommendedKnowledgePointIds": [
+              "cmsg22n8x000br0vo6c5a1nfy",
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "knowledgePointRecommendationSummary": "KP2 可用于描述正在护送和正在移动的任务状态；KP3 可用于简短说明安全箱被抢走这一已经发生的关键事件，两者自然形成当前行动与结果的对比。"
+          },
+          {
+            "id": "cmsx9i834000euwvo8y18uioe",
+            "order": 2,
+            "title": "记录最近的动作 / Writing the Last Move",
+            "summary": "小队追到吊塔下方，但 Boss 又复制 Sage 的防护动作，让大家无法直接靠近安全箱。子轩开始用简单句记录 Boss 每次复制的最近动作，林老师据此要求大家先停一下再行动。小队确认 Boss 只能复制最近一次明显的能力动作，下一步可以故意给它错误目标。",
+            "recommendedKnowledgePointIds": [
+              "cmsg22n8w000ar0vol4n8kqfc",
+              "cmsg22n8x000br0vo6c5a1nfy"
+            ],
+            "knowledgePointRecommendationSummary": "KP1 可用于表达 Boss 的固定规则，如它复制最近动作；KP2 可用于描述子轩正在记录、队伍正在观察的进行中行动，规则和现场观察能自然配合。"
+          },
+          {
+            "id": "cmsx9i834000fuwvowoyht2re",
+            "order": 3,
+            "title": "假冲刺与真屏障 / A Fake Dash and a Real Wall",
+            "summary": "镜面守卫开始连接吊塔程序，准备用安全箱控制港口吊塔。Jett 做出假冲刺，引导 Boss 复制错误方向；Sage 立刻立起真正的屏障，林老师带子轩靠近并关闭复制程序。小队夺回安全箱，吊塔停止移动，子轩也用记录帮助大家赢下这场战斗。",
+            "recommendedKnowledgePointIds": [
+              "cmsg22n8w000ar0vol4n8kqfc",
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "knowledgePointRecommendationSummary": "KP1 可用于复现最终计划中的简单动作规则，如 Jett runs 和 Sage makes a wall；KP3 可用于回顾任务结果，如小队夺回安全箱、关闭程序，适合收束故事。"
+          }
+        ]
+      },
+      "knowledgePoints": [
+        {
+          "id": "cmsg22n8z000cr0voijia0ldt",
+          "label": "Past Simple",
+          "labelZh": "一般过去时",
+          "category": "时态"
+        },
+        {
+          "id": "cmspypvk700189svoqwl2gtlw",
+          "label": "Past Continuous",
+          "labelZh": "过去进行时",
+          "category": "时态"
+        },
+        {
+          "id": "cmsg22n8w000ar0vol4n8kqfc",
+          "label": "Present Simple",
+          "labelZh": "一般现在时",
+          "category": "时态"
+        },
+        {
+          "id": "cmsg22n8x000br0vo6c5a1nfy",
+          "label": "Present Continuous",
+          "labelZh": "现在进行时",
+          "category": "时态"
+        }
+      ],
+      "plan": {
+        "courseId": "cmsvp6m880001qcvoz99bw7zj",
+        "status": "confirmed",
+        "englishLevel": "A1",
+        "mainIdeaTargetWordCount": 120,
+        "chapters": [
+          {
+            "outlineChapterId": "cmsx9i834000duwvo24ja8mmb",
+            "targetWordCount": 120,
+            "paragraphCount": 2,
+            "knowledgePointIds": [
+              "cmsg22n8x000br0vo6c5a1nfy",
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "readingExerciseMode": "interactive",
+            "readingExercises": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 4,
+                "wordForm": 3
+              },
+              "vocabulary": {
+                "chineseHint": 3
+              }
+            },
+            "chapterPractice": {
+              "enabled": false,
+              "grammar": {
+                "optionCloze": 5,
+                "wordForm": 5
+              }
+            },
+            "touched": {
+              "targetWordCount": false,
+              "paragraphCount": false,
+              "knowledgePointIds": false,
+              "readingExerciseMode": true,
+              "readingExercises": false,
+              "chapterPractice": false
+            }
+          },
+          {
+            "outlineChapterId": "cmsx9i834000euwvo8y18uioe",
+            "targetWordCount": 120,
+            "paragraphCount": 2,
+            "knowledgePointIds": [
+              "cmsg22n8w000ar0vol4n8kqfc",
+              "cmsg22n8x000br0vo6c5a1nfy"
+            ],
+            "readingExerciseMode": "interactive",
+            "readingExercises": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 4,
+                "wordForm": 3
+              },
+              "vocabulary": {
+                "chineseHint": 3
+              }
+            },
+            "chapterPractice": {
+              "enabled": false,
+              "grammar": {
+                "optionCloze": 5,
+                "wordForm": 5
+              }
+            },
+            "touched": {
+              "targetWordCount": false,
+              "paragraphCount": false,
+              "knowledgePointIds": false,
+              "readingExerciseMode": false,
+              "readingExercises": false,
+              "chapterPractice": false
+            }
+          },
+          {
+            "outlineChapterId": "cmsx9i834000fuwvowoyht2re",
+            "targetWordCount": 120,
+            "paragraphCount": 2,
+            "knowledgePointIds": [
+              "cmsg22n8w000ar0vol4n8kqfc",
+              "cmsg22n8z000cr0voijia0ldt"
+            ],
+            "readingExerciseMode": "interactive",
+            "readingExercises": {
+              "enabled": true,
+              "grammar": {
+                "optionCloze": 4,
+                "wordForm": 3
+              },
+              "vocabulary": {
+                "chineseHint": 3
+              }
+            },
+            "chapterPractice": {
+              "enabled": false,
+              "grammar": {
+                "optionCloze": 5,
+                "wordForm": 5
+              }
+            },
+            "touched": {
+              "targetWordCount": false,
+              "paragraphCount": false,
+              "knowledgePointIds": false,
+              "readingExerciseMode": false,
+              "readingExercises": false,
+              "chapterPractice": false
+            }
+          }
+        ],
+        "afterClassPractice": {
+          "enabled": true,
+          "touched": {
+            "knowledgePointIds": false,
+            "practice": true
+          },
+          "practice": {
+            "enabled": false,
+            "grammar": {
+              "optionCloze": 5,
+              "wordForm": 5
+            }
+          },
+          "knowledgePointIds": [
+            "cmsg22n8x000br0vo6c5a1nfy",
+            "cmsg22n8z000cr0voijia0ldt",
+            "cmsg22n8w000ar0vol4n8kqfc"
+          ],
+          "vocabularyReviewEnabled": true
+        },
+        "updatedAt": "2026-08-24T14:12:13.087Z",
+        "confirmedAt": "2026-08-24T14:12:13.084Z"
+      },
+      "lengthPolicy": {
+        "englishLevel": "A1",
+        "storyComplexity": "clear_linear",
+        "chinese": {
+          "directionOverview": {
+            "recommendedMax": 70,
+            "hardMax": 90
+          },
+          "outlineSummary": {
+            "recommendedMax": 70,
+            "hardMax": 95
+          },
+          "chapterOverview": {
+            "recommendedMax": 35,
+            "hardMax": 45
+          }
+        },
+        "english": {
+          "chapterTargetWords": 80,
+          "generationRange": [
+            70,
+            90
+          ],
+          "validationRange": [
+            70,
+            95
+          ],
+          "teacherRecommendedRange": [
+            60,
+            100
+          ],
+          "hardRange": [
+            60,
+            180
+          ]
+        }
+      },
+      "promptPeople": [
+        {
+          "role": "teacher",
+          "chineseName": "林老师",
+          "englishName": "Ms. Lin"
+        },
+        {
+          "role": "student",
+          "chineseName": "子轩",
+          "englishName": "ZiXuan"
+        }
+      ],
+      "promptCharacters": [
+        {
+          "displayName": "林老师",
+          "englishName": "Ms. Lin",
+          "roleInStory": "带领子轩参与护送任务，在战斗中提醒小队放慢节奏、说清动作，并设计让 Boss 复制错误动作的计划。",
+          "shortDescription": "带领子轩参与护送任务，在战斗中提醒小队放慢节奏、说清动作，并设计让 Boss 复制错误动作的计划。"
+        },
+        {
+          "displayName": "子轩",
+          "englishName": "ZiXuan",
+          "roleInStory": "起初相信动作越快越好，后来用简单句记录 Boss 最近复制的动作，帮助小队判断下一步该做什么。",
+          "shortDescription": "起初相信动作越快越好，后来用简单句记录 Boss 最近复制的动作，帮助小队判断下一步该做什么。"
+        },
+        {
+          "displayName": "Jett",
+          "englishName": "Jett",
+          "roleInStory": "负责快速侦查和引开 Boss，最后用假冲刺诱导 Boss 复制无效动作，为夺回安全箱创造机会。",
+          "shortDescription": "负责快速侦查和引开 Boss，最后用假冲刺诱导 Boss 复制无效动作，为夺回安全箱创造机会。"
+        },
+        {
+          "displayName": "Sage",
+          "englishName": "Sage",
+          "roleInStory": "负责保护退路和稳定安全箱，在关键时刻保留真正的屏障能力，阻止 Boss 控制吊塔。",
+          "shortDescription": "负责保护退路和稳定安全箱，在关键时刻保留真正的屏障能力，阻止 Boss 控制吊塔。"
+        },
+        {
+          "displayName": "镜面守卫",
+          "englishName": "Mirror Guard",
+          "roleInStory": "偷走辐能安全箱的最终 Boss，会复制小队最近一次使用过的能力，是迫使小队改变战斗节奏的主要阻碍。",
+          "shortDescription": "偷走辐能安全箱的最终 Boss，会复制小队最近一次使用过的能力，是迫使小队改变战斗节奏的主要阻碍。"
+        }
+      ]
+    },
+    "quickrouter_gpt"
+  ]
+}

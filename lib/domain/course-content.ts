@@ -1,5 +1,9 @@
 import type { CourseContentChapter, CourseContentParagraph, CourseContentPart, CourseGrammarQuestion, CourseVocabularyMatchingItem } from "@/lib/contracts/api";
 
+export function englishWordCount(text: string) {
+  return (text.match(/[A-Za-z]+(?:['’][A-Za-z]+)*(?:-[A-Za-z]+(?:['’][A-Za-z]+)*)*/g) ?? []).length;
+}
+
 function wordBlank(answer: string) {
   return answer.trim().split(/\s+/).map(() => "____").join(" ");
 }

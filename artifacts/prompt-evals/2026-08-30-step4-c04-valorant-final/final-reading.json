@@ -1,0 +1,293 @@
+{
+  "contractVersion": "step4.content.v4",
+  "chapters": [
+    {
+      "outlineChapterId": "cmsx9i834000duwvo24ja8mmb",
+      "paragraphs": [
+        {
+          "template": "At night, Ms. Lin and ZiXuan arrived at the harbor training ground. They {{OC1}} a Radianite {{VOC1}} with Jett and Sage. Jett {{WF1}} the path, and Sage {{WF2}} beside the precious cargo. While the team {{OC2}} toward the control console, a dark figure suddenly stepped out from behind a crane."
+        },
+        {
+          "template": "Mirror Guard {{OC3}} Jett's fast {{VOC2}} and rushed past Sage. It {{WF3}} the box before anyone could stop it. Ms. Lin saw that the Guard {{OC4}} the most recent move. Jett was turning back when the Boss carried the box under the harbor tower. The team followed it to the tower {{VOC3}}."
+        }
+      ],
+      "slots": [
+        {
+          "id": "OC1",
+          "kind": "optionCloze",
+          "knowledgePointKey": "G1",
+          "answer": "were escorting",
+          "distractors": [
+            "was escorting",
+            "escort"
+          ]
+        },
+        {
+          "id": "OC2",
+          "kind": "optionCloze",
+          "knowledgePointKey": "G1",
+          "answer": "was moving",
+          "distractors": [
+            "were moving",
+            "moves"
+          ]
+        },
+        {
+          "id": "OC3",
+          "kind": "optionCloze",
+          "knowledgePointKey": "G1",
+          "answer": "copied",
+          "distractors": [
+            "copy",
+            "copies"
+          ]
+        },
+        {
+          "id": "OC4",
+          "kind": "optionCloze",
+          "knowledgePointKey": "G1",
+          "answer": "was copying",
+          "distractors": [
+            "were copying",
+            "is copying"
+          ]
+        },
+        {
+          "id": "WF1",
+          "kind": "wordForm",
+          "knowledgePointKey": "G1",
+          "answer": "was watching",
+          "cue": "watch"
+        },
+        {
+          "id": "WF2",
+          "kind": "wordForm",
+          "knowledgePointKey": "G1",
+          "answer": "was walking",
+          "cue": "walk"
+        },
+        {
+          "id": "WF3",
+          "kind": "wordForm",
+          "knowledgePointKey": "G1",
+          "answer": "grabbed",
+          "cue": "grab"
+        },
+        {
+          "id": "VOC1",
+          "kind": "vocabulary",
+          "answer": "safety box",
+          "canonicalForm": "safety box",
+          "meaningZh": "安全箱"
+        },
+        {
+          "id": "VOC2",
+          "kind": "vocabulary",
+          "answer": "dash",
+          "canonicalForm": "dash",
+          "meaningZh": "快速冲刺"
+        },
+        {
+          "id": "VOC3",
+          "kind": "vocabulary",
+          "answer": "controls",
+          "canonicalForm": "controls",
+          "meaningZh": "控制装置"
+        }
+      ]
+    },
+    {
+      "outlineChapterId": "cmsx9i834000euwvo8y18uioe",
+      "paragraphs": [
+        {
+          "template": "Under the tower, the team found Mirror Guard beside the {{VOC1}}. Sage tried to move closer, but the Guard used a copied shield. ZiXuan watched carefully. “It {{OC1}} the last clear ability,” he said. “Now it {{OC2}} our path, and we {{WF1}} what it does.” He opened his {{VOC2}}."
+        },
+        {
+          "template": "ZiXuan wrote down each copied move. Ms. Lin said, “We {{OC3}} before each move, but the Guard {{WF2}} for our next action. ZiXuan {{OC4}} each move, and I {{WF3}} every line.” Their notes showed the Guard's fixed {{VOC3}}: it copied only the latest clear ability. Now the team could give it a false target."
+        }
+      ],
+      "slots": [
+        {
+          "id": "OC1",
+          "kind": "optionCloze",
+          "knowledgePointKey": "G1",
+          "answer": "copies",
+          "distractors": [
+            "copy",
+            "copied"
+          ]
+        },
+        {
+          "id": "OC2",
+          "kind": "optionCloze",
+          "knowledgePointKey": "G1",
+          "answer": "is blocking",
+          "distractors": [
+            "are blocking",
+            "blocked"
+          ]
+        },
+        {
+          "id": "OC3",
+          "kind": "optionCloze",
+          "knowledgePointKey": "G1",
+          "answer": "stop",
+          "distractors": [
+            "stops",
+            "stopped"
+          ]
+        },
+        {
+          "id": "OC4",
+          "kind": "optionCloze",
+          "knowledgePointKey": "G1",
+          "answer": "is recording",
+          "distractors": [
+            "record",
+            "was recording"
+          ]
+        },
+        {
+          "id": "WF1",
+          "kind": "wordForm",
+          "knowledgePointKey": "G1",
+          "answer": "are watching",
+          "cue": "watch"
+        },
+        {
+          "id": "WF2",
+          "kind": "wordForm",
+          "knowledgePointKey": "G1",
+          "answer": "is waiting",
+          "cue": "wait"
+        },
+        {
+          "id": "WF3",
+          "kind": "wordForm",
+          "knowledgePointKey": "G1",
+          "answer": "check",
+          "cue": "check"
+        },
+        {
+          "id": "VOC1",
+          "kind": "vocabulary",
+          "answer": "safety box",
+          "canonicalForm": "safety box",
+          "meaningZh": "安全箱"
+        },
+        {
+          "id": "VOC2",
+          "kind": "vocabulary",
+          "answer": "notebook",
+          "canonicalForm": "notebook",
+          "meaningZh": "笔记本"
+        },
+        {
+          "id": "VOC3",
+          "kind": "vocabulary",
+          "answer": "rule",
+          "canonicalForm": "rule",
+          "meaningZh": "规则"
+        }
+      ]
+    },
+    {
+      "outlineChapterId": "cmsx9i834000fuwvowoyht2re",
+      "paragraphs": [
+        {
+          "template": "Mirror Guard began connecting the safety box to the tower program {{OC1}} the harbor cranes. The team used ZiXuan's notes {{WF1}} its plan. Jett stepped forward {{OC2}} a dash toward an empty path. The Boss copied her false {{VOC1}} and rushed away from the box."
+        },
+        {
+          "template": "Sage raised her real {{VOC2}} {{OC3}} the Boss. Ms. Lin moved forward with ZiXuan {{WF2}} the console. ZiXuan used his notes {{OC4}} the correct switch, and Ms. Lin pressed it {{WF3}} the copying program. The team recovered the safety box. The cranes stopped moving, and the {{VOC3}} was safe again."
+        }
+      ],
+      "slots": [
+        {
+          "id": "OC1",
+          "kind": "optionCloze",
+          "knowledgePointKey": "G1",
+          "answer": "to control",
+          "distractors": [
+            "controlled",
+            "was controlling"
+          ]
+        },
+        {
+          "id": "OC2",
+          "kind": "optionCloze",
+          "knowledgePointKey": "G1",
+          "answer": "to fake",
+          "distractors": [
+            "faked",
+            "was faking"
+          ]
+        },
+        {
+          "id": "OC3",
+          "kind": "optionCloze",
+          "knowledgePointKey": "G1",
+          "answer": "to block",
+          "distractors": [
+            "blocked",
+            "was blocking"
+          ]
+        },
+        {
+          "id": "OC4",
+          "kind": "optionCloze",
+          "knowledgePointKey": "G1",
+          "answer": "to find",
+          "distractors": [
+            "found",
+            "was finding"
+          ]
+        },
+        {
+          "id": "WF1",
+          "kind": "wordForm",
+          "knowledgePointKey": "G1",
+          "answer": "to understand",
+          "cue": "understand"
+        },
+        {
+          "id": "WF2",
+          "kind": "wordForm",
+          "knowledgePointKey": "G1",
+          "answer": "to reach",
+          "cue": "reach"
+        },
+        {
+          "id": "WF3",
+          "kind": "wordForm",
+          "knowledgePointKey": "G1",
+          "answer": "to shut down",
+          "cue": "shut down"
+        },
+        {
+          "id": "VOC1",
+          "kind": "vocabulary",
+          "answer": "move",
+          "canonicalForm": "move",
+          "meaningZh": "动作"
+        },
+        {
+          "id": "VOC2",
+          "kind": "vocabulary",
+          "answer": "wall",
+          "canonicalForm": "wall",
+          "meaningZh": "屏障"
+        },
+        {
+          "id": "VOC3",
+          "kind": "vocabulary",
+          "answer": "harbor",
+          "canonicalForm": "harbor",
+          "meaningZh": "港口"
+        }
+      ]
+    }
+  ],
+  "mainIdea": {
+    "text": "Ms. Lin and ZiXuan joined Jett and Sage to escort a Radianite safety box through a harbor training ground. Mirror Guard copied Jett's dash, stole the box, and took it under the tower. When the Guard also copied Sage's shield, ZiXuan recorded each move and learned that it copied only the latest clear ability. The team used his notes to plan a trick. Jett made a false dash, so the Guard moved the wrong way. Sage then raised a real wall while Ms. Lin and ZiXuan shut down the copying program, recovered the box, stopped the cranes, and made the harbor safe again."
+  }
+}

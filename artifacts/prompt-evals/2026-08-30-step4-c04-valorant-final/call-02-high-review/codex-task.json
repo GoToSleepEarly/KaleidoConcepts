@@ -1,0 +1,10 @@
+{
+  "threadId": "01a05133-c0f2-7bf1-8a1e-a547a718f5b1",
+  "turnId": "01a05133-c4ab-7d21-88f3-8b2b577f20aa",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": "high",
+  "durationMs": 120170,
+  "promptPath": "../bootstrap-review-high/02-prompt.txt",
+  "promptCharacters": 8521,
+  "outputCharacters": 4630
+}

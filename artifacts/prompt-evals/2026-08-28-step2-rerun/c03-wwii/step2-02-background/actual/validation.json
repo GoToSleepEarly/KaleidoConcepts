@@ -1,0 +1,14 @@
+{
+  "config": {
+    "scope": "story",
+    "method": "prepareBackgroundKnowledge"
+  },
+  "suppliedResponseCount": 1,
+  "capturedRequestCount": 1,
+  "result": null,
+  "error": {
+    "name": "Error",
+    "message": "背景知识缺口没有完整生成，请重试",
+    "stack": "Error: 背景知识缺口没有完整生成，请重试\n    at Object.prepareBackgroundKnowledge (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\lib\\server\\ai\\story-outline-deps.ts:1031:34)\n    at async main (C:\\Users\\10622\\Desktop\\KaleidoConcepts\\PBLStudio\\scripts\\prompt-eval\\run-manual-ai-operation.ts:98:14)"
+  }
+}
