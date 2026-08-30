@@ -9,9 +9,8 @@ export const storyComplexitySchema = z.enum(["clear_linear", "conflict_driven", 
 
 export const storyOutlineSettingsSchema = z.object({
   chapterCount: z.number().int().min(3).max(5),
-  writingProvider: storyWritingProviderSchema,
   storyComplexity: storyComplexitySchema,
-});
+}).strict();
 
 export const researchPlanSchema = z.object({
   researchGoal: z.string().trim().min(1),

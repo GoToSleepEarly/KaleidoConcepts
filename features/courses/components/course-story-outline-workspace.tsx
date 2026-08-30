@@ -2,16 +2,16 @@
 
 import React, { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, BookOpen, Bot, Check, Loader2, Pencil, RotateCcw, Search, Send, Sparkles, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Bot, Check, CircleHelp, Loader2, Pencil, RotateCcw, Search, Send, Sparkles, UserRound } from "lucide-react";
 
 import { AutoGrowTextarea } from "@/components/ui/auto-grow-textarea";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { AiOperationStatusCard, AiWorkspaceGuide, CourseAiWorkspaceFrame, type AiOperationPresentation } from "@/features/courses/components/course-ai-workspace";
+import { AiOperationStatusCard, CourseAiWorkspaceFrame, type AiOperationPresentation } from "@/features/courses/components/course-ai-workspace";
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
-import type { CourseSourceReference, CourseStoryChatAction, CourseStoryMessageInput, CourseStoryOutline, CourseStoryOutlineState, CourseStoryDirection, PresetOption, StoryComplexity, StoryWritingProvider } from "@/lib/contracts/api";
+import type { CourseSourceReference, CourseStoryChatAction, CourseStoryMessageInput, CourseStoryOutline, CourseStoryOutlineState, CourseStoryDirection, PresetOption, StoryComplexity } from "@/lib/contracts/api";
 import { normalizeStoryChapterCount } from "@/lib/domain/story-length-policy";
 import { cn } from "@/lib/utils";
 import { createRequestId } from "@/lib/utils/request-id";
@@ -30,6 +30,8 @@ type PendingOutlineMutation = {
     preserveComposer?: boolean;
   };
 };
+
+const STORY_GUIDE_DISMISSED_KEY = "pblstudio.story-outline-guide.dismissed.v1";
 
 const outlineMutationActions = new Set<CourseStoryChatAction["action"]>(["confirm_direction", "generate_from_reference", "regenerate_outline", "revise_outline", "revise_chapter", "confirm_story_change"]);
 
@@ -68,6 +70,12 @@ function hasStoryResult(state: CourseStoryOutlineState) {
   return Boolean(state.directions.length || state.referenceMaterials.length || state.outline);
 }
 
+function elapsedOperationSeconds(startedAt?: string) {
+  if (!startedAt) return 0;
+  const started = new Date(startedAt).getTime();
+  return Number.isFinite(started) ? Math.max(0, Math.floor((Date.now() - started) / 1000)) : 0;
+}
+
 function isCourseStoryOutlineState(value: unknown): value is CourseStoryOutlineState {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<CourseStoryOutlineState>;
@@ -82,7 +90,6 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const [message, setMessage] = useState("");
   const [randomSupplement, setRandomSupplement] = useState("");
   const [chapterCount, setChapterCount] = useState(() => normalizeStoryChapterCount(initialState.settings.chapterCount));
-  const [writingProvider, setWritingProvider] = useState<StoryWritingProvider>(initialState.settings.writingProvider);
   const [storyComplexity, setStoryComplexity] = useState<StoryComplexity>(initialState.settings.storyComplexity);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState<PresetOption | null>(null);
@@ -96,7 +103,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const [pending, setPending] = useState(initialState.operation?.status === "running");
   const [pendingLabel, setPendingLabel] = useState(() => operationLoadingLabel(initialState.operation?.phase));
   const [pendingAction, setPendingAction] = useState(initialState.operation?.action ?? "idea");
-  const [pendingSeconds, setPendingSeconds] = useState(0);
+  const [pendingSeconds, setPendingSeconds] = useState(() => initialState.operation?.status === "running" ? elapsedOperationSeconds(initialState.operation.startedAt) : 0);
   const [resultTab, setResultTab] = useState<ResultTab>(() => latestResultTab(initialState));
   const [error, setError] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
@@ -104,8 +111,11 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const [optimisticTeacherMessage, setOptimisticTeacherMessage] = useState("");
   const [composerIntent, setComposerIntent] = useState<ComposerIntent | null>(null);
   const [pendingNavigationHref, setPendingNavigationHref] = useState<string | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideOpenedManually, setGuideOpenedManually] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const resultScrollRef = useRef<HTMLDivElement | null>(null);
   const requestInFlight = useRef(false);
   const settingsSaveInFlight = useRef(false);
   const stateRef = useRef(initialState);
@@ -118,6 +128,8 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const resolvedStoryType = storyType === "__custom__" ? customStoryType.trim() : storyType;
   const resolvedTone = tone === "__custom__" ? customTone.trim() : tone;
   const hasCurrentRetryAction = state.operation?.status === "failed" && state.chatMessages.some((chat) => chat.actions.some((action) => action.action === "retry_operation" && (!action.targetId || action.targetId === state.operation?.requestId)));
+  const latestAssistantMessageId = [...state.chatMessages].reverse().find((chat) => chat.role === "assistant")?.id;
+  const resultVersion = `${resultTab}:${state.outline?.updatedAt ?? ""}:${state.referenceMaterials.map((item) => item.updatedAt).join("|")}:${state.directions.map((item) => `${item.createdAt}:${item.selectedAt ?? ""}`).join("|")}`;
 
   const applyNextState = useCallback((nextState: CourseStoryOutlineState) => {
     const previousState = stateRef.current;
@@ -136,6 +148,18 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   }
 
   useEffect(() => {
+    let shouldOpen: boolean;
+    try {
+      shouldOpen = window.localStorage.getItem(STORY_GUIDE_DISMISSED_KEY) !== "true";
+    } catch {
+      shouldOpen = true;
+    }
+    if (!shouldOpen) return;
+    const timer = window.setTimeout(() => setGuideOpen(true), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (hasUnsentInput) event.preventDefault();
     };
@@ -145,17 +169,24 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
 
   useEffect(() => {
     if (!pending) return;
-    const started = Date.now();
+    const started = state.operation?.status === "running" ? new Date(state.operation.startedAt).getTime() : Date.now();
+    const updateElapsed = () => setPendingSeconds(Math.max(0, Math.floor((Date.now() - started) / 1000)));
+    updateElapsed();
     const timer = window.setInterval(() => {
-      setPendingSeconds(Math.floor((Date.now() - started) / 1000));
+      updateElapsed();
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [pending]);
+  }, [pending, state.operation?.requestId, state.operation?.startedAt, state.operation?.status]);
 
   useEffect(() => {
     const timeline = chatScrollRef.current;
     if (timeline) timeline.scrollTop = timeline.scrollHeight;
   }, [optimisticTeacherMessage, pending, pendingLabel, state.chatMessages.length, state.operation?.status, state.operation?.updatedAt, state.outline?.updatedAt]);
+
+  useEffect(() => {
+    const result = resultScrollRef.current;
+    if (result) result.scrollTop = 0;
+  }, [resultVersion]);
 
   useEffect(() => {
     let active = true;
@@ -168,7 +199,6 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
         if (JSON.stringify(nextState) === JSON.stringify(stateRef.current)) return;
         applyNextState(nextState);
         setChapterCount(normalizeStoryChapterCount(nextState.settings.chapterCount));
-        setWritingProvider(nextState.settings.writingProvider);
         setStoryComplexity(nextState.settings.storyComplexity);
         const operationRunning = nextState.operation?.status === "running";
         setPending(operationRunning);
@@ -194,7 +224,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
       const response = await fetch(`/api/courses/${state.course.id}/story-outline/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chapterCount, writingProvider, storyComplexity: nextComplexity }),
+        body: JSON.stringify({ chapterCount, storyComplexity: nextComplexity }),
       });
       const data = (await response.json()) as CourseStoryOutlineState & { message?: string };
       if (!response.ok) throw new Error(data.message || "故事复杂度保存失败");
@@ -279,7 +309,6 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
           ...input,
           requestId,
           chapterCount,
-          writingProvider,
           storyComplexity,
         }),
       });
@@ -486,22 +515,26 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   }
 
   return (
-    <div className={cn("mx-auto flex max-w-7xl flex-col gap-4 lg:gap-5", hasResultContent && "gap-3 max-lg:h-[calc(100dvh-7.25rem)] max-lg:overflow-hidden lg:h-[calc(100dvh-8.5rem)] lg:min-h-[36rem] lg:gap-4 lg:overflow-hidden")} data-testid="story-outline-shell">
+    <div className="mx-auto flex h-full max-w-7xl min-w-0 flex-col gap-3 overflow-hidden lg:gap-4" data-testid="story-outline-shell">
       <CourseCreateSteps courseId={state.course.id} currentStep={2} furthestStep={courseStageStep(state.course.currentStage)} onNavigate={navigate} />
       <CourseStaleNotice staleFromStage={state.course.staleFromStage} stage="story_outline" />
       <div className="flex shrink-0 items-end justify-between gap-4" data-testid="story-stage-heading-row">
         <div>
           <h2 className="text-2xl font-semibold text-foreground">故事大纲</h2>
-          {state.selectedKnowledgePoints?.find((point) => point.bookTitle) ? (() => {
-            const source = state.selectedKnowledgePoints!.find((point) => point.bookTitle)!;
-            return <p className="mt-1 text-xs text-muted-foreground">《{source.bookTitle}》 · {source.edition} · {source.officialLevel}</p>;
+          {state.course.englishLevel ? (() => {
+            const source = state.selectedKnowledgePoints?.find((point) => point.bookTitle);
+            return <p className="mt-1 text-xs text-muted-foreground">难度 {state.course.englishLevel}{source ? ` · 教材范围《${source.bookTitle}》· ${source.edition} · ${source.officialLevel}` : ""}</p>;
           })() : null}
         </div>
         <div className="flex items-center gap-2">
+          <Button aria-label="操作指引" onClick={() => { setGuideOpenedManually(true); setGuideOpen(true); }} type="button" variant="outline">
+            <CircleHelp className="size-4" />
+            <span className="hidden sm:inline">操作指引</span>
+          </Button>
           {hasStepContent ? (
-            <Button disabled={pending} onClick={() => setResetOpen(true)} type="button" variant="outline">
+            <Button aria-label="重新开始本轮构思" disabled={pending} onClick={() => setResetOpen(true)} type="button" variant="outline">
               <RotateCcw className="size-4" />
-              重新开始本轮构思
+              <span className="hidden md:inline">重新开始本轮构思</span>
             </Button>
           ) : null}
         </div>
@@ -509,7 +542,8 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
 
       <CourseAiWorkspaceFrame
         active={hasResultContent}
-        className={cn(hasResultContent && "gap-3 max-lg:flex-1 max-lg:overflow-hidden lg:flex-1 lg:gap-3")}
+        className="min-h-0 flex-1 gap-3 overflow-hidden lg:gap-3"
+        constrained
         footer={(
           <div className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-2 shadow-md sm:items-center sm:justify-between sm:flex-row" data-testid="story-step-footer">
             <p aria-live="polite" className="text-sm text-muted-foreground">
@@ -528,7 +562,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
           </div>
         )}
       >
-      <div className={cn("grid min-h-0 gap-4 lg:gap-5", hasResultContent ? "h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden xl:grid-cols-[minmax(420px,1fr)_minmax(0,1.2fr)] xl:grid-rows-[minmax(0,1fr)]" : "w-full xl:grid-cols-[minmax(0,2fr)_minmax(260px,0.75fr)] xl:items-start")} data-layout={hasResultContent ? "split" : "focus"} data-testid="story-outline-layout">
+      <div className={cn("grid h-full min-h-0 min-w-0 overflow-hidden", hasResultContent ? "grid-rows-[auto_minmax(0,1fr)] gap-4 xl:grid-cols-[minmax(420px,1fr)_minmax(0,1.2fr)] xl:grid-rows-[minmax(0,1fr)] lg:gap-5" : "w-full")} data-layout={hasResultContent ? "split" : "focus"} data-testid="story-outline-layout">
         {hasResultContent ? (
           <div className="grid shrink-0 grid-cols-2 gap-1 rounded-lg bg-muted p-1 xl:hidden" data-testid="story-mobile-view-tabs">
             <button aria-pressed={mobileView === "chat"} className={modeClass(mobileView === "chat")} onClick={() => setMobileView("chat")} type="button">
@@ -539,7 +573,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
             </button>
           </div>
         ) : null}
-        <section className={cn("flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-card shadow-sm", hasResultContent && "lg:h-full", !hasResultContent && "self-start", hasResultContent && mobileView === "result" && "hidden xl:flex")} data-testid="story-chat-pane">
+        <section className={cn("flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-card shadow-sm", !hasResultContent && "mx-auto w-full max-w-3xl", hasResultContent && mobileView === "result" && "hidden xl:flex")} data-testid="story-chat-pane">
           <div className={cn("border-b border-border", conversationStarted ? "flex min-h-14 items-center justify-between gap-3 px-4 py-2" : "p-4", !hasResultContent && "max-w-3xl")} data-testid="story-chat-toolbar">
             {!conversationStarted ? (
               <div className={cn("grid grid-cols-2 gap-2 rounded-lg bg-muted p-1", !hasResultContent && "w-full")}>
@@ -551,7 +585,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                 </button>
               </div>
             ) : <span className="shrink-0 text-sm font-semibold text-foreground">创作对话</span>}
-            <div className={cn(conversationStarted ? "flex min-w-0 items-center gap-2" : "mt-3 grid w-full grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3")} data-testid="story-chat-settings">
+            <div className={cn(conversationStarted ? "flex min-w-0 items-center gap-2" : "mt-3 grid w-full grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3")} data-testid="story-chat-settings">
               <label className={cn(conversationStarted ? "flex min-w-0 items-center gap-1" : "block")}>
                 <span className="shrink-0 text-xs text-muted-foreground">章节数</span>
                 <select aria-label="章节数" className={cn("rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100", conversationStarted ? "h-10 w-20" : "mt-1 h-9 w-full sm:h-10 sm:px-3")} onChange={(event) => setChapterCount(Number(event.target.value))} value={chapterCount}>
@@ -570,17 +604,10 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                   <option value="layered">丰富·多层叙事</option>
                 </select>
               </label>
-              <label className={cn(conversationStarted ? "flex min-w-0 items-center gap-1" : "block")}>
-                <span className="shrink-0 text-xs text-muted-foreground">写作模型</span>
-                <select aria-label="写作模型" className={cn("rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100", conversationStarted ? "h-10 w-24" : "mt-1 h-9 w-full sm:h-10 sm:px-3")} onChange={(event) => setWritingProvider(event.target.value as StoryWritingProvider)} value={writingProvider}>
-                  <option value="quickrouter_gpt">GPT</option>
-                  <option value="quickrouter_deepseek">DeepSeek（成本更低）</option>
-                </select>
-              </label>
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 touch-pan-y space-y-3 overflow-y-auto overscroll-contain scroll-pb-24 p-4" data-testid="story-chat-scroll" ref={chatScrollRef}>
+          <div className="min-h-0 flex-1 touch-pan-y space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain scroll-pb-24 p-4" data-testid="story-chat-scroll" ref={chatScrollRef}>
             {!conversationStarted && mode === "random" ? (
               <form className={cn("w-full space-y-4 rounded-lg border border-border bg-muted/30 p-4", !hasResultContent && "max-w-3xl")} onSubmit={submit}>
                 <h3 className="font-medium text-foreground">生成故事方向</h3>
@@ -609,7 +636,8 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
             {state.chatMessages.map((chat) => (
               <div className={cn("flex items-start gap-2", chat.role === "teacher" ? "justify-end" : "justify-start")} key={chat.id}>
                 {chat.role !== "teacher" ? <ChatAvatar role="assistant" /> : null}
-                <article className={cn("max-w-[calc(100%-2.5rem)] rounded-lg px-3 py-2 text-sm", !hasResultContent && "max-w-2xl", chat.role === "teacher" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground")}>
+                <article className={cn("max-w-[calc(100%-2.5rem)] rounded-lg px-3 py-2 text-sm", !hasResultContent && "max-w-2xl", chat.role === "teacher" ? "bg-primary text-primary-foreground" : chat.id === latestAssistantMessageId && state.operation?.status === "succeeded" ? "border border-emerald-200 bg-emerald-50 text-emerald-950" : "bg-muted text-foreground")} data-testid={chat.id === latestAssistantMessageId && state.operation?.status === "succeeded" ? "ai-operation-completion" : undefined}>
+                  {chat.id === latestAssistantMessageId && state.operation?.status === "succeeded" ? <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><Check aria-hidden className="size-3.5" />处理完成</p> : null}
                   <p className="whitespace-pre-wrap leading-6">{chat.content}</p>
                   {chat.id === latestAlignmentQuestionMessageId && state.alignment?.status !== "ready_for_confirmation" && state.alignment?.status !== "confirmed" && chat.actions.some((action) => action.action === "submit_alignment_answers" && action.questions?.length) ? (
                     <AlignmentQuestionForm
@@ -730,7 +758,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
         </section>
 
         {hasResultContent ? (
-          <div className={cn("min-h-0 min-w-0 overflow-y-auto overscroll-contain scroll-pb-24 lg:h-full", mobileView === "chat" && "hidden xl:block")} data-testid="story-result-scroll">
+          <div className={cn("min-h-0 min-w-0 overflow-x-hidden overflow-y-auto overscroll-contain scroll-pb-24 lg:h-full", mobileView === "chat" && "hidden xl:block")} data-testid="story-result-scroll" ref={resultScrollRef}>
             <ResultPanel
               onDescribeDirection={() => continueModify("我希望的故事方向：")}
               onConfirmDirection={(direction) =>
@@ -777,7 +805,6 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
             />
           </div>
         ) : null}
-        {!hasResultContent ? <AiWorkspaceGuide className="hidden xl:block" items={["描述已有想法，或用随机灵感快速确定主题与氛围。", "AI 会先确认创作理解，信息不足时只询问必要问题。", "确认方向后生成可逐章修改的故事大纲。"]} title="从一个清楚的故事目标开始" /> : null}
       </div>
       </CourseAiWorkspaceFrame>
       {themePickerOpen ? (
@@ -832,6 +859,35 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                 {pending ? <Loader2 className="size-4 animate-spin" /> : null}
                 删除故事构思并重新开始
               </Button>
+            </div>
+          </div>
+        </Dialog>
+      ) : null}
+      {guideOpen ? (
+        <Dialog onClose={() => setGuideOpen(false)} open title="故事大纲使用指引">
+          <div className="space-y-5 p-5 sm:p-6">
+            <p className="text-sm leading-6 text-muted-foreground">你不需要提前想好所有细节，AI 会陪你逐步完成故事构思。</p>
+            <ol className="grid gap-3">
+              {[
+                ["开始构思", "有想法可以直接描述人物、作品、主题或剧情；暂时没有方向，也可以从主题、故事类型和故事氛围中挑选灵感。"],
+                ["对齐故事要求", "AI 会先梳理你的想法，必要时补充参考资料或询问少量关键信息。"],
+                ["确定故事方向", "主线明确时，AI 会先展示理解供你确认；主线不明确时，会提供 3 个方向供你选择。"],
+                ["完善章节大纲", "确定方向后生成完整大纲。你可以修改整体故事或单独调整某一章，满意后再进入教学规划。"],
+              ].map(([title, content], index) => (
+                <li className="flex gap-3 rounded-lg bg-muted/50 p-3" key={title}>
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">{index + 1}</span>
+                  <div><p className="text-sm font-semibold text-foreground">{title}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{content}</p></div>
+                </li>
+              ))}
+            </ol>
+            <div className="flex justify-end gap-2 border-t border-border pt-4">
+              {!guideOpenedManually ? <Button onClick={() => setGuideOpen(false)} type="button" variant="outline">稍后再看</Button> : null}
+              <Button onClick={() => {
+                if (!guideOpenedManually) {
+                  try { window.localStorage.setItem(STORY_GUIDE_DISMISSED_KEY, "true"); } catch { /* Local preferences must not block the workflow. */ }
+                }
+                setGuideOpen(false);
+              }} type="button">{guideOpenedManually ? "知道了" : "知道了，不再自动展示"}</Button>
             </div>
           </div>
         </Dialog>
@@ -1011,7 +1067,7 @@ function ThemePickerDialog({ themes, selectedTheme, onClose, onConfirm }: { them
 }
 
 function modeClass(active: boolean) {
-  return cn("min-h-11 rounded-md px-3 text-sm font-medium", active ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70");
+  return cn("min-h-11 rounded-md px-3 text-sm font-semibold transition-colors", active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-card/70 hover:text-foreground");
 }
 
 function ChatAvatar({ role }: { role: "assistant" | "teacher" }) {

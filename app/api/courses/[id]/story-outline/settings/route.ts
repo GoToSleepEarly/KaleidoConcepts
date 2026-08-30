@@ -11,7 +11,7 @@ import { storyOutlineSettingsSchema } from "@/lib/server/validation/story-outlin
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const body: unknown = await request.json();
   const parsed = storyOutlineSettingsSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ message: "请选择章节数、故事复杂度和写作模型" }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ message: "请选择章节数和故事复杂度" }, { status: 400 });
   const { id } = await params;
   try {
     return NextResponse.json(await updateStoryOutlineSettings(getDb(), id, parsed.data));

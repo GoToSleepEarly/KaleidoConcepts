@@ -14,6 +14,7 @@ beforeEach(() => {
   refreshMock.mockReset();
   HTMLDialogElement.prototype.showModal = function showModal() { this.setAttribute("open", ""); };
   HTMLDialogElement.prototype.close = function close() { this.removeAttribute("open"); };
+  window.localStorage.setItem("pblstudio.content-guide.dismissed.v1", "true");
 });
 
 const initialState: CourseContentState = {
@@ -61,17 +62,17 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByRole("heading", { name: "文案与练习" })).toHaveClass("text-2xl");
     expect(screen.getByTestId("content-story-title")).toHaveTextContent("Hidden Door");
     expect(screen.getByTestId("content-story-title")).toHaveClass("text-sm", "text-muted-foreground");
-    expect(screen.getByRole("option", { name: "GPT" })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "GPT（默认）" })).not.toBeInTheDocument();
-    expect(screen.getByText("B1 · 1/1 章正文已完成 · 课后阅读已生成 · 无额外语法练习")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "文本生成模型" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "GPT" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("content-stage-progress")).not.toBeInTheDocument();
     expect(screen.queryByText("B1 · 正文、课后阅读、章节练习与课后练习")).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Chapter 1" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "Reading" })).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByRole("tab", { name: "第 1 章" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "课后阅读" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: "课后练习" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: "正文" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("content-primary-tabs")).toHaveClass("border-b", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
-    expect(screen.getByRole("tab", { name: "Chapter 1" })).toHaveClass("border-b-2");
-    expect(screen.getByRole("tab", { name: "Chapter 1" })).toHaveClass("shrink-0", "whitespace-nowrap");
+    expect(screen.getByRole("tab", { name: "第 1 章" })).toHaveClass("border-b-2");
+    expect(screen.getByRole("tab", { name: "第 1 章" })).toHaveClass("shrink-0", "whitespace-nowrap");
     expect(screen.getByTestId("content-secondary-tabs")).toHaveClass("border-b", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
     expect(screen.queryByRole("tab", { name: "练习" })).not.toBeInTheDocument();
     expect(screen.getByText("1 / 1 页")).toBeInTheDocument();
@@ -88,14 +89,34 @@ describe("CourseContentWorkspace", () => {
 
   test("switches to pure main idea and closed vocabulary matching page", () => {
     render(<CourseContentWorkspace initialState={initialState} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Reading" }));
-    expect(screen.getByRole("tab", { name: "Reading" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "Reading", selected: true })).toHaveClass("border-b-2");
+    fireEvent.click(screen.getByRole("tab", { name: "课后阅读" }));
+    expect(screen.getByRole("tab", { name: "课后阅读" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "课后阅读", selected: true })).toHaveClass("border-b-2");
     expect(screen.getByText("A complete story summary.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "课后练习" }));
     expect(screen.getByRole("tab", { name: "课后练习" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText(/hidden door/)).toBeInTheDocument();
     expect(screen.getByText("隐藏的门")).toBeInTheDocument();
+  });
+
+  test("keeps the preview operation slot stable between editable exercises and vocabulary matching", () => {
+    render(<CourseContentWorkspace initialState={{
+      ...initialState,
+      homework: {
+        grammar: [{ id: "homework-q1", type: "optionCloze", knowledgePointId: "kp1", before: "Mia ", after: " the map.", answer: "found", options: ["found", "finds", "finding"] }],
+        vocabularyMatching: initialState.homework!.vocabularyMatching,
+      },
+    }} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "课后练习" }));
+    const editableAction = screen.getByRole("button", { name: "修改课后选项填空第 1 页" });
+    expect(editableAction).toHaveClass("w-20");
+
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    const generatedAction = screen.getByRole("button", { name: "词汇配对由正文词汇自动汇总" });
+    expect(generatedAction).toBeDisabled();
+    expect(generatedAction).toHaveClass("w-20");
+    expect(screen.getByText("2 / 2 页")).toBeInTheDocument();
   });
 
   test("shows only the Chinese vocabulary hint in complete-reading mode", () => {
@@ -148,8 +169,8 @@ describe("CourseContentWorkspace", () => {
       messages: [{ id: "repair-1", role: "system", content: "检测到第 1 章需要修复。正在统一修复。", createdAt: "2026-08-10T00:00:00.000Z" }],
     }} />);
 
-    expect(screen.getByText("修复完成")).toBeInTheDocument();
-    expect(screen.getByText("修复完成").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("系统已完成 1 轮内容修复")).toBeInTheDocument();
+    expect(screen.getByText("系统已完成 1 轮内容修复").closest("details")).not.toHaveAttribute("open");
   });
 
   test("keeps historical repair rounds completed while a later exercise generation is running", () => {
@@ -160,7 +181,7 @@ describe("CourseContentWorkspace", () => {
       messages: [{ id: "repair-1", role: "system", content: "检测到第 1 章需要修复。正在统一修复。", createdAt: "2026-08-10T00:00:00.000Z" }],
     }} />);
 
-    expect(screen.getByText("修复完成")).toBeInTheDocument();
+    expect(screen.getByText("系统已完成 1 轮内容修复")).toBeInTheDocument();
     expect(screen.queryByText("修复中")).not.toBeInTheDocument();
   });
 
@@ -173,7 +194,7 @@ describe("CourseContentWorkspace", () => {
         messages: [{ id: "repair-1", role: "system", content: "检测到第 1 章需要修复。正在统一修复。", createdAt: "2026-08-10T00:00:00.000Z" }],
       }} />);
 
-      expect(screen.getByText("修复完成")).toBeInTheDocument();
+      expect(screen.getByText("系统已完成 1 轮内容修复")).toBeInTheDocument();
     } finally {
       Object.defineProperty(Array.prototype, "findLastIndex", { configurable: true, value: originalFindLastIndex });
     }
@@ -186,26 +207,52 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByTestId("content-stage-heading")).not.toHaveTextContent("English Adventure");
     expect(screen.getByTestId("content-stage-progress")).toHaveTextContent("B1 · 1 章 · 待生成正文");
     expect(screen.getByTestId("content-stage-header")).not.toHaveClass("rounded-xl", "border", "shadow-sm");
-    expect(screen.getByText(/将先生成全部章节正文、正文内练习和课后阅读/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "生成正文与课后阅读" })).toBeInTheDocument();
-    expect(screen.getByText("生成后可逐页检查和修改").closest("[data-chat-action]")).toHaveClass("w-fit", "max-w-xl");
-    expect(screen.getByRole("button", { name: "生成正文与课后阅读" })).not.toHaveClass("w-full");
+    expect(screen.getByText("生成阅读内容").closest("[data-chat-action]")).toHaveClass("w-fit", "max-w-[calc(100%-2.25rem)]", "rounded-xl", "p-3");
+    expect(screen.getByText(/系统会一次生成全部章节正文、正文内互动题和课后阅读/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始生成" })).toBeInTheDocument();
+    expect(screen.getByText("生成期间无需重复点击，进度会自动保存。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始生成" })).toHaveClass("min-h-11");
+    expect(screen.getByTestId("content-chat-scroll").querySelectorAll("[data-chat-bubble], [data-chat-action]")).toHaveLength(1);
     expect(screen.queryByLabelText("修改要求")).not.toBeInTheDocument();
-    expect(screen.getByTestId("content-workspace-layout")).toHaveClass("w-full", "xl:grid-cols-[minmax(0,2fr)_minmax(260px,0.75fr)]");
+    expect(screen.getByTestId("content-workspace-layout")).toHaveClass("h-full", "w-full", "min-h-0", "overflow-hidden");
+    expect(screen.getByTestId("content-workspace-layout")).not.toHaveClass("xl:grid-cols-[minmax(0,2fr)_minmax(260px,0.75fr)]");
+    expect(screen.getByTestId("content-chat-column")).toHaveClass("mx-auto", "h-full", "w-full", "max-w-3xl");
+    expect(screen.getByTestId("content-chat-pane")).toHaveClass("h-full", "min-h-0");
     expect(screen.queryByLabelText("课程内容预览")).not.toBeInTheDocument();
     expect(screen.queryByText("等待生成正文")).not.toBeInTheDocument();
+    expect(screen.getByTestId("content-workspace-root")).toHaveClass("h-full", "min-h-0", "overflow-hidden");
+    expect(screen.getByTestId("course-ai-workspace-frame")).toHaveClass("h-full", "grid-rows-[minmax(0,1fr)_auto]");
+    expect(screen.queryByTestId("ai-workspace-guide")).not.toBeInTheDocument();
+  });
+
+  test("uses a device-only first-use guide and keeps a manual reopen action", async () => {
+    window.localStorage.removeItem("pblstudio.content-guide.dismissed.v1");
+    const view = render(<CourseContentWorkspace initialState={{ ...initialState, status: "empty", chapters: [], mainIdea: null, homework: null }} />);
+
+    expect(await screen.findByRole("heading", { name: "文案与练习使用指引" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "知道了，不再自动展示" }));
+    expect(window.localStorage.getItem("pblstudio.content-guide.dismissed.v1")).toBe("true");
+
+    view.unmount();
+    render(<CourseContentWorkspace initialState={{ ...initialState, status: "empty", chapters: [], mainIdea: null, homework: null }} />);
+    expect(screen.queryByRole("heading", { name: "文案与练习使用指引" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "操作指引" }));
+    expect(screen.getByRole("heading", { name: "文案与练习使用指引" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "知道了" })).toBeInTheDocument();
   });
 
   test("keeps Step 4 sequential on phone and iPad portrait while preserving desktop split scroll regions", () => {
     render(<CourseContentWorkspace initialState={initialState} />);
 
     expect(screen.getByTestId("content-workspace-layout")).toHaveAttribute("data-layout", "split");
-    expect(screen.getByTestId("course-ai-workspace-frame")).toHaveClass("lg:h-full", "lg:grid-rows-[minmax(0,1fr)_auto]");
-    expect(screen.getByTestId("content-workspace-layout")).toHaveClass("lg:h-full", "lg:grid-rows-[auto_minmax(0,1fr)]", "xl:grid-cols-[minmax(400px,0.95fr)_minmax(0,1.3fr)]", "xl:grid-rows-[minmax(0,1fr)]");
+    expect(screen.getByTestId("content-workspace-root")).toHaveClass("h-full", "min-h-0", "overflow-hidden");
+    expect(screen.getByTestId("course-ai-workspace-frame")).toHaveClass("h-full", "grid-rows-[minmax(0,1fr)_auto]");
+    expect(screen.getByTestId("content-workspace-layout")).toHaveClass("h-full", "grid-rows-[auto_minmax(0,1fr)]", "xl:grid-cols-[minmax(400px,0.95fr)_minmax(0,1.3fr)]", "xl:grid-rows-[minmax(0,1fr)]");
     expect(screen.getByTestId("content-workspace-layout")).not.toHaveClass("md:h-[calc(100dvh-13.5rem)]");
-    expect(screen.getByTestId("content-chat-pane")).toHaveClass("h-[calc(100dvh-18rem)]", "min-h-[480px]", "lg:h-full", "overflow-hidden");
+    expect(screen.getByTestId("content-chat-pane")).toHaveClass("h-full", "min-h-0", "overflow-hidden");
+    expect(screen.getByTestId("content-chat-pane")).not.toHaveClass("min-h-[480px]");
     expect(screen.getByTestId("content-chat-scroll")).toHaveClass("overflow-y-auto", "overscroll-contain");
-    expect(screen.getByTestId("content-preview-pane")).toHaveClass("lg:h-full", "lg:overflow-hidden");
+    expect(screen.getByTestId("content-preview-pane")).toHaveClass("h-full", "min-h-0", "overflow-hidden");
     expect(screen.getByTestId("content-preview-scroll")).toHaveClass("overflow-y-scroll", "overscroll-contain", "[scrollbar-gutter:stable]", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
   });
 
@@ -231,6 +278,26 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByTestId("content-preview-scroll")).toHaveClass("p-3");
   });
 
+  test("groups persisted operation events into one unified history card after refresh", () => {
+    const messages = [
+      { id: "op-start", role: "assistant", content: "任务已经提交。", kind: "operation", status: "running", operation: "reading", requestId: "request-1", title: "正在生成阅读内容", createdAt: "2026-08-10T00:00:00.000Z" },
+      { id: "op-repair", role: "system", content: "检测到第 1 章需要修复。", kind: "repair", status: "running", operation: "reading", requestId: "request-1", title: "自动检查与修复", createdAt: "2026-08-10T00:01:00.000Z" },
+      { id: "op-success", role: "assistant", content: "阅读内容已生成并保存。", kind: "operation", status: "succeeded", operation: "reading", requestId: "request-1", title: "阅读内容已生成", createdAt: "2026-08-10T00:02:00.000Z" },
+    ] as unknown as CourseContentState["messages"];
+
+    render(<CourseContentWorkspace initialState={{ ...initialState, status: "reading_ready", messages }} />);
+
+    expect(screen.getAllByTestId("content-operation-card")).toHaveLength(1);
+    expect(screen.getByTestId("content-operation-card")).toHaveAttribute("data-request-id", "request-1");
+    expect(screen.getByText("阅读内容已生成")).toBeInTheDocument();
+    expect(screen.getByText("已完成")).toBeInTheDocument();
+    expect(screen.getByTestId("content-operation-card")).toHaveClass("w-full", "max-w-xl");
+    expect(screen.getByRole("button", { name: "确认并生成练习" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新生成阅读内容" })).toBeInTheDocument();
+    expect(screen.getByText("查看处理详情")).toBeInTheDocument();
+    expect(screen.queryByText("正在生成阅读内容")).not.toBeInTheDocument();
+  });
+
   test("uses mobile chat and preview tabs with preview selected first when content exists", () => {
     render(<CourseContentWorkspace initialState={initialState} />);
 
@@ -250,6 +317,70 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByTestId("content-preview-pane")).toHaveClass("hidden", "xl:block");
   });
 
+  test.each([
+    ["generating_reading", "generating_chapters"],
+    ["reading_ready", null],
+    ["failed", null],
+  ] as const)("lands on chat after refresh when status is %s", (status, phase) => {
+    render(<CourseContentWorkspace initialState={{ ...initialState, status, phase }} />);
+
+    expect(screen.getByRole("button", { name: /对话/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("content-chat-pane")).not.toHaveClass("hidden");
+    expect(screen.getByTestId("content-preview-pane")).toHaveClass("hidden", "xl:block");
+  });
+
+  test("lands on chat after a retained-content modification failure", () => {
+    const messages = [
+      { id: "modify-start", role: "assistant", content: "正在处理修改。", kind: "operation", status: "running", operation: "modify", requestId: "modify-request", title: "正在修改课程内容", createdAt: "2026-08-10T00:00:00.000Z" },
+      { id: "modify-failed", role: "assistant", content: "修改结果未通过检查，原内容已保留。", kind: "operation", status: "failed", operation: "modify", requestId: "modify-request", title: "本次修改未完成", createdAt: "2026-08-10T00:01:00.000Z" },
+    ] as unknown as CourseContentState["messages"];
+
+    render(<CourseContentWorkspace initialState={{ ...initialState, errorMessage: "修改结果未通过检查，原内容已保留。", messages }} />);
+
+    expect(screen.getByRole("button", { name: /对话/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("本次修改未完成")).toBeInTheDocument();
+    expect(screen.getByText("未完成")).toBeInTheDocument();
+  });
+
+  test("switches mobile modify actions to chat and returns to preview after success", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(initialState)));
+    render(<CourseContentWorkspace initialState={initialState} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "修改正文第 1 页" }));
+    expect(screen.getByRole("button", { name: /对话/ })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.change(screen.getByLabelText("修改要求"), { target: { value: "让语气更紧张" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送修改要求" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "预览" })).toHaveAttribute("aria-pressed", "true"));
+  });
+
+  test("offers compact mobile content navigation and an enlarged preview", () => {
+    render(<CourseContentWorkspace initialState={initialState} />);
+
+    const selector = screen.getByRole("combobox", { name: "选择课程内容" });
+    expect(within(selector).getByRole("option", { name: "第 1 章" })).toBeInTheDocument();
+    expect(within(selector).getByRole("option", { name: "课后阅读" })).toBeInTheDocument();
+    expect(within(selector).getByRole("option", { name: "课后练习" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "放大查看当前页" }));
+    expect(screen.getByRole("heading", { name: "放大查看" })).toBeInTheDocument();
+  });
+
+  test("aggregates consecutive completed repairs without dropping surrounding messages", () => {
+    render(<CourseContentWorkspace initialState={{
+      ...initialState,
+      messages: [
+        { id: "m1", role: "teacher", content: "保留故事转折。", createdAt: "2026-08-10T00:00:00.000Z" },
+        { id: "r1", role: "system", content: "检测到第 1 章需要修复。正在统一修复。", createdAt: "2026-08-10T00:01:00.000Z" },
+        { id: "r2", role: "system", content: "检测到课后阅读需要修复。正在单独修复。", createdAt: "2026-08-10T00:02:00.000Z" },
+        { id: "m2", role: "assistant", content: "内容已保存。", createdAt: "2026-08-10T00:03:00.000Z" },
+      ],
+    }} />);
+
+    expect(screen.getByText("系统已完成 2 轮内容修复")).toBeInTheDocument();
+    expect(screen.getByText("保留故事转折。")).toBeInTheDocument();
+    expect(screen.getByText("内容已保存。")).toBeInTheDocument();
+  });
+
   test("keeps mobile actions compact and prevents the bottom action bar from covering the composer", () => {
     render(<CourseContentWorkspace initialState={initialState} />);
 
@@ -257,6 +388,22 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByTestId("content-mobile-actions")).toHaveClass("xl:hidden");
     expect(screen.getByTestId("content-bottom-actions")).not.toHaveClass("sticky", "xl:sticky", "fixed");
     expect(screen.getByTestId("course-ai-workspace-frame")).toContainElement(screen.getByTestId("content-bottom-actions"));
+    expect(screen.queryByText("重开")).not.toBeInTheDocument();
+  });
+
+  test("orders desktop actions from guidance to destructive and regeneration actions", () => {
+    const stateWithExercises = {
+      ...initialState,
+      chapters: initialState.chapters.map((chapter) => ({ ...chapter, chapterPractice: [{ id: "q1", type: "optionCloze" as const, knowledgePointId: "kp1", before: "Mia ", after: " home.", answer: "went", options: ["went", "goes", "going"] }] })),
+    };
+    render(<CourseContentWorkspace initialState={stateWithExercises} />);
+
+    const actions = screen.getByTestId("content-stage-actions");
+    const orderedLabels = ["操作指引", "重新开始", "重新生成阅读内容", "重新生成练习"];
+    const buttons = orderedLabels.map((label) => within(actions).getByRole("button", { name: label }));
+    buttons.slice(0, -1).forEach((button, index) => {
+      expect(button.compareDocumentPosition(buttons[index + 1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
   });
 
   test("keeps the preview scroll surface mounted when the stale notice is dismissed", () => {
@@ -301,7 +448,7 @@ describe("CourseContentWorkspace", () => {
 
     expect(screen.getAllByRole("img", { name: "AI 助手" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("img", { name: "老师" })).toBeInTheDocument();
-    expect(screen.getByText("让语气更紧张").closest("[data-chat-bubble]")).toHaveClass("max-w-[calc(100%-2.25rem)]", "py-2", "leading-5");
+    expect(screen.getByText("让语气更紧张").closest("[data-chat-bubble]")).toHaveClass("max-w-[calc(100%-2.25rem)]", "rounded-xl", "border", "p-3");
   });
 
   test("selects and clears a preview page as the chat modification target", () => {
@@ -381,11 +528,11 @@ describe("CourseContentWorkspace", () => {
     };
     render(<CourseContentWorkspace initialState={readingReadyState} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "确认正文与课后阅读，生成练习" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认并生成练习" }));
 
     const timeline = screen.getByTestId("content-chat-scroll");
     const prior = within(timeline).getByText("正文已经生成。");
-    const confirmation = within(timeline).getByText("我确认正文与课后阅读，请生成章节与课后练习。");
+    const confirmation = within(timeline).getByText("我确认阅读内容，请生成章节与课后练习。");
     const loading = within(timeline).getByText("正在生成章节与课后练习");
     expect(prior.compareDocumentPosition(confirmation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(confirmation.compareDocumentPosition(loading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -394,13 +541,13 @@ describe("CourseContentWorkspace", () => {
       ...initialState,
       messages: [
         ...readingReadyState.messages,
-        { id: "confirmation", role: "teacher", content: "我确认正文与课后阅读，请生成章节与课后练习。", createdAt: "2026-08-10T00:01:00.000Z" },
+        { id: "confirmation", role: "teacher", content: "我确认阅读内容，请生成章节与课后练习。", createdAt: "2026-08-10T00:01:00.000Z" },
       ],
     }));
 
     await waitFor(() => expect(within(timeline).queryByText("正在生成章节与课后练习")).not.toBeInTheDocument());
     expect(within(timeline).getByText("正文已经生成。")).toBeInTheDocument();
-    expect(within(timeline).getAllByText("我确认正文与课后阅读，请生成章节与课后练习。")).toHaveLength(1);
+    expect(within(timeline).getAllByText("我确认阅读内容，请生成章节与课后练习。")).toHaveLength(1);
   });
 
   test("restores a persisted modification as working after refresh and keeps polling", async () => {
@@ -413,9 +560,21 @@ describe("CourseContentWorkspace", () => {
     }} />);
 
     expect(screen.getByText("正在修改课程内容")).toBeInTheDocument();
-    expect(screen.getByText("第 1 章 · 正文第 1 页")).toBeInTheDocument();
+    expect(screen.getAllByText("第 1 章 · 正文第 1 页")).toHaveLength(2);
     expect(screen.getByLabelText("修改要求")).toBeDisabled();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/courses/course-1/content"), { timeout: 3000 });
+  });
+
+  test("returns a refreshed persisted modification to preview after polling completes", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(initialState)));
+    render(<CourseContentWorkspace initialState={{
+      ...initialState,
+      messages: [{ id: "modify-target", role: "teacher", content: "让语气更紧张", targetType: "paragraph", targetId: "p1", createdAt: "2026-08-09T00:00:00.000Z" }],
+      operation: { id: "generation-1", type: "modify", status: "running", startedAt: "2026-08-09T00:00:00.000Z", updatedAt: "2026-08-09T00:00:00.000Z" },
+    }} />);
+
+    expect(screen.getByRole("button", { name: /对话/ })).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(screen.getByRole("button", { name: "预览" })).toHaveAttribute("aria-pressed", "true"), { timeout: 3000 });
   });
 
   test("keeps the reset recovery entry available for a persisted operation", () => {
@@ -440,19 +599,24 @@ describe("CourseContentWorkspace", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CourseContentWorkspace initialState={initialState} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "重新生成正文与课后阅读" }));
+    fireEvent.click(screen.getByRole("button", { name: "重新生成阅读内容" }));
     fireEvent.click(screen.getByRole("button", { name: "重新开始" }));
     fireEvent.click(screen.getByRole("button", { name: "删除文案与练习并重新开始" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "生成正文与课后阅读" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "开始生成" })).toBeInTheDocument());
 
     resolveGeneration(Response.json(initialState));
     await Promise.resolve();
-    expect(screen.getByRole("button", { name: "生成正文与课后阅读" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始生成" })).toBeInTheDocument();
     expect(screen.queryByLabelText("课程内容预览")).not.toBeInTheDocument();
   });
 
   test("offers a targeted Main Idea retry after its isolated validation fails", () => {
     render(<CourseContentWorkspace initialState={{ ...initialState, status: "failed", errorMessage: "课后阅读连续两次修复后词数仍应为 130–170，实际 178" }} />);
+    expect(screen.getByText("本次生成未完成")).toBeInTheDocument();
+    expect(screen.getByText("未完成")).toBeInTheDocument();
+    expect(screen.getByText("已完成的内容已保存，只需重试未通过的部分。")).toBeInTheDocument();
+    expect(screen.getByText("查看失败原因")).toBeInTheDocument();
+    expect(screen.getByTestId("content-failure-card")).toHaveClass("w-full", "max-w-xl");
     expect(screen.getByRole("button", { name: "重试课后阅读" })).toBeInTheDocument();
   });
 
@@ -464,7 +628,7 @@ describe("CourseContentWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "重试未通过内容" }));
 
     expect(screen.queryByText("请求超时")).not.toBeInTheDocument();
-    expect(screen.getByText("正在生成正文与课后阅读")).toBeInTheDocument();
+    expect(screen.getByText("正在生成阅读内容")).toBeInTheDocument();
   });
 
   test("keeps Step 5 reachable without adding a confirmation action to chat", () => {
@@ -537,7 +701,7 @@ describe("CourseContentWorkspace", () => {
     const fetchMock = vi.fn(async () => Response.json(stateWithExercises));
     vi.stubGlobal("fetch", fetchMock);
     render(<CourseContentWorkspace initialState={stateWithExercises} />);
-    fireEvent.click(screen.getByRole("button", { name: "重新生成正文与课后阅读" }));
+    fireEvent.click(screen.getByRole("button", { name: "重新生成阅读内容" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       "/api/courses/course-1/content/reading/generate?regenerate=true",
       expect.objectContaining({ method: "POST" }),
@@ -562,7 +726,7 @@ describe("CourseContentWorkspace", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CourseContentWorkspace initialState={completedState} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "重新生成正文与课后阅读" }));
+    fireEvent.click(screen.getByRole("button", { name: "重新生成阅读内容" }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "继续重新生成？" })).toBeInTheDocument());
     expect(screen.getByText(/视觉资源、图片和预览发布设置/)).toBeInTheDocument();
     expect(screen.queryByText(/Step/)).not.toBeInTheDocument();
@@ -592,6 +756,6 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByText(/不会被删除/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "删除文案与练习并重新开始" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/courses/course-1/content/reset", { method: "POST" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "生成正文与课后阅读" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "开始生成" })).toBeInTheDocument());
   });
 });

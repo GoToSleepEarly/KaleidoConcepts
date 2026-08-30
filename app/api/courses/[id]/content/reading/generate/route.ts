@@ -20,12 +20,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const hasDownstream = await hasCourseDownstream(downstreamDb, id, "content");
       if (hasDownstream && !preserveDownstream) return NextResponse.json({ message: "重新生成后，视觉资源和预览发布仍会保留旧版本", requiresReset: true }, { status: 409 });
       if (hasDownstream) {
-        await generateCourseReading(db, id, key, createCourseContentGenerationDeps(aiGateway), { regenerate });
+        await generateCourseReading(db, id, key, createCourseContentGenerationDeps(aiGateway), { regenerate, writingProvider: aiGateway.writingProvider });
         await markCourseDownstreamStale(downstreamDb, id, "content");
         return NextResponse.json(await getCourseContentState(db, id));
       }
     }
-    return NextResponse.json(await generateCourseReading(db, id, key, createCourseContentGenerationDeps(aiGateway), { regenerate }));
+    return NextResponse.json(await generateCourseReading(db, id, key, createCourseContentGenerationDeps(aiGateway), { regenerate, writingProvider: aiGateway.writingProvider }));
   }
   catch (error) {
     const authenticationResponse = authenticationErrorResponse(error);

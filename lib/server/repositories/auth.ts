@@ -8,6 +8,7 @@ type DbUser = {
   username: string;
   password: string;
   displayName: string;
+  writingProvider: "quickrouter_gpt" | "quickrouter_deepseek";
   aiGateway: "quickrouter" | "crazyrouter";
   quickRouterEndpoint: "main" | "direct";
 };
@@ -15,7 +16,7 @@ type DbUser = {
 export type AuthDb = {
   user: {
     findUnique: (query: { where: { username: string } | { id: string } }) => Promise<DbUser | null>;
-    update: (query: { where: { id: string }; data: { aiGateway: "quickrouter" | "crazyrouter"; quickRouterEndpoint: "main" | "direct" } }) => Promise<DbUser>;
+    update: (query: { where: { id: string }; data: { writingProvider?: "quickrouter_gpt" | "quickrouter_deepseek"; aiGateway: "quickrouter" | "crazyrouter"; quickRouterEndpoint: "main" | "direct" } }) => Promise<DbUser>;
   };
 };
 

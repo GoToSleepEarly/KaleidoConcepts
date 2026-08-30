@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { StoryComplexity, TeachingPlan } from "@/lib/contracts/api";
 import { defaultStoryComplexity } from "@/lib/domain/story-length-policy";
-import { defaultPracticeConfig, defaultReadingExerciseConfig, grammarExerciseTotal, MAX_CHAPTER_TARGET_WORD_COUNT, MIN_CHAPTER_TARGET_WORD_COUNT, minimumReadingParagraphCount, recommendedChapterWordCount } from "@/lib/domain/teaching-plan-policy";
+import { defaultPracticeConfig, defaultReadingExerciseConfig, grammarExerciseTotal, MAX_CHAPTER_TARGET_WORD_COUNT, MAX_READING_PAGE_COUNT, MIN_CHAPTER_TARGET_WORD_COUNT, MIN_READING_PAGE_COUNT, recommendedChapterWordCount, recommendedReadingPageCount } from "@/lib/domain/teaching-plan-policy";
 
 export const englishLevelSchema = z.union([
   z.literal("Starter"),
@@ -38,7 +38,7 @@ export const teachingPlanSchema = z.object({
   chapters: z.array(z.object({
     outlineChapterId: z.string().min(1),
     targetWordCount: z.number().int().nullable(),
-    paragraphCount: z.number().int().min(1),
+    paragraphCount: z.number().int().min(MIN_READING_PAGE_COUNT).max(MAX_READING_PAGE_COUNT),
     knowledgePointIds: z.array(z.string().min(1)),
     readingExerciseMode: z.union([z.literal("complete"), z.literal("interactive")]),
     readingExercises: exerciseConfigSchema,
@@ -96,7 +96,7 @@ export function buildTeachingPlanDraft(input: {
       return {
         outlineChapterId: chapter.id,
         targetWordCount,
-        paragraphCount: minimumReadingParagraphCount(targetWordCount),
+        paragraphCount: recommendedReadingPageCount(input.englishLevel, targetWordCount),
         knowledgePointIds: chapter.recommendedKnowledgePointIds,
         readingExerciseMode: "interactive",
         readingExercises,

@@ -14,8 +14,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!key || !parsed.success) return NextResponse.json({ message: "请选择要重试的失败阶段" }, { status: 400 });
   const { id } = await params;
   try {
-    const deps = createCourseContentGenerationDeps(await aiGatewayFromRequest(request));
-    return NextResponse.json(parsed.data.operation === "reading" ? await generateCourseReading(getDb(), id, key, deps) : await generateCourseExercises(getDb(), id, key, deps));
+    const settings = await aiGatewayFromRequest(request);
+    const deps = createCourseContentGenerationDeps(settings);
+    const options = { writingProvider: settings.writingProvider };
+    return NextResponse.json(parsed.data.operation === "reading" ? await generateCourseReading(getDb(), id, key, deps, options) : await generateCourseExercises(getDb(), id, key, deps, options));
   } catch (error) {
     const authenticationResponse = authenticationErrorResponse(error);
     if (authenticationResponse) return authenticationResponse;

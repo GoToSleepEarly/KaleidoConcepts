@@ -717,7 +717,7 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
       ...(workflowV2.mainlineCard ? { mainlineCard: workflowV2.mainlineCard } : {}),
       ...(setting?.alignmentSummary ? { summary: setting.alignmentSummary } : {}),
     },
-    operation: setting?.operationRequestId && (setting.operationStatus === "running" || setting.operationStatus === "failed" || setting.operationStatus === "result_unknown") && setting.operationPhase && setting.operationStartedAt ? {
+    operation: setting?.operationRequestId && (setting.operationStatus === "running" || setting.operationStatus === "succeeded" || setting.operationStatus === "failed" || setting.operationStatus === "result_unknown") && setting.operationPhase && setting.operationStartedAt ? {
       requestId: setting.operationRequestId,
       action: setting.operationAction ?? "story_operation",
       phase: setting.operationPhase as NonNullable<CourseStoryOutlineState["operation"]>["phase"],
@@ -1798,7 +1798,7 @@ export async function confirmStoryOutline(db: StoryOutlineDb, courseId: string) 
 export async function updateStoryOutlineSettings(
   db: StoryOutlineDb,
   courseId: string,
-  input: { chapterCount: number; writingProvider: StoryWritingProvider; storyComplexity: StoryComplexity },
+  input: { chapterCount: number; storyComplexity: StoryComplexity },
 ) {
   const course = await getCourse(db, courseId);
   const persist = async (tx: StoryOutlineDb) => {
@@ -1815,8 +1815,8 @@ export async function updateStoryOutlineSettings(
     const hasGeneratedArtifacts = Boolean(existingOutline) || existingDirections.length > 0;
     await tx.courseStorySetting.upsert({
       where: { courseId },
-      create: { courseId, chapterCount: input.chapterCount, writingProvider: input.writingProvider, storyComplexity: input.storyComplexity },
-      update: { chapterCount: input.chapterCount, writingProvider: input.writingProvider, storyComplexity: input.storyComplexity },
+      create: { courseId, chapterCount: input.chapterCount, writingProvider: storedSetting?.writingProvider ?? "quickrouter_gpt", storyComplexity: input.storyComplexity },
+      update: { chapterCount: input.chapterCount, storyComplexity: input.storyComplexity },
     });
     if (complexityChanged && hasGeneratedArtifacts) {
       await updateAlignmentDetails(tx, courseId, { artifactsOutdated: true });

@@ -16,6 +16,31 @@ export type GrammarContextDb = {
   presetOption?: { findMany: (query: Record<string, unknown>) => Promise<LegacyPresetRecord[]> };
 };
 
+function toTeachingPlanKnowledgePoint(record: GrammarPointRecord): TeachingPlanKnowledgePoint {
+  const units = [...(record.units ?? [])].sort((left, right) => left.unitNumber - right.unitNumber);
+  return {
+    id: record.id,
+    label: record.title,
+    category: record.section?.officialTitle,
+    bookTitle: record.bookEdition?.title,
+    edition: record.bookEdition?.edition,
+    officialLevel: record.bookEdition?.officialLevel,
+    unitStart: units[0]?.unitNumber,
+    unitEnd: units.at(-1)?.unitNumber,
+    units,
+  };
+}
+
+export async function resolveGrammarBookKnowledgePoints(db: GrammarContextDb, bookEditionId: string): Promise<TeachingPlanKnowledgePoint[]> {
+  if (!db.knowledgePoint) return [];
+  const records = await db.knowledgePoint.findMany({
+    where: { bookEditionId, source: "grammar_in_use" },
+    orderBy: { sortOrder: "asc" },
+    include: { section: true, bookEdition: true, units: true },
+  });
+  return records.map(toTeachingPlanKnowledgePoint);
+}
+
 export async function resolveGrammarKnowledgePoints(db: GrammarContextDb, ids: string[]): Promise<TeachingPlanKnowledgePoint[]> {
   if (!ids.length) return [];
   const mapped = new Map<string, TeachingPlanKnowledgePoint>();
@@ -27,18 +52,7 @@ export async function resolveGrammarKnowledgePoints(db: GrammarContextDb, ids: s
       include: { section: true, bookEdition: true, units: true },
     });
     for (const record of records) {
-      const units = [...(record.units ?? [])].sort((left, right) => left.unitNumber - right.unitNumber);
-      mapped.set(record.id, {
-        id: record.id,
-        label: record.title,
-        category: record.section?.officialTitle,
-        bookTitle: record.bookEdition?.title,
-        edition: record.bookEdition?.edition,
-        officialLevel: record.bookEdition?.officialLevel,
-        unitStart: units[0]?.unitNumber,
-        unitEnd: units.at(-1)?.unitNumber,
-        units,
-      });
+      mapped.set(record.id, toTeachingPlanKnowledgePoint(record));
       if (record.source !== "legacy") legacyIds.delete(record.id);
     }
   }

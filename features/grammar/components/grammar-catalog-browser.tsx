@@ -14,13 +14,17 @@ type CatalogBrowserProps = {
   selectedIds?: string[];
   onSelectedIdsChange?: (ids: string[]) => void;
   highlightedIds?: string[];
+  visiblePointIds?: string[];
+  emptyMessage?: string;
+  pointDescriptions?: Record<string, string>;
+  selectionLabels?: { selected: string; unselected: string };
 };
 
 function pointMap(book: GrammarBookCatalog | undefined) {
   return new Map(book?.sections.flatMap((section) => section.points).map((point) => [point.id, point]) ?? []);
 }
 
-export function GrammarCatalogBrowser({ books, activeBookId, onActiveBookChange, selectedIds, onSelectedIdsChange, highlightedIds = [] }: CatalogBrowserProps) {
+export function GrammarCatalogBrowser({ books, activeBookId, onActiveBookChange, selectedIds, onSelectedIdsChange, highlightedIds = [], visiblePointIds, emptyMessage = "当前书籍没有匹配的知识点", pointDescriptions = {}, selectionLabels }: CatalogBrowserProps) {
   const selectable = Boolean(onSelectedIdsChange);
   const activeBook = books.find((book) => book.id === activeBookId) ?? books[0];
   const [activeSectionId, setActiveSectionId] = useState(activeBook?.sections[0]?.id ?? "");
@@ -29,21 +33,25 @@ export function GrammarCatalogBrowser({ books, activeBookId, onActiveBookChange,
   const [mobileView, setMobileView] = useState<"browse" | "selected">("browse");
   const selected = useMemo(() => new Set(selectedIds ?? []), [selectedIds]);
   const highlighted = useMemo(() => new Set(highlightedIds), [highlightedIds]);
+  const visiblePointIdSet = useMemo(() => visiblePointIds === undefined ? null : new Set(visiblePointIds), [visiblePointIds]);
   const points = useMemo(() => pointMap(activeBook), [activeBook]);
 
-  const resolvedSectionId = activeBook?.sections.some((section) => section.id === activeSectionId) ? activeSectionId : activeBook?.sections[0]?.id ?? "";
+  const scopedSections = useMemo(() => activeBook?.sections
+    .map((section) => ({ ...section, points: visiblePointIdSet ? section.points.filter((point) => visiblePointIdSet.has(point.id)) : section.points }))
+    .filter((section) => section.points.length) ?? [], [activeBook, visiblePointIdSet]);
+  const resolvedSectionId = scopedSections.some((section) => section.id === activeSectionId) ? activeSectionId : scopedSections[0]?.id ?? activeBook?.sections[0]?.id ?? "";
 
   const normalizedQuery = query.trim();
   const visibleSections = useMemo(() => {
     if (!activeBook) return [];
     if (normalizedQuery) {
-      return activeBook.sections
+      return scopedSections
         .map((section) => ({ ...section, points: section.points.filter((point) => matchesGrammarPoint(point, normalizedQuery)) }))
         .filter((section) => section.points.length);
     }
-    const active = activeBook.sections.find((section) => section.id === resolvedSectionId);
-    return active ? [active] : activeBook.sections.slice(0, 1);
-  }, [activeBook, resolvedSectionId, normalizedQuery]);
+    const active = scopedSections.find((section) => section.id === resolvedSectionId);
+    return active ? [active] : scopedSections.slice(0, 1);
+  }, [activeBook, scopedSections, resolvedSectionId, normalizedQuery]);
 
   const selectedPoints = (selectedIds ?? []).map((id) => points.get(id)).filter((point): point is GrammarCatalogPoint => Boolean(point));
 
@@ -84,7 +92,7 @@ export function GrammarCatalogBrowser({ books, activeBookId, onActiveBookChange,
             </button>
           ))}
         </div>
-        <div className="-mx-3 mt-3 flex gap-2 border-t border-[#DCEAF6] bg-white px-3 py-3 sm:-mx-4 sm:px-4">
+        <div className="-mx-3 mt-3 flex flex-wrap gap-2 border-t border-[#DCEAF6] bg-white px-3 py-3 sm:-mx-4 sm:flex-nowrap sm:px-4">
           {selectable ? (
             <div className="flex shrink-0 rounded-lg border border-[#CCD8F8] bg-[#E9EEFF] p-1 xl:hidden">
               <button className={cn("min-h-10 rounded-md px-3 text-sm font-semibold", mobileView === "browse" ? "bg-[#5365EC] text-white shadow-sm" : "text-[#30459E]")} onClick={() => setMobileView("browse")} type="button">浏览</button>
@@ -103,7 +111,7 @@ export function GrammarCatalogBrowser({ books, activeBookId, onActiveBookChange,
         <aside className={cn("hidden min-h-0 overflow-y-auto border-r border-[#CCD8F8] bg-[#F8FAFF] p-3 md:block", mobileView === "selected" && "max-xl:hidden")}>
           <p className="px-2 pb-2 text-xs font-bold text-[#69829B]">目录章节</p>
           <nav className="space-y-1" aria-label="语法 Section">
-            {activeBook.sections.map((section) => (
+            {scopedSections.map((section) => (
               <button className={cn("flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5365EC]", section.id === resolvedSectionId && !normalizedQuery ? "bg-[#5365EC] font-bold text-white shadow-sm" : "text-[#526B84] hover:bg-[#E9EEFF] hover:text-[#30459E]")} key={section.id} onClick={() => { setActiveSectionId(section.id); setQuery(""); }} type="button"><span className="min-w-0 flex-1">{section.officialTitle}</span><ChevronRight aria-hidden className="size-4 shrink-0 opacity-70" /></button>
             ))}
           </nav>
@@ -113,7 +121,7 @@ export function GrammarCatalogBrowser({ books, activeBookId, onActiveBookChange,
           <label className="mb-3 block md:hidden">
             <span className="sr-only">选择 Section</span>
             <select aria-label="选择 Section" className="min-h-11 w-full rounded-lg border border-input bg-card px-3 text-base text-foreground sm:text-sm" onChange={(event) => { setActiveSectionId(event.target.value); setQuery(""); }} value={resolvedSectionId}>
-              {activeBook.sections.map((section) => <option key={section.id} value={section.id}>{section.officialTitle}</option>)}
+              {scopedSections.map((section) => <option key={section.id} value={section.id}>{section.officialTitle}</option>)}
             </select>
           </label>
           <div className="space-y-5">
@@ -130,11 +138,15 @@ export function GrammarCatalogBrowser({ books, activeBookId, onActiveBookChange,
                     return (
                       <div className="border-b border-[#DCEAF6] last:border-b-0" key={point.id}>
                         <div className={cn("flex min-h-14 items-stretch transition-colors hover:bg-[#F8FAFF]", active && "bg-[#EEF0FF] hover:bg-[#EEF0FF]")}>
-                          <button aria-label={selectable ? `${active ? "取消选择" : "选择"} ${unitRangeLabel(point)} ${point.title}` : `展开 ${unitRangeLabel(point)} ${point.title}`} aria-pressed={selectable ? active : undefined} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5365EC] focus-visible:ring-inset sm:px-4" onClick={() => selectable ? togglePoint(point.id) : toggleExpanded(point.id)} type="button">
+                          <button aria-label={selectable ? `${active ? "取消选择" : "选择"} ${unitRangeLabel(point)} ${point.title}` : `展开 ${unitRangeLabel(point)} ${point.title}`} aria-pressed={selectable ? active : undefined} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5365EC] focus-visible:ring-inset sm:gap-3 sm:px-4" onClick={() => selectable ? togglePoint(point.id) : toggleExpanded(point.id)} type="button">
                             {selectable ? <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded border", active ? "border-[#5365EC] bg-[#5365EC] text-white" : "border-[#B8CADD] bg-white")}>{active ? <Check className="size-3.5" /> : null}</span> : null}
-                            <span className="w-20 shrink-0 text-xs font-semibold text-[#69829B] sm:w-24">{unitRangeLabel(point)}</span>
-                            <span className="min-w-0 flex-1 text-sm font-semibold leading-5 text-[#19324D]">{point.title}</span>
-                            {highlighted.has(point.id) ? <span className="hidden shrink-0 rounded-full bg-success-50 px-2 py-0.5 text-[11px] font-semibold text-success sm:inline">尚未分配</span> : null}
+                            <span className="w-12 shrink-0 text-xs font-semibold text-[#69829B] sm:w-24">{unitRangeLabel(point)}</span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-sm font-semibold leading-5 text-[#19324D]">{point.title}</span>
+                              {pointDescriptions[point.id] ? <span className="mt-0.5 block text-xs leading-5 text-[#69829B]">{pointDescriptions[point.id]}</span> : null}
+                              {selectionLabels ? <span className={cn("mt-0.5 block text-xs font-semibold", active ? "text-[#4659DC]" : "text-[#526B84]")}>{active ? selectionLabels.selected : selectionLabels.unselected}</span> : null}
+                            </span>
+                            {!selectionLabels && highlighted.has(point.id) ? <span className="hidden shrink-0 rounded-full bg-success-50 px-2 py-0.5 text-[11px] font-semibold text-success sm:inline">尚未分配</span> : null}
                           </button>
                           <button aria-expanded={expanded} aria-label={`查看 ${point.title} 来源 Unit`} className="flex min-w-16 items-center justify-center gap-1 border-l border-[#DCEAF6] px-2 text-xs font-semibold text-[#526B84] hover:bg-[#E9EEFF] hover:text-[#30459E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5365EC] focus-visible:ring-inset" onClick={() => toggleExpanded(point.id)} type="button"><span>来源</span><ChevronDown className={cn("size-4 transition-transform", expanded && "rotate-180")} /></button>
                         </div>
@@ -149,7 +161,7 @@ export function GrammarCatalogBrowser({ books, activeBookId, onActiveBookChange,
                 </div>
               </section>
             ))}
-            {!visibleSections.length ? <div className="rounded-xl border border-dashed border-border bg-card py-12 text-center text-sm text-muted-foreground">当前书籍没有匹配的知识点</div> : null}
+            {!visibleSections.length ? <div className="rounded-xl border border-dashed border-border bg-card px-4 py-12 text-center text-sm text-muted-foreground">{emptyMessage}</div> : null}
           </div>
         </main>
 

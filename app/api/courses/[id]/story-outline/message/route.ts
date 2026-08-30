@@ -33,7 +33,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   let aiGateway: AiProviderSettings | undefined;
   try {
     const db = getDb();
-    aiGateway = await aiGatewayFromRequest(request, db);
+    const accountAiSettings = await aiGatewayFromRequest(request, db);
+    aiGateway = accountAiSettings;
+    const input = { ...parsed.data, writingProvider: accountAiSettings.writingProvider };
     if (parsed.data.action && outlineMutationActions.has(parsed.data.action)) {
       const downstreamDb = db as unknown as CourseDownstreamDb;
       const hasDownstream = await hasCourseDownstream(downstreamDb, id, "story_outline");
@@ -41,12 +43,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         return NextResponse.json({ message: "修改后，后续内容仍会保留修改前的版本", requiresReset: true }, { status: 409 });
       }
       if (hasDownstream) {
-        await handleStoryOutlineMessage(db, id, parsed.data, createStoryOutlineGenerationDeps(aiGateway));
+        await handleStoryOutlineMessage(db, id, input, createStoryOutlineGenerationDeps(aiGateway));
         await markCourseDownstreamStale(downstreamDb, id, "story_outline");
         return NextResponse.json(await getStoryOutlineState(db, id));
       }
     }
-    return NextResponse.json(await handleStoryOutlineMessage(db, id, parsed.data, createStoryOutlineGenerationDeps(aiGateway)));
+    return NextResponse.json(await handleStoryOutlineMessage(db, id, input, createStoryOutlineGenerationDeps(aiGateway)));
   } catch (error) {
     const authenticationResponse = authenticationErrorResponse(error);
     if (authenticationResponse) return authenticationResponse;

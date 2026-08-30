@@ -10,6 +10,13 @@ export type AiProviderSettings = {
   quickRouterEndpoint: QuickRouterEndpoint;
 };
 
+export const TEXT_GENERATION_MODELS = ["quickrouter_gpt", "quickrouter_deepseek"] as const;
+export type TextGenerationModel = (typeof TEXT_GENERATION_MODELS)[number];
+
+export type AccountAiSettings = AiProviderSettings & {
+  writingProvider: TextGenerationModel;
+};
+
 export type AiProviderSettingsInput = AiGateway | AiProviderSettings;
 
 export const quickRouterEndpointLabels: Record<QuickRouterEndpoint, string> = {

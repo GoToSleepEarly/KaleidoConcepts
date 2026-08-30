@@ -55,6 +55,7 @@ function createDb() {
       durationMinutes: 45,
       currentStage: "teaching_plan",
       englishLevel: "B1",
+      grammarBookEditionId: "book-1",
       knowledgePointIds: ["grammar-1", "grammar-2"],
     }),
     outline: record({
@@ -69,9 +70,10 @@ function createDb() {
     ],
     plan: null,
     knowledgePoints: [
-      record({ id: "grammar-1", title: "Past Simple", sortOrder: 0, section: { officialTitle: "Present and past" }, bookEdition: { title: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2" }, units: [{ unitNumber: 5, officialTitle: "Past simple" }] }),
-      record({ id: "grammar-2", title: "Wh- Questions", sortOrder: 1, section: { officialTitle: "Questions" }, bookEdition: { title: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2" }, units: [{ unitNumber: 49, officialTitle: "Questions 1" }] }),
-      record({ id: "grammar-3", title: "Present Perfect", sortOrder: 2, section: { officialTitle: "Present perfect and past" }, bookEdition: { title: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2" }, units: [{ unitNumber: 7, officialTitle: "Present perfect 1" }] }),
+      record({ id: "grammar-1", title: "Past Simple", source: "grammar_in_use", bookEditionId: "book-1", sortOrder: 0, section: { officialTitle: "Present and past" }, bookEdition: { title: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2" }, units: [{ unitNumber: 5, officialTitle: "Past simple" }] }),
+      record({ id: "grammar-2", title: "Wh- Questions", source: "grammar_in_use", bookEditionId: "book-1", sortOrder: 1, section: { officialTitle: "Questions" }, bookEdition: { title: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2" }, units: [{ unitNumber: 49, officialTitle: "Questions 1" }] }),
+      record({ id: "grammar-3", title: "Present Perfect", source: "grammar_in_use", bookEditionId: "book-1", sortOrder: 2, section: { officialTitle: "Present perfect and past" }, bookEdition: { title: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2" }, units: [{ unitNumber: 7, officialTitle: "Present perfect 1" }] }),
+      record({ id: "grammar-other", title: "Other Book Point", source: "grammar_in_use", bookEditionId: "book-2", sortOrder: 0, section: { officialTitle: "Other" }, bookEdition: { title: "Other Book", edition: "1st Edition", officialLevel: "B1" }, units: [{ unitNumber: 1, officialTitle: "Other" }] }),
     ],
     contentExists: false,
   };
@@ -102,7 +104,11 @@ function createDb() {
       }),
     },
     knowledgePoint: {
-      findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => state.knowledgePoints.filter((point) => where.id.in.includes(String(point.id)))),
+      findMany: vi.fn(async ({ where }: { where: { id?: { in: string[] }; bookEditionId?: string } }) => state.knowledgePoints.filter((point) => {
+        if (where.id && !where.id.in.includes(String(point.id))) return false;
+        if (where.bookEditionId && point.bookEditionId !== where.bookEditionId) return false;
+        return true;
+      })),
     },
     courseLessonContent: {
       findUnique: vi.fn(async () => state.contentExists ? { courseId: "course-1" } : null),
@@ -123,7 +129,7 @@ describe("teaching plan repository", () => {
 
     expect(state.course.currentStage).toBe("teaching_plan");
     expect(state.outline.chapters.map((chapter) => chapter.title)).toEqual(["发光地图", "蓝色书页"]);
-    expect(state.knowledgePoints.map((point) => point.label)).toEqual(["Past Simple", "Wh- Questions"]);
+    expect(state.knowledgePoints.map((point) => point.label)).toEqual(["Past Simple", "Wh- Questions", "Present Perfect"]);
     expect(state.knowledgePoints[0]).toMatchObject({ bookTitle: "English Grammar in Use", edition: "5th Edition", unitStart: 5, unitEnd: 5 });
     expect(state.plan.status).toBe("draft");
     expect(state.plan.mainIdeaTargetWordCount).toBe(120);
@@ -196,26 +202,42 @@ describe("teaching plan repository", () => {
     const db = createDb();
     const state = await getTeachingPlanState(db, "course-1");
     const plan = completePlan(state.plan);
-    plan.chapters[0].paragraphCount = 6;
+    plan.chapters[0].paragraphCount = 3;
+    plan.chapters[0].touched.paragraphCount = true;
     db.state.course = { ...db.state.course, currentStage: "preview" };
     db.state.contentExists = true;
 
     const saved = await saveTeachingPlan(db, "course-1", plan);
 
     expect(saved.englishLevel).toBe("B1");
-    expect(saved.chapters[0].paragraphCount).not.toBe(6);
+    expect(saved.chapters[0].paragraphCount).toBe(3);
+    expect(saved.chapters[0].touched.paragraphCount).toBe(true);
     expect(db.state.course.currentStage).toBe("preview");
     expect(db.state.contentExists).toBe(true);
     expect(db.courseLessonContent?.deleteMany).not.toHaveBeenCalled();
   });
 
-  test("rejects knowledge points outside the Step 1 selection", async () => {
+  test("keeps the Step 1 course selection unchanged when Step 3 adds knowledge points", async () => {
     const db = createDb();
     const state = await getTeachingPlanState(db, "course-1");
     const plan = completePlan(state.plan);
     plan.chapters[0].knowledgePointIds.push("grammar-3");
 
-    await expect(saveTeachingPlan(db, "course-1", plan)).rejects.toThrow("知识点只能从第一步已选范围中分配。");
+    await saveTeachingPlan(db, "course-1", plan);
+
+    expect(db.state.course.knowledgePointIds).toEqual(["grammar-1", "grammar-2"]);
+    expect(db.state.plan?.chapters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ knowledgePointIds: expect.arrayContaining(["grammar-3"]) }),
+    ]));
+  });
+
+  test("rejects knowledge points from a different grammar book", async () => {
+    const db = createDb();
+    const state = await getTeachingPlanState(db, "course-1");
+    const plan = completePlan(state.plan);
+    plan.chapters[0].knowledgePointIds.push("grammar-other");
+
+    await expect(saveTeachingPlan(db, "course-1", plan)).rejects.toThrow("知识点只能从当前语法书版本中选择。");
   });
 
   test("fills missing exercise fields with the current defaults when reading a saved plan", async () => {

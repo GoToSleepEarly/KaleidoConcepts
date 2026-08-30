@@ -6,7 +6,9 @@ import {
   defaultReadingExerciseConfig,
   practicePageCount,
   readingPageCount,
+  readingPageDensity,
   recommendedChapterWordCount,
+  recommendedReadingPageCount,
 } from "@/lib/domain/teaching-plan-policy";
 
 describe("teaching plan policy", () => {
@@ -26,10 +28,17 @@ describe("teaching plan policy", () => {
     expect(defaultReadingExerciseConfig()).toEqual({ enabled: true, grammar: { optionCloze: 4, wordForm: 3 }, vocabulary: { chineseHint: 3 } });
   });
 
-  it("derives at most two正文 paragraphs from words alone, never exercise density", () => {
+  it("recommends正文 pages from CEFR reading density", () => {
+    expect(readingPageDensity("A2")).toEqual({ min: 45, ideal: 60, max: 70 });
+    expect(recommendedReadingPageCount("A2", 90)).toBe(2);
+    expect(recommendedReadingPageCount("B2", 180)).toBe(2);
+    expect(recommendedReadingPageCount("C1", 200)).toBe(2);
+  });
+
+  it("preserves an explicit one-to-three page choice", () => {
     expect(readingPageCount(90, 1)).toBe(1);
     expect(readingPageCount(100, 2)).toBe(2);
-    expect(readingPageCount(180, 2)).toBe(2);
+    expect(readingPageCount(180, 3)).toBe(3);
   });
 
   it("balances practice pages without creating a one-item tail", () => {

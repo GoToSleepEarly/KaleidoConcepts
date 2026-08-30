@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
@@ -41,6 +41,9 @@ export function Dialog({
   children: React.ReactNode;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogId = useId();
+  const titleId = `${dialogId}-title`;
+  const descriptionId = `${dialogId}-description`;
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -93,8 +96,8 @@ export function Dialog({
         type="button"
       />
       <div
-        aria-describedby={description ? `${title}-description` : undefined}
-        aria-labelledby={`${title}-title`}
+        aria-describedby={description ? descriptionId : undefined}
+        aria-labelledby={titleId}
         aria-modal="true"
         className={cn(
           "z-modal max-h-[calc(100dvh-2rem)] w-[min(94vw,760px)] overflow-hidden rounded-lg bg-card p-0 text-foreground shadow-lg animate-dialog-fade max-sm:inset-x-2 max-sm:bottom-2 max-sm:top-auto max-sm:max-h-[calc(100dvh-1rem)] max-sm:w-auto max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-xl",
@@ -124,14 +127,14 @@ export function Dialog({
               <div className="min-w-0">
                 <h2
                   className="text-lg font-semibold tracking-tight text-foreground"
-                  id={`${title}-title`}
+                  id={titleId}
                 >
                   {title}
                 </h2>
                 {description ? (
                   <p
                     className="mt-0.5 truncate text-sm text-muted-foreground"
-                    id={`${title}-description`}
+                    id={descriptionId}
                   >
                     {description}
                   </p>

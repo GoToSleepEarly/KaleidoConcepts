@@ -11,18 +11,19 @@ export type AiOperationPresentation = {
   preserveMessage?: string;
 };
 
-export function CourseAiWorkspaceFrame({ active, children, footer, className }: { active: boolean; children: React.ReactNode; footer: React.ReactNode; className?: string }) {
+export function CourseAiWorkspaceFrame({ active, constrained = false, children, footer, className }: { active: boolean; constrained?: boolean; children: React.ReactNode; footer: React.ReactNode; className?: string }) {
   return (
     <div
       className={cn(
         "grid min-h-0 gap-4 lg:gap-5",
         active && "lg:h-full lg:min-h-0 lg:grid-rows-[minmax(0,1fr)_auto]",
+        constrained && "h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]",
         className,
       )}
       data-active-workspace={active ? "true" : "false"}
       data-testid="course-ai-workspace-frame"
     >
-      <div className={cn("min-h-0", active && "lg:overflow-hidden")}>{children}</div>
+      <div className={cn("min-h-0", active && "lg:overflow-hidden", constrained && "overflow-hidden")}>{children}</div>
       {footer}
     </div>
   );
@@ -39,7 +40,7 @@ export function AiOperationStatusCard({ elapsedSeconds, persisted, presentation,
         : "长内容可能仍在生成或校验；可以稍后返回查看，结果会自动保存。";
 
   return (
-    <article aria-live="polite" className={cn("w-fit max-w-xl rounded-lg border border-primary-200 bg-primary-50/70 p-3 text-sm text-foreground", className)} data-density={compact ? "compact" : "detailed"} data-testid="ai-operation-status">
+    <article aria-live="polite" className={cn("w-full max-w-xl rounded-lg border border-primary-200 bg-primary-50/70 p-3 text-sm text-foreground", className)} data-density={compact ? "compact" : "detailed"} data-testid="ai-operation-status">
       <div className="flex items-start gap-2.5">
         <LoaderCircle aria-hidden className="mt-0.5 size-4 shrink-0 animate-spin text-primary motion-reduce:animate-none" />
         <div className="min-w-0 flex-1">

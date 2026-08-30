@@ -11,7 +11,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const parsed = contentModifySchema.safeParse(await request.json());
   if (!key || !parsed.success) return NextResponse.json({ message: "请选择明确的修改范围并填写要求" }, { status: 400 });
   const { id } = await params;
-  try { return NextResponse.json(await modifyCourseContent(getDb(), id, parsed.data, key, createCourseContentGenerationDeps(await aiGatewayFromRequest(request)))); }
+  try {
+    const settings = await aiGatewayFromRequest(request);
+    return NextResponse.json(await modifyCourseContent(getDb(), id, parsed.data, key, createCourseContentGenerationDeps(settings), { writingProvider: settings.writingProvider }));
+  }
   catch (error) {
     const authenticationResponse = authenticationErrorResponse(error);
     if (authenticationResponse) return authenticationResponse;

@@ -11,6 +11,7 @@ model User {
   username    String   @unique
   password    String
   displayName String
+  writingProvider StoryWritingProvider @default(quickrouter_gpt)
   aiGateway   AiGateway @default(quickrouter)
   quickRouterEndpoint QuickRouterEndpoint @default(main)
   createdAt   DateTime @default(now())
@@ -494,10 +495,19 @@ model CourseContentChatMessage {
   content    String
   targetType CourseContentTargetType?
   targetId   String?
+  kind       CourseContentTimelineKind?
+  status     CourseContentTimelineStatus?
+  operation  CourseContentOperation?
+  requestId  String?
+  title      String?
+  details    Json?
+  eventKey   String?
   createdAt  DateTime              @default(now())
   course     Course                @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
+  @@unique([courseId, eventKey])
   @@index([courseId, createdAt])
+  @@index([courseId, requestId, createdAt])
 }
 
 model AiGenerationLog {
@@ -756,6 +766,20 @@ enum CourseContentGenerationStatus {
   succeeded
   failed
   result_unknown
+}
+
+enum CourseContentTimelineKind {
+  message
+  operation
+  repair
+  notice
+}
+
+enum CourseContentTimelineStatus {
+  running
+  succeeded
+  failed
+  stale
 }
 
 enum CourseContentTargetType {

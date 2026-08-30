@@ -8,7 +8,7 @@ import { BookOpen, ChevronDown, ListChecks, LogOut, Menu, Settings2, Sparkles, T
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { AI_GATEWAYS, QUICKROUTER_ENDPOINTS, aiGatewayDescriptions, aiGatewayLabels, quickRouterEndpointLabels, quickRouterEndpointUrls, type AiGateway, type QuickRouterEndpoint } from "@/lib/ai-gateway";
+import { AI_GATEWAYS, QUICKROUTER_ENDPOINTS, aiGatewayDescriptions, aiGatewayLabels, quickRouterEndpointLabels, quickRouterEndpointUrls, type AiGateway, type QuickRouterEndpoint, type TextGenerationModel } from "@/lib/ai-gateway";
 import { clearAuthSession, getStoredSession } from "@/lib/auth-session";
 import { cn } from "@/lib/utils";
 
@@ -87,6 +87,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [writingProvider, setWritingProvider] = useState<TextGenerationModel>("quickrouter_gpt");
   const [aiGateway, setAiGateway] = useState<AiGateway>("quickrouter");
   const [quickRouterEndpoint, setQuickRouterEndpoint] = useState<QuickRouterEndpoint>("main");
   const [isLoadingGateway, setIsLoadingGateway] = useState(false);
@@ -96,6 +97,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const routeMeta = getRouteMeta(pathname);
   const isCourseCreateRoute = pathname === "/courses/new" || (pathname.includes("/create/") && pathname.startsWith("/courses/"));
+  const isFixedCourseWorkspaceRoute = /^\/courses\/[^/]+\/create\/(story-outline|teaching-plan|content)$/u.test(pathname);
   const displayName = session?.user.displayName ?? "教师账号";
 
   useEffect(() => {
@@ -145,8 +147,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setHasLoadedGateway(false);
     try {
       const response = await fetch("/api/account/ai-gateway", { method: "GET", cache: "no-store" });
-      const result = await response.json() as { aiGateway?: AiGateway; quickRouterEndpoint?: QuickRouterEndpoint; message?: string };
+      const result = await response.json() as { writingProvider?: TextGenerationModel; aiGateway?: AiGateway; quickRouterEndpoint?: QuickRouterEndpoint; message?: string };
       if (!response.ok || !result.aiGateway) throw new Error(result.message || "中转站设置加载失败");
+      setWritingProvider(result.writingProvider ?? "quickrouter_gpt");
       setAiGateway(result.aiGateway);
       setQuickRouterEndpoint(result.quickRouterEndpoint ?? "main");
       setHasLoadedGateway(true);
@@ -164,10 +167,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const response = await fetch("/api/account/ai-gateway", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ aiGateway, quickRouterEndpoint }),
+        body: JSON.stringify({ writingProvider, aiGateway, quickRouterEndpoint }),
       });
-      const result = await response.json() as { aiGateway?: AiGateway; quickRouterEndpoint?: QuickRouterEndpoint; message?: string };
+      const result = await response.json() as { writingProvider?: TextGenerationModel; aiGateway?: AiGateway; quickRouterEndpoint?: QuickRouterEndpoint; message?: string };
       if (!response.ok || !result.aiGateway) throw new Error(result.message || "中转站设置保存失败");
+      setWritingProvider(result.writingProvider ?? writingProvider);
       setAiGateway(result.aiGateway);
       setQuickRouterEndpoint(result.quickRouterEndpoint ?? quickRouterEndpoint);
       setIsAdvancedOpen(false);
@@ -179,7 +183,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-dvh bg-[#F4F9FF] text-[#19324D]">
+    <div className={cn("flex min-h-dvh bg-[#F4F9FF] text-[#19324D]", isFixedCourseWorkspaceRoute && "h-dvh overflow-hidden")} data-testid="app-shell-root">
       <aside className="print-hidden fixed inset-y-0 left-0 z-sticky hidden w-60 flex-col border-r border-[#DCEAF6] bg-white text-[#19324D] lg:flex">
         <Link className="flex h-[72px] items-center gap-3 px-5" href="/courses">
           <span className="flex size-10 items-center justify-center rounded-xl bg-[#EEF0FF] text-[#4D5FE8]">
@@ -219,7 +223,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       </aside>
 
-      <div className="flex min-h-dvh min-w-0 flex-1 flex-col lg:pl-60">
+      <div className={cn("flex min-h-dvh min-w-0 flex-1 flex-col lg:pl-60", isFixedCourseWorkspaceRoute && "h-dvh min-h-0 overflow-hidden")}>
         <header className="print-hidden sticky top-0 z-sticky flex min-h-[64px] flex-wrap items-center gap-3 border-b border-[#DCEAF6] bg-white px-4 py-3 sm:flex-nowrap sm:gap-4 sm:px-6 lg:h-[72px] lg:px-8 lg:py-0">
           <button
             aria-expanded={isMobileNavOpen}
@@ -332,7 +336,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ) : null}
 
         <Dialog
-          description="仅选择国外 GPT 文本、联网研究、图片生成和编辑使用的中转站；DeepSeek 仍走原有直连。"
+          description="统一设置课程文本生成模型，以及 GPT 文本、联网研究和图片功能使用的中转站。"
           icon={<Settings2 className="size-5" />}
           onClose={() => setIsAdvancedOpen(false)}
           open={isAdvancedOpen}
@@ -340,6 +344,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           title="高级设置"
         >
           <div className="space-y-5 p-5 sm:p-6">
+            <fieldset disabled={isLoadingGateway || isSavingGateway}>
+              <legend className="text-sm font-semibold text-foreground">文本生成模型</legend>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">统一用于故事大纲和文案与练习，修改后从下一次 AI 请求起生效。</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", writingProvider === "quickrouter_gpt" ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")}>
+                  <span className="flex items-center gap-2">
+                    <input checked={writingProvider === "quickrouter_gpt"} className="size-4" name="writing-provider" onChange={() => setWritingProvider("quickrouter_gpt")} type="radio" value="quickrouter_gpt" />
+                    <span className="text-sm font-semibold text-foreground">GPT</span>
+                  </span>
+                  <span className="mt-2 block text-xs leading-5 text-muted-foreground">默认选择，适合稳定生成课程内容。</span>
+                </label>
+                <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", writingProvider === "quickrouter_deepseek" ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")}>
+                  <span className="flex items-center gap-2">
+                    <input checked={writingProvider === "quickrouter_deepseek"} className="size-4" name="writing-provider" onChange={() => setWritingProvider("quickrouter_deepseek")} type="radio" value="quickrouter_deepseek" />
+                    <span className="text-sm font-semibold text-foreground">DeepSeek</span>
+                  </span>
+                  <span className="mt-2 block text-xs leading-5 text-muted-foreground">成本更低，使用 DeepSeek 直连服务。</span>
+                </label>
+              </div>
+            </fieldset>
             <fieldset disabled={isLoadingGateway || isSavingGateway}>
               <legend className="text-sm font-semibold text-foreground">GPT 中转站</legend>
               <div className="mt-3 grid gap-3">
@@ -380,7 +404,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </Dialog>
 
-        <main className="flex-1 px-4 py-5 sm:px-6 lg:p-8">{children}</main>
+        <main className={cn("flex-1 px-4 py-5 sm:px-6 lg:p-8", isFixedCourseWorkspaceRoute && "min-h-0 overflow-hidden")}>{children}</main>
       </div>
     </div>
   );

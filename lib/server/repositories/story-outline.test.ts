@@ -1231,7 +1231,6 @@ describe("story outline repository", () => {
 
     const changed = await updateStoryOutlineSettings(db, "course-1", {
       chapterCount: 4,
-      writingProvider: "quickrouter_gpt",
       storyComplexity: "layered",
     });
 
@@ -1247,14 +1246,12 @@ describe("story outline repository", () => {
 
     const unchanged = await updateStoryOutlineSettings(db, "course-1", {
       chapterCount: 4,
-      writingProvider: "quickrouter_gpt",
       storyComplexity: "clear_linear",
     });
     expect(unchanged.alignment?.artifactsOutdated).not.toBe(true);
 
     const changed = await updateStoryOutlineSettings(db, "course-1", {
       chapterCount: 4,
-      writingProvider: "quickrouter_gpt",
       storyComplexity: "conflict_driven",
     });
     expect(changed.outline).toBeNull();

@@ -107,6 +107,7 @@ describe("CourseStoryOutlineWorkspace", () => {
   beforeEach(() => {
     vi.useRealTimers();
     pushMock.mockReset();
+    window.localStorage.clear();
     HTMLDialogElement.prototype.showModal = function showModal() {
       this.setAttribute("open", "");
     };
@@ -121,12 +122,20 @@ describe("CourseStoryOutlineWorkspace", () => {
     vi.restoreAllMocks();
   });
 
-  test("shows a guided idea input aligned with a compact process guide before results exist", () => {
+  test("shows a focused idea input and opens the complete first-use guide", async () => {
     render(<CourseStoryOutlineWorkspace initialState={emptyState} storyTonePresets={storyTonePresets} storyTypePresets={storyTypePresets} themePresets={themePresets} />);
 
     expect(screen.getByTestId("story-outline-layout")).toHaveAttribute("data-layout", "focus");
-    expect(screen.getByTestId("story-outline-layout")).toHaveClass("w-full", "xl:grid-cols-[minmax(0,2fr)_minmax(260px,0.75fr)]");
-    expect(screen.getByTestId("ai-workspace-guide")).toBeInTheDocument();
+    expect(screen.getByTestId("story-outline-shell")).toHaveClass("h-full", "overflow-hidden");
+    expect(screen.getByTestId("course-ai-workspace-frame")).toHaveClass("h-full", "grid-rows-[minmax(0,1fr)_auto]");
+    expect(screen.getByTestId("story-outline-layout")).toHaveClass("h-full", "w-full", "overflow-hidden");
+    expect(screen.getByTestId("story-outline-layout")).not.toHaveClass("xl:grid-cols-[minmax(0,2fr)_minmax(260px,0.75fr)]");
+    expect(screen.getByTestId("story-chat-pane")).toHaveClass("mx-auto", "h-full", "max-w-3xl");
+    expect(screen.getByRole("button", { name: "我有想法" })).toHaveClass("bg-primary", "text-primary-foreground");
+    expect(screen.queryByTestId("ai-workspace-guide")).not.toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "故事大纲使用指引" })).toBeInTheDocument();
+    expect(screen.getByText("你不需要提前想好所有细节，AI 会陪你逐步完成故事构思。")).toBeInTheDocument();
+    expect(screen.getByText("有想法可以直接描述人物、作品、主题或剧情；暂时没有方向，也可以从主题、故事类型和故事氛围中挑选灵感。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "故事大纲" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "故事想法" })).toBeInTheDocument();
     expect(screen.getByText("说说你的故事想法")).toBeInTheDocument();
@@ -134,6 +143,8 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByRole("button", { name: "开始讨论故事" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "随机灵感" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "随机灵感" }));
+    expect(screen.getByRole("button", { name: "随机灵感" })).toHaveClass("bg-primary", "text-primary-foreground");
+    expect(screen.getByRole("button", { name: "我有想法" })).not.toHaveClass("bg-primary");
     expect(screen.getByRole("button", { name: "选择主题" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "选择故事类型" })).toHaveTextContent("不限");
     expect(screen.getByRole("button", { name: "选择故事氛围" })).toHaveTextContent("不限");
@@ -145,6 +156,30 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.queryByRole("textbox", { name: "故事想法" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "生成 3 个故事方向" })).toBeInTheDocument();
     expect(screen.queryByText("还没有生成结果")).not.toBeInTheDocument();
+  });
+
+  test("remembers guide dismissal on this device and keeps a manual reopen action", async () => {
+    const first = render(<CourseStoryOutlineWorkspace initialState={emptyState} />);
+    await screen.findByRole("dialog", { name: "故事大纲使用指引" });
+    fireEvent.click(screen.getByRole("button", { name: "知道了，不再自动展示" }));
+    expect(window.localStorage.getItem("pblstudio.story-outline-guide.dismissed.v1")).toBe("true");
+    first.unmount();
+
+    render(<CourseStoryOutlineWorkspace initialState={emptyState} />);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "故事大纲使用指引" })).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "操作指引" }));
+    expect(screen.getByRole("dialog", { name: "故事大纲使用指引" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "知道了" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "稍后再看" })).not.toBeInTheDocument();
+  });
+
+  test("shows the course difficulty before the optional book scope", () => {
+    const state = structuredClone(outlineState);
+    state.course.englishLevel = "B1";
+    state.selectedKnowledgePoints = [{ id: "knowledge-1", label: "Past Simple", category: "时态", bookTitle: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2" }];
+    render(<CourseStoryOutlineWorkspace initialState={state} />);
+
+    expect(screen.getByText("难度 B1 · 教材范围《English Grammar in Use》· 5th Edition · B1–B2")).toBeInTheDocument();
   });
 
   test("shows knowledge point labels without a Step 2 word recommendation and names the teaching-plan stage", () => {
@@ -178,10 +213,10 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByTestId("story-outline-shell")).toHaveClass("gap-3", "lg:gap-4");
     expect(screen.getByTestId("story-outline-layout")).toHaveAttribute("data-layout", "split");
     expect(screen.getByTestId("story-outline-layout")).toHaveClass("min-h-0", "xl:grid-cols-[minmax(420px,1fr)_minmax(0,1.2fr)]");
-    expect(screen.getByTestId("course-ai-workspace-frame")).toHaveClass("gap-3", "lg:h-full", "lg:grid-rows-[minmax(0,1fr)_auto]");
+    expect(screen.getByTestId("course-ai-workspace-frame")).toHaveClass("gap-3", "h-full", "grid-rows-[minmax(0,1fr)_auto]");
     expect(screen.getByTestId("story-outline-layout")).toHaveClass("h-full");
     expect(screen.getByTestId("story-mobile-view-tabs")).toHaveClass("shrink-0", "xl:hidden");
-    expect(screen.getByTestId("story-chat-pane")).toHaveClass("min-h-0", "overflow-hidden", "lg:h-full");
+    expect(screen.getByTestId("story-chat-pane")).toHaveClass("h-full", "min-h-0", "overflow-hidden");
     expect(screen.getByTestId("story-chat-scroll")).toHaveClass("overflow-y-auto", "overscroll-contain", "touch-pan-y");
     expect(screen.getByTestId("story-result-scroll")).toHaveClass("lg:h-full", "overflow-y-auto", "overscroll-contain");
     expect(screen.getByTestId("story-mobile-view-tabs")).toHaveClass("xl:hidden");
@@ -202,8 +237,8 @@ describe("CourseStoryOutlineWorkspace", () => {
       ],
     }} />);
 
-    expect(screen.getByTestId("story-outline-shell")).toHaveClass("flex", "max-lg:h-[calc(100dvh-7.25rem)]", "max-lg:overflow-hidden");
-    expect(screen.getByTestId("course-ai-workspace-frame")).toHaveClass("max-lg:flex-1", "max-lg:overflow-hidden");
+    expect(screen.getByTestId("story-outline-shell")).toHaveClass("flex", "h-full", "overflow-hidden");
+    expect(screen.getByTestId("course-ai-workspace-frame")).toHaveClass("flex-1", "overflow-hidden");
     expect(screen.getByTestId("story-outline-layout")).toHaveClass("min-h-0", "h-full", "overflow-hidden");
     expect(screen.getByTestId("story-outline-layout")).toHaveClass("grid-rows-[auto_minmax(0,1fr)]");
     expect(screen.getByTestId("story-chat-pane")).toHaveClass("min-h-0", "overflow-hidden");
@@ -224,10 +259,10 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(settings).not.toHaveClass("mt-3");
     expect(screen.getByText("章节数")).toBeInTheDocument();
     expect(screen.getByText("故事复杂度")).toBeInTheDocument();
-    expect(screen.getByText("写作模型")).toBeInTheDocument();
+    expect(screen.queryByText("写作模型")).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "章节数" })).toHaveClass("h-10", "w-20");
     expect(screen.getByRole("combobox", { name: "故事复杂度" })).toHaveValue("clear_linear");
-    expect(screen.getByRole("combobox", { name: "写作模型" })).toHaveClass("h-10", "w-24");
+    expect(screen.queryByRole("combobox", { name: "写作模型" })).not.toBeInTheDocument();
   });
 
   test("persists a complexity change before the teacher can continue with an existing outline", async () => {
@@ -245,7 +280,7 @@ describe("CourseStoryOutlineWorkspace", () => {
       "/api/courses/course-1/story-outline/settings",
       expect.objectContaining({
         method: "PUT",
-        body: JSON.stringify({ chapterCount: 4, writingProvider: "quickrouter_gpt", storyComplexity: "layered" }),
+        body: JSON.stringify({ chapterCount: 4, storyComplexity: "layered" }),
       }),
     ));
     expect(screen.getByText("当前展示的是上一版故事成果")).toBeInTheDocument();
@@ -607,7 +642,7 @@ describe("CourseStoryOutlineWorkspace", () => {
       }],
     }} />);
 
-    expect(screen.getByRole("option", { name: "GPT" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "写作模型" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("故事想法"), { target: { value: "我确认需求" } });
     fireEvent.click(screen.getByRole("button", { name: "确认需求" }));
     expect(screen.getByText("我确认这份创作理解。")).toBeInTheDocument();
@@ -1246,6 +1281,7 @@ describe("CourseStoryOutlineWorkspace", () => {
   });
 
   test("moves the cursor to the end when prefilling a direction request", async () => {
+    window.localStorage.setItem("pblstudio.story-outline-guide.dismissed.v1", "true");
     render(<CourseStoryOutlineWorkspace initialState={{
       ...emptyState,
       directions: [{
@@ -1325,10 +1361,55 @@ describe("CourseStoryOutlineWorkspace", () => {
 
     expect((await screen.findAllByText("正在理解你的故事想法")).length).toBeGreaterThan(0);
     expect(screen.getByTestId("ai-operation-status")).toHaveAttribute("data-density", "compact");
+    expect(screen.getByTestId("ai-operation-status")).toHaveClass("w-full", "max-w-xl");
     await act(async () => {
       resolveResponse(Response.json(emptyState));
       await responsePromise;
     });
+  });
+
+  test("continues the persisted Loading timer instead of restarting it after refresh", () => {
+    const startedAt = new Date(Date.now() - 45_000).toISOString();
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      operation: {
+        requestId: "request-running-timer",
+        action: "idea",
+        phase: "aligning",
+        status: "running",
+        errorMessage: null,
+        startedAt,
+        updatedAt: startedAt,
+      },
+    }} />);
+
+    expect(screen.getByText("45 秒")).toBeInTheDocument();
+  });
+
+  test("renders the latest persisted AI reply as a completion card after refresh", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      chatMessages: [{
+        id: "assistant-complete",
+        courseId: "course-1",
+        role: "assistant",
+        content: "故事大纲已生成，右侧显示的是最新版本。",
+        actions: [],
+        createdAt: "2026-08-30T08:00:00.000Z",
+      }],
+      operation: {
+        requestId: "request-complete",
+        action: "confirm_direction",
+        phase: "generating_outline",
+        status: "succeeded",
+        errorMessage: null,
+        startedAt: "2026-08-30T07:59:30.000Z",
+        updatedAt: "2026-08-30T08:00:00.000Z",
+      },
+    }} />);
+
+    expect(screen.getByTestId("ai-operation-completion")).toHaveTextContent("处理完成");
+    expect(screen.getByTestId("ai-operation-completion")).toHaveTextContent("故事大纲已生成，右侧显示的是最新版本。");
   });
 
   test("shows elapsed seconds and long-wait hint while generating", async () => {

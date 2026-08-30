@@ -41,4 +41,21 @@ describe("GrammarCatalogBrowser", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: "搜索当前书籍" }), { target: { value: "past 2" } });
     expect(screen.getAllByText("Present perfect and past").length).toBeGreaterThan(0);
   });
+
+  it("supports a scoped task view with an explicit chapter action", () => {
+    render(<GrammarCatalogBrowser
+      activeBookId="book"
+      books={books}
+      emptyMessage="当前分类没有知识点"
+      onActiveBookChange={vi.fn()}
+      onSelectedIdsChange={vi.fn()}
+      pointDescriptions={{ point: "AI 已推荐至第 2 章" }}
+      selectionLabels={{ selected: "已加入本章", unselected: "加入本章" }}
+      selectedIds={["point"]}
+      visiblePointIds={["point"]}
+    />);
+
+    expect(screen.getByText("AI 已推荐至第 2 章")).toBeInTheDocument();
+    expect(screen.getByText("已加入本章")).toBeInTheDocument();
+  });
 });

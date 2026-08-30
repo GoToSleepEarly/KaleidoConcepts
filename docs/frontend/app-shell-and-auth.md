@@ -266,9 +266,13 @@ There is no second account area in the sidebar.
 
 ## 账户高级设置
 
-账户菜单提供“高级设置”，配置国外 GPT 系列调用使用的中转站：`QuickRouter` 或 `Crazyrouter`。选择 QuickRouter 时可进一步选择固定 Base URL：主站 `https://api.quickrouter.ai` 或直连 `https://api.quickrouter.us`。选择同时作用于 GPT 文本生成、联网研究、人物形象、课程图片生成和图片编辑；DeepSeek 继续使用原有 `DEEPSEEK_BASE_URL` 官方直连路径，不经过任何中转站，也不受该设置影响。
+账户菜单提供“高级设置”，统一配置文本生成模型与国外 GPT 系列调用使用的中转站。文本生成模型提供稳定产品名 `GPT` 与 `DeepSeek`，不向老师展示底层版本、provider 或能力后缀。该选择统一作用于故事大纲和文案与练习，不在课程流程中重复提供模型选择。默认使用 GPT；DeepSeek 作为低成本选项。
 
-设置保存在 `User.aiGateway` 与 `User.quickRouterEndpoint`，是 AI 路由的唯一真实来源。Base URL 不允许自由输入，数据库只保存 `main / direct` 枚举，服务端集中映射到白名单 URL，避免错误地址和 SSRF 风险。每次打开高级设置时，`GET /api/account/ai-gateway` 都按 HTTP-only 身份 Cookie 读取两项设置；`PATCH` 接收 `{ aiGateway, quickRouterEndpoint }`。为兼容缓存中的旧前端，缺少 `quickRouterEndpoint` 时保留数据库原值。所有 AI 写请求实时读取这两项设置，因此保存后的下一次 GPT 文本、研究或图片请求立即生效，无需重新登录。
+GPT 中转站提供 `QuickRouter` 或 `Crazyrouter`。选择 QuickRouter 时可进一步选择固定 Base URL：主站 `https://api.quickrouter.ai` 或直连 `https://api.quickrouter.us`。中转站选择同时作用于 GPT 文本生成、联网研究、人物形象、课程图片生成和图片编辑；DeepSeek 继续使用原有 `DEEPSEEK_BASE_URL` 官方直连路径，不经过任何中转站，也不受该设置影响。
+
+设置保存在 `User.writingProvider`、`User.aiGateway` 与 `User.quickRouterEndpoint`，是文本模型与 AI 路由的唯一账户级真实来源。Base URL 不允许自由输入，数据库只保存 `main / direct` 枚举，服务端集中映射到白名单 URL，避免错误地址和 SSRF 风险。每次打开高级设置时，`GET /api/account/ai-gateway` 都按 HTTP-only 身份 Cookie 读取三项设置；`PATCH` 接收 `{ writingProvider, aiGateway, quickRouterEndpoint }`。为兼容缓存中的旧前端，缺少任一新增可选字段时保留数据库原值。
+
+故事大纲和文案与练习的每个新 AI 操作在服务端开始时读取账户文本模型。修改设置只影响下一次新请求：已经运行的任务继续使用启动时的模型，不自动重放；已有成果不清空、不改写，也不标记为旧版本。课程设置和生成记录继续保存实际使用的模型快照，用于幂等、失败恢复和审计，但不再作为老师可编辑的模型偏好。高级设置保存三项配置时使用一次原子更新；任一字段校验或数据库写入失败时全部保持原值。
 
 主站与直连是显式手动切换，不在网络错误后自动向另一个地址重放生成请求。原因是上游可能已经接收第一次请求，自动重放会带来重复生成和重复费用。Crazyrouter 被选中时 QuickRouter Base URL 选项隐藏但保留，切回 QuickRouter 后恢复上次选择。
 
@@ -279,6 +283,8 @@ QuickRouter 图片继续支持其专属 `gpt-image-2-c` 备用模型。Crazyrout
 生产环境统一从项目根目录 `.env` 读取数据库、持久化图片目录和 AI 服务配置。`scripts/deploy-prod.sh` 在构建前加载该文件，并在重启已有 PM2 进程时使用 `--update-env`，确保新 Node 进程不沿用 PM2 保存的旧变量。生产 `.env` 不提交 Git，也不使用 `.env.local` 叠加覆盖。
 
 实现状态：已实现账户菜单设置、登录同步、数据库字段、服务端路由选择和 GPT 文本/研究/图片 provider 分流；生产部署前执行 `pnpm prisma:deploy`。
+
+2026-08-30：GPT / DeepSeek 写作模型已从课程流程收拢到账户“高级设置”。选择保存到 `User.writingProvider`，仅影响下一次新发起的文本任务；运行中任务继续使用领取时快照，既有课程内容不回写。验证通过账户 API、服务端路由与工作区回归测试、全量 87 个文件 / 689 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate` 和 `pnpm build`；提交号待用户验收后记录。
 
 2026-08-19：账户中转站收敛为 QuickRouter 与 Crazyrouter，移除 HaoAI/Easy88AI 的 UI、API、运行时分支和环境变量；旧浏览器 Cookie/Session 自动回退 QuickRouter，数据库旧账户值迁移到 Crazyrouter，失败图片任务的历史来源标记继续只读保留。Crazyrouter 文本、生图和基于生成结果的编辑已做真实串联验证；实现验证通过全量 58 个文件 / 476 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm exec prisma validate`、`pnpm build` 与 migration deploy。
 

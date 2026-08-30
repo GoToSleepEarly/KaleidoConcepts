@@ -681,6 +681,12 @@ export type CourseContentMessage = {
   content: string;
   targetType?: CourseContentTargetType | null;
   targetId?: string | null;
+  kind?: "message" | "operation" | "repair" | "notice" | null;
+  status?: "running" | "succeeded" | "failed" | "stale" | null;
+  operation?: "reading" | "exercises" | "modify" | null;
+  requestId?: string | null;
+  title?: string | null;
+  details?: Record<string, unknown> | null;
   createdAt: string;
 };
 

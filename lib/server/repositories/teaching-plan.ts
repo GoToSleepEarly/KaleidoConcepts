@@ -6,10 +6,10 @@ import type {
   TeachingPlanState,
 } from "@/lib/contracts/api";
 import { buildTeachingPlanDraft, TeachingPlanValidationError, validateTeachingPlanForConfirm } from "@/lib/server/validation/teaching-plan";
-import { defaultPracticeConfig, defaultReadingExerciseConfig, minimumReadingParagraphCount } from "@/lib/domain/teaching-plan-policy";
+import { defaultPracticeConfig, defaultReadingExerciseConfig, MAX_READING_PAGE_COUNT, MIN_READING_PAGE_COUNT, recommendedReadingPageCount } from "@/lib/domain/teaching-plan-policy";
 import { defaultStoryComplexity, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import { earliestCourseStage, furthestCourseStage, nextCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
-import { resolveGrammarKnowledgePoints, type GrammarContextDb } from "@/lib/server/repositories/grammar-context";
+import { resolveGrammarBookKnowledgePoints, resolveGrammarKnowledgePoints, type GrammarContextDb } from "@/lib/server/repositories/grammar-context";
 
 type DbCourse = {
   id: string;
@@ -19,6 +19,7 @@ type DbCourse = {
   staleFromStage?: CourseStage | null;
   lifecycleStatus?: "draft" | "published" | "archived";
   englishLevel?: EnglishLevel | null;
+  grammarBookEditionId?: string | null;
   knowledgePointIds?: unknown;
   storySetting?: { storyComplexity?: StoryComplexity | null; alignmentDetails?: unknown } | null;
 };
@@ -122,7 +123,7 @@ function toTeachingPlan(record: DbTeachingPlan): TeachingPlan {
     status: record.status,
     englishLevel: record.englishLevel,
     mainIdeaTargetWordCount: typeof record.mainIdeaTargetWordCount === "number" ? record.mainIdeaTargetWordCount : 120,
-    chapters: normalizeChapters(record.chapters),
+    chapters: normalizeChapters(record.chapters, record.englishLevel),
     afterClassPractice: normalizeAfterClassPractice(record.afterClassPractice),
     updatedAt: record.updatedAt.toISOString(),
     confirmedAt: record.confirmedAt?.toISOString() ?? null,
@@ -165,7 +166,7 @@ function normalizePracticeConfig(value: unknown): TeachingPlan["chapters"][numbe
   };
 }
 
-function normalizeChapters(value: unknown): TeachingPlan["chapters"] {
+function normalizeChapters(value: unknown, englishLevel: EnglishLevel | null): TeachingPlan["chapters"] {
   if (!Array.isArray(value)) return [];
   return value.filter(isRecord).map((chapter) => {
     const touched = isRecord(chapter.touched) ? chapter.touched : {};
@@ -176,14 +177,16 @@ function normalizeChapters(value: unknown): TeachingPlan["chapters"] {
     return {
       outlineChapterId: typeof chapter.outlineChapterId === "string" ? chapter.outlineChapterId : "",
       targetWordCount,
-      paragraphCount: minimumReadingParagraphCount(targetWordCount ?? 90),
+      paragraphCount: touched.paragraphCount === true && typeof chapter.paragraphCount === "number"
+        ? Math.min(MAX_READING_PAGE_COUNT, Math.max(MIN_READING_PAGE_COUNT, Math.round(chapter.paragraphCount)))
+        : recommendedReadingPageCount(englishLevel ?? "A2", targetWordCount ?? 90),
       knowledgePointIds: Array.isArray(chapter.knowledgePointIds) ? chapter.knowledgePointIds.filter((id): id is string => typeof id === "string") : [],
       readingExerciseMode: touched.readingExerciseMode === true ? savedReadingMode : "interactive",
       readingExercises,
       chapterPractice: touched.chapterPractice === true ? savedChapterPractice : defaultPracticeConfig(false),
       touched: {
         targetWordCount: touched.targetWordCount === true,
-        paragraphCount: false,
+        paragraphCount: touched.paragraphCount === true,
         knowledgePointIds: touched.knowledgePointIds === true,
         readingExerciseMode: touched.readingExerciseMode === true,
         readingExercises: touched.readingExercises === true || touched.embeddedExercises === true,
@@ -305,7 +308,9 @@ export async function getTeachingPlanState(db: TeachingPlanDb, courseId: string)
   const outline = await getConfirmedOutline(db, course);
   const [savedPlan, knowledgePoints] = await Promise.all([
     ensureTeachingPlan(db, course, outline),
-    listKnowledgePoints(db, Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : []),
+    course.grammarBookEditionId
+      ? resolveGrammarBookKnowledgePoints(db, course.grammarBookEditionId)
+      : listKnowledgePoints(db, Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : []),
   ]);
   const plan = savedPlan.afterClassPractice.touched.knowledgePointIds && savedPlan.afterClassPractice.knowledgePointIds.length
     ? savedPlan
@@ -344,21 +349,28 @@ export async function saveTeachingPlan(db: TeachingPlanDb, courseId: string, pla
   const outlineChapterIds = toOutlineState(outline).chapters.map((chapter) => chapter.id);
   if (plan.courseId !== courseId) throw new TeachingPlanValidationError();
   if (!course.englishLevel || plan.englishLevel !== course.englishLevel) throw new TeachingPlanValidationError("英语难度以第一步设置为准。");
-  const allowedKnowledgePointIds = new Set(Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : []);
+  const existingKnowledgePointIds = Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [];
+  const submittedKnowledgePointIds = [...new Set([
+    ...plan.chapters.flatMap((chapter) => chapter.knowledgePointIds),
+    ...plan.afterClassPractice.knowledgePointIds,
+  ])];
+  const allowedKnowledgePointIds = new Set(existingKnowledgePointIds);
+  if (course.grammarBookEditionId && db.knowledgePoint) {
+    const editionPoints = await db.knowledgePoint.findMany({
+      where: { id: { in: submittedKnowledgePointIds }, bookEditionId: course.grammarBookEditionId, source: "grammar_in_use" },
+    });
+    editionPoints.forEach((point) => allowedKnowledgePointIds.add(point.id));
+  }
   if (plan.chapters.some((chapter) => chapter.knowledgePointIds.some((id) => !allowedKnowledgePointIds.has(id)))
     || plan.afterClassPractice.knowledgePointIds.some((id) => !allowedKnowledgePointIds.has(id))) {
-    throw new TeachingPlanValidationError("知识点只能从第一步已选范围中分配。");
+    throw new TeachingPlanValidationError("知识点只能从当前语法书版本中选择。");
   }
   const parsedPlan = {
     ...plan,
     englishLevel: course.englishLevel,
     status: "draft" as const,
     confirmedAt: null,
-    chapters: plan.chapters.map((chapter) => ({
-      ...chapter,
-      paragraphCount: minimumReadingParagraphCount(chapter.targetWordCount ?? 90),
-      touched: { ...chapter.touched, paragraphCount: false },
-    })),
+    chapters: plan.chapters,
   };
   if (parsedPlan.chapters.map((chapter) => chapter.outlineChapterId).join("\n") !== outlineChapterIds.join("\n")) {
     throw new TeachingPlanValidationError("教学规划章节与故事大纲不一致。");
@@ -377,7 +389,12 @@ export async function saveTeachingPlan(db: TeachingPlanDb, courseId: string, pla
         ...planWriteData(parsedPlan),
       },
     });
-    if (!options.preserveProgress) await tx.course.update({ where: { id: courseId }, data: { currentStage: furthestCourseStage(course.currentStage, "teaching_plan") } });
+    if (!options.preserveProgress) {
+      await tx.course.update({
+        where: { id: courseId },
+        data: { currentStage: furthestCourseStage(course.currentStage, "teaching_plan") },
+      });
+    }
     return toTeachingPlan(saved);
   };
   return db.$transaction ? db.$transaction(save) : save(db);

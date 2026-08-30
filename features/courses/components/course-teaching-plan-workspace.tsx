@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, BookOpenText, Check, ChevronDown, ChevronRight, Loader2, Minus, PencilLine, Plus, RotateCcw, X } from "lucide-react";
 
@@ -8,11 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
+import { GrammarKnowledgePointPickerDialog } from "@/features/courses/components/grammar-knowledge-point-picker-dialog";
 import { KnowledgePointPickerDialog } from "@/features/courses/components/knowledge-point-picker-dialog";
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
-import type { GrammarExerciseType, GrammarPracticeConfig, ReadingExerciseMode, TeachingPlan, TeachingPlanChapter, TeachingPlanState } from "@/lib/contracts/api";
-import { grammarExerciseTotal, MAX_CHAPTER_TARGET_WORD_COUNT, MIN_CHAPTER_TARGET_WORD_COUNT, minimumReadingParagraphCount, practicePageCount, readingExerciseTotal, readingPageCount } from "@/lib/domain/teaching-plan-policy";
-import { storyComplexityLabel } from "@/lib/domain/story-length-policy";
+import type { EnglishLevel, GrammarBookCatalog, GrammarExerciseType, GrammarPracticeConfig, ReadingExerciseMode, TeachingPlan, TeachingPlanChapter, TeachingPlanState } from "@/lib/contracts/api";
+import { grammarExerciseTotal, MAX_CHAPTER_TARGET_WORD_COUNT, MAX_READING_PAGE_COUNT, MIN_CHAPTER_TARGET_WORD_COUNT, MIN_READING_PAGE_COUNT, practicePageCount, readingPageCount, readingPageDensity, recommendedReadingPageCount } from "@/lib/domain/teaching-plan-policy";
 import { cn } from "@/lib/utils";
 import { readJsonResponse } from "@/lib/utils/response-json";
 
@@ -32,9 +32,15 @@ function unionKnowledgePointIds(chapters: TeachingPlanChapter[]) {
 
 type ActivePanel = "chapters" | "afterClass";
 type MobileChapterSection = "goals" | "reading" | "practice";
+type BatchApplyTarget = "reading" | "practice";
 
 function chapterReady(chapter: TeachingPlanChapter) {
-  return Boolean(chapter.targetWordCount);
+  return validIntegerInRange(chapter.targetWordCount, MIN_CHAPTER_TARGET_WORD_COUNT, MAX_CHAPTER_TARGET_WORD_COUNT)
+    && validIntegerInRange(chapter.paragraphCount, MIN_READING_PAGE_COUNT, MAX_READING_PAGE_COUNT);
+}
+
+function validIntegerInRange(value: number | null, min: number, max: number) {
+  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
 }
 
 function compactTabClass(active: boolean) {
@@ -43,6 +49,7 @@ function compactTabClass(active: boolean) {
 
 function hasValidExercisePlan(plan: TeachingPlan) {
   const chaptersValid = plan.chapters.every((chapter) => {
+    if (!chapterReady(chapter)) return false;
     const readingCount = grammarExerciseTotal(chapter.readingExercises.grammar);
     const practiceCount = grammarExerciseTotal(chapter.chapterPractice.grammar);
     if (!chapter.knowledgePointIds.length) return chapter.readingExercises.enabled && readingCount === 0 && !chapter.chapterPractice.enabled && practiceCount === 0;
@@ -54,8 +61,46 @@ function hasValidExercisePlan(plan: TeachingPlan) {
   return grammarExerciseTotal(plan.afterClassPractice.practice.grammar) >= Math.max(1, plan.afterClassPractice.knowledgePointIds.length);
 }
 
+function exercisePlanIssue(plan: TeachingPlan) {
+  for (const [index, chapter] of plan.chapters.entries()) {
+    const label = `第 ${index + 1} 章`;
+    if (!validIntegerInRange(chapter.targetWordCount, MIN_CHAPTER_TARGET_WORD_COUNT, MAX_CHAPTER_TARGET_WORD_COUNT)) return `${label}目标词数需为 ${MIN_CHAPTER_TARGET_WORD_COUNT}–${MAX_CHAPTER_TARGET_WORD_COUNT} 之间的整数`;
+    if (!validIntegerInRange(chapter.paragraphCount, MIN_READING_PAGE_COUNT, MAX_READING_PAGE_COUNT)) return `${label}正文页数需为 ${MIN_READING_PAGE_COUNT}–${MAX_READING_PAGE_COUNT} 之间的整数`;
+    const readingCount = grammarExerciseTotal(chapter.readingExercises.grammar);
+    const practiceCount = grammarExerciseTotal(chapter.chapterPractice.grammar);
+    if (!chapter.knowledgePointIds.length && (readingCount > 0 || chapter.chapterPractice.enabled || practiceCount > 0)) return `${label}没有知识点，请关闭语法题和章节练习`;
+    if (chapter.knowledgePointIds.length && readingCount < chapter.knowledgePointIds.length) return `${label}正文语法题少于知识点数量`;
+    if (chapter.chapterPractice.enabled && practiceCount < chapter.knowledgePointIds.length) return `${label}章节练习题少于知识点数量`;
+  }
+  if (!plan.chapters.some((chapter) => chapter.knowledgePointIds.length)) return "整门课程至少需要分配 1 个知识点";
+  if (plan.afterClassPractice.enabled && !plan.afterClassPractice.vocabularyReviewEnabled && !plan.afterClassPractice.practice.enabled) return "课后练习至少保留词汇复习或语法习题";
+  if (plan.afterClassPractice.practice.enabled && grammarExerciseTotal(plan.afterClassPractice.practice.grammar) < Math.max(1, plan.afterClassPractice.knowledgePointIds.length)) return "课后语法题少于所选知识点数量";
+  return "";
+}
+
 function sameIdSet(left: string[], right: string[]) {
   return left.length === right.length && left.every((id) => right.includes(id));
+}
+
+function toGrammarBookCatalog(knowledgePoints: TeachingPlanState["knowledgePoints"]): GrammarBookCatalog | null {
+  const source = knowledgePoints[0];
+  if (!source?.bookTitle || !source.edition || !source.officialLevel) return null;
+  if (knowledgePoints.some((point) => point.bookTitle !== source.bookTitle || point.edition !== source.edition || point.unitStart === undefined || !point.units?.length)) return null;
+  const bookId = `current:${source.bookTitle}:${source.edition}`;
+  const sections = new Map<string, GrammarBookCatalog["sections"][number]>();
+  for (const point of knowledgePoints) {
+    const officialTitle = point.category || "Other";
+    const section = sections.get(officialTitle) ?? { id: `${bookId}:section:${sections.size + 1}`, officialTitle, points: [] };
+    section.points.push({
+      id: point.id,
+      title: point.label,
+      unitStart: point.unitStart!,
+      unitEnd: point.unitEnd ?? point.unitStart!,
+      units: point.units!,
+    });
+    sections.set(officialTitle, section);
+  }
+  return { id: bookId, title: source.bookTitle, edition: source.edition, officialLevel: source.officialLevel, sections: [...sections.values()] };
 }
 
 export function CourseTeachingPlanWorkspace({ initialState }: { initialState: TeachingPlanState }) {
@@ -68,6 +113,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
   const [confirming, setConfirming] = useState(false);
   const [downstreamConfirmOpen, setDownstreamConfirmOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [batchApplyTarget, setBatchApplyTarget] = useState<BatchApplyTarget | null>(null);
   const [resetting, setResetting] = useState(false);
   const [affectedResources, setAffectedResources] = useState<string[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
@@ -77,9 +123,8 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
   const selectedChapter = plan.chapters[selectedChapterIndex];
   const selectedOutlineChapter = initialState.outline.chapters[selectedChapterIndex];
   const readyChapterCount = plan.chapters.filter(chapterReady).length;
-  const courseKnowledgePointCount = unionKnowledgePointIds(plan.chapters).length;
-  const grammarSource = initialState.knowledgePoints.find((point) => point.bookTitle);
   const exercisePlanValid = hasValidExercisePlan(plan);
+  const planIssue = exercisePlanIssue(plan);
   const confirmHint = plan.englishLevel ? `章节 ${readyChapterCount}/${plan.chapters.length} · ${plan.afterClassPractice.enabled ? "课后练习已开启" : "课后练习不生成"}` : "还需选择英语难度";
   const afterClassNeedsReview = useMemo(() => {
     if (!plan.afterClassPractice.touched.knowledgePointIds) return false;
@@ -90,6 +135,10 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
     const recommended = new Set(initialState.outline.chapters.flatMap((chapter) => chapter.recommendedKnowledgePointIds));
     return (initialState.course.knowledgePointIds ?? []).filter((id) => !recommended.has(id));
   }, [initialState.course.knowledgePointIds, initialState.outline.chapters]);
+  const otherChapterCount = Math.max(0, plan.chapters.length - 1);
+  const practiceSkippedCount = selectedChapter?.chapterPractice.enabled
+    ? plan.chapters.filter((chapter, index) => index !== selectedChapterIndex && !chapter.knowledgePointIds.length).length
+    : 0;
 
   function updatePlan(updater: (current: TeachingPlan) => TeachingPlan) {
     setError("");
@@ -148,7 +197,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
       return {
         ...current,
         chapters: current.chapters.map((chapter, index) =>
-          index === selectedChapterIndex
+          index === selectedChapterIndex || (source.chapterPractice.enabled && !chapter.knowledgePointIds.length)
             ? chapter
             : {
                 ...chapter,
@@ -161,6 +210,12 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
         ),
       };
     });
+  }
+
+  function confirmBatchApply() {
+    if (batchApplyTarget === "reading") applyCurrentChapterReadingToAll();
+    if (batchApplyTarget === "practice") applyCurrentChapterPracticeToAll();
+    setBatchApplyTarget(null);
   }
 
   useEffect(() => {
@@ -264,16 +319,15 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto flex h-full min-w-0 max-w-7xl flex-col gap-4 overflow-hidden" data-testid="teaching-plan-workspace">
       <CourseCreateSteps currentStep={3} courseId={initialState.course.id} furthestStep={courseStageStep(initialState.course.currentStage)} onNavigate={navigate} />
       <CourseStaleNotice staleFromStage={initialState.course.staleFromStage} stage="teaching_plan" />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <div className="flex min-w-0 items-start justify-between gap-3 sm:block">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-muted-foreground">教学规划</p>
-              <h2 className="mt-1 truncate text-xl font-semibold text-foreground sm:text-2xl">{initialState.outline.title}</h2>
-              {grammarSource ? <p className="mt-1 text-xs text-muted-foreground">《{grammarSource.bookTitle}》 · {grammarSource.edition} · {grammarSource.officialLevel}</p> : null}
+              <h2 className="text-2xl font-semibold text-foreground">教学规划</h2>
+              <p className="mt-1 truncate text-balance text-lg font-semibold text-foreground">{initialState.outline.title}</p>
             </div>
             <Button className="shrink-0 lg:hidden" disabled={confirming || resetting} onClick={() => setResetConfirmOpen(true)} size="sm" type="button" variant="outline">
               <RotateCcw className="size-4" />
@@ -286,14 +340,10 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
             <RotateCcw className="size-4" />
             重置教学规划
           </Button>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1.5 font-medium text-muted-foreground sm:px-3">{storyComplexityLabel(initialState.lengthPolicy.storyComplexity)}</span>
-          <span className="rounded-full bg-primary-50 px-3 py-1.5 text-sm font-semibold text-primary-700">{initialState.course.englishLevel}</span>
-          <span className="rounded-full bg-muted px-2.5 py-1.5 font-medium text-muted-foreground sm:px-3">全课 {courseKnowledgePointCount} 个知识点</span>
-          <span className={cn("shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium", !exercisePlanValid ? "bg-amber-50 text-amber-800" : hasChanges ? "bg-primary-50 text-primary-700" : "bg-muted text-muted-foreground")}>{!exercisePlanValid ? "待完善" : hasChanges ? "有未确认修改" : "已确认"}</span>
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-5" data-testid="teaching-plan-layout">
+      <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-3 overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)] lg:grid-rows-1 lg:gap-5" data-testid="teaching-plan-layout">
         <div className="min-w-0 space-y-3 rounded-lg border border-border bg-card p-3 shadow-sm lg:hidden" data-testid="teaching-plan-mobile-controls">
           <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1" data-testid="teaching-plan-mobile-panel-tabs" aria-label="教学规划配置">
             <button aria-pressed={activePanel === "chapters"} className={compactTabClass(activePanel === "chapters")} onClick={() => setActivePanel("chapters")} type="button">
@@ -355,49 +405,36 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
             </div>
           ) : null}
         </div>
-        <aside className="hidden space-y-4 lg:block" data-testid="teaching-plan-desktop-sidebar">
+        <aside className="hidden min-h-0 overflow-y-auto lg:block" data-testid="teaching-plan-desktop-sidebar">
           <section className="rounded-lg bg-card p-3 shadow-sm">
+            <div className="flex items-center justify-between px-1 pb-2">
+              <div className="text-sm font-semibold text-foreground">教学内容</div>
+              <div className="text-xs font-medium text-muted-foreground">{readyChapterCount}/{plan.chapters.length} 章</div>
+            </div>
             <div aria-label="教学规划配置" className="space-y-2" role="tablist">
-              <PanelTab active={activePanel === "chapters"} label="章节" onClick={() => setActivePanel("chapters")} summary={`${readyChapterCount}/${plan.chapters.length} 章 · 词数 · 知识点 · 题型`} />
-              <PanelTab active={activePanel === "afterClass"} label="课后" onClick={() => setActivePanel("afterClass")} summary={`课后阅读 ${plan.mainIdeaTargetWordCount ?? 120} 词 · ${plan.afterClassPractice.enabled ? (plan.afterClassPractice.practice.enabled ? `${grammarExerciseTotal(plan.afterClassPractice.practice.grammar)} 道语法题${plan.afterClassPractice.vocabularyReviewEnabled ? " + 词汇复习" : ""}` : "仅词汇复习") : "无课后练习"}`} />
+              {plan.chapters.map((chapter, index) => {
+                const outline = initialState.outline.chapters[index];
+                const active = activePanel === "chapters" && selectedChapterIndex === index;
+                return (
+                  <button className={cn("w-full rounded-md border p-3 text-left transition-colors", active ? "border-primary bg-primary-50" : "border-border bg-background hover:border-primary-200 hover:bg-muted/40")} key={chapter.outlineChapterId} onClick={() => { setActivePanel("chapters"); setSelectedChapterIndex(index); }} role="tab" type="button">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-sm font-semibold text-foreground">第 {outline.order} 章 · {outline.title}</span>
+                      {active ? <Check className="size-4 text-primary" /> : <ChevronRight className="size-4 text-muted-foreground" />}
+                    </div>
+                    <div className="mt-1 truncate text-xs font-medium text-muted-foreground">
+                      {chapter.targetWordCount ? `${chapter.targetWordCount} 词 · ${readingPageCount(chapter.targetWordCount, chapter.paragraphCount)} 页` : "词数未设置"} · {chapter.knowledgePointIds.length} 个知识点
+                    </div>
+                  </button>
+                );
+              })}
+              <div className="my-2 border-t border-border" />
+              <PanelTab active={activePanel === "afterClass"} label="课后设置" onClick={() => setActivePanel("afterClass")} summary={`课后阅读 ${plan.mainIdeaTargetWordCount ?? 120} 词 · ${plan.afterClassPractice.enabled ? "已配置练习" : "无课后练习"}`} />
             </div>
           </section>
-          {activePanel === "chapters" ? (
-            <section className="rounded-lg bg-card p-3 shadow-sm">
-              <div className="flex items-center justify-between px-1 pb-2">
-                <div className="text-sm font-semibold text-foreground">章节</div>
-                <div className="text-xs font-medium text-muted-foreground">配置概要</div>
-              </div>
-              <div className="space-y-2">
-                {plan.chapters.map((chapter, index) => {
-                  const outline = initialState.outline.chapters[index];
-                  const active = selectedChapterIndex === index;
-                  return (
-                    <button className={cn("w-full rounded-md border p-3 text-left transition-colors", active ? "border-primary bg-primary-50" : "border-border bg-background hover:border-primary-200 hover:bg-muted/40")} key={chapter.outlineChapterId} onClick={() => setSelectedChapterIndex(index)} type="button">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="min-w-0 truncate text-sm font-semibold text-foreground">
-                          第 {outline.order} 章 · {outline.title}
-                        </span>
-                        {chapterReady(chapter) ? <Check className="size-4 text-primary" /> : <ChevronRight className="size-4 text-muted-foreground" />}
-                      </div>
-                      <div className="mt-2 space-y-1 text-xs font-medium text-muted-foreground">
-                        <div>
-                          {chapter.targetWordCount ? `${chapter.targetWordCount} 词 · ${readingPageCount(chapter.targetWordCount, chapter.paragraphCount)} 个正文段落` : "词数未设置"} · {chapter.knowledgePointIds.length} 个知识点
-                        </div>
-                        <div>
-                          {chapter.readingExerciseMode === "interactive" ? `边读边练 ${readingExerciseTotal(chapter.readingExercises)} 题` : `完整阅读 ${readingExerciseTotal(chapter.readingExercises)} 题`} · {chapter.chapterPractice.enabled ? `章节练习 ${grammarExerciseTotal(chapter.chapterPractice.grammar)} 题 / ${practicePageCount(chapter.chapterPractice.grammar)} 页` : "无章节练习"}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          ) : null}
         </aside>
 
-        <main className="min-w-0 space-y-5">
-          {activePanel === "chapters" && selectedChapter && selectedOutlineChapter ? <ChapterEditor chapter={selectedChapter} index={selectedChapterIndex} knowledgePoints={initialState.knowledgePoints} lengthPolicy={initialState.lengthPolicy} unrecommendedSelectedKnowledgePointIds={unrecommendedSelectedKnowledgePointIds} mobileSection={mobileChapterSection} onApplyChapterPracticeToAll={applyCurrentChapterPracticeToAll} onApplyReadingToAll={applyCurrentChapterReadingToAll} onChange={(updater) => updateChapter(selectedChapterIndex, updater)} outline={selectedOutlineChapter} /> : null}
+        <main className="min-h-0 min-w-0 space-y-5 overflow-x-hidden overflow-y-auto pb-2" data-testid="teaching-plan-editor-scroll">
+          {activePanel === "chapters" && selectedChapter && selectedOutlineChapter ? <ChapterEditor chapter={selectedChapter} englishLevel={(plan.englishLevel ?? initialState.course.englishLevel ?? "A2") as EnglishLevel} index={selectedChapterIndex} key={selectedChapter.outlineChapterId} knowledgePoints={initialState.knowledgePoints} step1KnowledgePointIds={initialState.course.knowledgePointIds ?? []} unrecommendedSelectedKnowledgePointIds={unrecommendedSelectedKnowledgePointIds} mobileSection={mobileChapterSection} onApplyChapterPracticeToAll={() => setBatchApplyTarget("practice")} onApplyReadingToAll={() => setBatchApplyTarget("reading")} onChange={(updater) => updateChapter(selectedChapterIndex, updater)} outline={selectedOutlineChapter} /> : null}
 
           {activePanel === "afterClass" ? (
             <>
@@ -444,7 +481,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
         </main>
       </div>
 
-      <div className="sticky bottom-3 flex flex-col gap-3 rounded-lg border border-border bg-card px-3 py-3 shadow-md sm:bottom-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <div className="flex shrink-0 flex-col gap-3 rounded-lg border border-border bg-card px-3 py-3 shadow-md sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm" data-testid="teaching-plan-bottom-summary">
           <span className="font-medium text-foreground">{confirmHint}</span>
           <span aria-hidden="true" className="text-muted-foreground">
@@ -455,7 +492,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
               {error}
             </span>
           ) : (
-            <span className={cn("text-xs", !exercisePlanValid ? "text-amber-700" : "text-muted-foreground")}>{!exercisePlanValid ? "请完善后再确认" : hasChanges ? "确认后保存" : "当前规划已确认"}</span>
+            <span className={cn("text-xs", !exercisePlanValid ? "text-amber-700" : "text-muted-foreground")}>{!exercisePlanValid ? planIssue || "请完善后再确认" : hasChanges ? "有未确认修改，确认后保存" : "当前规划已确认"}</span>
           )}
         </div>
         <div className="grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] gap-2 sm:flex">
@@ -469,6 +506,26 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
           </Button>
         </div>
       </div>
+      <Dialog description="确认覆盖范围后再应用" onClose={() => setBatchApplyTarget(null)} open={batchApplyTarget !== null} size="compact" title={batchApplyTarget === "reading" ? `将本章正文设置应用到其他 ${otherChapterCount} 章？` : `将本章章节练习配置应用到其他 ${otherChapterCount} 章？`}>
+        <div className="space-y-5 p-5 sm:p-6">
+          {batchApplyTarget === "reading" ? (
+            <div className="space-y-3 text-sm leading-6">
+              <div><p className="font-semibold text-foreground">会同步</p><p className="text-muted-foreground">目标词数、正文页数、阅读模式、正文题型和题量</p></div>
+              <div><p className="font-semibold text-foreground">不会修改</p><p className="text-muted-foreground">各章知识点、章节练习</p></div>
+            </div>
+          ) : (
+            <div className="space-y-3 text-sm leading-6">
+              <div><p className="font-semibold text-foreground">会同步</p><p className="text-muted-foreground">章节练习开启状态、选项填空和给词变形题量</p></div>
+              <div><p className="font-semibold text-foreground">不会修改</p><p className="text-muted-foreground">各章知识点、正文设置</p></div>
+              {practiceSkippedCount ? <p className="rounded-md bg-amber-50 px-3 py-2 text-amber-800">将应用到 {otherChapterCount - practiceSkippedCount} 章；另有 {practiceSkippedCount} 章没有语法知识点，将保持关闭。</p> : null}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setBatchApplyTarget(null)} type="button" variant="outline">取消</Button>
+            <Button onClick={confirmBatchApply} type="button">应用到其他章节</Button>
+          </div>
+        </div>
+      </Dialog>
       <Dialog description="将放弃本阶段的手动调整" onClose={() => setResetConfirmOpen(false)} open={resetConfirmOpen} title="重置教学规划？">
         <div className="space-y-5 p-5 sm:p-6">
           <p className="text-sm leading-6 text-muted-foreground">将删除当前教学规划，并按最新故事大纲重新创建。后续内容不会被删除，但仍会保留旧版本。</p>
@@ -551,18 +608,77 @@ function PanelTab({ active, label, summary, onClick }: { active: boolean; label:
   );
 }
 
-function ChapterEditor({ chapter, outline, index, knowledgePoints, lengthPolicy, unrecommendedSelectedKnowledgePointIds, mobileSection, onApplyReadingToAll, onApplyChapterPracticeToAll, onChange }: { chapter: TeachingPlanChapter; outline: TeachingPlanState["outline"]["chapters"][number]; index: number; knowledgePoints: TeachingPlanState["knowledgePoints"]; lengthPolicy: TeachingPlanState["lengthPolicy"]; unrecommendedSelectedKnowledgePointIds: string[]; mobileSection?: MobileChapterSection; onApplyReadingToAll: () => void; onApplyChapterPracticeToAll: () => void; onChange: (updater: (chapter: TeachingPlanChapter) => TeachingPlanChapter) => void }) {
+function ChapterSummary({ summary }: { summary: string }) {
+  const paragraphRef = useRef<HTMLParagraphElement | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+
+  useLayoutEffect(() => {
+    if (expanded) return;
+    const paragraph = paragraphRef.current;
+    if (!paragraph) return;
+    const measure = () => setOverflows(paragraph.scrollHeight > paragraph.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(paragraph);
+    return () => observer.disconnect();
+  }, [expanded, summary]);
+
+  return (
+    <div className="mt-2 flex max-w-3xl items-start gap-2 text-sm leading-6 text-muted-foreground">
+      <p className={cn("min-w-0 flex-1", !expanded && "line-clamp-2")} ref={paragraphRef}>{summary}</p>
+      {overflows ? <button className="shrink-0 text-xs font-medium text-primary hover:text-primary-700" onClick={() => setExpanded((current) => !current)} type="button">{expanded ? "收起概要" : "展开概要"}</button> : null}
+    </div>
+  );
+}
+
+function ChapterEditor({ chapter, outline, index, englishLevel, knowledgePoints, step1KnowledgePointIds, unrecommendedSelectedKnowledgePointIds, mobileSection, onApplyReadingToAll, onApplyChapterPracticeToAll, onChange }: { chapter: TeachingPlanChapter; outline: TeachingPlanState["outline"]["chapters"][number]; index: number; englishLevel: EnglishLevel; knowledgePoints: TeachingPlanState["knowledgePoints"]; step1KnowledgePointIds: string[]; unrecommendedSelectedKnowledgePointIds: string[]; mobileSection?: MobileChapterSection; onApplyReadingToAll: () => void; onApplyChapterPracticeToAll: () => void; onChange: (updater: (chapter: TeachingPlanChapter) => TeachingPlanChapter) => void }) {
   const chapterLabel = `第 ${index + 1} 章`;
   const [pickerOpen, setPickerOpen] = useState(false);
+  const grammarBook = useMemo(() => toGrammarBookCatalog(knowledgePoints), [knowledgePoints]);
   const recommendedIds = outline.recommendedKnowledgePointIds;
+  const step1Ids = useMemo(() => new Set(step1KnowledgePointIds), [step1KnowledgePointIds]);
+  const pendingIds = useMemo(() => new Set(unrecommendedSelectedKnowledgePointIds), [unrecommendedSelectedKnowledgePointIds]);
+  const chapterPointSources = useMemo(() => Object.fromEntries(knowledgePoints.map((point) => {
+    if (recommendedIds.includes(point.id)) return [point.id, { label: "AI 推荐", tone: "primary" as const }];
+    if (pendingIds.has(point.id)) return [point.id, { label: "待安排", tone: "warning" as const }];
+    if (step1Ids.has(point.id)) return [point.id, { label: "基础信息", tone: "muted" as const }];
+    return [point.id, { label: "本章添加", tone: "muted" as const }];
+  })), [knowledgePoints, pendingIds, recommendedIds, step1Ids]);
   const knowledgePointsChanged = !sameIdSet(chapter.knowledgePointIds, recommendedIds);
-  const recommendedRange = lengthPolicy.english.teacherRecommendedRange;
-  const wordCountWarning = chapter.targetWordCount !== null && chapter.targetWordCount < recommendedRange[0]
-    ? "低于推荐范围，可能无法完整表达本章事件。"
-    : chapter.targetWordCount !== null && chapter.targetWordCount > recommendedRange[1]
-      ? "高于推荐范围，可能增加学生阅读负担；调高词数不会增加剧情复杂度。"
+  const wordCountValid = validIntegerInRange(chapter.targetWordCount, MIN_CHAPTER_TARGET_WORD_COUNT, MAX_CHAPTER_TARGET_WORD_COUNT);
+  const pageCountValid = validIntegerInRange(chapter.paragraphCount, MIN_READING_PAGE_COUNT, MAX_READING_PAGE_COUNT);
+  const wordsPerPage = wordCountValid && pageCountValid ? Math.ceil((chapter.targetWordCount ?? 0) / chapter.paragraphCount) : null;
+  const density = readingPageDensity(englishLevel);
+  const densityWarning = wordsPerPage !== null && wordsPerPage < density.min
+    ? `每页约 ${wordsPerPage} 词，低于 ${englishLevel} 建议的 ${density.min}–${density.max} 词，课堂节奏可能偏碎。`
+    : wordsPerPage !== null && wordsPerPage > density.max
+      ? `每页约 ${wordsPerPage} 词，高于 ${englishLevel} 建议的 ${density.min}–${density.max} 词，课堂投屏时可能偏密。`
       : "";
   const mobileSectionClass = (section: MobileChapterSection) => (mobileSection && mobileSection !== section ? "max-lg:hidden" : "");
+
+  function applyKnowledgePointSelection(ids: string[]) {
+    onChange((current) => ({
+      ...current,
+      knowledgePointIds: ids,
+      ...(!ids.length ? {
+        readingExercises: { ...current.readingExercises, grammar: { optionCloze: 0, wordForm: 0 } },
+        chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } },
+      } : current.knowledgePointIds.length ? {} : {
+        readingExercises: { ...current.readingExercises, grammar: { optionCloze: 4, wordForm: 3 } },
+      }),
+      touched: {
+        ...current.touched,
+        knowledgePointIds: !sameIdSet(ids, recommendedIds),
+      },
+    }));
+    setPickerOpen(false);
+  }
+
   return (
     <section>
       <div className="space-y-5">
@@ -572,24 +688,26 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, lengthPolicy,
               <h3 className="text-lg font-semibold text-foreground">
                 {chapterLabel} · {outline.title}
               </h3>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{outline.summary}</p>
+              <ChapterSummary summary={outline.summary} />
             </div>
             <div className="flex shrink-0 flex-wrap items-start gap-2">
-              <label className="rounded-md border border-input bg-background px-3 py-2">
+              <label className={cn("rounded-md border bg-background px-3 py-2", wordCountValid ? "border-input" : "border-red-400")}>
                 <span className="block text-xs font-medium text-muted-foreground">目标词数</span>
                 <span className="mt-1 flex items-center gap-2">
                   <input
                     aria-label={`${chapterLabel}目标词数`}
-                    className="h-9 w-20 rounded-md border border-input bg-card px-2 text-center text-sm font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary-100"
+                    aria-invalid={!wordCountValid}
+                    aria-describedby={!wordCountValid ? `${outline.id}-word-count-error` : undefined}
+                    className={cn("h-9 w-20 rounded-md border bg-card px-2 text-center text-sm font-semibold outline-none focus:ring-2", wordCountValid ? "border-input focus:border-primary focus:ring-primary-100" : "border-red-400 text-red-800 focus:border-red-500 focus:ring-red-100")}
                     max={MAX_CHAPTER_TARGET_WORD_COUNT}
                     min={MIN_CHAPTER_TARGET_WORD_COUNT}
                     onChange={(event) =>
                       onChange((current) => {
-                        const targetWordCount = Number(event.target.value);
+                        const targetWordCount = event.target.value === "" ? Number.NaN : Number(event.target.value);
                         return {
                           ...current,
                           targetWordCount,
-                          paragraphCount: minimumReadingParagraphCount(targetWordCount),
+                          paragraphCount: current.touched.paragraphCount || !Number.isFinite(targetWordCount) ? current.paragraphCount : recommendedReadingPageCount(englishLevel, targetWordCount),
                           touched: {
                             ...current.touched,
                             targetWordCount: true,
@@ -597,25 +715,41 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, lengthPolicy,
                         };
                       })
                     }
+                    step={1}
                     type="number"
-                    value={chapter.targetWordCount ?? ""}
+                    value={Number.isFinite(chapter.targetWordCount) ? chapter.targetWordCount ?? "" : ""}
                   />
                   <span className="text-sm text-muted-foreground">词</span>
                 </span>
+                {!wordCountValid ? <span className="mt-1 block text-xs text-red-700" id={`${outline.id}-word-count-error`}>请输入 {MIN_CHAPTER_TARGET_WORD_COUNT}–{MAX_CHAPTER_TARGET_WORD_COUNT} 之间的整数</span> : null}
               </label>
-              <div className="rounded-md border border-input bg-background px-3 py-2">
-                <span className="block text-xs font-medium text-muted-foreground">正文段落</span>
+              <label className={cn("rounded-md border bg-background px-3 py-2", pageCountValid ? "border-input" : "border-red-400")}>
+                <span className="block text-xs font-medium text-muted-foreground">正文页数</span>
                 <span className="mt-1 flex items-center gap-2">
-                  <output aria-label={`${chapterLabel}正文段落数`} className="flex h-9 min-w-16 items-center justify-center rounded-md bg-muted px-3 text-sm font-semibold tabular-nums text-foreground">
-                    {chapter.paragraphCount} 段
-                  </output>
+                  <input
+                    aria-label={`${chapterLabel}正文页数`}
+                    aria-invalid={!pageCountValid}
+                    aria-describedby={!pageCountValid ? `${outline.id}-page-count-error` : undefined}
+                    className={cn("h-9 w-20 rounded-md border bg-card px-2 text-center text-sm font-semibold outline-none focus:ring-2", pageCountValid ? "border-input focus:border-primary focus:ring-primary-100" : "border-red-400 text-red-800 focus:border-red-500 focus:ring-red-100")}
+                    max={MAX_READING_PAGE_COUNT}
+                    min={MIN_READING_PAGE_COUNT}
+                    onChange={(event) => {
+                      const paragraphCount = event.target.value === "" ? Number.NaN : Number(event.target.value);
+                      onChange((current) => ({ ...current, paragraphCount, touched: { ...current.touched, paragraphCount: true } }));
+                    }}
+                    step={1}
+                    type="number"
+                    value={Number.isFinite(chapter.paragraphCount) ? chapter.paragraphCount : ""}
+                  />
+                  <span className="text-sm text-muted-foreground">页</span>
                 </span>
-              </div>
+                {!pageCountValid ? <span className="mt-1 block text-xs text-red-700" id={`${outline.id}-page-count-error`}>请输入 {MIN_READING_PAGE_COUNT}–{MAX_READING_PAGE_COUNT} 之间的整数</span> : null}
+              </label>
             </div>
           </div>
-          <p className={cn("mt-2 text-xs", wordCountWarning ? "text-amber-700" : "text-muted-foreground")}>
-            推荐 {recommendedRange[0]}–{recommendedRange[1]} 词；只有低于 {lengthPolicy.english.hardRange[0]} 或高于 {lengthPolicy.english.hardRange[1]} 才会阻止保存。{wordCountWarning ? ` ${wordCountWarning}` : ""}
-          </p>
+          {wordsPerPage !== null ? <p className={cn("mt-2 text-xs", densityWarning ? "text-amber-700" : "text-muted-foreground")}>
+            每页约 {wordsPerPage} 词 · 将生成 {chapter.paragraphCount} 个正文页和 {chapter.paragraphCount} 张章节配图。{densityWarning ? ` ${densityWarning}` : ""}
+          </p> : null}
           <div className="mt-6 border-t border-border pt-5">
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm font-medium text-foreground">知识点</div>
@@ -650,10 +784,11 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, lengthPolicy,
                 chapter.knowledgePointIds.map((id) => {
                   const point = knowledgePoints.find((item) => item.id === id);
                   const label = point ? knowledgePointName(point) : id;
+                  const source = chapterPointSources[id];
                   return (
-                    <span className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full py-1 pl-3 pr-1.5 text-sm", recommendedIds.includes(id) ? "bg-primary-50 text-primary-700" : "bg-amber-50 text-amber-800")} key={id}>
+                    <span className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full py-1 pl-3 pr-1.5 text-sm", source?.tone === "primary" ? "bg-primary-50 text-primary-700" : source?.tone === "warning" ? "bg-amber-50 text-amber-800" : "bg-muted text-foreground")} key={id}>
                       <OverflowingKnowledgePointTitle title={label} />
-                      <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-semibold", recommendedIds.includes(id) ? "bg-primary-100 text-primary-700" : "bg-amber-100 text-amber-800")}>{recommendedIds.includes(id) ? "AI 推荐" : "手动添加"}</span>
+                      <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-semibold", source?.tone === "primary" ? "bg-primary-100 text-primary-700" : source?.tone === "warning" ? "bg-amber-100 text-amber-800" : "bg-background text-muted-foreground")}>{source?.label ?? "本章添加"}</span>
                       <button
                         aria-label={`删除知识点 ${label}`}
                         className="rounded-full p-0.5 text-primary-700 hover:bg-primary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -682,31 +817,27 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, lengthPolicy,
                 <span className="text-sm text-muted-foreground">本章不分配语法知识点，仅生成阅读与词汇内容</span>
               )}
             </div>
-            {outline.knowledgePointRecommendationSummary ? <p className="mt-3 rounded-md bg-primary-50 px-3 py-2 text-sm leading-6 text-primary-700">AI 推荐：{outline.knowledgePointRecommendationSummary} 如需调整，可从第一步已选知识点中修改。</p> : null}
+            {outline.knowledgePointRecommendationSummary ? <p className="mt-3 rounded-md bg-primary-50 px-3 py-2 text-sm leading-6 text-primary-700">AI 推荐：{outline.knowledgePointRecommendationSummary} 如需调整，可从语法库补充或修改。</p> : null}
             {chapter.knowledgePointIds.length > 3 ? <p className="mt-2 text-sm text-amber-700">建议一章不超过 3 个知识点。</p> : null}
           </div>
-          {pickerOpen ? (
+          {pickerOpen && grammarBook ? (
+            <GrammarKnowledgePointPickerDialog
+              aiUnrecommendedIds={unrecommendedSelectedKnowledgePointIds}
+              allowEmpty
+              books={[grammarBook]}
+              initialBookId={grammarBook.id}
+              initialSelectedIds={chapter.knowledgePointIds}
+              onClose={() => setPickerOpen(false)}
+              onConfirm={({ selectedIds }) => applyKnowledgePointSelection(selectedIds)}
+              step1SelectedIds={step1KnowledgePointIds}
+              title="新增本章知识点"
+            />
+          ) : pickerOpen ? (
             <KnowledgePointPickerDialog
-              description="按 Section 选择本章教学目标；范围仅限第一步已选知识点。"
+              description="按 Section 选择本章教学目标；范围为当前语法书版本的完整知识点。"
               highlightedIds={unrecommendedSelectedKnowledgePointIds}
               knowledgePoints={knowledgePoints}
-              onConfirm={(ids) => {
-                onChange((current) => ({
-                  ...current,
-                  knowledgePointIds: ids,
-                  ...(!ids.length ? {
-                    readingExercises: { ...current.readingExercises, grammar: { optionCloze: 0, wordForm: 0 } },
-                    chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } },
-                  } : current.knowledgePointIds.length ? {} : {
-                    readingExercises: { ...current.readingExercises, grammar: { optionCloze: 4, wordForm: 3 } },
-                  }),
-                  touched: {
-                    ...current.touched,
-                    knowledgePointIds: !sameIdSet(ids, recommendedIds),
-                  },
-                }));
-                setPickerOpen(false);
-              }}
+              onConfirm={applyKnowledgePointSelection}
               onClose={() => setPickerOpen(false)}
               selectedIds={chapter.knowledgePointIds}
               title="选择本章知识点"
@@ -717,9 +848,9 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, lengthPolicy,
         <div className={cn("rounded-lg bg-card p-5 shadow-sm", mobileSectionClass("reading"))} data-testid="teaching-plan-reading-section">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h4 className="text-sm font-semibold text-foreground">正文模式</h4>
-            <Button aria-label="同步正文设置到全部章节" className="self-start sm:self-auto" onClick={onApplyReadingToAll} size="sm" type="button" variant="outline">
-              <span className="sm:hidden">同步到全部章节</span>
-              <span className="hidden sm:inline">同步正文设置到全部章节</span>
+            <Button aria-label="应用本章正文设置到其他章节" className="self-start sm:self-auto" onClick={onApplyReadingToAll} size="sm" type="button" variant="outline">
+              <span className="sm:hidden">应用到其他章节</span>
+              <span className="hidden sm:inline">应用本章正文设置到其他章节</span>
             </Button>
           </div>
           <div aria-label="正文模式" className="mt-4 grid gap-3 sm:grid-cols-2" role="radiogroup">
@@ -765,7 +896,6 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, lengthPolicy,
               onChange((current) => ({
                 ...current,
                 readingExercises,
-                paragraphCount: minimumReadingParagraphCount(current.targetWordCount ?? 90),
                 touched: { ...current.touched, readingExercises: true },
               }))
             }
@@ -787,7 +917,7 @@ function ChapterEditor({ chapter, outline, index, knowledgePoints, lengthPolicy,
               }
             />
             <Button onClick={onApplyChapterPracticeToAll} size="sm" type="button" variant="outline">
-              同步章节练习到全部章节
+              应用本章章节练习配置到其他章节
             </Button>
           </div>
           {chapter.chapterPractice.enabled ? (

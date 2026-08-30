@@ -28,9 +28,14 @@ type ContentRecord = {
 type ContentOperation = "reading" | "exercises" | "modify";
 type GenerationRecord = {
   id: string; courseId: string; operation: ContentOperation; status: "running" | "succeeded" | "failed" | "result_unknown";
-  baseContentVersion: number; previousStatus: CourseContentStatus; leaseExpiresAt: Date; startedAt: Date; updatedAt: Date;
+  idempotencyKey: string; attempt: number; baseContentVersion: number; previousStatus: CourseContentStatus; leaseExpiresAt: Date; startedAt: Date; updatedAt: Date;
 };
-type MessageRecord = { id: string; role: "teacher" | "assistant" | "system"; content: string; targetType?: "chapter" | "paragraph" | "chapter_practice" | "main_idea" | "homework" | null; targetId?: string | null; createdAt: Date };
+type MessageRecord = {
+  id: string; role: "teacher" | "assistant" | "system"; content: string;
+  targetType?: "chapter" | "paragraph" | "chapter_practice" | "main_idea" | "homework" | null; targetId?: string | null;
+  kind?: "message" | "operation" | "repair" | "notice" | null; status?: "running" | "succeeded" | "failed" | "stale" | null;
+  operation?: ContentOperation | null; requestId?: string | null; title?: string | null; details?: unknown; eventKey?: string | null; createdAt: Date;
+};
 type PromptPersonRecord = { role: "teacher" | "student"; chineseNameSnapshot: string; englishNameSnapshot: string };
 type PromptCharacterRecord = { displayName: string; englishName: string; roleInStory: string; shortDescription: string };
 type Delegate<T> = {
@@ -248,7 +253,19 @@ function toState(state: TeachingPlanState, content: ContentRecord, messages: Mes
     mainIdea: (content.mainIdea as CourseContentState["mainIdea"]) ?? null,
     homework: (content.homework as CourseContentState["homework"]) ?? null,
     exercisesStale: content.exercisesStale,
-    messages: messages.map((message) => ({ id: message.id, role: message.role, content: message.content, ...(message.targetType ? { targetType: message.targetType, targetId: message.targetId ?? null } : {}), createdAt: message.createdAt.toISOString() })),
+    messages: messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      ...(message.targetType ? { targetType: message.targetType, targetId: message.targetId ?? null } : {}),
+      ...(message.kind ? { kind: message.kind } : {}),
+      ...(message.status ? { status: message.status } : {}),
+      ...(message.operation ? { operation: message.operation } : {}),
+      ...(message.requestId ? { requestId: message.requestId } : {}),
+      ...(message.title ? { title: message.title } : {}),
+      ...(message.details && typeof message.details === "object" && !Array.isArray(message.details) ? { details: message.details as Record<string, unknown> } : {}),
+      createdAt: message.createdAt.toISOString(),
+    })),
     errorMessage: content.errorMessage,
     updatedAt: content.updatedAt?.toISOString() ?? null,
     operation: operation?.status === "running" ? {
@@ -292,6 +309,18 @@ export async function recoverStaleCourseContentOperation(db: CourseContentDb, co
       phase: null,
       errorMessage: "上次处理已中断，现有内容已保留。可以重试或重新开始。",
     };
+    if (generation && tx.courseContentChatMessage?.create) {
+      const interruptedOperation: ClaimedOperation = {
+        claimed: true,
+        firstAttempt: false,
+        id: generation.id,
+        requestId: generation.idempotencyKey,
+        operation: generation.operation,
+        baseContentVersion: generation.baseContentVersion,
+        previousStatus: generation.previousStatus,
+      };
+      await tx.courseContentChatMessage.create({ data: operationTimelineMessage(courseId, interruptedOperation, "failed", data.errorMessage) });
+    }
     if (tx.courseLessonContent.updateMany) {
       const released = await tx.courseLessonContent.updateMany({
         where: content.activeGenerationId ? { courseId, activeGenerationId: content.activeGenerationId } : { courseId, activeGenerationId: null, status: content.status },
@@ -308,7 +337,7 @@ export async function getCourseContentState(db: CourseContentDb, courseId: strin
   const state = await prerequisite(db, courseId);
   const ensured = await ensureContent(db, state);
   await recoverStaleCourseContentOperation(db, courseId);
-  const [persistedContent, messages] = await Promise.all([db.courseLessonContent.findUnique({ where: { courseId } }), db.courseContentChatMessage.findMany!({ where: { courseId }, orderBy: { createdAt: "asc" } })]);
+  const [persistedContent, messages] = await Promise.all([db.courseLessonContent.findUnique({ where: { courseId } }), db.courseContentChatMessage.findMany!({ where: { courseId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] })]);
   const content = persistedContent ?? ensured;
   const operation = content.activeGenerationId ? await db.courseContentGeneration.findUnique({ where: { id: content.activeGenerationId } }) : null;
   return toState(state, content, messages, operation);
@@ -336,7 +365,55 @@ export async function resetCourseContent(db: CourseContentDb, courseId: string) 
   return db.$transaction ? db.$transaction((tx) => reset(tx as CourseContentDb)) : reset(db);
 }
 
-type ClaimedOperation = { claimed: boolean; firstAttempt: boolean; id: string; baseContentVersion: number; previousStatus: CourseContentStatus };
+type ClaimedOperation = {
+  claimed: boolean;
+  firstAttempt: boolean;
+  id: string;
+  requestId: string;
+  operation: ContentOperation;
+  baseContentVersion: number;
+  previousStatus: CourseContentStatus;
+  targetType?: MessageRecord["targetType"];
+  targetId?: string;
+};
+
+type TimelineStartInput = {
+  teacherMessage?: { content: string; targetType?: MessageRecord["targetType"]; targetId?: string };
+  targetType?: MessageRecord["targetType"];
+  targetId?: string;
+};
+
+function operationTimelineCopy(operation: ContentOperation, status: "running" | "succeeded" | "failed") {
+  if (operation === "reading") {
+    if (status === "running") return { title: "正在生成阅读内容", content: "系统正在生成全部章节正文、正文内互动题和课后阅读。" };
+    if (status === "succeeded") return { title: "阅读内容已生成", content: "阅读内容已通过检查并保存。" };
+    return { title: "阅读内容生成未完成", content: "本次生成未完成，已经保存的内容不会丢失。" };
+  }
+  if (operation === "exercises") {
+    if (status === "running") return { title: "正在生成章节与课后练习", content: "系统正在根据已确认正文生成章节练习和课后练习。" };
+    if (status === "succeeded") return { title: "章节与课后练习已生成", content: "章节练习和课后练习已通过检查并保存。" };
+    return { title: "章节与课后练习生成未完成", content: "本次练习生成未完成，现有正文和练习不会被覆盖。" };
+  }
+  if (status === "running") return { title: "正在修改课程内容", content: "系统正在按指定范围修改，原内容会保留到新版本通过检查。" };
+  if (status === "succeeded") return { title: "修改已完成", content: "已按指定范围完成修改并通过检查，其他内容未变。" };
+  return { title: "本次修改未完成", content: "修改结果未通过检查，原内容已保留。" };
+}
+
+function operationTimelineMessage(courseId: string, operation: ClaimedOperation, status: "running" | "succeeded" | "failed", content?: string) {
+  const copy = operationTimelineCopy(operation.operation, status);
+  return {
+    courseId,
+    role: "assistant" as const,
+    content: content ?? copy.content,
+    kind: "operation" as const,
+    status,
+    operation: operation.operation,
+    requestId: operation.requestId,
+    title: copy.title,
+    eventKey: `${operation.requestId}:${status}`,
+    ...(operation.targetType ? { targetType: operation.targetType, targetId: operation.targetId ?? null, details: { targetType: operation.targetType, targetId: operation.targetId ?? null } } : {}),
+  };
+}
 
 async function claim(
   db: CourseContentDb,
@@ -345,6 +422,7 @@ async function claim(
   operation: ContentOperation,
   idempotencyKey: string,
   startData: Record<string, unknown> = {},
+  timeline: TimelineStartInput = {},
 ): Promise<ClaimedOperation> {
   try {
     return await inTransaction(db, async (tx) => {
@@ -357,7 +435,7 @@ async function claim(
       }
 
       const prior = await tx.courseContentGeneration.findUnique({ where: { courseId_sourceRevision_operation: { courseId, sourceRevision: revision, operation } } });
-      if (prior?.status === "succeeded") return { claimed: false, firstAttempt: false, id: prior.id, baseContentVersion: prior.baseContentVersion, previousStatus: prior.previousStatus };
+      if (prior?.status === "succeeded") return { claimed: false, firstAttempt: false, id: prior.id, requestId: prior.idempotencyKey, operation, baseContentVersion: prior.baseContentVersion, previousStatus: prior.previousStatus };
       if (prior?.status === "running" && prior.leaseExpiresAt.getTime() > Date.now()) throw new CourseContentConflictError();
       const now = new Date();
       const generation = prior
@@ -373,7 +451,12 @@ async function claim(
         await tx.courseLessonContent.update!({ where: { courseId }, data: { ...startData, activeGenerationId: generation.id, errorMessage: null } });
       }
       content = { ...content, ...startData, activeGenerationId: generation.id } as ContentRecord;
-      return { claimed: true, firstAttempt: !prior, id: generation.id, baseContentVersion: content.contentVersion, previousStatus: generation.previousStatus };
+      const claimedOperation: ClaimedOperation = { claimed: true, firstAttempt: !prior, id: generation.id, requestId: idempotencyKey, operation, baseContentVersion: content.contentVersion, previousStatus: generation.previousStatus, targetType: timeline.targetType, targetId: timeline.targetId };
+      if (!prior && timeline.teacherMessage) {
+        await tx.courseContentChatMessage.create!({ data: { courseId, role: "teacher", kind: "message", requestId: idempotencyKey, eventKey: `${idempotencyKey}:teacher`, ...timeline.teacherMessage } });
+      }
+      await tx.courseContentChatMessage.create!({ data: operationTimelineMessage(courseId, claimedOperation, "running") });
+      return claimedOperation;
     });
   } catch (error) {
     if (typeof error === "object" && error && "code" in error && error.code === "P2002") throw new CourseContentConflictError("当前内容正在处理，请勿重复提交");
@@ -417,6 +500,9 @@ async function finishOperation(db: CourseContentDb, courseId: string, operation:
   return inTransaction(db, async (tx) => {
     await updateOwnedContent(tx, courseId, operation, { ...contentData, activeGenerationId: null });
     await sideEffect?.(tx);
+    const terminalStatus = generationData.status === "succeeded" ? "succeeded" : "failed";
+    const terminalContent = typeof generationData.errorMessage === "string" ? generationData.errorMessage : undefined;
+    await tx.courseContentChatMessage.create!({ data: operationTimelineMessage(courseId, operation, terminalStatus, terminalContent) });
     await tx.courseContentGeneration.update!({ where: { id: operation.id }, data: generationData });
   });
 }
@@ -457,12 +543,13 @@ async function recordContentAiUsage(
   } }).catch(() => undefined);
 }
 
-export async function generateCourseReading(db: CourseContentDb, courseId: string, idempotencyKey: string, deps: CourseContentGenerationDeps, options: { regenerate?: boolean } = {}) {
+export async function generateCourseReading(db: CourseContentDb, courseId: string, idempotencyKey: string, deps: CourseContentGenerationDeps, options: { regenerate?: boolean; writingProvider?: StoryWritingProvider } = {}) {
   const state = await prerequisite(db, courseId);
   const current = await ensureContent(db, state);
+  const writingProvider = options.writingProvider ?? current.writingProvider;
   const baseRevision = sourceRevision(state);
   const revision = options.regenerate ? `${baseRevision}:regenerate:${current.contentVersion + 1}` : baseRevision;
-  const operation = await claim(db, courseId, revision, "reading", idempotencyKey, { status: "generating_reading", phase: "generating_chapters", sourceRevision: baseRevision });
+  const operation = await claim(db, courseId, revision, "reading", idempotencyKey, { status: "generating_reading", phase: "generating_chapters", sourceRevision: baseRevision, writingProvider });
   if (!operation.claimed) return getCourseContentState(db, courseId);
   return withLease(db, operation.id, async () => {
   try {
@@ -474,7 +561,7 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
     const reusableMainIdea = !options.regenerate && current.status === "failed" && current.mainIdea
       ? structuredClone(current.mainIdea as { title: string; text: string })
       : null;
-    const generatedReading = reusableChapters ? null : await deps.generateReading(state, current.writingProvider);
+    const generatedReading = reusableChapters ? null : await deps.generateReading(state, writingProvider);
     await updateOwnedContent(db, courseId, operation, { phase: "validating_chapters" });
     let chapterResults = reusableChapters
       ? reusableChapters.map((chapter) => {
@@ -501,10 +588,10 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
       const mainIdeaPolicy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? 120);
       const firstPassMainIdeaCount = wordCount(mainIdeaRaw.text);
       const firstPassMainIdeaValid = firstPassMainIdeaCount >= mainIdeaPolicy.acceptedRange[0] && firstPassMainIdeaCount <= mainIdeaPolicy.acceptedRange[1];
-      await recordContentAiUsage(db, courseId, operation, current.writingProvider, idempotencyKey, "candidate", generatedReading.candidateUsage, requirements.length, {
+      await recordContentAiUsage(db, courseId, operation, writingProvider, idempotencyKey, "candidate", generatedReading.candidateUsage, requirements.length, {
         phase: "candidate_positions",
       });
-      await recordContentAiUsage(db, courseId, operation, current.writingProvider, idempotencyKey, "final", generatedReading.usage, requirements.length, {
+      await recordContentAiUsage(db, courseId, operation, writingProvider, idempotencyKey, "final", generatedReading.usage, requirements.length, {
         validChapterCount: firstPassValidChapterCount,
         mainIdeaValid: firstPassMainIdeaValid,
         firstPassReady: firstPassValidChapterCount === requirements.length && firstPassMainIdeaValid,
@@ -522,8 +609,8 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
       const phase = failed.length ? "repairing_chapters" : "repairing_main_idea";
       await updateOwnedContent(db, courseId, operation, { phase, chapters: chapters.map((chapter) => ({ ...chapter, validationIssues: validateChapter(state, chapter) })) });
       const chapterDetails = failed.map((item) => `第 ${item.chapter.order} 章（${[...item.structuredIssues.map((issue) => issue.message), ...validateChapter(state, item.chapter)].filter((message, index, all) => all.indexOf(message) === index).join("；")}）`);
-      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${[...chapterDetails, ...(mainIdeaIssue ? [mainIdeaIssue.replaceAll("Main Idea", "课后阅读")] : [])].join("；")}。正在一次统一修复全部失败位置。` });
-      const repairBundle = await deps.repairReading(state, current.writingProvider, failed.map((item) => ({
+      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${[...chapterDetails, ...(mainIdeaIssue ? [mainIdeaIssue.replaceAll("Main Idea", "课后阅读")] : [])].join("；")}。正在一次统一修复全部失败位置。`, kind: "repair", status: "running", operation: "reading", requestId: operation.requestId, title: "自动检查与修复", eventKey: `${operation.requestId}:repair:1` });
+      const repairBundle = await deps.repairReading(state, writingProvider, failed.map((item) => ({
         current: item.draft,
         requirements: item.requirement,
         issues: item.structuredIssues.length ? item.structuredIssues : validateChapter(state, item.chapter).map((message) => ({ code: "part_structure" as const, message })),
@@ -554,7 +641,7 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
       }).length;
       if (mainIdeaIssue && repairBundle.mainIdea) mainIdeaRaw = repairBundle.mainIdea;
       mainIdeaCount = wordCount(mainIdeaRaw.text);
-      await recordContentAiUsage(db, courseId, operation, current.writingProvider, idempotencyKey, "repair", repairBundle.usage, failed.length + (mainIdeaIssue ? 1 : 0), { resolvedChapterCount, mainIdeaResolved: !mainIdeaIssue || (mainIdeaCount >= mainIdeaPolicy.acceptedRange[0] && mainIdeaCount <= mainIdeaPolicy.acceptedRange[1]) });
+      await recordContentAiUsage(db, courseId, operation, writingProvider, idempotencyKey, "repair", repairBundle.usage, failed.length + (mainIdeaIssue ? 1 : 0), { resolvedChapterCount, mainIdeaResolved: !mainIdeaIssue || (mainIdeaCount >= mainIdeaPolicy.acceptedRange[0] && mainIdeaCount <= mainIdeaPolicy.acceptedRange[1]) });
       chapters = chapterResults.map((result) => result.chapter);
       await updateOwnedContent(db, courseId, operation, { chapters, mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle } });
     }
@@ -576,19 +663,17 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
   });
 }
 
-export async function generateCourseExercises(db: CourseContentDb, courseId: string, idempotencyKey: string, deps: CourseContentGenerationDeps, options: { regenerate?: boolean } = {}) {
+export async function generateCourseExercises(db: CourseContentDb, courseId: string, idempotencyKey: string, deps: CourseContentGenerationDeps, options: { regenerate?: boolean; writingProvider?: StoryWritingProvider } = {}) {
   const state = await prerequisite(db, courseId);
   const content = await ensureContent(db, state);
+  const writingProvider = options.writingProvider ?? content.writingProvider;
   if (!Array.isArray(content.chapters) || !content.chapters.length || !content.mainIdea) throw new CourseContentPrerequisiteError("请先生成并确认正文");
   const baseRevision = `${sourceRevision(state)}:${content.contentVersion}`;
   const revision = options.regenerate ? `${baseRevision}:regenerate` : baseRevision;
-  const operation = await claim(db, courseId, revision, "exercises", idempotencyKey, { status: "generating_exercises", phase: "generating_exercises" });
+  const operation = await claim(db, courseId, revision, "exercises", idempotencyKey, { status: "generating_exercises", phase: "generating_exercises", writingProvider }, options.regenerate ? {} : { teacherMessage: { content: "我确认阅读内容，请生成章节与课后练习。" } });
   if (!operation.claimed) return getCourseContentState(db, courseId);
   return withLease(db, operation.id, async () => {
   try {
-    if (!options.regenerate && operation.firstAttempt) {
-      await appendOwnedMessage(db, courseId, operation, { role: "teacher", content: "我确认正文与课后阅读，请生成章节与课后练习。" });
-    }
     if (!requiresExerciseAi(state.plan)) {
       const localExercises = locallyAssembledExercises(state, content.chapters as CourseContentChapter[]);
       await finishOperation(db, courseId, operation, { status: "ready", phase: null, chapters: localExercises.chapters, homework: localExercises.homework, exercisesStale: false, errorMessage: null }, { status: "succeeded" });
@@ -599,7 +684,7 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
       title: chapter.title,
       cleanText: chapter.paragraphs.map(buildCleanParagraphText).join(" "),
     }));
-    let generated = await deps.generateExercises(state, content.writingProvider, cleanChapters);
+    let generated = await deps.generateExercises(state, writingProvider, cleanChapters);
     await updateOwnedContent(db, courseId, operation, { phase: "validating_exercises" });
     const keys = pointKeyMap(state);
     const homeworkPlan = state.plan.afterClassPractice;
@@ -626,8 +711,8 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
       }
       if (round === courseContentSemanticRepairAttempts) throw new Error(`练习一次修复后仍未通过：${failedTargets.map((target) => `${target.label}（${target.issues.join("；")}）`).join("；")}`);
       await updateOwnedContent(db, courseId, operation, { phase: "repairing_chapters" });
-      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${failedTargets.length} 个练习区域需要修复：${failedTargets.map((target) => `${target.label}（${target.issues.join("；")}）`).join("；")}。正在统一修复。` });
-      const repaired = await deps.repairExercises(state, content.writingProvider, failedTargets, generated, cleanChapters);
+      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${failedTargets.length} 个练习区域需要修复：${failedTargets.map((target) => `${target.label}（${target.issues.join("；")}）`).join("；")}。正在统一修复。`, kind: "repair", status: "running", operation: "exercises", requestId: operation.requestId, title: "自动检查与修复", eventKey: `${operation.requestId}:repair:${round + 1}` });
+      const repaired = await deps.repairExercises(state, writingProvider, failedTargets, generated, cleanChapters);
       await updateOwnedContent(db, courseId, operation, { phase: "validating_exercises" });
       const repairedIds = new Set(repaired.chapters.map((item) => item.outlineChapterId));
       generated = {
@@ -690,11 +775,12 @@ function replaceExercisePage(questions: CourseGrammarQuestion[], currentPage: Co
   return questions.map((question) => byId.get(question.id) ?? question);
 }
 
-export async function modifyCourseContent(db: CourseContentDb, courseId: string, input: { targetType: "chapter" | "paragraph" | "chapter_practice" | "main_idea" | "homework"; targetId: string; instruction: string }, idempotencyKey: string, deps: CourseContentGenerationDeps) {
+export async function modifyCourseContent(db: CourseContentDb, courseId: string, input: { targetType: "chapter" | "paragraph" | "chapter_practice" | "main_idea" | "homework"; targetId: string; instruction: string }, idempotencyKey: string, deps: CourseContentGenerationDeps, options: { writingProvider?: StoryWritingProvider } = {}) {
   const state = await prerequisite(db, courseId);
   const content = await ensureContent(db, state);
+  const writingProvider = options.writingProvider ?? content.writingProvider;
   const revision = createHash("sha256").update(`${sourceRevision(state)}:${content.contentVersion}:${input.targetType}:${input.targetId}:${input.instruction}`).digest("hex");
-  const operation = await claim(db, courseId, revision, "modify", idempotencyKey);
+  const operation = await claim(db, courseId, revision, "modify", idempotencyKey, { writingProvider }, { targetType: input.targetType, targetId: input.targetId, teacherMessage: { content: input.instruction, targetType: input.targetType, targetId: input.targetId } });
   if (!operation.claimed) return getCourseContentState(db, courseId);
   return withLease(db, operation.id, async () => {
   try {
@@ -736,9 +822,8 @@ export async function modifyCourseContent(db: CourseContentDb, courseId: string,
   if (input.targetType === "main_idea") relatedContext = { cleanChapters: chapters.map((item) => ({ id: item.outlineChapterId, title: item.title, cleanText: item.paragraphs.map(buildCleanParagraphText).join(" ") })) };
   if (!target) throw new CourseContentPrerequisiteError("未找到要修改的内容区域");
 
-  await appendOwnedMessage(db, courseId, operation, { role: "teacher", content: input.instruction, targetType: input.targetType, targetId: input.targetId });
   relatedContext = { englishLevel: state.course.englishLevel, ...relatedContext };
-  const result = await deps.modifyContent(content.writingProvider, input.targetType, target, input.instruction, constraints, relatedContext);
+  const result = await deps.modifyContent(writingProvider, input.targetType, target, input.instruction, constraints, relatedContext);
   if (result.kind !== input.targetType) throw new Error("修改结果与指定范围不一致，原内容已保留");
 
   if (input.targetType === "paragraph" && chapter && result.paragraph) {
@@ -783,9 +868,7 @@ export async function modifyCourseContent(db: CourseContentDb, courseId: string,
   if (input.targetType === "main_idea") data.mainIdea = { id: "main-idea", title: mainIdeaTitle, ...result.mainIdea };
   if (input.targetType === "homework") data.homework = content.homework;
   if (["chapter", "paragraph"].includes(input.targetType) && content.homework) data.exercisesStale = true;
-  await finishOperation(db, courseId, operation, data, { status: "succeeded" }, async (tx) => {
-    await tx.courseContentChatMessage.create!({ data: { courseId, role: "assistant", content: "已按指定范围完成修改并通过校验，其他内容未变。", targetType: input.targetType, targetId: input.targetId } });
-  });
+  await finishOperation(db, courseId, operation, data, { status: "succeeded" });
   return getCourseContentState(db, courseId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "内容修改失败；原内容已保留";

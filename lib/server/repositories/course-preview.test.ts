@@ -3,6 +3,34 @@ import { describe, expect, it, vi } from "vitest";
 import { confirmVisualResources, getCoursePreview, publishCourse, savePresentation } from "@/lib/server/repositories/course-preview";
 
 describe("course preview state transitions", () => {
+  it("resolves final knowledge points from the teaching plan without requiring Step 3 additions in Step 1", async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      { id: "grammar-1", title: "Past Simple" },
+      { id: "grammar-3", title: "Present Perfect" },
+    ]);
+    const db = {
+      course: { findUnique: vi.fn().mockResolvedValue({
+        id: "course-1", title: "课程名称", lifecycleStatus: "draft", staleFromStage: null,
+        grammarBookEditionId: "book-1", knowledgePointIds: ["grammar-1"], people: [], presentation: null,
+        teachingPlan: {
+          chapters: [{ outlineChapterId: "outline-chapter-1", knowledgePointIds: ["grammar-1", "grammar-3"] }],
+          afterClassPractice: { knowledgePointIds: ["grammar-3"] },
+        },
+        storyOutline: { title: "海底图书馆 / The Ocean Library", chapters: [{ id: "outline-chapter-1", order: 1, title: "发光地图 / The Glowing Map" }] },
+        lessonContent: { mainIdea: null, homework: null, chapters: [{ id: "chapter-1", outlineChapterId: "outline-chapter-1", order: 1, title: "Chapter 1", targetWordCount: 90, readingExerciseMode: "complete", paragraphs: [], chapterPractice: [], validationIssues: [] }] },
+        visualImageSlots: [{ id: "cover", slotType: "cover", chapterId: null, paragraphId: null, activeImage: { status: "succeeded", publicUrl: "/cover.webp" }, images: [] }],
+      }) },
+      knowledgePoint: { findMany },
+      presetOption: { findMany: vi.fn().mockResolvedValue([]) },
+    } as never;
+
+    await getCoursePreview(db, "course-1");
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: { in: ["grammar-1", "grammar-3"] } }),
+    }));
+  });
+
   it("uses the bilingual story outline as the title source for preview pages", async () => {
     const db = {
       course: { findUnique: vi.fn().mockResolvedValue({

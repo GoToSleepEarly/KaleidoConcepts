@@ -64,7 +64,15 @@ export async function getCoursePreview(db: CoursePreviewDb, courseId: string): P
   if (!course) throw new CoursePreviewNotFoundError("课程不存在");
   if (!course.lessonContent) throw new CoursePreviewPrerequisiteError("请先完成文案与练习");
   assertVisualResourcesReady(course.visualImageSlots);
-  const selectedIds = Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [];
+  const planChapters = Array.isArray(course.teachingPlan?.chapters) ? course.teachingPlan.chapters as Array<{ outlineChapterId?: string; knowledgePointIds?: string[] }> : [];
+  const afterClassPractice = course.teachingPlan?.afterClassPractice as { knowledgePointIds?: string[] } | null;
+  const planKnowledgePointIds = [...new Set([
+    ...planChapters.flatMap((chapter) => Array.isArray(chapter.knowledgePointIds) ? chapter.knowledgePointIds : []),
+    ...(Array.isArray(afterClassPractice?.knowledgePointIds) ? afterClassPractice.knowledgePointIds : []),
+  ])];
+  const selectedIds = planKnowledgePointIds.length
+    ? planKnowledgePointIds
+    : Array.isArray(course.knowledgePointIds) ? course.knowledgePointIds.filter((id): id is string => typeof id === "string") : [];
   const knowledgePoints = course.grammarBookEditionId
     ? await db.knowledgePoint.findMany({ where: { id: { in: selectedIds }, bookEditionId: course.grammarBookEditionId, source: "grammar_in_use" }, orderBy: { sortOrder: "asc" }, select: { id: true, title: true } }).then((points) => points.map((point) => ({ id: point.id, label: point.title })))
     : await db.presetOption.findMany({ where: { id: { in: selectedIds }, kind: "grammar" }, orderBy: [{ sortOrder: "asc" }, { label: "asc" }], select: { id: true, label: true } });
@@ -87,8 +95,6 @@ export async function getCoursePreview(db: CoursePreviewDb, courseId: string): P
   }));
   const mainIdea = course.lessonContent.mainIdea as { id: string; title: string; text: string } | null;
   const homework = course.lessonContent.homework as { grammar: CourseGrammarQuestion[]; vocabularyMatching: CourseVocabularyMatchingItem[] } | null;
-  const planChapters = Array.isArray(course.teachingPlan?.chapters) ? course.teachingPlan.chapters as Array<{ outlineChapterId?: string; knowledgePointIds?: string[] }> : [];
-  const afterClassPractice = course.teachingPlan?.afterClassPractice as { knowledgePointIds?: string[] } | null;
   const outlineChapterTitles = new Map(course.storyOutline?.chapters.map((chapter) => [chapter.id, chapter.title]) ?? []);
   const chapters = (course.lessonContent.chapters as unknown as CourseContentChapter[]).map((chapter) => ({
     ...chapter,

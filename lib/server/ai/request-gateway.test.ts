@@ -9,6 +9,7 @@ describe("aiGatewayFromRequest", () => {
       username: "teacher",
       password: "secret",
       displayName: "Teacher",
+      writingProvider: "quickrouter_deepseek",
       aiGateway: "crazyrouter",
       quickRouterEndpoint: "direct",
     });
@@ -16,7 +17,7 @@ describe("aiGatewayFromRequest", () => {
       headers: { cookie: "kaleido.user-id=teacher-1; theme=dark" },
     });
 
-    await expect(aiGatewayFromRequest(request, { user: { findUnique } })).resolves.toEqual({ aiGateway: "crazyrouter", quickRouterEndpoint: "direct" });
+    await expect(aiGatewayFromRequest(request, { user: { findUnique } })).resolves.toEqual({ writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "direct" });
     expect(findUnique).toHaveBeenCalledWith({ where: { id: "teacher-1" } });
   });
 
@@ -27,15 +28,16 @@ describe("aiGatewayFromRequest", () => {
       username: "teacher",
       password: "secret",
       displayName: "Teacher",
+      writingProvider: "quickrouter_gpt" as const,
       aiGateway,
       quickRouterEndpoint: "main",
     }));
     const db = { user: { findUnique } };
     const request = new Request("http://localhost/api/test", { headers: { cookie: "kaleido.user-id=teacher-1" } });
 
-    await expect(aiGatewayFromRequest(request, db)).resolves.toEqual({ aiGateway: "quickrouter", quickRouterEndpoint: "main" });
+    await expect(aiGatewayFromRequest(request, db)).resolves.toEqual({ writingProvider: "quickrouter_gpt", aiGateway: "quickrouter", quickRouterEndpoint: "main" });
     aiGateway = "crazyrouter";
-    await expect(aiGatewayFromRequest(request, db)).resolves.toEqual({ aiGateway: "crazyrouter", quickRouterEndpoint: "main" });
+    await expect(aiGatewayFromRequest(request, db)).resolves.toEqual({ writingProvider: "quickrouter_gpt", aiGateway: "crazyrouter", quickRouterEndpoint: "main" });
     expect(findUnique).toHaveBeenCalledTimes(2);
   });
 

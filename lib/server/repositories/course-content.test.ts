@@ -204,7 +204,7 @@ describe("course content repository", () => {
     let content = { id: "content-1", courseId: "course-1", status: "empty", phase: null, writingProvider: "quickrouter_gpt", sourceRevision: "", contentVersion: 0, chapters: [] as unknown[], mainIdea: null as unknown, homework: null, exercisesStale: false, errorMessage: null as string | null, updatedAt: now };
     let generation: Record<string, unknown> | null = null;
     const applyData = (current: Record<string, unknown>, data: Record<string, unknown>) => Object.fromEntries(Object.entries({ ...current, ...data }).map(([key, value]) => [key, typeof value === "object" && value && "increment" in value ? Number(current[key] ?? 0) + Number(Reflect.get(value, "increment")) : value]));
-    const messages: Array<{ id: string; role: "teacher" | "assistant" | "system"; content: string; createdAt: Date }> = [];
+    const messages: Array<{ id: string; role: "teacher" | "assistant" | "system"; content: string; kind?: string; status?: string; operation?: string; requestId?: string; title?: string; eventKey?: string; createdAt: Date }> = [];
     const db = {
       course: { findUnique: vi.fn(async () => course), update: vi.fn(async () => course) },
       courseStoryOutline: { findUnique: vi.fn(async () => outline) },
@@ -241,13 +241,15 @@ describe("course content repository", () => {
     const generateExercises = vi.fn();
     const deps = { generateReading, repairReading, generateExercises } as unknown as CourseContentGenerationDeps;
 
-    const result = await generateCourseReading(db, "course-1", "request-1", deps);
+    const result = await generateCourseReading(db, "course-1", "request-1", deps, { writingProvider: "quickrouter_deepseek" });
     const exerciseResult = await generateCourseExercises(db, "course-1", "request-2", deps);
 
     expect(result.status).toBe("ready");
     expect(result.chapters[0]?.title).toBe("发光地图 / The Glowing Map");
     expect(exerciseResult.status).toBe("ready");
     expect(generateReading).toHaveBeenCalledTimes(1);
+    expect((generateReading.mock.calls as unknown[][])[0]?.[1]).toBe("quickrouter_deepseek");
+    expect(result.writingProvider).toBe("quickrouter_deepseek");
     expect((generateReading.mock.calls as unknown[][])[0]?.[0]).toMatchObject({ contentIntent: { kind: "concept", objective: "理解重力", learningTargets: [{ expectedUnderstanding: "物体之间会相互吸引" }] } });
     expect(generateExercises).not.toHaveBeenCalled();
     expect(repairReading).toHaveBeenCalledTimes(1);
@@ -255,7 +257,10 @@ describe("course content repository", () => {
     expect((repairReading.mock.calls as unknown[][])[0]?.[3]).toMatchObject({ issues: [expect.stringContaining("Main Idea")] });
     expect(result.mainIdea?.title).toBe("Main Idea Reading Practice");
     expect(messages.some((message) => message.content.includes("一次统一修复全部失败位置"))).toBe(true);
-    expect(messages.map((message) => message.content)).toContain("我确认正文与课后阅读，请生成章节与课后练习。");
+    expect(messages.map((message) => message.content)).toContain("我确认阅读内容，请生成章节与课后练习。");
+    expect(messages.filter((message) => message.requestId === "request-1" && message.kind === "operation").map((message) => message.status)).toEqual(["running", "succeeded"]);
+    expect(messages.filter((message) => message.requestId === "request-2" && message.kind === "operation").map((message) => message.status)).toEqual(["running", "succeeded"]);
+    expect(messages.find((message) => message.requestId === "request-1" && message.kind === "repair")).toMatchObject({ operation: "reading", title: "自动检查与修复" });
     expect(exerciseResult.messages.map((message) => message.content)).toEqual(messages.map((message) => message.content));
   });
 

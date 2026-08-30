@@ -39,7 +39,7 @@ export function KnowledgePointPickerDialog({ description, highlightedIds = [], k
 
   return (
     <Dialog description={description} onClose={onClose} open title={title}>
-      <div className="flex max-h-[70dvh] min-h-[500px] flex-col">
+      <div className="flex max-h-[70dvh] min-h-[500px] flex-col max-sm:h-[calc(100dvh-6rem)] max-sm:max-h-none max-sm:min-h-0">
         <div className="border-b border-border p-4">
           <div aria-label="知识点类别" className="mb-3 flex gap-1 overflow-x-auto rounded-md bg-muted p-1" role="tablist">
             {["全部", ...(highlightedIds.length ? [highlightedCategory] : []), ...categories].map((category) => <button aria-selected={activeCategory === category} className={cn("min-h-9 shrink-0 rounded px-3 text-sm font-medium transition-colors", activeCategory === category ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:bg-card/70 hover:text-foreground")} key={category} onClick={() => { setActiveCategory(category); setQuery(""); }} role="tab" type="button">{category}</button>)}
@@ -61,7 +61,7 @@ export function KnowledgePointPickerDialog({ description, highlightedIds = [], k
         </div>
         <div className="flex items-center justify-between border-t border-border p-4">
           <span className="text-sm text-muted-foreground">已选择 {selected.size} 个</span>
-          <div className="flex gap-2"><Button onClick={onClose} type="button" variant="outline">取消</Button><Button disabled={!selected.size} onClick={() => onConfirm([...selected])} type="button">确认选择</Button></div>
+          <div className="flex gap-2"><Button onClick={onClose} type="button" variant="outline">取消</Button><Button onClick={() => onConfirm([...selected])} type="button">确认选择</Button></div>
         </div>
       </div>
     </Dialog>

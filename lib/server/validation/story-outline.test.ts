@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { storyOutlineMessageSchema, storyOutlineSaveSchema, storyOutlineSettingsSchema } from "@/lib/server/validation/story-outline";
 
-const settings = { chapterCount: 3, writingProvider: "quickrouter_gpt", storyComplexity: "clear_linear" } as const;
+const settings = { chapterCount: 3, storyComplexity: "clear_linear" } as const;
 
 describe("story outline chapter bounds", () => {
   it("accepts only three to five chapters for new settings and messages", () => {
@@ -10,6 +10,7 @@ describe("story outline chapter bounds", () => {
     expect(storyOutlineSettingsSchema.safeParse({ ...settings, chapterCount: 5 }).success).toBe(true);
     expect(storyOutlineSettingsSchema.safeParse({ ...settings, chapterCount: 2 }).success).toBe(false);
     expect(storyOutlineSettingsSchema.safeParse({ ...settings, chapterCount: 6 }).success).toBe(false);
+    expect(storyOutlineSettingsSchema.safeParse({ ...settings, writingProvider: "quickrouter_deepseek" }).success).toBe(false);
     expect(storyOutlineMessageSchema.safeParse({ message: "test", mode: "idea", chapterCount: 2 }).success).toBe(false);
   });
 

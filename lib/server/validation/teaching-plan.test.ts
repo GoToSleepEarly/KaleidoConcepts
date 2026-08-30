@@ -151,22 +151,34 @@ describe("teaching plan validation", () => {
     expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id))).not.toThrow();
   });
 
-  test("accepts teacher targets from 60 to 180 while generation validation may tolerate more", () => {
+  test("accepts teacher targets from 60 to 200", () => {
     expect(() => validateTeachingPlanForConfirm(completePlan({
       chapters: completePlan().chapters.map((chapter, index) => index === 0 ? { ...chapter, targetWordCount: 59 } : chapter),
     }), outlineChapters.map((chapter) => chapter.id)))
-      .toThrow(new TeachingPlanValidationError("第 1 章目标词数需在 60-180 之间。"));
+      .toThrow(new TeachingPlanValidationError("第 1 章目标词数需在 60-200 之间。"));
 
     expect(() => validateTeachingPlanForConfirm(completePlan({
-      chapters: completePlan().chapters.map((chapter, index) => index === 1 ? { ...chapter, targetWordCount: 180 } : chapter),
+      chapters: completePlan().chapters.map((chapter, index) => index === 1 ? { ...chapter, targetWordCount: 200 } : chapter),
     }), outlineChapters.map((chapter) => chapter.id))).not.toThrow();
 
     const plan = completePlan({
-      chapters: completePlan().chapters.map((chapter, index) => index === 1 ? { ...chapter, targetWordCount: 181 } : chapter),
+      chapters: completePlan().chapters.map((chapter, index) => index === 1 ? { ...chapter, targetWordCount: 201 } : chapter),
     });
 
     expect(() => validateTeachingPlanForConfirm(plan, outlineChapters.map((chapter) => chapter.id)))
-      .toThrow(new TeachingPlanValidationError("第 2 章目标词数需在 60-180 之间。"));
+      .toThrow(new TeachingPlanValidationError("第 2 章目标词数需在 60-200 之间。"));
+  });
+
+  test("accepts one to three正文 pages and rejects larger values", () => {
+    expect(() => validateTeachingPlanForConfirm({
+      ...completePlan(),
+      chapters: completePlan().chapters.map((chapter, index) => index === 0 ? { ...chapter, paragraphCount: 3 } : chapter),
+    }, ["chapter-1", "chapter-2"])).not.toThrow();
+
+    expect(() => validateTeachingPlanForConfirm({
+      ...completePlan(),
+      chapters: completePlan().chapters.map((chapter, index) => index === 0 ? { ...chapter, paragraphCount: 4 } : chapter),
+    }, ["chapter-1", "chapter-2"])).toThrow(new TeachingPlanValidationError());
   });
 
   test("allows optional正文 types but requires at least one grammar question", () => {
