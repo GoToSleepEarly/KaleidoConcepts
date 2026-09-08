@@ -964,7 +964,7 @@ type SubmitAlignmentAnswersInput = {
 - 结果区底部统一显示非阻断提示，只列出实际存在的问题并明确 `当前结果可以继续使用`。篇幅提示引导老师从对应方向、整体大纲或章节的修改入口输入要求；知识点提示说明可在本步调整，也可进入教学规划后补充。
 - 首次大纲尚未成功展示时，结构、关联或服务错误统一说明 `这次故事大纲没有完整生成。已保留当前故事要求和故事主线，可以直接重新生成。`，唯一动作是 `重新生成故事大纲`。不展示内部展示单位、生成目标、实际值，也不提供含义不清的“修改要求后重新提交”。已有旧大纲时改为说明右侧仍保留上一版。
 
-实现验证：`pnpm prisma:deploy`、`pnpm test`（88 个文件 / 718 项）、目标 ESLint、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`。提交号待本轮提交后补充。
+实现验证：`pnpm prisma:deploy`、`pnpm test`（88 个文件 / 718 项）、目标 ESLint、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`。实现提交：`0156c0a`。
 
 Step 2 的生成状态不能只保存在前端 `pending`。每次会调用 AI 或联网的操作都使用客户端生成的 `requestId` 做幂等。MVP 不建立独立工作流表，直接在每门课程唯一的 `CourseStorySetting` 上保存当前操作摘要，避免把一个串行页面做成通用工作流引擎：
 
