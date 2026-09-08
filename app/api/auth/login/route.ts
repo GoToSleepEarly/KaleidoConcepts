@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { getDb } from "@/lib/server/db";
 import { verifyTeacherLogin } from "@/lib/server/repositories/auth";
-import { AUTH_USER_COOKIE, REMEMBERED_AUTH_MAX_AGE_SECONDS } from "@/lib/auth-cookie";
+import { AUTH_USER_COOKIE, REMEMBERED_AUTH_MAX_AGE_SECONDS, authCookieSecure } from "@/lib/auth-cookie";
 
 const loginSchema = z.object({
   username: z.string(),
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       httpOnly: true,
       sameSite: "lax",
       path: "/",
-      secure: process.env.NODE_ENV === "production",
+      secure: authCookieSecure(),
       ...(payload.data.remember ? { maxAge: REMEMBERED_AUTH_MAX_AGE_SECONDS } : {}),
     });
     return response;

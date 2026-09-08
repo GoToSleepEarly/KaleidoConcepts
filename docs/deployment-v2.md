@@ -51,6 +51,7 @@ sudo chmod 600 /etc/pbl-studio-v2.env
 
 ```dotenv
 NODE_ENV="production"
+AUTH_COOKIE_SECURE="true"
 HOSTNAME="127.0.0.1"
 PORT="3100"
 APP_NAME="pbl-studio-v2"
@@ -61,6 +62,8 @@ DATABASE_URL_FOR_PG_DUMP="postgresql://pbl_v2_app:数据库密码@127.0.0.1:5432
 STORAGE_DIR="/data/pbl-studio-v2/images"
 BACKUP_DIR="/data/backups/pbl-studio-v2"
 ```
+
+`AUTH_COOKIE_SECURE` 默认跟随 `NODE_ENV`：生产环境为安全 Cookie，只能通过 HTTPS 使用。若公网入口暂时只能使用 HTTP，可短期显式设置为 `false`，使 Safari 等浏览器能够保存身份 Cookie；启用 HTTPS 后必须恢复为 `true`。修改该变量后需要重新发布或重启应用进程，老师随后退出并重新登录。
 
 数据库密码包含 URL 保留字符时必须编码。DeepSeek 使用官方直连；QuickRouter 与 Crazyrouter 使用各自配置的 key。生产环境不得配置 `HTTP_PROXY` 或 `HTTPS_PROXY`。
 

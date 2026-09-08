@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { POST } from "./route";
 
@@ -9,8 +9,14 @@ vi.mock("@/lib/server/repositories/auth", () => ({ verifyTeacherLogin }));
 
 describe("POST /api/auth/login", () => {
   beforeEach(() => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("AUTH_COOKIE_SECURE", "");
     verifyTeacherLogin.mockReset();
     verifyTeacherLogin.mockResolvedValue({ id: "user-1", displayName: "教师账号" });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   test("persists only the authenticated user cookie when remember me is enabled", async () => {
@@ -24,6 +30,7 @@ describe("POST /api/auth/login", () => {
     expect(response.status).toBe(200);
     expect(cookie).toContain("kaleido.user-id=user-1");
     expect(cookie).toContain("Max-Age=2592000");
+    expect(cookie).toContain("Secure");
     expect(cookie).not.toContain("kaleido.ai-gateway");
   });
 
@@ -38,5 +45,19 @@ describe("POST /api/auth/login", () => {
     expect(cookie).toContain("kaleido.user-id=user-1");
     expect(cookie).not.toContain("Max-Age");
     expect(cookie).not.toContain("kaleido.ai-gateway");
+  });
+
+  test("allows HTTP deployments to disable the Secure cookie attribute explicitly", async () => {
+    vi.stubEnv("AUTH_COOKIE_SECURE", "false");
+
+    const response = await POST(new Request("http://203.0.113.10:3100/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "teacher", password: "123456", remember: true }),
+    }));
+    const cookie = response.headers.get("set-cookie") ?? "";
+
+    expect(cookie).toContain("kaleido.user-id=user-1");
+    expect(cookie).not.toContain("Secure");
   });
 });
