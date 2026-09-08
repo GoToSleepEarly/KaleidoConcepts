@@ -284,7 +284,7 @@ QuickRouter 图片继续支持其专属 `gpt-image-2-c` 备用模型。Crazyrout
 
 实现状态：已实现账户菜单设置、登录同步、数据库字段、服务端路由选择和 GPT 文本/研究/图片 provider 分流；生产部署前执行 `pnpm prisma:deploy`。
 
-2026-09-08：身份 Cookie 的 `Secure` 属性增加显式环境开关 `AUTH_COOKIE_SECURE`，登录与退出共用同一判断。未配置时保持原行为（生产启用、开发关闭）；仅在临时 HTTP 公网入口显式设为 `false`，启用 HTTPS 后恢复为 `true`。验证与提交号见本次发布记录。
+2026-09-08：身份 Cookie 的 `Secure` 属性增加显式环境开关 `AUTH_COOKIE_SECURE`，登录与退出共用同一判断。未配置时保持原行为（生产启用、开发关闭）；仅在临时 HTTP 公网入口显式设为 `false`，启用 HTTPS 后恢复为 `true`。验证通过全量 88 个文件 / 717 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm build`、乱码扫描和 `git diff --check`。实现提交：`3a66caf`。
 
 2026-08-30：GPT / DeepSeek 写作模型已从课程流程收拢到账户“高级设置”。选择保存到 `User.writingProvider`，仅影响下一次新发起的文本任务；运行中任务继续使用领取时快照，既有课程内容不回写。验证通过账户 API、服务端路由与工作区回归测试、全量 87 个文件 / 689 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate` 和 `pnpm build`；提交号待用户验收后记录。
 
