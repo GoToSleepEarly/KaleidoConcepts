@@ -350,6 +350,12 @@ describe("story outline repository", () => {
     }, deps);
 
     expect(state.chatMessages.map((message) => message.content)).toContain("学生们进入海底图书馆");
+    expect(state.chatMessages.find((message) => message.content === "学生们进入海底图书馆")).toMatchObject({
+      source: "teacher_input",
+      retryAttempt: 1,
+      requestId: expect.any(String),
+      rootRequestId: expect.any(String),
+    });
     expect(state.outline).toBeNull();
     expect(state.alignment).toMatchObject({ status: "ready_for_confirmation", storyMode: "new_story", classroomPresence: "participant", summary: expect.stringContaining("海底冒险") });
     expect(db.state.setting?.alignmentDetails).toMatchObject({ schemaVersion: 2, requirement: { kind: "resolved", brief: { kind: "narrative" } } });
@@ -865,9 +871,10 @@ describe("story outline repository", () => {
     expect(db.state.directions.find((direction) => direction.id === directionId)?.selectedAt).toBeInstanceOf(Date);
     expect(db.state.outline).toBeNull();
     expect(db.state.setting?.operationStatus).toBe("failed");
+    expect(db.state.logs.at(-1)?.requestId).toBe(db.state.setting?.operationRequestId);
     expect(db.state.messages.at(-1)).toMatchObject({
       role: "assistant",
-      content: "大纲生成暂时失败。你可以重试本步，或修改要求后重新提交。",
+      content: "这次故事大纲没有完整生成。已保留当前故事要求和故事主线，可以直接重新生成。",
       actions: [expect.objectContaining({ action: "retry_operation", targetId: db.state.setting?.operationRequestId })],
     });
 
@@ -879,6 +886,14 @@ describe("story outline repository", () => {
 
     expect(db.state.outline).not.toBeNull();
     expect(db.state.messages.filter((message) => String(message.content).startsWith("我选择并生成故事大纲："))).toHaveLength(1);
+    expect(db.state.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: "teacher",
+        source: "ui_action",
+        retryAttempt: 2,
+        content: "重新生成故事大纲（第 2 次），沿用本次操作已确认的内容。",
+      }),
+    ]));
   });
 
   test("does not persist raw Prisma diagnostics as a teacher-facing operation error", async () => {
@@ -896,8 +911,8 @@ describe("story outline repository", () => {
       targetId: directionId,
     }, { ...deps, generateOutline })).rejects.toThrow("Invalid `prisma");
 
-    expect(db.state.setting?.operationError).toBe("故事大纲生成失败，请重试本步");
-    expect(db.state.messages.at(-1)?.content).toBe("故事大纲生成失败，请重试本步。你可以重试本步，或修改要求后重新提交。");
+    expect(db.state.setting?.operationError).toBe("这次故事大纲没有完整生成。已保留当前故事要求和故事主线，可以直接重新生成");
+    expect(db.state.messages.at(-1)?.content).toBe("这次故事大纲没有完整生成。已保留当前故事要求和故事主线，可以直接重新生成。");
     expect(db.state.messages.at(-1)?.content).not.toContain("prisma");
   });
 

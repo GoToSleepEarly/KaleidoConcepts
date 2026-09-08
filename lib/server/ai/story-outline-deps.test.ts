@@ -45,7 +45,7 @@ vi.mock("./story-outline-provider", () => ({
 }));
 
 describe("createStoryOutlineGenerationDeps", () => {
-  test("rejects generated and revised Chinese story fields beyond the configured generation maximum", async () => {
+  test("keeps generated and revised Chinese story fields when they exceed the generation target", async () => {
     const deps = createStoryOutlineGenerationDeps();
     const shared = {
       chapterCount: 3,
@@ -60,10 +60,10 @@ describe("createStoryOutlineGenerationDeps", () => {
     };
     const direction = { title: "方向", hook: "长".repeat(102), storyHighlight: "亮点", growthCore: "合作", mainCharacters: ["Mia"], whyFits: "匹配要求" };
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify([direction, direction, direction]) });
-    await expect(deps.generateDirections({ ...shared, task: "生成方向" })).rejects.toThrow("方向概要超过 101 展示单位验收上限（生成目标 90，实际 102）");
+    await expect(deps.generateDirections({ ...shared, task: "生成方向" })).resolves.toHaveLength(3);
 
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify(direction) });
-    await expect(deps.reviseDirection({ ...shared, task: "修改方向", direction: { title: "旧方向" } })).rejects.toThrow("方向概要超过 101 展示单位验收上限（生成目标 90，实际 102）");
+    await expect(deps.reviseDirection({ ...shared, task: "修改方向", direction: { title: "旧方向" } })).resolves.toMatchObject({ hook: "长".repeat(102) });
 
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
       title: { zh: "故事", en: "Story" },
@@ -71,7 +71,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       characters: [],
       chapters: [1, 2, 3].map((order) => ({ order, title: { zh: `第${order}章`, en: `Chapter ${order}` }, whatHappens: "行动产生结果。", characterKeys: [] })),
     }) });
-    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).rejects.toThrow("整体概要超过 107 展示单位验收上限（生成目标 95，实际 108）");
+    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).resolves.toMatchObject({ summary: "长".repeat(108) });
 
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
       title: { zh: "故事", en: "Story" },
@@ -79,10 +79,11 @@ describe("createStoryOutlineGenerationDeps", () => {
       characters: [],
       chapters: [1, 2, 3].map((order) => ({ order, title: { zh: `第${order}章`, en: `Chapter ${order}` }, whatHappens: order === 1 ? "长".repeat(52) : "行动产生结果。", characterKeys: [] })),
     }) });
-    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).rejects.toThrow("第 1 章概述超过 51 展示单位验收上限（生成目标 45，实际 52）");
+    const longChapterOutline = await deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" });
+    expect(longChapterOutline.chapters[0]).toMatchObject({ whatHappens: "长".repeat(52) });
 
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({ status: "ready", chapter: { order: 1, title: { zh: "第一章", en: "Chapter One" }, whatHappens: "长".repeat(52), characterIds: [] } }) });
-    await expect(deps.reviseChapter({ ...shared, task: "修改章节", chapterOrder: 1 })).rejects.toThrow("单章概述超过 51 展示单位验收上限（生成目标 45，实际 52）");
+    await expect(deps.reviseChapter({ ...shared, task: "修改章节", chapterOrder: 1 })).resolves.toMatchObject({ status: "ready", chapter: { whatHappens: "长".repeat(52) } });
   });
 
   test("converts response-only KP keys to knowledge point labels in the saved recommendation summary", async () => {

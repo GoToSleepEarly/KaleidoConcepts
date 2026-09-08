@@ -28,6 +28,8 @@ export const researchPlanSchema = z.object({
 export const storyOutlineMessageSchema = z.object({
   message: z.string().default(""),
   mode: z.union([z.literal("idea"), z.literal("random"), z.literal("revise")]),
+  triggerSource: z.union([z.literal("teacher_input"), z.literal("ui_action")]).optional(),
+  triggerLabel: z.string().trim().min(1).max(100).optional(),
   action: z
     .union([
       z.literal("choose_direction"),

@@ -12,7 +12,7 @@ import { CourseCreateSteps, courseStageStep } from "@/features/courses/component
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
 import type { CourseSourceReference, CourseStoryChatAction, CourseStoryMessageInput, CourseStoryOutline, CourseStoryOutlineState, CourseStoryDirection, PresetOption, StoryComplexity } from "@/lib/contracts/api";
-import { normalizeStoryChapterCount } from "@/lib/domain/story-length-policy";
+import { chineseDisplayLength, normalizeStoryChapterCount, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import { cn } from "@/lib/utils";
 import { createRequestId } from "@/lib/utils/request-id";
 
@@ -370,11 +370,12 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
           message: teacherMessage,
           mode: "revise",
           action: composerIntent.action,
+          triggerSource: "teacher_input",
           ...(composerIntent.action === "revise_direction" ? { targetId: composerIntent.targetId } : {}),
           ...(composerIntent.action === "revise_chapter" ? { targetChapterOrder: composerIntent.targetChapterOrder } : {}),
           ...(composerIntent.action === "revise_mainline" ? { expectedStateRevision: stateRef.current.stateRevision } : {}),
         }
-      : { message: teacherMessage, mode };
+      : { message: teacherMessage, mode, triggerSource: "teacher_input" };
     const accepted = await postMessage(messageInput, composerIntent?.action === "revise_direction" ? "正在调整故事方向..." : composerIntent?.action === "revise_mainline" ? "正在调整故事主线..." : composerIntent?.action === "revise_outline" ? "正在调整故事大纲..." : composerIntent?.action === "revise_chapter" ? `正在调整第 ${composerIntent.targetChapterOrder} 章...` : "正在分析故事要求...", {
       restoreMessage: mode === "idea" ? message : undefined,
       restoreRandomSupplement: mode === "random" ? randomSupplement : undefined,
@@ -450,6 +451,8 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
           mode: "idea",
           action: "retry_operation",
           targetId: action.targetId,
+          triggerSource: "ui_action",
+          triggerLabel: action.label,
         },
         operationLoadingLabel(state.operation?.phase),
       );
@@ -468,6 +471,8 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
         message: draft,
         mode: action.action === "regenerate_outline" || isStoryChangeAction ? "revise" : "idea",
         action: action.action,
+        triggerSource: "ui_action",
+        triggerLabel: action.label,
         targetId: action.targetId,
         ...(action.action === "confirm_requirements" || action.action === "confirm_mainline" ? { expectedStateRevision: stateRef.current.stateRevision } : {}),
         researchPlan: action.researchPlan,
@@ -639,6 +644,12 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                 <article className={cn("max-w-[calc(100%-2.5rem)] rounded-lg px-3 py-2 text-sm", !hasResultContent && "max-w-2xl", chat.role === "teacher" ? "bg-primary text-primary-foreground" : chat.id === latestAssistantMessageId && state.operation?.status === "succeeded" ? "border border-emerald-200 bg-emerald-50 text-emerald-950" : "bg-muted text-foreground")} data-testid={chat.id === latestAssistantMessageId && state.operation?.status === "succeeded" ? "ai-operation-completion" : undefined}>
                   {chat.id === latestAssistantMessageId && state.operation?.status === "succeeded" ? <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><Check aria-hidden className="size-3.5" />处理完成</p> : null}
                   <p className="whitespace-pre-wrap leading-6">{chat.content}</p>
+                  {chat.role === "teacher" && chat.source && chat.source !== "legacy" ? (
+                    <p className="mt-1 text-[11px] leading-4 opacity-70">
+                      {chat.source === "ui_action" ? "按钮操作" : "手动输入"}
+                      {chat.retryAttempt && chat.retryAttempt > 1 ? ` · 第 ${chat.retryAttempt} 次尝试` : ""}
+                    </p>
+                  ) : null}
                   {chat.id === latestAlignmentQuestionMessageId && state.alignment?.status !== "ready_for_confirmation" && state.alignment?.status !== "confirmed" && chat.actions.some((action) => action.action === "submit_alignment_answers" && action.questions?.length) ? (
                     <AlignmentQuestionForm
                       disabled={pending}
@@ -648,6 +659,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                             message: readableMessage,
                             mode: "idea",
                             action: "submit_alignment_answers",
+                            triggerSource: "teacher_input",
                             alignmentAnswers: answers,
                             expectedStateRevision: stateRef.current.stateRevision,
                           },
@@ -697,7 +709,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                     onClick={() =>
                       void handleAction({
                         id: "retry-operation",
-                        label: "重试本步",
+                        label: state.operation?.phase === "generating_outline" ? "重新生成故事大纲" : "重试本步",
                         action: "retry_operation",
                       })
                     }
@@ -705,7 +717,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                     type="button"
                     variant="outline"
                   >
-                    重试本步
+                    {state.operation?.phase === "generating_outline" ? "重新生成故事大纲" : "重试本步"}
                   </Button>
                 </div>
               </div>
@@ -768,6 +780,8 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                     mode: "idea",
                     action: "confirm_direction",
                     targetId: direction.id,
+                    triggerSource: "ui_action",
+                    triggerLabel: "选择并生成大纲",
                   },
                   "正在生成故事大纲...",
                   {
@@ -1352,7 +1366,7 @@ function ResultPanel({ state, references, outline, resultTab, setResultTab, onCo
             ))}
           </section>
         ) : (
-          <DirectionsPanel directions={state.directions} outdated={artifactsOutdated} onConfirmDirection={onConfirmDirection} onDescribeDirection={onDescribeDirection} onReviseDirection={onReviseDirection} pending={pending} />
+          <DirectionsPanel directions={state.directions} outdated={artifactsOutdated} onConfirmDirection={onConfirmDirection} onDescribeDirection={onDescribeDirection} onReviseDirection={onReviseDirection} pending={pending} state={state} />
         )}
       </div>
     );
@@ -1376,7 +1390,12 @@ function ResultPanel({ state, references, outline, resultTab, setResultTab, onCo
             故事方向
           </button>
         </div>
-        {resultTab === "outline" ? <OutlineSummary onReviseChapter={onReviseChapter} onReviseOutline={onReviseOutline} outline={outline} pending={pending || artifactsOutdated} state={state} /> : null}
+        {resultTab === "outline" ? (
+          <>
+            <OutlineSummary onReviseChapter={onReviseChapter} onReviseOutline={onReviseOutline} outline={outline} pending={pending || artifactsOutdated} state={state} />
+            <OutlineQualityNotice outline={outline} state={state} />
+          </>
+        ) : null}
         {resultTab === "characters" ? <CharactersSection outline={outline} /> : null}
         {resultTab === "references" ? (
           <div className="space-y-4">
@@ -1410,7 +1429,7 @@ function ResultPanel({ state, references, outline, resultTab, setResultTab, onCo
   }
 
   if (state.directions.length) {
-    return <DirectionsPanel directions={state.directions} outdated={artifactsOutdated} onConfirmDirection={onConfirmDirection} onDescribeDirection={onDescribeDirection} onReviseDirection={onReviseDirection} pending={pending} />;
+    return <DirectionsPanel directions={state.directions} outdated={artifactsOutdated} onConfirmDirection={onConfirmDirection} onDescribeDirection={onDescribeDirection} onReviseDirection={onReviseDirection} pending={pending} state={state} />;
   }
 
   return null;
@@ -1426,7 +1445,31 @@ function ArtifactVersionNotice({ outdated }: { outdated: boolean }) {
   );
 }
 
-function DirectionsPanel({ directions, outdated, onConfirmDirection, onDescribeDirection, onReviseDirection, pending }: { directions: CourseStoryDirection[]; outdated: boolean; onConfirmDirection: (direction: CourseStoryDirection) => void; onDescribeDirection: () => void; onReviseDirection: (direction: CourseStoryDirection) => void; pending: boolean }) {
+function OutlineQualityNotice({ outline, state }: { outline: CourseStoryOutline; state: CourseStoryOutlineState }) {
+  const policy = storyLengthPolicy(state.course.englishLevel, state.settings.storyComplexity, outline.chapterCount);
+  const longSections = [
+    ...(chineseDisplayLength(outline.summary) > policy.chinese.outlineSummary.hardMax ? ["整体概要"] : []),
+    ...outline.chapters.flatMap((chapter) => chineseDisplayLength(chapter.whatHappens || chapter.storyGoal) > policy.chinese.chapterOverview.hardMax ? [`第 ${chapter.order} 章概述`] : []),
+  ];
+  const incompleteRecommendations = outline.chapters.filter((chapter) => {
+    const hasRecommendations = Boolean(chapter.recommendedKnowledgePointIds?.length);
+    const hasSummary = Boolean(chapter.knowledgePointRecommendationSummary?.trim());
+    return hasRecommendations !== hasSummary;
+  }).map((chapter) => `第 ${chapter.order} 章`);
+  if (!longSections.length && !incompleteRecommendations.length) return null;
+  return (
+    <aside className="rounded-md border border-amber-200 bg-amber-50/70 px-3 py-3 text-sm text-amber-950" aria-label="内容优化提示">
+      <p className="font-medium">内容优化提示</p>
+      <ul className="mt-1 list-disc space-y-1 pl-5 text-xs leading-5 text-amber-900">
+        {longSections.length ? <li>{longSections.join("、")}略长，但当前结果可以继续使用。</li> : null}
+        {incompleteRecommendations.length ? <li>{incompleteRecommendations.join("、")}的知识点推荐尚不完整，不影响故事大纲使用。</li> : null}
+      </ul>
+      <p className="mt-2 text-xs leading-5 text-amber-800">如需优化，请点击对应章节或整体大纲的修改入口后输入要求；知识点也可以在教学规划中补充。</p>
+    </aside>
+  );
+}
+
+function DirectionsPanel({ directions, outdated, onConfirmDirection, onDescribeDirection, onReviseDirection, pending, state }: { directions: CourseStoryDirection[]; outdated: boolean; onConfirmDirection: (direction: CourseStoryDirection) => void; onDescribeDirection: () => void; onReviseDirection: (direction: CourseStoryDirection) => void; pending: boolean; state: CourseStoryOutlineState }) {
   return (
     <section className="space-y-4 rounded-lg bg-card p-4 shadow-sm">
       <ArtifactVersionNotice outdated={outdated} />
@@ -1471,6 +1514,11 @@ function DirectionsPanel({ directions, outdated, onConfirmDirection, onDescribeD
               </Button>
             ) : null}
           </div>
+          {chineseDisplayLength(splitBilingual(direction.hook).zh) > storyLengthPolicy(state.course.englishLevel, state.settings.storyComplexity, state.settings.chapterCount).chinese.directionOverview.hardMax ? (
+            <p className="mt-3 border-t border-amber-200 pt-3 text-xs leading-5 text-amber-800">
+              这条方向概述略长，但可以继续使用。如需精简，请点击“调整这张卡”后输入要求。
+            </p>
+          ) : null}
         </article>
       ))}
       <div className="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">

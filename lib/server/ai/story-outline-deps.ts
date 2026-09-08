@@ -9,7 +9,7 @@ import type {
   StoryWritingProvider,
   EnglishLevel,
 } from "@/lib/contracts/api";
-import { chineseDisplayLength, chineseValidationMax, defaultStoryComplexity, storyLengthPolicy, type StoryLengthPolicy } from "@/lib/domain/story-length-policy";
+import { defaultStoryComplexity, storyLengthPolicy, type StoryLengthPolicy } from "@/lib/domain/story-length-policy";
 
 import { devAiLog } from "./dev-ai-log";
 import { createStoryOutlineProvider } from "./story-outline-provider";
@@ -114,14 +114,6 @@ function resolvedStoryPolicy(input: Pick<StoryPromptContext, "englishLevel" | "s
   if (input.lengthPolicy) return input.lengthPolicy;
   const level = (input.englishLevel ?? "A2") as EnglishLevel;
   return storyLengthPolicy(level, input.storyComplexity ?? defaultStoryComplexity(level), input.chapterCount);
-}
-
-function enforceChineseGenerationMax(value: string, generationMax: number, label: string) {
-  const actualLength = chineseDisplayLength(value);
-  const validationMax = chineseValidationMax(generationMax);
-  if (actualLength > validationMax) {
-    throw new StoryOutlineResponseError(`${label}超过 ${validationMax} 展示单位验收上限（生成目标 ${generationMax}，实际 ${actualLength}），请重试本步`);
-  }
 }
 
 type StoryReferenceOption = {
@@ -1153,7 +1145,6 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       return { scope: "within_target" as const, needsBackgroundRefresh: false as const };
     },
     generateDirections: async (input: StoryPromptContext & { task: string }) => {
-      const policy = resolvedStoryPolicy(input);
       const { text } = await client().generateOutline({
         writingProvider: "quickrouter_gpt",
         operation: "story_generate_directions",
@@ -1189,12 +1180,10 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       }
       return parsed.map((value) => {
         const direction = normalizeDirection(value, input.coursePeople, "故事方向返回的内容结构不完整，请重试本步");
-        enforceChineseGenerationMax(direction.hook, policy.chinese.directionOverview.hardMax, "方向概要");
         return { ...direction, classroomValue: "", seedPrompt: direction.hook };
       });
     },
     reviseDirection: async (input: StoryPromptContext & { task: string; direction: unknown }) => {
-      const policy = resolvedStoryPolicy(input);
       const { text } = await client().generateOutline({
         writingProvider: "quickrouter_gpt",
         operation: "story_revise_direction",
@@ -1225,7 +1214,6 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
         input.coursePeople,
         "故事方向修改返回的内容结构不完整，请重试本步",
       );
-      enforceChineseGenerationMax(parsed.hook, policy.chinese.directionOverview.hardMax, "方向概要");
       return {
         ...parsed,
         classroomValue: stringValue((input.direction as { classroomValue?: unknown }).classroomValue),
@@ -1233,7 +1221,6 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       };
     },
     reviseChapter: async (input: StoryPromptContext & { task: string; chapterOrder: number }) => {
-      const policy = resolvedStoryPolicy(input);
       const { text } = await client().generateOutline({
         writingProvider: "quickrouter_gpt",
         operation: "story_revise_chapter",
@@ -1269,7 +1256,6 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       const title = bilingualChapterTitle(chapter.title);
       const whatHappens = proseValue(chapter.whatHappens);
       if (!title || !whatHappens) throw new StoryOutlineResponseError("章节修改返回的内容结构不完整，请重试本步");
-      enforceChineseGenerationMax(whatHappens, policy.chinese.chapterOverview.hardMax, "单章概述");
       return {
         status: "ready" as const,
         chapter: {
@@ -1424,7 +1410,6 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
       if (!title || !summary || !parsed.chapters.length) {
         throw new StoryOutlineResponseError("故事大纲返回的内容结构不完整，请重试本步");
       }
-      enforceChineseGenerationMax(summary, policy.chinese.outlineSummary.hardMax, "整体概要");
       const options = knowledgePointOptions(input);
       const resolveKnowledgePointIds = (values: string[] = []) => [...new Set(values.flatMap((value) => {
         const normalized = value.trim().toLowerCase();
@@ -1508,7 +1493,6 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
         const recommendedKeys = stringArray(chapter.recommendedKnowledgePointKeys).length
           ? stringArray(chapter.recommendedKnowledgePointKeys)
           : stringArray(chapter.recommendedKnowledgePointIds);
-        enforceChineseGenerationMax(whatHappens, policy.chinese.chapterOverview.hardMax, `第 ${order} 章概述`);
         return {
           order,
           title: chapterTitle,

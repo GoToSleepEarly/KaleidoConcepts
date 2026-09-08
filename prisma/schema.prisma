@@ -7,15 +7,15 @@ datasource db {
 }
 
 model User {
-  id          String   @id @default(cuid())
-  username    String   @unique
-  password    String
-  displayName String
-  writingProvider StoryWritingProvider @default(quickrouter_gpt)
-  aiGateway   AiGateway @default(quickrouter)
-  quickRouterEndpoint QuickRouterEndpoint @default(main)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                  String               @id @default(cuid())
+  username            String               @unique
+  password            String
+  displayName         String
+  writingProvider     StoryWritingProvider @default(quickrouter_gpt)
+  aiGateway           AiGateway            @default(quickrouter)
+  quickRouterEndpoint QuickRouterEndpoint  @default(main)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 }
 
 model Person {
@@ -41,7 +41,7 @@ model Person {
 }
 
 model PersonVisualAsset {
-  id                  String                  @id @default(cuid())
+  id                  String                 @id @default(cuid())
   personId            String
   parentAssetId       String?
   sourceMode          PersonVisualSourceMode
@@ -50,19 +50,19 @@ model PersonVisualAsset {
   compiledPrompt      String
   sourceHash          String
   idempotencyKey      String
-  status              PersonVisualStatus      @default(pending)
+  status              PersonVisualStatus     @default(pending)
   provider            PersonVisualProvider
   providerImageUrl    String?
   storagePath         String?
-  publicUrl            String?
+  publicUrl           String?
   temporarySourcePath String?
   failureReason       String?
-  createdAt           DateTime                 @default(now())
-  updatedAt           DateTime                 @updatedAt
-  person              Person                   @relation("PersonVisualAssets", fields: [personId], references: [id], onDelete: Cascade)
-  parentAsset         PersonVisualAsset?       @relation("PersonVisualVersions", fields: [parentAssetId], references: [id], onDelete: Restrict)
-  childAssets         PersonVisualAsset[]      @relation("PersonVisualVersions")
-  selectedBy          Person[]                 @relation("ActivePersonVisual")
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  person              Person                 @relation("PersonVisualAssets", fields: [personId], references: [id], onDelete: Cascade)
+  parentAsset         PersonVisualAsset?     @relation("PersonVisualVersions", fields: [parentAssetId], references: [id], onDelete: Restrict)
+  childAssets         PersonVisualAsset[]    @relation("PersonVisualVersions")
+  selectedBy          Person[]               @relation("ActivePersonVisual")
   courseSnapshots     CoursePerson[]
 
   @@unique([personId, idempotencyKey])
@@ -71,61 +71,61 @@ model PersonVisualAsset {
 }
 
 model Course {
-  id              String          @id @default(cuid())
-  title           String
-  durationMinutes Int
-  englishLevel    EnglishLevel?
-  grammarBookEditionId String?
-  knowledgePointIds Json             @default("[]")
-  lifecycleStatus CourseLifecycle @default(draft)
-  currentStage    CourseStage     @default(audience)
-  staleFromStage  CourseStage?
-  visualQuality   CourseImageQuality @default(medium)
-  imageGenerationConcurrency Int     @default(3)
-  idempotencyKey  String          @unique
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  people          CoursePerson[]
-  storyOutline    CourseStoryOutline?
-  storySetting     CourseStorySetting?
-  storyDirections CourseStoryDirection[]
-  storyMessages   CourseStoryChatMessage[]
-  sourceReferences CourseSourceReference[]
-  characters      CourseCharacter[]
-  aiGenerationLogs AiGenerationLog[]
-  teachingPlan    CourseTeachingPlan?
-  lessonContent   CourseLessonContent?
-  contentGenerations CourseContentGeneration[]
-  contentMessages CourseContentChatMessage[]
-  visualResourcePlan CourseVisualResourcePlan?
-  characterVisuals CourseCharacterVisual[]
-  visualImageSlots CourseVisualImageSlot[]
-  images CourseImage[]
-  presentation CoursePresentation?
-  grammarBookEdition GrammarBookEdition? @relation(fields: [grammarBookEditionId], references: [id], onDelete: Restrict)
+  id                         String                     @id @default(cuid())
+  title                      String
+  durationMinutes            Int
+  englishLevel               EnglishLevel?
+  grammarBookEditionId       String?
+  knowledgePointIds          Json                       @default("[]")
+  lifecycleStatus            CourseLifecycle            @default(draft)
+  currentStage               CourseStage                @default(audience)
+  staleFromStage             CourseStage?
+  visualQuality              CourseImageQuality         @default(medium)
+  imageGenerationConcurrency Int                        @default(3)
+  idempotencyKey             String                     @unique
+  createdAt                  DateTime                   @default(now())
+  updatedAt                  DateTime                   @updatedAt
+  people                     CoursePerson[]
+  storyOutline               CourseStoryOutline?
+  storySetting               CourseStorySetting?
+  storyDirections            CourseStoryDirection[]
+  storyMessages              CourseStoryChatMessage[]
+  sourceReferences           CourseSourceReference[]
+  characters                 CourseCharacter[]
+  aiGenerationLogs           AiGenerationLog[]
+  teachingPlan               CourseTeachingPlan?
+  lessonContent              CourseLessonContent?
+  contentGenerations         CourseContentGeneration[]
+  contentMessages            CourseContentChatMessage[]
+  visualResourcePlan         CourseVisualResourcePlan?
+  characterVisuals           CourseCharacterVisual[]
+  visualImageSlots           CourseVisualImageSlot[]
+  images                     CourseImage[]
+  presentation               CoursePresentation?
+  grammarBookEdition         GrammarBookEdition?        @relation(fields: [grammarBookEditionId], references: [id], onDelete: Restrict)
 
   @@index([lifecycleStatus, updatedAt])
 }
 
 model GrammarBookEdition {
-  id            String             @id
-  title         String
-  edition       String
-  officialLevel String
-  sortOrder     Int
-  sections      GrammarSection[]
+  id              String           @id
+  title           String
+  edition         String
+  officialLevel   String
+  sortOrder       Int
+  sections        GrammarSection[]
   knowledgePoints KnowledgePoint[]
-  courses       Course[]
+  courses         Course[]
 
   @@index([sortOrder])
 }
 
 model GrammarSection {
-  id            String             @id
-  bookEditionId String
-  officialTitle String
-  sortOrder     Int
-  bookEdition   GrammarBookEdition @relation(fields: [bookEditionId], references: [id], onDelete: Cascade)
+  id              String             @id
+  bookEditionId   String
+  officialTitle   String
+  sortOrder       Int
+  bookEdition     GrammarBookEdition @relation(fields: [bookEditionId], references: [id], onDelete: Cascade)
   knowledgePoints KnowledgePoint[]
 
   @@unique([bookEditionId, sortOrder])
@@ -133,14 +133,14 @@ model GrammarSection {
 }
 
 model KnowledgePoint {
-  id            String               @id
+  id            String                      @id
   source        KnowledgePointSource
   bookEditionId String?
   sectionId     String?
   title         String
   sortOrder     Int
-  bookEdition   GrammarBookEdition?  @relation(fields: [bookEditionId], references: [id], onDelete: Restrict)
-  section       GrammarSection?      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  bookEdition   GrammarBookEdition?         @relation(fields: [bookEditionId], references: [id], onDelete: Restrict)
+  section       GrammarSection?             @relation(fields: [sectionId], references: [id], onDelete: Restrict)
   units         GrammarKnowledgePointUnit[]
 
   @@index([source, bookEditionId, sortOrder])
@@ -158,20 +158,20 @@ model GrammarKnowledgePointUnit {
 }
 
 model CoursePerson {
-  id                      String             @id @default(cuid())
-  courseId                String
-  personId                String
-  role                    PersonRole
-  chineseNameSnapshot     String
-  englishNameSnapshot     String
-  ageSnapshot             Int
-  genderSnapshot          Gender
-  visualAssetIdSnapshot   String?
-  createdAt               DateTime           @default(now())
-  updatedAt               DateTime           @updatedAt
-  course                  Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  person                  Person             @relation(fields: [personId], references: [id], onDelete: Restrict)
-  visualAssetSnapshot     PersonVisualAsset? @relation(fields: [visualAssetIdSnapshot], references: [id], onDelete: Restrict)
+  id                    String             @id @default(cuid())
+  courseId              String
+  personId              String
+  role                  PersonRole
+  chineseNameSnapshot   String
+  englishNameSnapshot   String
+  ageSnapshot           Int
+  genderSnapshot        Gender
+  visualAssetIdSnapshot String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  course                Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  person                Person             @relation(fields: [personId], references: [id], onDelete: Restrict)
+  visualAssetSnapshot   PersonVisualAsset? @relation(fields: [visualAssetIdSnapshot], references: [id], onDelete: Restrict)
 
   @@unique([courseId, personId])
   @@index([personId, createdAt])
@@ -193,70 +193,79 @@ model PresetOption {
 }
 
 model CourseStoryOutline {
-  id              String               @id @default(cuid())
-  courseId        String               @unique
+  id              String                      @id @default(cuid())
+  courseId        String                      @unique
   chapterCount    Int
   title           String
   summary         String
-  writingProvider StoryWritingProvider @default(quickrouter_gpt)
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-  course          Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  writingProvider StoryWritingProvider        @default(quickrouter_gpt)
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  course          Course                      @relation(fields: [courseId], references: [id], onDelete: Cascade)
   chapters        CourseStoryOutlineChapter[]
 }
 
 model CourseStorySetting {
-  id              String               @id @default(cuid())
-  courseId        String               @unique
-  chapterCount    Int
-  writingProvider StoryWritingProvider @default(quickrouter_gpt)
-  storyComplexity StoryComplexity?
-  alignmentStatus StoryAlignmentStatus @default(idle)
-  planningMode StoryPlanningMode @default(explore_options)
-  alignmentSummary String?
-  alignmentDetails Json @default("{}")
-  alignmentConfirmedAt DateTime?
-  stateRevision Int @default(0)
-  operationRequestId String?
-  operationAction String?
-  operationPhase String?
-  operationStatus StoryOperationStatus?
-  operationError String?
-  operationInput Json?
-  operationStartedAt DateTime?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-  course          Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  id                     String                @id @default(cuid())
+  courseId               String                @unique
+  chapterCount           Int
+  writingProvider        StoryWritingProvider  @default(quickrouter_gpt)
+  storyComplexity        StoryComplexity?
+  alignmentStatus        StoryAlignmentStatus  @default(idle)
+  planningMode           StoryPlanningMode     @default(explore_options)
+  alignmentSummary       String?
+  alignmentDetails       Json                  @default("{}")
+  alignmentConfirmedAt   DateTime?
+  stateRevision          Int                   @default(0)
+  operationRequestId     String?
+  operationAction        String?
+  operationPhase         String?
+  operationStatus        StoryOperationStatus?
+  operationError         String?
+  operationInput         Json?
+  operationRootRequestId String?
+  operationRetryAttempt  Int                   @default(1)
+  operationStartedAt     DateTime?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  course                 Course                @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
 
 model CourseStoryDirection {
-  id              String   @id @default(cuid())
-  courseId        String
-  title           String
-  hook            String
-  whyFits         String
-  mainCharacters  Json
-  storyHighlight  String   @default("")
-  growthCore      String   @default("")
-  classroomValue  String
-  seedPrompt      String
-  selectedAt      DateTime?
-  createdAt       DateTime @default(now())
-  course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  id             String    @id @default(cuid())
+  courseId       String
+  title          String
+  hook           String
+  whyFits        String
+  mainCharacters Json
+  storyHighlight String    @default("")
+  growthCore     String    @default("")
+  classroomValue String
+  seedPrompt     String
+  selectedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  course         Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@index([courseId, createdAt])
 }
 
 model CourseStoryChatMessage {
-  id        String              @id @default(cuid())
-  courseId  String
-  role      CourseStoryChatRole
-  content   String
-  actions   Json?
-  createdAt DateTime            @default(now())
-  course    Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  id            String              @id @default(cuid())
+  courseId      String
+  role          CourseStoryChatRole
+  content       String
+  actions       Json?
+  source        String              @default("legacy")
+  requestId     String?
+  rootRequestId String?
+  action        String?
+  retryAttempt  Int?
+  metadata      Json                @default("{}")
+  createdAt     DateTime            @default(now())
+  course        Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@index([courseId, createdAt])
+  @@index([courseId, requestId])
 }
 
 model CourseSourceReference {
@@ -304,51 +313,51 @@ model CourseCharacter {
 }
 
 model CourseStoryOutlineChapter {
-  id          String             @id @default(cuid())
-  outlineId   String
-  order       Int
-  title       String
-  storyGoal   String
-  keyEvents   Json
-  characterIds Json
-  setting     String
-  endingHook  String
-  recommendedKnowledgePointIds Json @default("[]")
-  knowledgePointRecommendationSummary String @default("")
-  outline     CourseStoryOutline @relation(fields: [outlineId], references: [id], onDelete: Cascade)
+  id                                  String             @id @default(cuid())
+  outlineId                           String
+  order                               Int
+  title                               String
+  storyGoal                           String
+  keyEvents                           Json
+  characterIds                        Json
+  setting                             String
+  endingHook                          String
+  recommendedKnowledgePointIds        Json               @default("[]")
+  knowledgePointRecommendationSummary String             @default("")
+  outline                             CourseStoryOutline @relation(fields: [outlineId], references: [id], onDelete: Cascade)
 
   @@unique([outlineId, order])
 }
 
 model CourseTeachingPlan {
-  id                 String             @id @default(cuid())
-  courseId           String             @unique
-  status             TeachingPlanStatus @default(draft)
-  englishLevel       EnglishLevel?
-  mainIdeaTargetWordCount Int             @default(120)
-  chapters           Json
-  afterClassPractice Json
-  confirmedAt        DateTime?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  course             Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  id                      String             @id @default(cuid())
+  courseId                String             @unique
+  status                  TeachingPlanStatus @default(draft)
+  englishLevel            EnglishLevel?
+  mainIdeaTargetWordCount Int                @default(120)
+  chapters                Json
+  afterClassPractice      Json
+  confirmedAt             DateTime?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  course                  Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
 
 model CourseCharacterVisual {
-  id                  String                    @id @default(cuid())
+  id                  String                 @id @default(cuid())
   courseId            String
-  characterId         String                    @unique
+  characterId         String                 @unique
   intent              CharacterVisualIntent?
   source              CharacterVisualSource?
   personVisualAssetId String?
   activeImageId       String?
-  status              CharacterVisualStatus     @default(missing)
-  createdAt           DateTime                   @default(now())
-  updatedAt           DateTime                   @updatedAt
-  course              Course                     @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  character           CourseCharacter            @relation(fields: [characterId], references: [id], onDelete: Cascade)
-  activeImage         CourseImage?               @relation("ActiveCharacterVisual", fields: [activeImageId], references: [id], onDelete: SetNull)
-  images              CourseImage[]              @relation("CharacterVisualImages")
+  status              CharacterVisualStatus  @default(missing)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  course              Course                 @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  character           CourseCharacter        @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  activeImage         CourseImage?           @relation("ActiveCharacterVisual", fields: [activeImageId], references: [id], onDelete: SetNull)
+  images              CourseImage[]          @relation("CharacterVisualImages")
 
   @@index([courseId, status])
   @@index([personVisualAssetId])
@@ -368,63 +377,63 @@ model CourseVisualResourcePlan {
 }
 
 model CourseVisualImageSlot {
-  id            String              @id @default(cuid())
-  courseId      String
-  stableKey     String
-  slotType      CourseImageSlotType
-  chapterId     String?
-  paragraphId   String?
-  sourceText    String
-  characterIds  Json
-  focus         String
+  id               String              @id @default(cuid())
+  courseId         String
+  stableKey        String
+  slotType         CourseImageSlotType
+  chapterId        String?
+  paragraphId      String?
+  sourceText       String
+  characterIds     Json
+  focus            String
   sceneDescription String              @default("")
-  prompt        String
-  activeImageId String?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  course        Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  activeImage   CourseImage?        @relation("ActiveSlotImage", fields: [activeImageId], references: [id], onDelete: SetNull)
-  images        CourseImage[]       @relation("SlotImages")
+  prompt           String
+  activeImageId    String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  course           Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  activeImage      CourseImage?        @relation("ActiveSlotImage", fields: [activeImageId], references: [id], onDelete: SetNull)
+  images           CourseImage[]       @relation("SlotImages")
 
   @@unique([courseId, stableKey])
   @@index([courseId, chapterId])
 }
 
 model CourseImage {
-  id                String                   @id @default(cuid())
-  courseId          String
-  slotId            String?
-  characterVisualId String?
-  parentAssetId     String?
-  operation         CourseImageOperation
-  userInstruction   String?
-  prompt            String
-  quality           CourseImageQuality
-  referenceAssetIds Json                     @default("[]")
-  sourceHash        String
-  planRevision      Int                      @default(1)
-  idempotencyKey    String
-  status            CourseImageStatus        @default(pending)
-  provider          CourseImageProvider      @default(quickrouter_gpt_image_2)
-  providerTaskId    String?
-  providerImageUrl  String?
-  storagePath       String?
-  publicUrl          String?
-  temporarySourcePath String?
-  failureReason     String?
-  failureCode       CourseImageFailureCode?
-  attempt           Int                      @default(0)
-  leaseToken        String?
-  leaseExpiresAt    DateTime?
-  startedAt         DateTime?
-  createdAt         DateTime                 @default(now())
-  updatedAt         DateTime                 @updatedAt
-  course            Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  slot              CourseVisualImageSlot?   @relation("SlotImages", fields: [slotId], references: [id], onDelete: Cascade)
-  characterVisual   CourseCharacterVisual?   @relation("CharacterVisualImages", fields: [characterVisualId], references: [id], onDelete: Cascade)
-  parentAsset       CourseImage?              @relation("CourseImageVersions", fields: [parentAssetId], references: [id], onDelete: Restrict)
-  childAssets       CourseImage[]             @relation("CourseImageVersions")
-  selectedBySlots   CourseVisualImageSlot[]   @relation("ActiveSlotImage")
+  id                   String                  @id @default(cuid())
+  courseId             String
+  slotId               String?
+  characterVisualId    String?
+  parentAssetId        String?
+  operation            CourseImageOperation
+  userInstruction      String?
+  prompt               String
+  quality              CourseImageQuality
+  referenceAssetIds    Json                    @default("[]")
+  sourceHash           String
+  planRevision         Int                     @default(1)
+  idempotencyKey       String
+  status               CourseImageStatus       @default(pending)
+  provider             CourseImageProvider     @default(quickrouter_gpt_image_2)
+  providerTaskId       String?
+  providerImageUrl     String?
+  storagePath          String?
+  publicUrl            String?
+  temporarySourcePath  String?
+  failureReason        String?
+  failureCode          CourseImageFailureCode?
+  attempt              Int                     @default(0)
+  leaseToken           String?
+  leaseExpiresAt       DateTime?
+  startedAt            DateTime?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  course               Course                  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  slot                 CourseVisualImageSlot?  @relation("SlotImages", fields: [slotId], references: [id], onDelete: Cascade)
+  characterVisual      CourseCharacterVisual?  @relation("CharacterVisualImages", fields: [characterVisualId], references: [id], onDelete: Cascade)
+  parentAsset          CourseImage?            @relation("CourseImageVersions", fields: [parentAssetId], references: [id], onDelete: Restrict)
+  childAssets          CourseImage[]           @relation("CourseImageVersions")
+  selectedBySlots      CourseVisualImageSlot[] @relation("ActiveSlotImage")
   selectedByCharacters CourseCharacterVisual[] @relation("ActiveCharacterVisual")
 
   @@unique([courseId, idempotencyKey])
@@ -435,52 +444,52 @@ model CourseImage {
 }
 
 model CourseLessonContent {
-  id                 String              @id @default(cuid())
-  courseId           String              @unique
-  status             CourseContentStatus @default(empty)
+  id                 String               @id @default(cuid())
+  courseId           String               @unique
+  status             CourseContentStatus  @default(empty)
   phase              CourseContentPhase?
   writingProvider    StoryWritingProvider @default(quickrouter_gpt)
-  sourceRevision     String              @default("")
-  contentVersion     Int                 @default(0)
-  chapters           Json                @default("[]")
+  sourceRevision     String               @default("")
+  contentVersion     Int                  @default(0)
+  chapters           Json                 @default("[]")
   mainIdea           Json?
   homework           Json?
-  exercisesStale     Boolean             @default(false)
+  exercisesStale     Boolean              @default(false)
   errorMessage       String?
   activeGenerationId String?
   confirmedAt        DateTime?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  course             Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  course             Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
 
 model CoursePresentation {
-  courseId          String   @id
-  coverTheme        String   @default("dark")
-  coverTitleFontSize Float   @default(1.0)
-  chapterTheme      String   @default("blue-purple")
-  slideOverrides    Json     @default("{}")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  course            Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId           String   @id
+  coverTheme         String   @default("dark")
+  coverTitleFontSize Float    @default(1.0)
+  chapterTheme       String   @default("blue-purple")
+  slideOverrides     Json     @default("{}")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  course             Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
 
 model CourseContentGeneration {
-  id             String                        @id @default(cuid())
-  courseId       String
-  operation      CourseContentOperation
-  sourceRevision String
-  idempotencyKey String
-  status         CourseContentGenerationStatus @default(running)
-  attempt        Int                           @default(0)
-  baseContentVersion Int                       @default(0)
-  previousStatus CourseContentStatus           @default(empty)
-  leaseExpiresAt DateTime                      @default(now())
-  startedAt      DateTime                      @default(now())
-  errorMessage   String?
-  createdAt      DateTime                      @default(now())
-  updatedAt      DateTime                      @updatedAt
-  course         Course                        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  id                 String                        @id @default(cuid())
+  courseId           String
+  operation          CourseContentOperation
+  sourceRevision     String
+  idempotencyKey     String
+  status             CourseContentGenerationStatus @default(running)
+  attempt            Int                           @default(0)
+  baseContentVersion Int                           @default(0)
+  previousStatus     CourseContentStatus           @default(empty)
+  leaseExpiresAt     DateTime                      @default(now())
+  startedAt          DateTime                      @default(now())
+  errorMessage       String?
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
+  course             Course                        @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([courseId, idempotencyKey])
   @@unique([courseId, sourceRevision, operation])
@@ -489,7 +498,7 @@ model CourseContentGeneration {
 }
 
 model CourseContentChatMessage {
-  id         String                @id @default(cuid())
+  id         String                       @id @default(cuid())
   courseId   String
   role       CourseStoryChatRole
   content    String
@@ -502,8 +511,8 @@ model CourseContentChatMessage {
   title      String?
   details    Json?
   eventKey   String?
-  createdAt  DateTime              @default(now())
-  course     Course                @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt  DateTime                     @default(now())
+  course     Course                       @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([courseId, eventKey])
   @@index([courseId, createdAt])
@@ -511,8 +520,8 @@ model CourseContentChatMessage {
 }
 
 model AiGenerationLog {
-  id               String                  @id @default(cuid())
-  requestId        String?                 @unique
+  id               String                 @id @default(cuid())
+  requestId        String?                @unique
   courseId         String?
   stage            String
   operation        String
@@ -523,8 +532,8 @@ model AiGenerationLog {
   outputSnapshot   Json?
   errorMessage     String?
   latencyMs        Int?
-  createdAt        DateTime                @default(now())
-  course           Course?                 @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  createdAt        DateTime               @default(now())
+  course           Course?                @relation(fields: [courseId], references: [id], onDelete: SetNull)
 
   @@index([courseId, createdAt])
   @@index([stage, operation, createdAt])

@@ -576,6 +576,8 @@ describe("CourseStoryOutlineWorkspace", () => {
           role: "teacher",
           content: "我想创作一个海底故事。",
           actions: [],
+          source: "ui_action",
+          retryAttempt: 2,
           createdAt: "2026-08-14T00:00:00.000Z",
         },
         {
@@ -591,6 +593,7 @@ describe("CourseStoryOutlineWorkspace", () => {
 
     expect(screen.getByRole("img", { name: "老师" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "AI 助手" })).toBeInTheDocument();
+    expect(screen.getByText("按钮操作 · 第 2 次尝试")).toBeInTheDocument();
   });
 
   test("submits teacher input to the message endpoint", async () => {
@@ -815,7 +818,8 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getAllByRole("button", { name: "重试本步" })).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "重试本步" }));
-    await waitFor(() => expect(fetchBody(fetchMock, 1)).toMatchObject({ action: "retry_operation", message: "" }));
+    await waitFor(() => expect(fetchBody(fetchMock, 1)).toMatchObject({ action: "retry_operation", message: "", triggerSource: "ui_action", triggerLabel: "重试本步" }));
+    expect(textbox).toHaveValue("");
   });
 
   test("restores the draft only when the server cannot confirm receiving the request", async () => {
@@ -1594,6 +1598,27 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.queryByRole("button", { name: "保存故事大纲" })).not.toBeInTheDocument();
     expect(screen.queryByText("最新版本")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "下一步：教学规划" })).toHaveLength(1);
+  });
+
+  test("shows non-blocking outline quality hints after rendering the result", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      course: { ...outlineState.course, englishLevel: "A2" },
+      outline: {
+        ...outlineState.outline!,
+        summary: "长".repeat(106),
+        chapters: [{
+          ...outlineState.outline!.chapters[0]!,
+          storyGoal: "长".repeat(52),
+          recommendedKnowledgePointIds: ["kp-missing-summary"],
+          knowledgePointRecommendationSummary: "",
+        }],
+      },
+    }} />);
+
+    expect(screen.getByRole("complementary", { name: "内容优化提示" })).toHaveTextContent("整体概要、第 1 章概述略长，但当前结果可以继续使用");
+    expect(screen.getByRole("complementary", { name: "内容优化提示" })).toHaveTextContent("第 1 章的知识点推荐尚不完整，不影响故事大纲使用");
+    expect(screen.getByText(/知识点也可以在教学规划中补充/)).toBeInTheDocument();
   });
 
   test("confirms the current V2 mainline without submitting or clearing the composer draft", async () => {

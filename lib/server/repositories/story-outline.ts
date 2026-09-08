@@ -54,6 +54,12 @@ type DbMessage = {
   role: "teacher" | "assistant" | "system";
   content: string;
   actions?: unknown;
+  source?: "teacher_input" | "ui_action" | "system" | "ai" | "legacy";
+  requestId?: string | null;
+  rootRequestId?: string | null;
+  action?: string | null;
+  retryAttempt?: number | null;
+  metadata?: unknown;
   createdAt: Date;
 };
 
@@ -118,6 +124,8 @@ type DbSetting = {
   operationStatus?: "running" | "succeeded" | "failed" | "result_unknown" | "superseded" | null;
   operationError?: string | null;
   operationInput?: unknown;
+  operationRootRequestId?: string | null;
+  operationRetryAttempt?: number | null;
   operationStartedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -530,6 +538,14 @@ function toMessage(message: DbMessage): CourseStoryChatMessage {
     role: message.role,
     content,
     actions: Array.isArray(message.actions) ? message.actions as CourseStoryChatAction[] : [],
+    source: message.source ?? "legacy",
+    requestId: message.requestId ?? null,
+    rootRequestId: message.rootRequestId ?? null,
+    action: message.action ?? null,
+    retryAttempt: message.retryAttempt ?? null,
+    metadata: typeof message.metadata === "object" && message.metadata !== null && !Array.isArray(message.metadata)
+      ? message.metadata as Record<string, unknown>
+      : {},
     createdAt: message.createdAt.toISOString(),
   };
 }
@@ -719,6 +735,8 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
     },
     operation: setting?.operationRequestId && (setting.operationStatus === "running" || setting.operationStatus === "succeeded" || setting.operationStatus === "failed" || setting.operationStatus === "result_unknown") && setting.operationPhase && setting.operationStartedAt ? {
       requestId: setting.operationRequestId,
+      rootRequestId: setting.operationRootRequestId ?? setting.operationRequestId,
+      retryAttempt: setting.operationRetryAttempt ?? 1,
       action: setting.operationAction ?? "story_operation",
       phase: setting.operationPhase as NonNullable<CourseStoryOutlineState["operation"]>["phase"],
       status: setting.operationStatus,
@@ -737,9 +755,29 @@ export async function getStoryOutlineState(db: StoryOutlineDb, courseId: string)
   return stateFromCourse(db, await getCourse(db, courseId));
 }
 
-async function addMessage(db: StoryOutlineDb, courseId: string, role: CourseStoryChatMessage["role"], content: string, actions: CourseStoryChatAction[] = []) {
+type StoryMessageAudit = Pick<CourseStoryChatMessage, "source" | "requestId" | "rootRequestId" | "action" | "retryAttempt" | "metadata">;
+
+async function addMessage(
+  db: StoryOutlineDb,
+  courseId: string,
+  role: CourseStoryChatMessage["role"],
+  content: string,
+  actions: CourseStoryChatAction[] = [],
+  audit: StoryMessageAudit = {},
+) {
   return db.courseStoryChatMessage.create({
-    data: { courseId, role, content, actions },
+    data: {
+      courseId,
+      role,
+      content,
+      actions,
+      source: audit.source ?? (role === "teacher" ? "ui_action" : role === "assistant" ? "ai" : "system"),
+      requestId: audit.requestId ?? null,
+      rootRequestId: audit.rootRequestId ?? null,
+      action: audit.action ?? null,
+      retryAttempt: audit.retryAttempt ?? null,
+      metadata: audit.metadata ?? {},
+    },
   });
 }
 
@@ -915,6 +953,8 @@ type OperationGuard = (db?: StoryOutlineDb) => Promise<void>;
 
 async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task: string, deps: StoryOutlineGenerationDeps, setting?: { chapterCount: number; writingProvider: StoryWritingProvider; storyComplexity: StoryComplexity }, selectedDirection?: CourseStoryDirection | null, guard?: OperationGuard) {
   const started = Date.now();
+  const operationSetting = await db.courseStorySetting.findUnique({ where: { courseId: course.id } });
+  const operationRequestId = operationSetting?.operationRequestId ?? undefined;
   try {
     const resolved = setting ?? await currentSetting(db, course);
     const context = await storyAiContext(db, course, resolved.chapterCount, selectedDirection);
@@ -933,10 +973,6 @@ async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task
       task,
       writingProvider: resolved.writingProvider,
     });
-    const allowedIds = new Set(context.selectedKnowledgePoints?.map((item) => item.id) ?? []);
-    if (allowedIds.size && outline.chapters.some((chapter) => chapter.recommendedKnowledgePointIds?.some((id) => !allowedIds.has(id)) || (chapter.recommendedKnowledgePointIds?.length && !chapter.knowledgePointRecommendationSummary?.trim()))) {
-      throw new CourseStoryOutlineValidationError("章节知识点推荐没有完整生成，请重试本次大纲。");
-    }
     const persistOutline = async (tx: StoryOutlineDb) => {
       await guard?.(tx);
       await writeOutline(tx, course, outline, resolved.writingProvider, resolved.chapterCount);
@@ -948,6 +984,7 @@ async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task
     if (db.$transaction) await db.$transaction(persistOutline);
     else await persistOutline(db);
     await logGeneration(db, {
+      requestId: operationRequestId,
       courseId: course.id,
       stage: "story_outline",
       operation: "generate_outline",
@@ -960,6 +997,7 @@ async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task
     });
   } catch (error) {
     await logGeneration(db, {
+      requestId: operationRequestId,
       courseId: course.id,
       stage: "story_outline",
       operation: "generate_outline",
@@ -1158,7 +1196,41 @@ function renderMainlineCard(card: StoryMainlineCard, coursePeople: CourseAudienc
   ].join("\n");
 }
 
-type InternalStoryMessageInput = CourseStoryMessageInput & { isRetry?: boolean; operationRevision?: number };
+type InternalStoryMessageInput = CourseStoryMessageInput & {
+  isRetry?: boolean;
+  operationRevision?: number;
+  rootRequestId?: string;
+  retryAttempt?: number;
+};
+
+function operationAudit(
+  input: InternalStoryMessageInput,
+  source: NonNullable<CourseStoryChatMessage["source"]> = input.triggerSource ?? (input.action ? "ui_action" : "teacher_input"),
+): StoryMessageAudit {
+  return {
+    source,
+    requestId: input.requestId ?? null,
+    rootRequestId: input.rootRequestId ?? input.requestId ?? null,
+    action: input.action ?? input.mode,
+    retryAttempt: input.retryAttempt ?? 1,
+    metadata: {
+      ...(input.triggerLabel ? { triggerLabel: input.triggerLabel } : {}),
+      ...(input.targetId ? { targetId: input.targetId } : {}),
+      ...(input.targetChapterOrder ? { targetChapterOrder: input.targetChapterOrder } : {}),
+    },
+  };
+}
+
+function operationDisplayName(input: Pick<InternalStoryMessageInput, "action" | "mode">) {
+  if (input.action === "confirm_direction" || input.action === "confirm_mainline" || input.action === "generate_from_reference" || input.action === "regenerate_outline") return "故事大纲";
+  if (input.action === "generate_directions") return "故事方向";
+  if (input.action === "revise_chapter") return "目标章节";
+  if (input.action === "revise_outline") return "整体大纲";
+  if (input.action === "revise_direction") return "故事方向";
+  if (input.action === "choose_reference_search" || input.action === "request_reference_search") return "参考资料";
+  if (input.action === "confirm_requirements") return "故事创作准备";
+  return "故事要求";
+}
 
 async function assertCurrentOperation(db: StoryOutlineDb, courseId: string, input: InternalStoryMessageInput) {
   if (!input.requestId || input.operationRevision === undefined) return;
@@ -1203,7 +1275,7 @@ async function executeStoryOutlineMessage(
     });
   };
   if (input.message.trim() && !input.isRetry && input.action !== "confirm_requirements") {
-    await addMessage(db, courseId, "teacher", input.message.trim());
+    await addMessage(db, courseId, "teacher", input.message.trim(), [], operationAudit(input));
   }
   const rerouteRequirementChange = async (targetScope: "direction" | "outline" | "chapter") => {
     if (!input.message.trim()) return null;
@@ -1637,20 +1709,33 @@ export async function handleStoryOutlineMessage(
   }
   if (before?.operationStatus === "running") throw new CourseStoryOutlineOperationConflictError();
 
+  const retrying = originalInput.action === "retry_operation";
+  const rootRequestId = retrying
+    ? before?.operationRootRequestId ?? before?.operationRequestId ?? requestId
+    : requestId;
+  const retryAttempt = retrying ? Math.max(2, (before?.operationRetryAttempt ?? 1) + 1) : 1;
   let input: InternalStoryMessageInput = { ...originalInput, requestId };
-  if (originalInput.action === "retry_operation") {
+  if (retrying) {
     if (before?.operationStatus !== "failed" || typeof before.operationInput !== "object" || before.operationInput === null) {
       throw new CourseStoryOutlineValidationError("当前没有可以重试的失败步骤");
     }
     if (originalInput.targetId && originalInput.targetId !== before.operationRequestId) {
       throw new CourseStoryOutlineValidationError("该失败步骤已被更新，请使用最新的重试操作");
     }
-    input = { ...(before.operationInput as CourseStoryMessageInput), requestId, isRetry: true };
+    input = {
+      ...(before.operationInput as CourseStoryMessageInput),
+      requestId,
+      isRetry: true,
+      triggerSource: "ui_action",
+      triggerLabel: originalInput.triggerLabel ?? "重试本步",
+    };
   }
   const startedAt = new Date();
   const previousRevision = before?.stateRevision ?? 0;
   const operationRevision = previousRevision + 1;
   input.operationRevision = operationRevision;
+  input.rootRequestId = rootRequestId;
+  input.retryAttempt = retryAttempt;
   const persistedInput = JSON.parse(JSON.stringify({ ...input, requestId: undefined, isRetry: undefined, operationRevision: undefined })) as CourseStoryMessageInput;
   const claimed = await db.courseStorySetting.updateMany({
     where: { courseId, stateRevision: previousRevision },
@@ -1662,6 +1747,8 @@ export async function handleStoryOutlineMessage(
       operationStatus: "running",
       operationError: null,
       operationInput: persistedInput,
+      operationRootRequestId: rootRequestId,
+      operationRetryAttempt: retryAttempt,
       operationStartedAt: startedAt,
     },
   });
@@ -1671,25 +1758,57 @@ export async function handleStoryOutlineMessage(
     throw new CourseStoryOutlineOperationConflictError("页面状态已经更新，请刷新后重试");
   }
   try {
+    await addMessage(
+      db,
+      courseId,
+      "system",
+      retrying
+        ? `重新执行${operationDisplayName(input)}（第 ${retryAttempt} 次）。`
+        : `开始处理${operationDisplayName(input)}。`,
+      [],
+      operationAudit(input, input.triggerSource ?? (input.action ? "ui_action" : "teacher_input")),
+    );
+    if (retrying) {
+      await addMessage(
+        db,
+        courseId,
+        "teacher",
+        `重新生成${operationDisplayName(input)}（第 ${retryAttempt} 次），沿用本次操作已确认的内容。`,
+        [],
+        operationAudit(input, "ui_action"),
+      );
+    }
     await executeStoryOutlineMessage(db, courseId, input, deps);
+    await addMessage(db, courseId, "system", `${operationDisplayName(input)}处理完成。`, [], operationAudit(input, "system"));
     await db.courseStorySetting.updateMany({
       where: { courseId, operationRequestId: requestId, operationStatus: "running" },
       data: { operationStatus: "succeeded", operationError: null },
     });
     return getStoryOutlineState(db, courseId);
   } catch (error) {
-    const message = publicStoryOutlineErrorMessage(error);
+    const rawMessage = publicStoryOutlineErrorMessage(error);
+    const failedPhase = operationPhase(input);
+    const existingOutline = failedPhase === "generating_outline"
+      ? await db.courseStoryOutline.findUnique({ where: { courseId } })
+      : null;
+    const message = failedPhase === "generating_outline"
+      ? existingOutline
+        ? "新版故事大纲没有完整生成，右侧仍保留上一版"
+        : "这次故事大纲没有完整生成。已保留当前故事要求和故事主线，可以直接重新生成"
+      : rawMessage;
     const updated = await db.courseStorySetting.updateMany({
       where: { courseId, operationRequestId: requestId, operationStatus: "running" },
       data: { operationStatus: "failed", operationError: message },
     });
-    const recoveryMessage = `${message}${/[。！？]$/u.test(message) ? "" : "。"}你可以重试本步，或修改要求后重新提交。`;
+    const recoveryMessage = failedPhase === "generating_outline"
+      ? `${message}${/[。！？]$/u.test(message) ? "" : "。"}`
+      : `${message}${/[。！？]$/u.test(message) ? "" : "。"}你可以重试本步。`;
     if (updated.count) await addMessage(db, courseId, "assistant", recoveryMessage, [{
       id: `retry-${requestId}`,
-      label: "重试本步",
+      label: failedPhase === "generating_outline" ? "重新生成故事大纲" : "重试本步",
       action: "retry_operation",
       targetId: requestId,
-    }]);
+    }], operationAudit(input, "ai"));
     throw error;
   }
 }
@@ -1724,6 +1843,8 @@ export async function resetStoryOutline(db: StoryOutlineDb, courseId: string) {
         operationPhase: null,
         operationError: null,
         operationInput: null,
+        operationRootRequestId: null,
+        operationRetryAttempt: 1,
         operationStartedAt: null,
       },
     });

@@ -326,6 +326,12 @@ export type CourseStoryChatMessage = {
   role: CourseStoryChatRole;
   content: string;
   actions: CourseStoryChatAction[];
+  source?: "teacher_input" | "ui_action" | "system" | "ai" | "legacy";
+  requestId?: string | null;
+  rootRequestId?: string | null;
+  action?: string | null;
+  retryAttempt?: number | null;
+  metadata?: Record<string, unknown>;
   createdAt: string;
 };
 
@@ -436,6 +442,8 @@ export type CourseStoryOutlineState = {
   coursePeople: CourseAudiencePerson[];
   operation?: {
     requestId: string;
+    rootRequestId?: string;
+    retryAttempt?: number;
     action: string;
     phase: "aligning" | "repairing_alignment_format" | "preparing_reference" | "searching_reference" | "generating_directions" | "generating_outline" | "revising";
     status: "running" | "succeeded" | "failed" | "result_unknown" | "superseded";
@@ -449,6 +457,8 @@ export type CourseStoryMessageInput = {
   message: string;
   mode: "idea" | "random" | "revise";
   action?: CourseStoryChatAction["action"];
+  triggerSource?: "teacher_input" | "ui_action";
+  triggerLabel?: string;
   targetId?: string;
   targetChapterOrder?: number;
   alignmentAnswers?: Record<string, string | string[]> | Array<{
