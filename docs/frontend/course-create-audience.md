@@ -329,6 +329,7 @@ type CoursePerson = {
 
 ## 实现状态
 
+- 2026-09-09：本轮基础信息变更确认与下游原子清理实现提交为 `8bbf852`。
 - 2026-08-27：Step 1 正式不再承担课程时长概念。遗留 `durationMinutes` 仅作旧接口 / 数据兼容，不进入新课程的方向、大纲、教学规划或正文篇幅规则；统一规则见 `docs/frontend/story-complexity-length-policy.md`。旧课程读取不改写。实现提交：`3636339`。
 
 - Grammar in Use 单册选择、目录来源展示和新数据合同：已实现，待用户验收。
