@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
+  AiProviderResultUnknownError,
   StoryOutlineIncompleteResponseError,
   StoryOutlineProviderConfigError,
   createStoryOutlineProvider,
+  textTransportTimeoutMs,
 } from "./story-outline-provider";
 
 const originalEnv = { ...process.env };
@@ -98,6 +100,27 @@ describe("createStoryOutlineProvider", () => {
     });
 
     expect(timeoutSpy).toHaveBeenCalledWith(360_000);
+    const init = (fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as
+      | (RequestInit & { dispatcher?: unknown })
+      | undefined;
+    expect(init?.dispatcher).toBeDefined();
+    expect(textTransportTimeoutMs(360_000)).toBe(390_000);
+  });
+
+  test("does not retry when response headers time out after the provider may have accepted the request", async () => {
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
+    const headersTimeout = new TypeError("fetch failed", {
+      cause: Object.assign(new Error("Headers Timeout Error"), { code: "UND_ERR_HEADERS_TIMEOUT" }),
+    });
+    const fetchMock = vi.fn().mockRejectedValue(headersTimeout);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createStoryOutlineProvider().generateOutline({
+      writingProvider: "quickrouter_gpt",
+      prompt: "生成较长的课程正文",
+    })).rejects.toBeInstanceOf(AiProviderResultUnknownError);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   test("returns provider token usage for cost diagnostics", async () => {
@@ -267,10 +290,34 @@ describe("createStoryOutlineProvider", () => {
     const fetchMock = vi.fn().mockResolvedValue(response);
     vi.stubGlobal("fetch", fetchMock);
 
+    const generation = createStoryOutlineProvider().generateOutline({
+      writingProvider: "quickrouter_gpt",
+      prompt: "生成大纲",
+    });
+
+    await expect(generation).rejects.toBeInstanceOf(AiProviderResultUnknownError);
+    await expect(generation).rejects.toThrow("故事大纲服务响应中断，生成结果未能确认，请手动重试本步");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("reports a response body timeout as an unknown result", async () => {
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
+    const bodyTimeout = Object.assign(new Error("Body Timeout Error"), {
+      code: "UND_ERR_BODY_TIMEOUT",
+    });
+    const response = {
+      ok: true,
+      status: 200,
+      text: vi.fn().mockRejectedValue(bodyTimeout),
+    } as unknown as Response;
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+
     await expect(createStoryOutlineProvider().generateOutline({
       writingProvider: "quickrouter_gpt",
       prompt: "生成大纲",
-    })).rejects.toThrow("故事大纲服务响应中断，未收到完整结果，请重试本步");
+    })).rejects.toBeInstanceOf(AiProviderResultUnknownError);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

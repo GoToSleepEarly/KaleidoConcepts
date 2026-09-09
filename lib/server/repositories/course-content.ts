@@ -7,6 +7,7 @@ import { englishWordRangesForTarget } from "@/lib/domain/story-length-policy";
 import { readingPageCount } from "@/lib/domain/teaching-plan-policy";
 import { storyContentIntentFromAlignmentDetails } from "@/lib/domain/story-content-intent";
 import { buildPromptParts, buildPromptQuestions, buildReadingTemplateRequirements, mainIdeaWordCountPolicy, type CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
+import { AiProviderResultUnknownError } from "@/lib/server/ai/story-outline-provider";
 import {
   STEP4_CONTENT_CONTRACT_VERSION,
   applyChapterTemplateRepairs,
@@ -526,13 +527,17 @@ async function finishOperation(db: CourseContentDb, courseId: string, operation:
   });
 }
 
-async function failOperation(db: CourseContentDb, courseId: string, operation: ClaimedOperation, message: string, fallbackStatus?: CourseContentStatus) {
+export function courseContentGenerationFailureStatus(error: unknown): "failed" | "result_unknown" {
+  return error instanceof AiProviderResultUnknownError ? "result_unknown" : "failed";
+}
+
+async function failOperation(db: CourseContentDb, courseId: string, operation: ClaimedOperation, message: string, fallbackStatus?: CourseContentStatus, generationStatus: "failed" | "result_unknown" = "failed") {
   try {
     await finishOperation(db, courseId, operation, {
       ...(fallbackStatus ? { status: fallbackStatus } : {}),
       phase: null,
       errorMessage: message,
-    }, { status: "failed", errorMessage: message });
+    }, { status: generationStatus, errorMessage: message });
   } catch (failure) {
     if (!(failure instanceof CourseContentSupersededError)) throw failure;
   }
@@ -713,7 +718,7 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
       await recordContentAiStructureFailure(db, courseId, operation, writingProvider, error, requirements.length);
     }
     const message = error instanceof Error ? error.message : "正文生成失败";
-    await failOperation(db, courseId, operation, message, options.regenerate ? current.status : "failed");
+    await failOperation(db, courseId, operation, message, options.regenerate ? current.status : "failed", courseContentGenerationFailureStatus(error));
     throw error;
   }
   });
@@ -783,7 +788,7 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
     throw new Error("练习生成未完成");
   } catch (error) {
     const message = error instanceof Error ? error.message : "练习生成失败";
-    await failOperation(db, courseId, operation, message, options.regenerate ? content.status : "reading_ready");
+    await failOperation(db, courseId, operation, message, options.regenerate ? content.status : "reading_ready", courseContentGenerationFailureStatus(error));
     throw error;
   }
   });
@@ -937,7 +942,7 @@ export async function modifyCourseContent(db: CourseContentDb, courseId: string,
   return getCourseContentState(db, courseId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "内容修改失败；原内容已保留";
-    await failOperation(db, courseId, operation, message, content.status);
+    await failOperation(db, courseId, operation, message, content.status, courseContentGenerationFailureStatus(error));
     throw error;
   }
   });

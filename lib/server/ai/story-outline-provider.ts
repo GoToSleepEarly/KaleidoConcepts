@@ -1,3 +1,5 @@
+import { Agent, type Dispatcher } from "undici";
+
 import type { StoryWritingProvider } from "@/lib/contracts/api";
 import { aiProviderBaseUrl, normalizeAiProviderSettings, type AiGateway, type AiProviderSettingsInput } from "@/lib/ai-gateway";
 
@@ -65,6 +67,31 @@ export class StoryOutlineProviderConfigError extends Error {
     this.name = "StoryOutlineProviderConfigError";
   }
 }
+
+export class AiProviderResultUnknownError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "AiProviderResultUnknownError";
+  }
+}
+
+const textDispatchers = new Map<number, Dispatcher>();
+const transportTimeoutMarginMs = 30_000;
+
+export function textTransportTimeoutMs(requestTimeoutMs: number) {
+  return requestTimeoutMs + transportTimeoutMarginMs;
+}
+
+function textDispatcher(requestTimeoutMs: number) {
+  const transportTimeout = textTransportTimeoutMs(requestTimeoutMs);
+  const existing = textDispatchers.get(transportTimeout);
+  if (existing) return existing;
+  const dispatcher = new Agent({ headersTimeout: transportTimeout, bodyTimeout: transportTimeout });
+  textDispatchers.set(transportTimeout, dispatcher);
+  return dispatcher;
+}
+
+type UndiciRequestInit = RequestInit & { dispatcher: Dispatcher };
 
 function configFromEnvironment(input: AiProviderSettingsInput): ProviderConfig {
   const settings = normalizeAiProviderSettings(input);
@@ -169,6 +196,13 @@ function canRetryBeforeConnection(error: unknown) {
   return code !== null && RETRYABLE_CONNECT_CODES.has(code);
 }
 
+function isAmbiguousTimeout(error: unknown) {
+  const code = transportErrorCode(error);
+  return code === "UND_ERR_HEADERS_TIMEOUT"
+    || code === "UND_ERR_BODY_TIMEOUT"
+    || error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+}
+
 export function createStoryOutlineProvider(config?: ProviderConfig, selectedSettings: AiProviderSettingsInput = "quickrouter") {
   function resolvedConfig() {
     if (config) return { baseUrl: "https://api.quickrouter.ai", gateway: "quickrouter" as const, ...config };
@@ -190,7 +224,8 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
           },
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(timeoutMs),
-        });
+          dispatcher: textDispatcher(timeoutMs),
+        } as UndiciRequestInit);
         break;
       } catch (error) {
         const retrying = attempt === 1 && canRetryBeforeConnection(error);
@@ -203,11 +238,8 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
           error,
         });
         if (retrying) continue;
-        if (
-          error instanceof Error &&
-          (error.name === "TimeoutError" || error.name === "AbortError")
-        ) {
-          throw new Error("故事大纲生成超时，请稍后重试", { cause: error });
+        if (isAmbiguousTimeout(error)) {
+          throw new AiProviderResultUnknownError("故事大纲服务响应超时，生成结果未能确认，请手动重试本步", { cause: error });
         }
         throw new Error("故事大纲服务连接失败，请稍后重试", { cause: error });
       }
@@ -230,8 +262,9 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     } catch (error) {
       devAiLog({ operation, phase: "error", context: { gateway: activeConfig.gateway }, status: response.status, latencyMs: Date.now() - startedAt, error });
       const code = transportErrorCode(error);
-      if (code && INTERRUPTED_RESPONSE_CODES.has(code)) {
-        throw new Error("故事大纲服务响应中断，未收到完整结果，请重试本步", { cause: error });
+      if (isAmbiguousTimeout(error) || code && INTERRUPTED_RESPONSE_CODES.has(code)) {
+        const reason = isAmbiguousTimeout(error) ? "响应超时" : "响应中断";
+        throw new AiProviderResultUnknownError(`故事大纲服务${reason}，生成结果未能确认，请手动重试本步`, { cause: error });
       }
       throw new Error("故事大纲服务返回异常", { cause: error });
     }
@@ -277,6 +310,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     let response: Response | null = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
+        const timeoutMs = timeoutOverride ?? activeConfig.timeoutMs;
         response = await fetch(`${activeConfig.baseUrl}/chat/completions`, {
           method: "POST",
           headers: {
@@ -285,15 +319,16 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
             "Content-Type": "application/json",
           },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(timeoutOverride ?? activeConfig.timeoutMs),
-        });
+          signal: AbortSignal.timeout(timeoutMs),
+          dispatcher: textDispatcher(timeoutMs),
+        } as UndiciRequestInit);
         break;
       } catch (error) {
         const retrying = attempt === 1 && canRetryBeforeConnection(error);
         devAiLog({ operation, phase: "error", context: { gateway: "deepseek" }, latencyMs: Date.now() - startedAt, payload: { attempt, retrying }, error });
         if (retrying) continue;
-        if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-          throw new Error("故事大纲生成超时，请稍后重试", { cause: error });
+        if (isAmbiguousTimeout(error)) {
+          throw new AiProviderResultUnknownError("故事大纲服务响应超时，生成结果未能确认，请手动重试本步", { cause: error });
         }
         throw new Error("故事大纲服务连接失败，请稍后重试", { cause: error });
       }
@@ -308,8 +343,9 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     } catch (error) {
       devAiLog({ operation, phase: "error", context: { gateway: "deepseek" }, status: response.status, latencyMs: Date.now() - startedAt, error });
       const code = transportErrorCode(error);
-      if (code && INTERRUPTED_RESPONSE_CODES.has(code)) {
-        throw new Error("故事大纲服务响应中断，未收到完整结果，请重试本步", { cause: error });
+      if (isAmbiguousTimeout(error) || code && INTERRUPTED_RESPONSE_CODES.has(code)) {
+        const reason = isAmbiguousTimeout(error) ? "响应超时" : "响应中断";
+        throw new AiProviderResultUnknownError(`故事大纲服务${reason}，生成结果未能确认，请手动重试本步`, { cause: error });
       }
       throw new Error("故事大纲服务返回异常", { cause: error });
     }

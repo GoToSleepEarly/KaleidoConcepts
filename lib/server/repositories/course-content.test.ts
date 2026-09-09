@@ -2,12 +2,18 @@ import { describe, expect, test, vi } from "vitest";
 
 import { readingCandidateEnvelopeSchema } from "@/lib/server/ai/course-content-template";
 import type { CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
-import { CourseContentConflictError, courseContentSemanticRepairAttempts, exerciseQuestionIssues, generateCourseExercises, generateCourseReading, modifyCourseContent, recordContentAiStructureFailure, recoverStaleCourseContentOperation, requiresExerciseAi, resetCourseContent, type CourseContentDb } from "@/lib/server/repositories/course-content";
+import { AiProviderResultUnknownError } from "@/lib/server/ai/story-outline-provider";
+import { CourseContentConflictError, courseContentGenerationFailureStatus, courseContentSemanticRepairAttempts, exerciseQuestionIssues, generateCourseExercises, generateCourseReading, modifyCourseContent, recordContentAiStructureFailure, recoverStaleCourseContentOperation, requiresExerciseAi, resetCourseContent, type CourseContentDb } from "@/lib/server/repositories/course-content";
 import { AiJsonResponseError, parseAiJson } from "@/lib/server/validation/course-content";
 
 describe("course content repository", () => {
   test("allows at most one semantic repair per generation stage", () => {
     expect(courseContentSemanticRepairAttempts).toBe(1);
+  });
+
+  test("marks an ambiguous provider timeout as an unknown result instead of a safe failure", () => {
+    expect(courseContentGenerationFailureStatus(new AiProviderResultUnknownError("响应超时"))).toBe("result_unknown");
+    expect(courseContentGenerationFailureStatus(new Error("校验失败"))).toBe("failed");
   });
 
   test("persists candidate schema diagnostics with the operation request id", async () => {

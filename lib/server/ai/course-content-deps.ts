@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { CourseContentChapter, CourseContentPart, CourseGrammarQuestion, EnglishLevel, StoryContentIntent, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
 import { buildCleanParagraphText, englishWordCount } from "@/lib/domain/course-content";
 import { defaultStoryComplexity, englishWordRangesForTarget, storyLengthPolicy } from "@/lib/domain/story-length-policy";
-import { createStoryOutlineProvider } from "@/lib/server/ai/story-outline-provider";
+import { AiProviderResultUnknownError, createStoryOutlineProvider } from "@/lib/server/ai/story-outline-provider";
 import type { AiProviderSettingsInput } from "@/lib/ai-gateway";
 import { devAiLog } from "@/lib/server/ai/dev-ai-log";
 import {
@@ -434,6 +434,7 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
     }
     catch (error) {
       const message = error instanceof Error ? error.message.replaceAll("故事大纲", "课程内容") : "课程内容生成失败";
+      if (error instanceof AiProviderResultUnknownError) throw new AiProviderResultUnknownError(message, { cause: error });
       throw new Error(message, { cause: error });
     }
   };
