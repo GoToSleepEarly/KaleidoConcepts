@@ -286,7 +286,7 @@ QuickRouter 图片继续支持其专属 `gpt-image-2-c` 备用模型。Crazyrout
 
 实现状态：已实现账户菜单设置、登录同步、数据库字段、服务端路由选择和 GPT 文本/研究/图片 provider 分流；生产部署前执行 `pnpm prisma:deploy`。
 
-2026-09-09：修复本地完整环境每次启动执行 seed 时覆盖已有账号中转站偏好的问题；已有账号 seed 更新不再包含三项可变 AI 设置。高级设置弹窗新增数据库读取 Loading 和可恢复失败态，读取完成前不再展示组件默认选项。验证通过全量 89 个测试文件 / 730 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`。
+2026-09-09：修复本地完整环境每次启动执行 seed 时覆盖已有账号中转站偏好的问题；已有账号 seed 更新不再包含三项可变 AI 设置。高级设置弹窗新增数据库读取 Loading 和可恢复失败态，读取完成前不再展示组件默认选项。验证通过全量 89 个测试文件 / 730 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`。实现提交：`48369d7`。
 
 2026-09-08：身份 Cookie 的 `Secure` 属性增加显式环境开关 `AUTH_COOKIE_SECURE`，登录与退出共用同一判断。未配置时保持原行为（生产启用、开发关闭）；仅在临时 HTTP 公网入口显式设为 `false`，启用 HTTPS 后恢复为 `true`。验证通过全量 88 个文件 / 717 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm build`、乱码扫描和 `git diff --check`。实现提交：`3a66caf`。
 
