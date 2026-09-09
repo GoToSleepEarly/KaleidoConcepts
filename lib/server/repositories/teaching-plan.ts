@@ -65,6 +65,15 @@ type DbTeachingPlan = {
   updatedAt: Date;
 };
 
+type DbLessonContent = {
+  courseId: string;
+  status?: string;
+  contentVersion?: number;
+  chapters?: unknown;
+  mainIdea?: unknown;
+  homework?: unknown;
+};
+
 type Delegate<T> = {
   findUnique?: (query: Record<string, unknown>) => Promise<T | null>;
   findMany?: (query: Record<string, unknown>) => Promise<T[]>;
@@ -79,7 +88,7 @@ export type TeachingPlanDb = {
   courseTeachingPlan: Required<Pick<Delegate<DbTeachingPlan>, "findUnique" | "upsert" | "update">>;
   knowledgePoint?: GrammarContextDb["knowledgePoint"];
   presetOption?: GrammarContextDb["presetOption"];
-  courseLessonContent?: Pick<Delegate<{ courseId: string }>, "findUnique" | "deleteMany">;
+  courseLessonContent?: Pick<Delegate<DbLessonContent>, "findUnique" | "deleteMany">;
   courseContentGeneration?: Pick<Delegate<{ courseId: string }>, "deleteMany">;
   courseContentChatMessage?: Pick<Delegate<{ courseId: string }>, "deleteMany">;
   $transaction?: <T>(callback: (tx: TeachingPlanDb) => Promise<T>) => Promise<T>;
@@ -447,6 +456,15 @@ export async function saveTeachingPlan(db: TeachingPlanDb, courseId: string, pla
 
 export type TeachingPlanDownstreamAction = "check" | "preserve";
 
+function hasGeneratedCourseContent(content: DbLessonContent | null) {
+  if (!content) return false;
+  return content.status !== undefined && content.status !== "empty"
+    || typeof content.contentVersion === "number" && content.contentVersion > 0
+    || Array.isArray(content.chapters) && content.chapters.length > 0
+    || content.mainIdea != null
+    || content.homework != null;
+}
+
 export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, downstreamAction: TeachingPlanDownstreamAction, inputPlan?: TeachingPlan) {
   const confirm = async (tx: TeachingPlanDb) => {
     let course = await getCourse(tx, courseId);
@@ -458,7 +476,7 @@ export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, 
     const outlineChapterIds = toOutlineState(outline).chapters.map((chapter) => chapter.id);
 
     const content = tx.courseLessonContent?.findUnique ? await tx.courseLessonContent.findUnique({ where: { courseId } }) : null;
-    const hasDownstream = Boolean(content) || !["teaching_plan", "content"].includes(course.currentStage);
+    const hasDownstream = hasGeneratedCourseContent(content) || !["teaching_plan", "content"].includes(course.currentStage);
     if (hasDownstream && downstreamAction === "check") throw new CourseTeachingPlanConflictError();
 
     if (inputPlan) {

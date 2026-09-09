@@ -217,7 +217,7 @@ describe("course content repository", () => {
 
   test("keeps the Prisma transaction method bound while resetting Step 4", async () => {
     const now = new Date("2026-08-10T00:00:00.000Z");
-    const course = { id: "course-1", title: "Hidden Door", durationMinutes: 45, currentStage: "content", englishLevel: "B1", knowledgePointIds: ["kp-1"] };
+    let course = { id: "course-1", title: "Hidden Door", durationMinutes: 45, currentStage: "content", staleFromStage: "content" as string | null, lifecycleStatus: "published", englishLevel: "B1", knowledgePointIds: ["kp-1"] };
     const emptyContent = {
       id: "content-2", courseId: "course-1", status: "empty", phase: null, writingProvider: "quickrouter_gpt",
       sourceRevision: "r2", contentVersion: 0, chapters: [], mainIdea: null, homework: null, exercisesStale: false,
@@ -228,7 +228,13 @@ describe("course content repository", () => {
     const deleteContent = vi.fn(async () => ({ count: 1 }));
     const db = {
       _engineConfig: "available",
-      course: { findUnique: vi.fn(async () => course), update: vi.fn(async () => course) },
+      course: {
+        findUnique: vi.fn(async () => course),
+        update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          course = { ...course, ...data } as typeof course;
+          return course;
+        }),
+      },
       courseStoryOutline: { findUnique: vi.fn(async () => ({ id: "outline-1", title: "Hidden Door", chapters: [{ id: "chapter-1", order: 1, title: "The Map", storyGoal: "Find it", keyEvents: ["Find it"], recommendedKnowledgePointIds: ["kp-1"] }] })) },
       courseTeachingPlan: { findUnique: vi.fn(async () => ({ id: "plan-1", courseId: "course-1", status: "confirmed", englishLevel: "B1", chapters: [{ outlineChapterId: "chapter-1", targetWordCount: 90, paragraphCount: 1, knowledgePointIds: ["kp-1"], readingExerciseMode: "complete", readingExercises: { enabled: true, grammar: { optionCloze: 1, wordForm: 0 }, vocabulary: { chineseHint: 0 } }, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { targetWordCount: false, paragraphCount: false, knowledgePointIds: false, readingExerciseMode: false, readingExercises: false, chapterPractice: false } }], afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { knowledgePointIds: false, practice: false } }, updatedAt: now, confirmedAt: now })) },
       presetOption: { findMany: vi.fn(async () => [{ id: "kp-1", kind: "grammar", label: "Past Simple", category: "时态", archivedAt: null }]) },
@@ -247,6 +253,13 @@ describe("course content repository", () => {
     expect(deleteMessages).toHaveBeenCalled();
     expect(deleteGenerations).toHaveBeenCalled();
     expect(deleteContent).toHaveBeenCalled();
+    expect(result.course.staleFromStage).toBeNull();
+    expect(course).toMatchObject({ staleFromStage: null, lifecycleStatus: "draft" });
+
+    course = { ...course, currentStage: "preview", staleFromStage: null };
+    const resetWithLaterStages = await resetCourseContent(db as unknown as CourseContentDb, "course-1");
+
+    expect(resetWithLaterStages.course.staleFromStage).toBe("visual_resources");
   });
 
   test("generates chapters and Main Idea together, then uses the one shared repair budget for an invalid Main Idea", async () => {

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { CourseContentChapter, CourseContentPart, CourseContentPhase, CourseContentState, CourseContentStatus, CourseGrammarQuestion, GrammarExercisePlan, StoryContentIntent, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
 import { buildCleanParagraphText, collectVocabularyMatching, courseContentQuestionPageSize, englishWordCount, paginateBalanced, stableShuffle, validateGrammarCoverage, validateParagraphParts } from "@/lib/domain/course-content";
-import { furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
+import { courseStageIndex, earliestCourseStage, furthestCourseStage, nextCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
 import { englishWordRangesForTarget } from "@/lib/domain/story-length-policy";
 import { readingPageCount } from "@/lib/domain/teaching-plan-policy";
 import { storyContentIntentFromAlignmentDetails } from "@/lib/domain/story-content-intent";
@@ -356,6 +356,14 @@ export async function updateCourseContentProvider(db: CourseContentDb, courseId:
 
 export async function resetCourseContent(db: CourseContentDb, courseId: string) {
   const state = await prerequisite(db, courseId);
+  if (state.course.staleFromStage && courseStageIndex(state.course.staleFromStage) < courseStageIndex("content")) {
+    throw new CourseContentPrerequisiteError("前序内容仍是旧版本，请先处理对应阶段");
+  }
+  const clearedCurrentStaleStage = staleStageAfterConfirming(state.course.staleFromStage, "content", state.course.currentStage);
+  const nextStage = nextCourseStage("content")!;
+  const nextStaleStage = courseStageIndex(state.course.currentStage) > courseStageIndex("content")
+    ? earliestCourseStage(clearedCurrentStaleStage, nextStage)
+    : clearedCurrentStaleStage;
   const reset = async (tx: CourseContentDb) => {
     if (!tx.courseContentChatMessage.deleteMany || !tx.courseContentGeneration.deleteMany || !tx.courseLessonContent.deleteMany) {
       throw new Error("当前数据库不支持重新开始文案与练习");
@@ -363,7 +371,14 @@ export async function resetCourseContent(db: CourseContentDb, courseId: string) 
     await tx.courseContentChatMessage.deleteMany({ where: { courseId } });
     await tx.courseContentGeneration.deleteMany({ where: { courseId } });
     await tx.courseLessonContent.deleteMany({ where: { courseId } });
-    await tx.course.update({ where: { id: courseId }, data: { currentStage: state.course.currentStage } });
+    await tx.course.update({
+      where: { id: courseId },
+      data: {
+        currentStage: state.course.currentStage,
+        staleFromStage: nextStaleStage,
+        lifecycleStatus: "draft",
+      },
+    });
     return getCourseContentState(tx, courseId);
   };
   return db.$transaction ? db.$transaction((tx) => reset(tx as CourseContentDb)) : reset(db);

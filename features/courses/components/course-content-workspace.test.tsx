@@ -767,10 +767,12 @@ describe("CourseContentWorkspace", () => {
       showModal(this: HTMLDialogElement) { this.setAttribute("open", ""); },
       close(this: HTMLDialogElement) { this.removeAttribute("open"); },
     });
-    const emptyState = { ...initialState, status: "empty" as const, chapters: [], mainIdea: null, homework: null, messages: [], contentVersion: 0 };
+    const staleState = { ...initialState, course: { ...initialState.course, staleFromStage: "content" as const } };
+    const emptyState = { ...staleState, course: { ...staleState.course, staleFromStage: null }, status: "empty" as const, chapters: [], mainIdea: null, homework: null, messages: [], contentVersion: 0 };
     const fetchMock = vi.fn(async () => Response.json(emptyState));
     vi.stubGlobal("fetch", fetchMock);
-    render(<CourseContentWorkspace initialState={initialState} />);
+    render(<CourseContentWorkspace initialState={staleState} />);
+    expect(screen.getByText("当前内容仍是旧版本。")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重新开始" }));
     expect(screen.getByRole("heading", { name: "重新开始" })).toBeInTheDocument();
     expect(screen.getByText(/将删除当前文案与练习并重新开始/)).toBeInTheDocument();
@@ -780,5 +782,6 @@ describe("CourseContentWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "删除文案与练习并重新开始" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/courses/course-1/content/reset", { method: "POST" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "开始生成" })).toBeInTheDocument());
+    expect(screen.queryByText("当前内容仍是旧版本。")).not.toBeInTheDocument();
   });
 });

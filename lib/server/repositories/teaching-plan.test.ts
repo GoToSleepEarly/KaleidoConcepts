@@ -111,7 +111,14 @@ function createDb() {
       })),
     },
     courseLessonContent: {
-      findUnique: vi.fn(async () => state.contentExists ? { courseId: "course-1" } : null),
+      findUnique: vi.fn(async () => state.contentExists ? {
+        courseId: "course-1",
+        status: "ready",
+        contentVersion: 1,
+        chapters: [{ id: "chapter-1" }],
+        mainIdea: { id: "main-idea" },
+        homework: null,
+      } : null),
       deleteMany: vi.fn(async () => { state.contentExists = false; return { count: 1 }; }),
     },
     courseContentGeneration: { deleteMany: vi.fn(async () => ({ count: 1 })) },
@@ -311,6 +318,25 @@ describe("teaching plan repository", () => {
     expect(result.course.staleFromStage).toBe("content");
     expect(db.courseContentChatMessage?.deleteMany).not.toHaveBeenCalled();
     expect(db.courseContentGeneration?.deleteMany).not.toHaveBeenCalled();
+  });
+
+  test("does not mark an untouched empty Step 4 shell stale after the plan changes", async () => {
+    const db = createDb();
+    const state = await getTeachingPlanState(db, "course-1");
+    await saveTeachingPlan(db, "course-1", completePlan(state.plan));
+    db.state.course = { ...db.state.course, currentStage: "content" };
+    db.courseLessonContent!.findUnique = vi.fn(async () => ({
+      courseId: "course-1",
+      status: "empty",
+      contentVersion: 0,
+      chapters: [],
+      mainIdea: null,
+      homework: null,
+    }));
+
+    const result = await confirmTeachingPlan(db, "course-1", "check");
+
+    expect(result.course.staleFromStage).toBeNull();
   });
 
   test("confirms the new plan while preserving existing downstream content when chosen", async () => {
