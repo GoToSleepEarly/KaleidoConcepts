@@ -4,12 +4,12 @@ import type { CourseContentChapter, CourseContentParagraph, CourseContentPart, S
 import { buildCleanParagraphText, englishWordCount, stableShuffle, validateParagraphParts } from "@/lib/domain/course-content";
 import { englishWordRangesForTarget } from "@/lib/domain/story-length-policy";
 
-export const STEP4_CONTENT_CONTRACT_VERSION = "step4.content.v4" as const;
-export const STEP4_READING_CANDIDATE_VERSION = "step4.reading-candidate.v1" as const;
+export const STEP4_CONTENT_CONTRACT_VERSION = "step4.content.v5" as const;
+export const STEP4_READING_CANDIDATE_VERSION = "step4.reading-candidate.v2" as const;
 
 const requiredText = z.string().trim().min(1);
 const optionSlotSchema = z.object({
-  id: z.string().regex(/^OC\d+$/),
+  id: z.string().regex(/^GR\d+$/),
   kind: z.literal("optionCloze"),
   knowledgePointKey: requiredText,
   answer: requiredText,
@@ -17,7 +17,7 @@ const optionSlotSchema = z.object({
 }).strict();
 const candidateOptionSlotSchema = optionSlotSchema.omit({ distractors: true });
 const wordFormSlotSchema = z.object({
-  id: z.string().regex(/^WF\d+$/),
+  id: z.string().regex(/^GR\d+$/),
   kind: z.literal("wordForm"),
   knowledgePointKey: requiredText,
   answer: requiredText,
@@ -102,8 +102,8 @@ export type ChapterTemplateRequirements = {
   narrativeTense?: "past";
   paragraphCount: number;
   targetWordCount: number;
-  optionClozeCount: number;
-  wordFormCount: number;
+  grammarCount: number;
+  enabledGrammarTypes: Array<"optionCloze" | "wordForm">;
   vocabularyCount: number;
   grammarPoints: ChapterGrammarPoint[];
 };
@@ -113,6 +113,7 @@ export type ChapterTemplateIssueCode =
   | "paragraph_word_count"
   | "slot_set"
   | "marker_set"
+  | "exercise_type"
   | "knowledge_point"
   | "knowledge_point_coverage"
   | "part_structure"
@@ -174,14 +175,13 @@ export type ReadingTemplatePromptContext = {
 const markerPattern = /\{\{([A-Z]+\d+)\}\}/g;
 const PARAGRAPH_WORD_COUNT_TOLERANCE = 3;
 
-function numberedIds(prefix: "OC" | "WF" | "VOC", count: number) {
+function numberedIds(prefix: "GR" | "VOC", count: number) {
   return Array.from({ length: count }, (_, index) => `${prefix}${index + 1}`);
 }
 
 export function requiredChapterSlotIds(requirements: ChapterTemplateRequirements) {
   return [
-    ...numberedIds("OC", requirements.optionClozeCount),
-    ...numberedIds("WF", requirements.wordFormCount),
+    ...numberedIds("GR", requirements.grammarCount),
     ...numberedIds("VOC", requirements.vocabularyCount),
   ];
 }
@@ -226,6 +226,9 @@ export function compileChapterTemplate(generated: GeneratedChapterTemplate, requ
   const pointsByKey = new Map(requirements.grammarPoints.map((point) => [point.key, point]));
   const grammarSlots = generated.slots.filter((slot): slot is Extract<GeneratedContentSlot, { kind: "optionCloze" | "wordForm" }> => slot.kind !== "vocabulary");
   for (const slot of grammarSlots) {
+    if (!requirements.enabledGrammarTypes.includes(slot.kind)) {
+      issues.push({ code: "exercise_type", target: slot.id, message: `${slot.id} 使用了未选择的题型` });
+    }
     if (!pointsByKey.has(slot.knowledgePointKey)) {
       issues.push({ code: "knowledge_point", target: slot.id, message: `${slot.id} 使用了未允许的知识点` });
     }
@@ -349,6 +352,8 @@ export function repairFullyResolvesChapter(previous: ChapterTemplateIssue[], can
 export function decompileChapterTemplate(chapter: CourseContentChapter, knowledgePointKeyById: Map<string, string>): GeneratedChapterTemplate | null {
   const slots: GeneratedContentSlot[] = [];
   const paragraphs: Array<{ template: string }> = [];
+  let grammarIndex = 0;
+  let vocabularyIndex = 0;
   for (const paragraph of chapter.paragraphs) {
     let template = "";
     for (const part of paragraph.parts) {
@@ -356,9 +361,7 @@ export function decompileChapterTemplate(chapter: CourseContentChapter, knowledg
         template += part.text;
         continue;
       }
-      const match = part.id.match(/-(OC\d+|WF\d+|VOC\d+)$/);
-      if (!match) return null;
-      const id = match[1];
+      const id = part.type === "vocabulary" ? `VOC${++vocabularyIndex}` : `GR${++grammarIndex}`;
       template += `{{${id}}}`;
       if (part.type === "vocabulary") {
         slots.push({ id, kind: "vocabulary", answer: part.answer, canonicalForm: part.canonicalForm, meaningZh: part.meaningZh });
@@ -399,10 +402,14 @@ function promptChapterSpec(chapter: ReadingTemplatePromptContext["chapters"][num
     chapterWordBudget: { target: chapter.requirements.targetWordCount, preferredRange: wordRanges.generationRange, acceptedRange: wordRanges.validationRange },
     paragraphBudgets: paragraphWordBudgets(chapter.requirements.targetWordCount, chapter.requirements.paragraphCount),
     requiredSlotIds: requiredChapterSlotIds(chapter.requirements),
+    enabledGrammarTypes: chapter.requirements.enabledGrammarTypes,
     grammarPoints,
     ...(chapter.knowledgePointUsagePlan ? { knowledgePointUsagePlan: chapter.knowledgePointUsagePlan } : {}),
   };
 }
+
+const readingTypeAllocationRule = "先让各知识点获得的题量尽量接近；在此基础上，在 enabledGrammarTypes 中尽量均匀分配题型。多个题型都适配同一知识点时，优先使用当前数量较少的题型；只有知识点与某题型明显不适配时才允许偏斜，不要求机械平均。";
+const readingToVerbRule = "若目标是 to + verb：enabledGrammarTypes 包含 wordForm 时优先使用 wordForm，answer 必须是完整的 'to verb'；仅允许 optionCloze 时，把完整的 'to verb' 作为 answer。不得生成未选择题型，也不得把 to 写在 marker 外只考 verb。";
 
 export function buildReadingTemplatePrompt(context: ReadingTemplatePromptContext) {
   const payload = {
@@ -424,16 +431,16 @@ export function buildReadingTemplatePrompt(context: ReadingTemplatePromptContext
     "contentIntent 是已确认的最终内容目标：storyMode='faithful' 时不得改写原作关键人物、事件因果或结局；classroomPresence='observer' 时课堂人物只能见证，不能推动或改变原作事件。概念故事必须让正文自然呈现每个 learningTarget.expectedUnderstanding；事实故事不得超出 factualFocus 和 sourceRequirements；required 必须保留，excluded 不得出现。contentIntent 不存在时只依据已确认大纲，不自行推测教学理论。",
     "grammarSource 给出本课程统一使用的 Grammar in Use 书名、版本和官方难度；各章 grammarPoints 罗列本章知识点及准确官方 Unit。用这些目录信息和已有英语知识理解实际语法含义；Unit 只是来源，不增加覆盖数量，也不要复述教材内容或自行补案例。",
     "englishLevel 与 cefrWritingProfile 控制表达难度，storyComplexityProfile 控制叙事结构。每段用具体行动、必要对话或概念结果推进故事并保持连续；禁止用大纲复述、规则说明、检查过程或重复空话凑词数，不得为篇幅新增冲突、反转、支线或万能机制。",
-    "返回 {candidateVersion,chapters:[chapter],mainIdea:{text}}；chapter={outlineChapterId,paragraphs:[{template}],slots:[slot]}，template 使用 {{OC1}}/{{WF1}}/{{VOC1}}。",
+    "返回 {candidateVersion,chapters:[chapter],mainIdea:{text}}；chapter={outlineChapterId,paragraphs:[{template}],slots:[slot]}，template 使用 {{GR1}}/{{GR2}}/{{VOC1}}。",
     "slot 统一放入同一数组：{id,kind:'optionCloze',knowledgePointKey,answer}；{id,kind:'wordForm',knowledgePointKey,answer,cue}；{id,kind:'vocabulary',answer,canonicalForm,meaningZh}。禁止返回 distractors 或 options；给词题只用 cue，不返回 baseForm。",
     "先写出正确、连贯的完整 clean text，再从自然存在的结构设置槽位；禁止先定答案再倒推句子。narrativeTense 是旁白基准，其他时态须有句意、时间提示、事件先后或对话支持；知识点不自然时改写局部语境。",
-    "requiredSlotIds 每个都在 template 与 slots 中各出现一次；knowledgePointKey 仅来自本章 grammarPoints 且全部覆盖。每个语法空格的 answer 选择本身必须由绑定知识点决定；构成目标语法的功能词、助动词或情态词必须包含在 answer 内，不得预先写在 marker 外。若目标是 to + verb，必须用 {{WF}} 且 answer='to verb'，不得用 to {{WF}} 且 answer='verb'。仅在完整句其他位置出现知识点、而空格只考查无关词形或词义，不算覆盖。cue 是给词提示。",
+    `requiredSlotIds 每个都在 template 与 slots 中各出现一次；GR 槽位的 kind 只能来自 enabledGrammarTypes。knowledgePointKey 仅来自本章 grammarPoints 且全部覆盖。${readingTypeAllocationRule}每个语法空格的 answer 选择本身必须由绑定知识点决定；构成目标语法的功能词、助动词或情态词必须包含在 answer 内，不得预先写在 marker 外。${readingToVerbRule}仅在完整句其他位置出现知识点、而空格只考查无关词形或词义，不算覆盖。cue 是给词提示。`,
     "词汇槽位选择适合当前 CEFR、可脱离本句复习的实词或常用词组；canonicalForm 用词典原形，meaningZh 对应当前语境。",
     "每章优先落入 chapterWordBudget.preferredRange，且必须落入 chapterWordBudget.acceptedRange；每段同时优先落入 paragraphBudgets.preferredRange，且必须落入 paragraphBudgets.acceptedRange（所有上下界均为硬验收）；题目答案计入词数。人物、信息、物品和章节结果必须连续。",
     "Main Idea 只返回 {text}，概括全故事且遵守 mainIdea 的 preferredRange 和 acceptedRange，不含题目或标题。",
     "返回前回填全部答案并逐句通读，再检查章节 ID、段落数、固定槽位、知识点覆盖和词数；先修正全部错误，不输出检查过程。示例只说明字段连接方式，禁止照抄内容或数量。",
     "<formatExample>",
-    JSON.stringify({ candidateVersion: STEP4_READING_CANDIDATE_VERSION, chapters: [{ outlineChapterId: "example-id", paragraphs: [{ template: "Mia {{OC1}} ready and must {{WF1}} the {{VOC1}}." }], slots: [{ id: "OC1", kind: "optionCloze", knowledgePointKey: "EXAMPLE_KEY", answer: "is" }, { id: "WF1", kind: "wordForm", knowledgePointKey: "EXAMPLE_KEY", answer: "carry", cue: "carry" }, { id: "VOC1", kind: "vocabulary", answer: "map", canonicalForm: "map", meaningZh: "地图" }] }], mainIdea: { text: "Mia follows a plan." } }),
+    JSON.stringify({ candidateVersion: STEP4_READING_CANDIDATE_VERSION, chapters: [{ outlineChapterId: "example-id", paragraphs: [{ template: "Mia {{GR1}} ready and must {{GR2}} the {{VOC1}}." }], slots: [{ id: "GR1", kind: "optionCloze", knowledgePointKey: "EXAMPLE_KEY", answer: "is" }, { id: "GR2", kind: "wordForm", knowledgePointKey: "EXAMPLE_KEY", answer: "carry", cue: "carry" }, { id: "VOC1", kind: "vocabulary", answer: "map", canonicalForm: "map", meaningZh: "地图" }] }], mainIdea: { text: "Mia follows a plan." } }),
     "</formatExample>",
     "<context>",
     JSON.stringify(payload),
@@ -451,14 +458,15 @@ export function buildReadingTemplateFinalizationPrompt(candidateOutput: unknown,
       acceptedWordRange: spec.chapterWordBudget.acceptedRange,
       paragraphAcceptedRanges: spec.paragraphBudgets.map((budget) => budget.acceptedRange),
       requiredSlotIds: spec.requiredSlotIds,
+      enabledGrammarTypes: spec.enabledGrammarTypes,
       grammarPoints: spec.grammarPoints.map((point) => ({ key: point.key, label: point.label, units: point.units })),
     };
   });
   return [
     "你是英语教案的最终审校编辑。完整审核 candidate 中的正文、Main Idea 和每一道嵌入题；只返回严格 JSON，不要说明或 Markdown。英语正确性是最高验收门槛。",
     "第一步审核纯正文：把每个 marker 替换为对应 answer，逐句通读全文，包括不含 marker 的句子；语法、时态与体、叙事基准时态、主谓一致、单复数、代词指代、助动词、介词、语序、事件先后和段落衔接必须全部正确。任何位置有错，都返回该段完整 paragraphPatch。",
-    "第二步审核题目：候选位置、answer、cue 均可修改；空格处的选择本身必须真实考查绑定 grammarPoint。构成目标语法的功能词、助动词或情态词必须包含在 answer 内，不得预先泄露在 marker 外；若目标是 to + verb，必须用 {{WF}} 且 answer='to verb'，不得用 to {{WF}} 且 answer='verb'。optionCloze 返回两个标准、完整且拼写正确的 distractors；逐项回填后只有 answer 能同时满足当前语法、时间线和语义，否则改写局部上下文提供决定性线索。wordForm 不能只在句子其他位置体现知识点。vocabulary 三个字段须一致，answer 不含连字符。",
-    "保持章节 ID、段落数、requiredSlotIds、题型题量、知识点白名单与覆盖以及 accepted word ranges；只修错误所需的局部文字，保留候选事实、人物行动、因果、物品去向和结局，不增加新事实或支线。Main Idea 也必须英语正确并准确概括全文。",
+    `第二步审核题目：候选位置、answer、cue 和 GR 槽位的 kind 均可修改，但 kind 只能来自该章 enabledGrammarTypes；空格处的选择本身必须真实考查绑定 grammarPoint。${readingTypeAllocationRule}构成目标语法的功能词、助动词或情态词必须包含在 answer 内，不得预先泄露在 marker 外；${readingToVerbRule}optionCloze 返回两个标准、完整且拼写正确的 distractors；逐项回填后只有 answer 能同时满足当前语法、时间线和语义，否则改写局部上下文提供决定性线索。wordForm 不能只在句子其他位置体现知识点。vocabulary 三个字段须一致，answer 不含连字符。`,
+    "保持章节 ID、段落数、requiredSlotIds、题型白名单、语法与词汇总题量、知识点白名单与覆盖以及 accepted word ranges；只修错误所需的局部文字，保留候选事实、人物行动、因果、物品去向和结局，不增加新事实或支线。Main Idea 也必须英语正确并准确概括全文。",
     "返回 {contractVersion,chapters:[{outlineChapterId,paragraphPatches,slots}],mainIdea?}。paragraphPatches 只列需要修改的段落，元素为 {paragraphIndex,template}，索引从 0 开始；无修改返回 []。slots 必须返回本章全部最终 slot：option={id,kind:'optionCloze',knowledgePointKey,answer,distractors:[两个]}，wordForm={id,kind:'wordForm',knowledgePointKey,answer,cue}，vocabulary={id,kind:'vocabulary',answer,canonicalForm,meaningZh}。Main Idea 无需修改时省略 mainIdea，需要修改时返回完整 {text}。",
     "输出前再次用最终 slots 回填候选正文与所有 paragraphPatches，确认纯正文和题目两轮审核均通过；不要输出审核过程。",
     "<reviewContext>",
@@ -492,7 +500,7 @@ export function buildReadingTemplateRepairPrompt(targets: Array<{
     "每个修复必须一次消除该章全部 issues；保留故事事实、未失败段落和未失败槽位。若无法保证完全修复，也必须只返回目标范围，禁止扩大修改。",
     `最小共享上下文：${JSON.stringify({ storyTitle: context.storyTitle, storySummary: context.storySummary, ...(mainIdeaTarget ? { storyArc: context.chapters.map(({ id, title, summary }) => ({ id, title, summary })) } : {}), contentIntent: context.contentIntent, englishLevel: context.englishLevel, cefrWritingProfile: context.cefrWritingProfile, storyComplexity: context.storyComplexity, storyComplexityProfile: context.storyComplexityProfile, people: context.people, grammarSource: context.grammarSource })}。`,
     "英语正确性是最高优先级：修复后的答案回填句必须在语法、时态、主谓一致、单复数、代词、助动词、介词、语序和时间逻辑上正确。每个语法空格的 answer 选择本身必须由绑定知识点决定；仅完整句其他位置出现知识点不算覆盖。分别回填每个 distractor，只要任一项在当前语法、时间线和语义中也成立，就先改写局部上下文使 answer 成为唯一正确答案。不得为了题量、知识点覆盖、字数或故事表达保留错误英语。",
-    "只修目标问题，不得借修复增加冲突、反转、支线或改变事实。knowledgePointKey 只能来自 spec.grammarPoints，全部知识点至少覆盖一次；requiredSlotIds 必须在模板和 slots 中各恰好出现一次。",
+    `只修目标问题，不得借修复增加冲突、反转、支线或改变事实。knowledgePointKey 只能来自 spec.grammarPoints，全部知识点至少覆盖一次；requiredSlotIds 必须在模板和 slots 中各恰好出现一次。${readingTypeAllocationRule}${readingToVerbRule}`,
     ...(mainIdeaTarget ? ["mainIdea 只返回 {text}，依据共享故事事实概括全故事并解决 mainIdeaTarget 的全部问题，不修改正文。"] : []),
     "<repairTargets>",
     JSON.stringify({ contractVersion: STEP4_CONTENT_CONTRACT_VERSION, mainIdeaTarget, mainIdeaPolicy: mainIdeaTarget ? context.mainIdea : undefined, targets: targets.map((target) => {
@@ -508,6 +516,7 @@ export function buildReadingTemplateRepairPrompt(targets: Array<{
           chapterWordBudget: { target: target.requirements.targetWordCount, preferredRange: englishWordRangesForTarget(target.requirements.targetWordCount).generationRange, acceptedRange: englishWordRangesForTarget(target.requirements.targetWordCount).validationRange },
           paragraphBudgets: paragraphWordBudgets(target.requirements.targetWordCount, target.requirements.paragraphCount),
           requiredSlotIds: requiredChapterSlotIds(target.requirements),
+          enabledGrammarTypes: target.requirements.enabledGrammarTypes,
           grammarPoints: target.requirements.grammarPoints.map(({ key, label, category, unitStart, unitEnd, sourceUnits }) => ({ key, label, category, unitStart, unitEnd, units: sourceUnits })),
         },
         previousChapter: located && located.index > 0 ? adjacentSummary(context.chapters[located.index - 1]) : undefined,

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { generatedExercisesSchema, generatedQuestionSchema, generatedReadingBundleSchema, parseAiJson } from "@/lib/server/validation/course-content";
+import { readingCandidateEnvelopeSchema } from "@/lib/server/ai/course-content-template";
+import { AiJsonResponseError, generatedExercisesSchema, generatedQuestionSchema, generatedReadingBundleSchema, parseAiJson } from "@/lib/server/validation/course-content";
 
 describe("course content AI schema", () => {
   test("requires chapters and Main Idea in the same initial response while discarding redundant generated titles", () => {
@@ -76,5 +77,27 @@ describe("course content AI schema", () => {
   test("extracts one complete JSON object from harmless surrounding prose locally", () => {
     const text = 'Here is the result:\n{"chapters":[],"homeworkGrammar":[]}\nDone.';
     expect(parseAiJson(text, generatedExercisesSchema, "failed")).toEqual({ chapters: [], homeworkGrammar: [] });
+  });
+
+  test("preserves actionable schema paths and a bounded raw response when AI JSON has the wrong shape", () => {
+    const raw = JSON.stringify({ candidateVersion: "wrong", chapters: [{ outlineChapterId: "chapter-1" }], mainIdea: { text: "" } });
+
+    try {
+      parseAiJson(raw, readingCandidateEnvelopeSchema, "正文候选结构无效");
+      throw new Error("expected parsing to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AiJsonResponseError);
+      expect((error as AiJsonResponseError).diagnostics).toMatchObject({
+        failureType: "schema_mismatch",
+        rawResponsePreview: raw,
+        rawResponseLength: raw.length,
+        rawResponseTruncated: false,
+      });
+      expect((error as AiJsonResponseError).diagnostics.schemaIssues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: "candidateVersion" }),
+        expect.objectContaining({ path: "chapters.0.paragraphs" }),
+        expect.objectContaining({ path: "mainIdea.text" }),
+      ]));
+    }
   });
 });

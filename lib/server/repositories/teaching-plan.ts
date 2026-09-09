@@ -1,12 +1,23 @@
 import type {
   CourseStage,
   EnglishLevel,
+  GrammarExerciseType,
   StoryComplexity,
   TeachingPlan,
   TeachingPlanState,
 } from "@/lib/contracts/api";
 import { buildTeachingPlanDraft, TeachingPlanValidationError, validateTeachingPlanForConfirm } from "@/lib/server/validation/teaching-plan";
-import { defaultPracticeConfig, defaultReadingExerciseConfig, MAX_READING_PAGE_COUNT, MIN_READING_PAGE_COUNT, recommendedReadingPageCount } from "@/lib/domain/teaching-plan-policy";
+import {
+  ALL_GRAMMAR_EXERCISE_TYPES,
+  defaultPracticeConfig,
+  defaultReadingExerciseConfig,
+  DEFAULT_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
+  MAX_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
+  MAX_READING_PAGE_COUNT,
+  MIN_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
+  MIN_READING_PAGE_COUNT,
+  recommendedReadingPageCount,
+} from "@/lib/domain/teaching-plan-policy";
 import { defaultStoryComplexity, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import { earliestCourseStage, furthestCourseStage, nextCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
 import { resolveGrammarBookKnowledgePoints, resolveGrammarKnowledgePoints, type GrammarContextDb } from "@/lib/server/repositories/grammar-context";
@@ -138,31 +149,45 @@ function numericField(value: unknown, key: string, fallback: number) {
   return isRecord(value) && typeof value[key] === "number" ? value[key] as number : fallback;
 }
 
+function grammarTypes(value: unknown, legacyCounts?: Record<string, unknown>): GrammarExerciseType[] {
+  if (Array.isArray(value)) {
+    return ALL_GRAMMAR_EXERCISE_TYPES.filter((type) => value.includes(type));
+  }
+  return ALL_GRAMMAR_EXERCISE_TYPES.filter((type) => typeof legacyCounts?.[type] === "number" && Number(legacyCounts[type]) > 0);
+}
+
+function normalizeGrammarPlan(value: unknown, fallback: TeachingPlan["chapters"][number]["readingExercises"]["grammar"]) {
+  const record = isRecord(value) ? value : {};
+  if (Array.isArray(record.enabledTypes) && typeof record.total === "number") {
+    return { enabledTypes: grammarTypes(record.enabledTypes), total: record.total };
+  }
+  const enabledTypes = grammarTypes(undefined, record);
+  const legacyTotal = ALL_GRAMMAR_EXERCISE_TYPES.reduce((total, type) => total + numericField(record, type, 0), 0);
+  const hasLegacyCounts = ALL_GRAMMAR_EXERCISE_TYPES.some((type) => typeof record[type] === "number");
+  return hasLegacyCounts ? { enabledTypes, total: legacyTotal } : fallback;
+}
+
 function normalizeReadingExerciseConfig(value: unknown): TeachingPlan["chapters"][number]["readingExercises"] {
   const record = isRecord(value) ? value : {};
   const defaults = defaultReadingExerciseConfig();
-  const grammar = isRecord(record.grammar) ? record.grammar : {};
+  const grammar = normalizeGrammarPlan(record.grammar, defaults.grammar);
   const vocabulary = isRecord(record.vocabulary) ? record.vocabulary : {};
+  const legacyVocabularyTotal = numericField(vocabulary, "chineseHint", defaults.vocabulary.total);
   return {
     enabled: true,
-    grammar: {
-      optionCloze: numericField(grammar, "optionCloze", defaults.grammar.optionCloze),
-      wordForm: numericField(grammar, "wordForm", defaults.grammar.wordForm),
-    },
-    vocabulary: { chineseHint: numericField(vocabulary, "chineseHint", defaults.vocabulary.chineseHint) },
+    grammar,
+    vocabulary: Array.isArray(vocabulary.enabledTypes) && typeof vocabulary.total === "number"
+      ? { enabledTypes: vocabulary.enabledTypes.includes("chineseHint") ? ["chineseHint"] : [], total: vocabulary.total }
+      : { enabledTypes: legacyVocabularyTotal > 0 ? ["chineseHint"] : [], total: legacyVocabularyTotal },
   };
 }
 
 function normalizePracticeConfig(value: unknown): TeachingPlan["chapters"][number]["chapterPractice"] {
   const record = isRecord(value) ? value : {};
   const defaults = defaultPracticeConfig(false);
-  const grammar = isRecord(record.grammar) ? record.grammar : {};
   return {
     enabled: typeof record.enabled === "boolean" ? record.enabled : false,
-    grammar: {
-      optionCloze: numericField(grammar, "optionCloze", defaults.grammar.optionCloze),
-      wordForm: numericField(grammar, "wordForm", defaults.grammar.wordForm),
-    },
+    grammar: normalizeGrammarPlan(record.grammar, defaults.grammar),
   };
 }
 
@@ -200,13 +225,33 @@ function normalizeAfterClassPractice(value: unknown): TeachingPlan["afterClassPr
   const record = isRecord(value) ? value : {};
   const touched = isRecord(record.touched) ? record.touched : {};
   const manuallyConfigured = touched.practice === true;
-  const practice = manuallyConfigured ? normalizePracticeConfig(record.practice) : defaultPracticeConfig(false);
+  const practiceRecord = isRecord(record.practice) ? record.practice : {};
+  const legacyPractice = normalizePracticeConfig(practiceRecord);
+  const knowledgePointIds = Array.isArray(record.knowledgePointIds) ? record.knowledgePointIds.filter((id): id is string => typeof id === "string") : [];
+  const legacyPerPoint = knowledgePointIds.length ? Math.ceil(legacyPractice.grammar.total / knowledgePointIds.length) : DEFAULT_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT;
+  const practice = manuallyConfigured ? {
+    enabled: practiceRecord.enabled === true,
+    enabledTypes: Array.isArray(practiceRecord.enabledTypes)
+      ? grammarTypes(practiceRecord.enabledTypes)
+      : legacyPractice.grammar.enabledTypes,
+    questionsPerKnowledgePoint: Math.min(
+      MAX_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
+      Math.max(
+        MIN_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
+        typeof practiceRecord.questionsPerKnowledgePoint === "number" ? practiceRecord.questionsPerKnowledgePoint : legacyPerPoint,
+      ),
+    ),
+  } : {
+    enabled: false,
+    enabledTypes: [...ALL_GRAMMAR_EXERCISE_TYPES],
+    questionsPerKnowledgePoint: DEFAULT_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
+  };
   const vocabularyReviewEnabled = manuallyConfigured && record.enabled === true && (typeof record.vocabularyReviewEnabled === "boolean" ? record.vocabularyReviewEnabled : true);
   return {
     ...record,
     enabled: vocabularyReviewEnabled || practice.enabled,
     vocabularyReviewEnabled,
-    knowledgePointIds: Array.isArray(record.knowledgePointIds) ? record.knowledgePointIds.filter((id): id is string => typeof id === "string") : [],
+    knowledgePointIds,
     practice,
     touched: { knowledgePointIds: touched.knowledgePointIds === true, practice: manuallyConfigured },
   } as TeachingPlan["afterClassPractice"];

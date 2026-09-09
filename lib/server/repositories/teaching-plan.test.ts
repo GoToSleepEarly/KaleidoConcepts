@@ -28,13 +28,13 @@ function completePlan(plan: TeachingPlan): TeachingPlan {
       ...chapter,
       targetWordCount: 120,
       knowledgePointIds: [`grammar-${index + 1}`],
-      chapterPractice: { enabled: true, grammar: { optionCloze: 4, wordForm: 0 } },
+      chapterPractice: { enabled: true, grammar: { enabledTypes: ["optionCloze"], total: 4 } },
     })),
     afterClassPractice: {
       enabled: true,
       vocabularyReviewEnabled: true,
       knowledgePointIds: ["grammar-1", "grammar-2"],
-      practice: { enabled: true, grammar: { optionCloze: 8, wordForm: 0 } },
+      practice: { enabled: true, enabledTypes: ["optionCloze", "wordForm"], questionsPerKnowledgePoint: 5 },
       touched: { knowledgePointIds: false, practice: true },
     },
   };
@@ -134,7 +134,7 @@ describe("teaching plan repository", () => {
     expect(state.plan.status).toBe("draft");
     expect(state.plan.mainIdeaTargetWordCount).toBe(120);
     expect(state.plan.englishLevel).toBe("B1");
-    expect(state.plan.chapters[0]).toMatchObject({ targetWordCount: 130, knowledgePointIds: ["grammar-1"], readingExerciseMode: "interactive", chapterPractice: { enabled: false, grammar: { optionCloze: 5, wordForm: 5 } } });
+    expect(state.plan.chapters[0]).toMatchObject({ targetWordCount: 130, knowledgePointIds: ["grammar-1"], readingExerciseMode: "interactive", chapterPractice: { enabled: false, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 10 } } });
     expect(state.plan.chapters.map((chapter) => chapter.outlineChapterId)).toEqual(["outline-chapter-1", "outline-chapter-2"]);
     expect(state.plan.afterClassPractice.knowledgePointIds).toEqual(["grammar-1", "grammar-2"]);
     expect(state.outline.chapters[0]).toMatchObject({
@@ -280,9 +280,9 @@ describe("teaching plan repository", () => {
 
     expect(state.plan.chapters[0].readingExerciseMode).toBe("interactive");
     expect(state.plan.chapters[0].targetWordCount).toBe(90);
-    expect(state.plan.chapters[0].readingExercises).toEqual({ enabled: true, grammar: { optionCloze: 2, wordForm: 3 }, vocabulary: { chineseHint: 3 } });
-    expect(state.plan.chapters[0].chapterPractice).toEqual({ enabled: true, grammar: { optionCloze: 5, wordForm: 3 } });
-    expect(state.plan.afterClassPractice.practice).toEqual({ enabled: true, grammar: { optionCloze: 3, wordForm: 5 } });
+    expect(state.plan.chapters[0].readingExercises).toEqual({ enabled: true, grammar: { enabledTypes: ["optionCloze"], total: 2 }, vocabulary: { enabledTypes: ["chineseHint"], total: 3 } });
+    expect(state.plan.chapters[0].chapterPractice).toEqual({ enabled: true, grammar: { enabledTypes: ["wordForm"], total: 3 } });
+    expect(state.plan.afterClassPractice.practice).toEqual({ enabled: true, enabledTypes: ["optionCloze"], questionsPerKnowledgePoint: 5 });
   });
 
   test("confirms a complete plan and advances to content", async () => {

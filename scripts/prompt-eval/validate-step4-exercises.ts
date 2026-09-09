@@ -41,7 +41,11 @@ async function main() {
   const homework = homeworkPlan.practice.enabled
     ? (() => {
         const questions = generated.homeworkGrammar.map((question, index) => normalize(question, "homework", index));
-        const issues = exerciseQuestionIssues(input.knowledgePoints, homeworkPlan.knowledgePointIds, homeworkPlan.practice.grammar, questions);
+        const issues = exerciseQuestionIssues(input.knowledgePoints, homeworkPlan.knowledgePointIds, {
+          enabledTypes: homeworkPlan.practice.enabledTypes,
+          total: homeworkPlan.knowledgePointIds.length * homeworkPlan.practice.questionsPerKnowledgePoint,
+          questionsPerKnowledgePoint: homeworkPlan.practice.questionsPerKnowledgePoint,
+        }, questions);
         return { pass: issues.length === 0, issues, questionCount: questions.length };
       })()
     : { pass: generated.homeworkGrammar.length === 0, issues: generated.homeworkGrammar.length ? ["课后语法练习应为空"] : [], questionCount: generated.homeworkGrammar.length };

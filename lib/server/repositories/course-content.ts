@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import type { CourseContentChapter, CourseContentPart, CourseContentPhase, CourseContentState, CourseContentStatus, CourseGrammarQuestion, StoryContentIntent, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
+import type { CourseContentChapter, CourseContentPart, CourseContentPhase, CourseContentState, CourseContentStatus, CourseGrammarQuestion, GrammarExercisePlan, StoryContentIntent, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
 import { buildCleanParagraphText, collectVocabularyMatching, courseContentQuestionPageSize, englishWordCount, paginateBalanced, stableShuffle, validateGrammarCoverage, validateParagraphParts } from "@/lib/domain/course-content";
 import { furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
 import { englishWordRangesForTarget } from "@/lib/domain/story-length-policy";
@@ -18,7 +18,7 @@ import {
   type GeneratedChapterTemplate,
 } from "@/lib/server/ai/course-content-template";
 import { getTeachingPlanState, type TeachingPlanDb } from "@/lib/server/repositories/teaching-plan";
-import type { GeneratedModification, GeneratedQuestion } from "@/lib/server/validation/course-content";
+import { AiJsonResponseError, type GeneratedModification, type GeneratedQuestion } from "@/lib/server/validation/course-content";
 
 type ContentRecord = {
   id: string; courseId: string; status: CourseContentStatus; phase: CourseContentPhase; writingProvider: StoryWritingProvider;
@@ -80,9 +80,8 @@ function sourceRevision(input: TeachingPlanState & { contentIntent?: StoryConten
 const wordCount = englishWordCount;
 
 export function requiresExerciseAi(plan: TeachingPlanState["plan"]) {
-  const hasQuestions = (grammar: { optionCloze: number; wordForm: number }) => grammar.optionCloze > 0 || grammar.wordForm > 0;
-  return plan.chapters.some((chapter) => chapter.chapterPractice.enabled && hasQuestions(chapter.chapterPractice.grammar))
-    || (plan.afterClassPractice.practice.enabled && hasQuestions(plan.afterClassPractice.practice.grammar));
+  return plan.chapters.some((chapter) => chapter.chapterPractice.enabled && chapter.chapterPractice.grammar.total > 0)
+    || (plan.afterClassPractice.practice.enabled && plan.afterClassPractice.knowledgePointIds.length > 0);
 }
 
 function locallyAssembledExercises(state: TeachingPlanState, chapters: CourseContentChapter[]) {
@@ -175,11 +174,10 @@ function validateChapter(state: TeachingPlanState, chapter: CourseContentChapter
   const vocabulary = parts.filter((part) => part.type === "vocabulary");
   const missing = validateGrammarCoverage(plan.knowledgePointIds, grammar);
   if (missing.length) issues.push(`正文语法题未覆盖知识点：${knowledgePointLabels(state.knowledgePoints, missing).join("、")}`);
-  const optionCount = grammar.filter((item) => item.exerciseType === "optionCloze").length;
-  const wordFormCount = grammar.filter((item) => item.exerciseType === "wordForm").length;
-  if (optionCount !== plan.readingExercises.grammar.optionCloze) issues.push(`选项填空数量应为 ${plan.readingExercises.grammar.optionCloze}，实际 ${optionCount}`);
-  if (wordFormCount !== plan.readingExercises.grammar.wordForm) issues.push(`给词变形数量应为 ${plan.readingExercises.grammar.wordForm}，实际 ${wordFormCount}`);
-  if (vocabulary.length !== plan.readingExercises.vocabulary.chineseHint) issues.push(`词汇题数量应为 ${plan.readingExercises.vocabulary.chineseHint}，实际 ${vocabulary.length}`);
+  if (grammar.length !== plan.readingExercises.grammar.total) issues.push(`语法题总数应为 ${plan.readingExercises.grammar.total}，实际 ${grammar.length}`);
+  const disallowedTypes = grammar.filter((item) => !plan.readingExercises.grammar.enabledTypes.includes(item.exerciseType));
+  if (disallowedTypes.length) issues.push(`${disallowedTypes.length} 道语法题使用了未选择的题型`);
+  if (vocabulary.length !== plan.readingExercises.vocabulary.total) issues.push(`词汇题总数应为 ${plan.readingExercises.vocabulary.total}，实际 ${vocabulary.length}`);
   const actualWords = wordCount(chapter.paragraphs.map(buildCleanParagraphText).join(" "));
   const [minimumWords, maximumWords] = englishWordRangesForTarget(chapter.targetWordCount).validationRange;
   if (actualWords < minimumWords || actualWords > maximumWords) issues.push(`正文词数目标 ${chapter.targetWordCount}，实际 ${actualWords}`);
@@ -197,16 +195,22 @@ function normalizeQuestion(raw: GeneratedQuestion, prefix: string, index: number
 export function exerciseQuestionIssues(
   knowledgePoints: Array<{ id: string; label: string }>,
   requiredIds: string[],
-  expected: { optionCloze: number; wordForm: number },
+  expected: GrammarExercisePlan & { questionsPerKnowledgePoint?: number },
   questions: CourseGrammarQuestion[],
 ) {
   const issues: string[] = [];
   const missing = validateGrammarCoverage(requiredIds, questions);
   if (missing.length) issues.push(`未覆盖知识点：${knowledgePointLabels(knowledgePoints, missing).join("、")}`);
-  const labels = { optionCloze: "选项填空", wordForm: "给词变形" } as const;
-  for (const type of ["optionCloze", "wordForm"] as const) {
-    const actual = questions.filter((question) => question.type === type).length;
-    if (actual !== expected[type]) issues.push(`${labels[type]}数量应为 ${expected[type]}，实际 ${actual}`);
+  if (questions.length !== expected.total) issues.push(`语法题总数应为 ${expected.total}，实际 ${questions.length}`);
+  const disallowedTypes = questions.filter((question) => !expected.enabledTypes.includes(question.type));
+  if (disallowedTypes.length) issues.push(`${disallowedTypes.length} 道题使用了未选择的题型`);
+  if (expected.questionsPerKnowledgePoint !== undefined) {
+    for (const id of requiredIds) {
+      const actual = questions.filter((question) => question.knowledgePointId === id).length;
+      if (actual !== expected.questionsPerKnowledgePoint) {
+        issues.push(`${knowledgePointLabels(knowledgePoints, [id])[0] ?? id} 应有 ${expected.questionsPerKnowledgePoint} 题，实际 ${actual}`);
+      }
+    }
   }
   const invalidOptions = questions.filter((question) => question.type === "optionCloze" && (question.options?.length !== 3 || new Set(question.options.map((option) => option.trim().toLocaleLowerCase())).size !== 3 || !question.options.includes(question.answer))).length;
   if (invalidOptions) issues.push(`${invalidOptions} 道选项填空的选项结构无效`);
@@ -543,6 +547,38 @@ async function recordContentAiUsage(
   } }).catch(() => undefined);
 }
 
+export async function recordContentAiStructureFailure(
+  db: CourseContentDb,
+  courseId: string,
+  operation: Pick<ClaimedOperation, "id" | "requestId">,
+  writingProvider: StoryWritingProvider,
+  error: AiJsonResponseError,
+  targetCount: number,
+) {
+  if (!db.aiGenerationLog?.create) return;
+  const callType = error.operation === "content_finalize_reading_questions_v3"
+    ? "final"
+    : error.operation === "content_repair_reading_v2"
+      ? "repair"
+      : "candidate";
+  await db.aiGenerationLog.create({ data: {
+    requestId: `${operation.id}:${operation.requestId}:step4-reading:${callType}:structure-failure`,
+    courseId,
+    stage: "content",
+    operation: `reading_v2_${callType}`,
+    status: "failed",
+    writingProvider,
+    inputSnapshot: {
+      contractVersion: STEP4_CONTENT_CONTRACT_VERSION,
+      targetCount,
+      aiOperation: error.operation ?? null,
+    },
+    outputSnapshot: error.diagnostics,
+    errorMessage: error.message,
+    ...(typeof error.latencyMs === "number" ? { latencyMs: error.latencyMs } : {}),
+  } }).catch(() => undefined);
+}
+
 export async function generateCourseReading(db: CourseContentDb, courseId: string, idempotencyKey: string, deps: CourseContentGenerationDeps, options: { regenerate?: boolean; writingProvider?: StoryWritingProvider } = {}) {
   const state = await prerequisite(db, courseId);
   const current = await ensureContent(db, state);
@@ -551,9 +587,9 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
   const revision = options.regenerate ? `${baseRevision}:regenerate:${current.contentVersion + 1}` : baseRevision;
   const operation = await claim(db, courseId, revision, "reading", idempotencyKey, { status: "generating_reading", phase: "generating_chapters", sourceRevision: baseRevision, writingProvider });
   if (!operation.claimed) return getCourseContentState(db, courseId);
+  const requirements = buildReadingTemplateRequirements(state);
   return withLease(db, operation.id, async () => {
   try {
-    const requirements = buildReadingTemplateRequirements(state);
     const requirementById = new Map(requirements.map((requirement) => [requirement.outlineChapterId, requirement]));
     const reusableChapters = !options.regenerate && current.status === "failed" && Array.isArray(current.chapters) && current.chapters.length
       ? structuredClone(current.chapters as CourseContentChapter[])
@@ -561,7 +597,9 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
     const reusableMainIdea = !options.regenerate && current.status === "failed" && current.mainIdea
       ? structuredClone(current.mainIdea as { title: string; text: string })
       : null;
-    const generatedReading = reusableChapters ? null : await deps.generateReading(state, writingProvider);
+    const generatedReading = reusableChapters ? null : await deps.generateReading(state, writingProvider, async () => {
+      await updateOwnedContent(db, courseId, operation, { phase: "validating_chapters" });
+    });
     await updateOwnedContent(db, courseId, operation, { phase: "validating_chapters" });
     let chapterResults = reusableChapters
       ? reusableChapters.map((chapter) => {
@@ -656,6 +694,9 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
     await finishOperation(db, courseId, operation, { status: needsExerciseAi ? "reading_ready" : "ready", phase: null, chapters: localExercises.chapters, mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle }, homework: localExercises.homework, exercisesStale: false, contentVersion: { increment: 1 }, errorMessage: null }, { status: "succeeded" });
     return getCourseContentState(db, courseId);
   } catch (error) {
+    if (error instanceof AiJsonResponseError) {
+      await recordContentAiStructureFailure(db, courseId, operation, writingProvider, error, requirements.length);
+    }
     const message = error instanceof Error ? error.message : "正文生成失败";
     await failOperation(db, courseId, operation, message, options.regenerate ? current.status : "failed");
     throw error;
@@ -701,7 +742,11 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
       });
       const grammar = homeworkPlan.practice.enabled ? generated.homeworkGrammar.map((question, index) => normalizeQuestion(question, "homework", index, keys)) : [];
       if (homeworkPlan.practice.enabled) {
-        const issues = exerciseQuestionIssues(state.knowledgePoints, homeworkPlan.knowledgePointIds, homeworkPlan.practice.grammar, grammar);
+        const issues = exerciseQuestionIssues(state.knowledgePoints, homeworkPlan.knowledgePointIds, {
+          enabledTypes: homeworkPlan.practice.enabledTypes,
+          total: homeworkPlan.knowledgePointIds.length * homeworkPlan.practice.questionsPerKnowledgePoint,
+          questionsPerKnowledgePoint: homeworkPlan.practice.questionsPerKnowledgePoint,
+        }, grammar);
         if (issues.length) failedTargets.push({ id: "homework", label: "课后练习", issues });
       }
       if (!failedTargets.length) {
@@ -793,7 +838,7 @@ export async function modifyCourseContent(db: CourseContentDb, courseId: string,
   if (input.targetType === "chapter" && chapter) {
     target = { outlineChapterId: chapter.outlineChapterId, paragraphs: chapter.paragraphs.map((paragraph) => ({ parts: buildPromptParts(state, paragraph.parts) })) };
     const plan = state.plan.chapters.find((item) => item.outlineChapterId === chapter.outlineChapterId)!;
-    constraints = { targetWordCount: plan.targetWordCount, paragraphCount: plan.paragraphCount, grammarPoints: promptPoints(state, plan.knowledgePointIds), exerciseCounts: { ...plan.readingExercises.grammar, vocabulary: plan.readingExercises.vocabulary.chineseHint } };
+    constraints = { targetWordCount: plan.targetWordCount, paragraphCount: plan.paragraphCount, grammarPoints: promptPoints(state, plan.knowledgePointIds), exercisePlan: { grammar: plan.readingExercises.grammar, vocabulary: plan.readingExercises.vocabulary } };
     relatedContext = { chapterTitle: chapter.title, storySummary: state.outline.summary, surroundingContext: state.outline.chapters.map(({ id, order, title, summary }) => ({ id, order, title, summary })) };
   }
   else if (input.targetType === "paragraph" && chapter) {
@@ -814,11 +859,11 @@ export async function modifyCourseContent(db: CourseContentDb, courseId: string,
     const currentPage = exercisePage(chapter.chapterPractice, pageTarget.type, pageTarget.page);
     target = currentPage ? buildPromptQuestions(state, currentPage) : null;
     const plan = state.plan.chapters.find((item) => item.outlineChapterId === chapter.outlineChapterId)!;
-    constraints = { counts: plan.chapterPractice.grammar, pageType: pageTarget.type, pageSize: Array.isArray(target) ? target.length : 0, grammarPoints: promptPoints(state, plan.knowledgePointIds), preserveKnowledgePointPerQuestion: true };
+    constraints = { exercisePlan: plan.chapterPractice.grammar, pageType: pageTarget.type, pageSize: Array.isArray(target) ? target.length : 0, grammarPoints: promptPoints(state, plan.knowledgePointIds), preserveKnowledgePointPerQuestion: true };
     relatedContext = { chapterText: chapter.paragraphs.map(buildCleanParagraphText).join(" ") };
   }
   else if (input.targetType === "main_idea") { const policy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? 120); target = content.mainIdea && typeof content.mainIdea === "object" ? { text: Reflect.get(content.mainIdea, "text") } : null; constraints = { wordCount: policy.acceptedRange, targetWordCount: policy.targetWordCount, pureReading: true }; }
-  else if (pageTarget) { const grammar = (content.homework as CourseContentState["homework"])?.grammar ?? []; const currentPage = exercisePage(grammar, pageTarget.type, pageTarget.page); target = currentPage ? buildPromptQuestions(state, currentPage) : null; constraints = { counts: state.plan.afterClassPractice.practice.grammar, pageType: pageTarget.type, pageSize: currentPage?.length ?? 0, grammarPoints: promptPoints(state, state.plan.afterClassPractice.knowledgePointIds), preserveKnowledgePointPerQuestion: true }; relatedContext = { englishLevel: state.course.englishLevel }; }
+  else if (pageTarget) { const grammar = (content.homework as CourseContentState["homework"])?.grammar ?? []; const currentPage = exercisePage(grammar, pageTarget.type, pageTarget.page); target = currentPage ? buildPromptQuestions(state, currentPage) : null; constraints = { exercisePlan: state.plan.afterClassPractice.practice, pageType: pageTarget.type, pageSize: currentPage?.length ?? 0, grammarPoints: promptPoints(state, state.plan.afterClassPractice.knowledgePointIds), preserveKnowledgePointPerQuestion: true }; relatedContext = { englishLevel: state.course.englishLevel }; }
   if (input.targetType === "main_idea") relatedContext = { cleanChapters: chapters.map((item) => ({ id: item.outlineChapterId, title: item.title, cleanText: item.paragraphs.map(buildCleanParagraphText).join(" ") })) };
   if (!target) throw new CourseContentPrerequisiteError("未找到要修改的内容区域");
 
@@ -858,7 +903,12 @@ export async function modifyCourseContent(db: CourseContentDb, courseId: string,
     const replacements = result.questions.map((question, index) => normalizeQuestion(question, `homework-page-${pageTarget.page}`, index, pointKeyMap(state)));
     if (replacements.length !== currentPage.length || replacements.some((question, index) => question.type !== currentPage[index].type || question.knowledgePointId !== currentPage[index].knowledgePointId)) throw new Error("课后练习分页修改必须保留原题型、题量和知识点映射");
     const grammar = replaceExercisePage(homework.grammar, currentPage, replacements);
-    const issues = exerciseQuestionIssues(state.knowledgePoints, state.plan.afterClassPractice.knowledgePointIds, state.plan.afterClassPractice.practice.grammar, grammar);
+    const homeworkPractice = state.plan.afterClassPractice.practice;
+    const issues = exerciseQuestionIssues(state.knowledgePoints, state.plan.afterClassPractice.knowledgePointIds, {
+      enabledTypes: homeworkPractice.enabledTypes,
+      total: state.plan.afterClassPractice.knowledgePointIds.length * homeworkPractice.questionsPerKnowledgePoint,
+      questionsPerKnowledgePoint: homeworkPractice.questionsPerKnowledgePoint,
+    }, grammar);
     if (issues.length) throw new Error(`课后练习修改未通过校验：${issues.join("；")}`);
     content.homework = { ...homework, grammar };
   } else throw new Error("修改结果缺少目标内容，原内容已保留");

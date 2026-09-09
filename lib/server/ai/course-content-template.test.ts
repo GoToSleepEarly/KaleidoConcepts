@@ -21,8 +21,8 @@ const requirements: ChapterTemplateRequirements = {
   narrativeTense: "past",
   paragraphCount: 2,
   targetWordCount: 120,
-  optionClozeCount: 1,
-  wordFormCount: 1,
+  grammarCount: 2,
+  enabledGrammarTypes: ["optionCloze", "wordForm"],
   vocabularyCount: 1,
   grammarPoints: [
     { key: "KP1", label: "Future with Will", unitStart: 19, unitEnd: 19, sourceUnits: [{ unitNumber: 19, officialTitle: "Present tenses (I am doing / I do) for the future" }] },
@@ -41,12 +41,12 @@ function validChapter(): GeneratedChapterTemplate {
   return {
     outlineChapterId: "chapter-1",
     paragraphs: [
-      { template: "Mia said, “Tomorrow, I {{OC1}} open the old gate with my team.” They checked the map, carried the box, and waited beside the quiet wall until sunrise. Everyone knew the careful plan and stayed calm. Before they moved, Mia read each note aloud, while her friends compared every symbol with the drawing on the wall all day." },
-      { template: "The students must {{WF1}} together when the bell rings. They follow {{VOC1}}, protect the people nearby, and bring every missing sound back to the city before the final celebration begins. At the last corner, they hear a soft song, choose the safest path, and tell the waiting families that the danger has finally passed." },
+      { template: "Mia said, “Tomorrow, I {{GR1}} open the old gate with my team.” They checked the map, carried the box, and waited beside the quiet wall until sunrise. Everyone knew the careful plan and stayed calm. Before they moved, Mia read each note aloud, while her friends compared every symbol with the drawing on the wall all day." },
+      { template: "The students must {{GR2}} together when the bell rings. They follow {{VOC1}}, protect the people nearby, and bring every missing sound back to the city before the final celebration begins. At the last corner, they hear a soft song, choose the safest path, and tell the waiting families that the danger has finally passed." },
     ],
     slots: [
-      { id: "OC1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "will", distractors: ["did", "has"] },
-      { id: "WF1", kind: "wordForm", knowledgePointKey: "KP2", answer: "stay", cue: "stay" },
+      { id: "GR1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "will", distractors: ["did", "has"] },
+      { id: "GR2", kind: "wordForm", knowledgePointKey: "KP2", answer: "stay", cue: "stay" },
       { id: "VOC1", kind: "vocabulary", answer: "a useful clue", canonicalForm: "useful clue", meaningZh: "有用的线索" },
     ],
   };
@@ -56,7 +56,7 @@ describe("Step4 fixed-slot production contract", () => {
   test("lets AI assign knowledge points while program closes exact typed slots", () => {
     const result = compileChapterTemplate(validChapter(), requirements);
 
-    expect(requiredChapterSlotIds(requirements)).toEqual(["OC1", "WF1", "VOC1"]);
+    expect(requiredChapterSlotIds(requirements)).toEqual(["GR1", "GR2", "VOC1"]);
     expect(result.issues).toEqual([]);
     expect(result.paragraphs.flatMap((paragraph) => paragraph.parts).filter((part) => part.type !== "text")).toHaveLength(3);
     expect(result.cleanText).toContain("I will open the old gate");
@@ -122,6 +122,9 @@ describe("Step4 fixed-slot production contract", () => {
     expect(prompt).toContain("禁止用大纲复述、规则说明、检查过程或重复空话凑词数");
     expect(prompt).toContain("answer 选择本身必须由绑定知识点决定");
     expect(prompt).toContain("功能词、助动词或情态词必须包含在 answer 内");
+    expect(prompt).toContain("优先使用当前数量较少的题型");
+    expect(prompt).toContain("仅允许 optionCloze 时，把完整的 'to verb' 作为 answer");
+    expect(prompt).not.toContain("若目标是 to + verb，必须让该 GR 槽位使用 wordForm");
     expect(prompt).toContain("仅在完整句其他位置出现知识点");
     expect(prompt).toContain("候选作答点将在下一次 AI 调用中独立审核定稿");
     expect(prompt).toContain("禁止返回 distractors 或 options");
@@ -146,18 +149,21 @@ describe("Step4 fixed-slot production contract", () => {
       mainIdea: { targetWordCount: 20, preferredRange: [18, 22] as [number, number], acceptedRange: [15, 25] as [number, number] },
     };
     const candidate = {
-      candidateVersion: "step4.reading-candidate.v1",
-      chapters: [{ outlineChapterId: "chapter-1", paragraphs: [{ template: "Mia {{OC1}} ready." }], slots: [{ id: "OC1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "is" }] }],
+      candidateVersion: "step4.reading-candidate.v2",
+      chapters: [{ outlineChapterId: "chapter-1", paragraphs: [{ template: "Mia {{GR1}} ready." }], slots: [{ id: "GR1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "is" }] }],
       mainIdea: { text: "Mia follows a plan." },
     };
     const prompt = buildReadingTemplateFinalizationPrompt(candidate, context);
 
     expect(prompt).toContain("第一步审核纯正文");
     expect(prompt).toContain("包括不含 marker 的句子");
-    expect(prompt).toContain("候选位置、answer、cue 均可修改");
+    expect(prompt).toContain("候选位置、answer、cue 和 GR 槽位的 kind 均可修改");
     expect(prompt).toContain("不得预先泄露在 marker 外");
     expect(prompt).toContain("标准、完整且拼写正确的 distractors");
     expect(prompt).toContain("提供决定性线索");
+    expect(prompt).toContain("优先使用当前数量较少的题型");
+    expect(prompt).toContain("仅允许 optionCloze 时，把完整的 'to verb' 作为 answer");
+    expect(prompt).not.toContain("若目标是 to + verb，必须使用 wordForm");
     expect(prompt).toContain('"candidate"');
     expect(prompt).toContain("distractors:[两个]");
     expect(prompt).toContain("paragraphPatches 只列需要修改的段落");
@@ -167,13 +173,13 @@ describe("Step4 fixed-slot production contract", () => {
 
   test("merges reviewed slots and only changed paragraphs into the final reading contract", () => {
     const candidate = {
-      candidateVersion: "step4.reading-candidate.v1",
+      candidateVersion: "step4.reading-candidate.v2",
       chapters: [{
         outlineChapterId: "chapter-1",
-        paragraphs: [{ template: "Yesterday, Mia {{OC1}} home." }, { template: "She must {{WF1}} the {{VOC1}}." }],
+        paragraphs: [{ template: "Yesterday, Mia {{GR1}} home." }, { template: "She must {{GR2}} the {{VOC1}}." }],
         slots: [
-          { id: "OC1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "go" },
-          { id: "WF1", kind: "wordForm", knowledgePointKey: "KP2", answer: "carry", cue: "carry" },
+          { id: "GR1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "go" },
+          { id: "GR2", kind: "wordForm", knowledgePointKey: "KP2", answer: "carry", cue: "carry" },
           { id: "VOC1", kind: "vocabulary", answer: "map", canonicalForm: "map", meaningZh: "地图" },
         ],
       }],
@@ -183,26 +189,26 @@ describe("Step4 fixed-slot production contract", () => {
       contractVersion: STEP4_CONTENT_CONTRACT_VERSION,
       chapters: [{
         outlineChapterId: "chapter-1",
-        paragraphPatches: [{ paragraphIndex: 0, template: "Yesterday, Mia {{OC1}} home safely." }],
+        paragraphPatches: [{ paragraphIndex: 0, template: "Yesterday, Mia {{GR1}} home safely." }],
         slots: [
-          { id: "OC1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "went", distractors: ["goes", "will go"] },
-          { id: "WF1", kind: "wordForm", knowledgePointKey: "KP2", answer: "carry", cue: "carry" },
+          { id: "GR1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "went", distractors: ["goes", "will go"] },
+          { id: "GR2", kind: "wordForm", knowledgePointKey: "KP2", answer: "carry", cue: "carry" },
           { id: "VOC1", kind: "vocabulary", answer: "map", canonicalForm: "map", meaningZh: "地图" },
         ],
       }],
     });
 
-    expect(result.chapters[0]?.paragraphs).toEqual([{ template: "Yesterday, Mia {{OC1}} home safely." }, { template: "She must {{WF1}} the {{VOC1}}." }]);
+    expect(result.chapters[0]?.paragraphs).toEqual([{ template: "Yesterday, Mia {{GR1}} home safely." }, { template: "She must {{GR2}} the {{VOC1}}." }]);
     expect(result.chapters[0]?.slots[0]).toMatchObject({ answer: "went", distractors: ["goes", "will go"] });
     expect(result.mainIdea).toEqual(candidate.mainIdea);
   });
 
   test("leaves uncertain grammar meaning to the model while retaining deterministic structure checks", () => {
     const generated = validChapter();
-    generated.slots = generated.slots.map((slot) => slot.id === "WF1"
+    generated.slots = generated.slots.map((slot) => slot.id === "GR2"
       ? { ...slot, knowledgePointKey: "KP1", answer: "speak", cue: "speak" }
       : slot);
-    generated.paragraphs[1].template = generated.paragraphs[1].template.replace("must {{WF1}}", "asked them to {{WF1}}");
+    generated.paragraphs[1].template = generated.paragraphs[1].template.replace("must {{GR2}}", "asked them to {{GR2}}");
 
     expect(compileChapterTemplate(generated, requirements).issues).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ code: expect.stringMatching(/^grammar_|^option_quality$/) }),
@@ -211,7 +217,7 @@ describe("Step4 fixed-slot production contract", () => {
 
   test("reports a named missing slot instead of accepting an anonymous count", () => {
     const generated = validChapter();
-    generated.paragraphs[1].template = generated.paragraphs[1].template.replace("{{WF1}}", "stay");
+    generated.paragraphs[1].template = generated.paragraphs[1].template.replace("{{GR2}}", "stay");
 
     expect(compileChapterTemplate(generated, requirements).issues).toContainEqual(expect.objectContaining({ code: "marker_set" }));
   });
@@ -239,6 +245,8 @@ describe("Step4 fixed-slot production contract", () => {
 
     for (const expected of ["The Time Door", "Understand gravity", "Objects attract one another", "A2", "The team sees objects fall"]) expect(prompt).toContain(expected);
     expect(prompt).toContain("mainIdeaTarget");
+    expect(prompt).toContain("优先使用当前数量较少的题型");
+    expect(prompt).toContain("仅允许 optionCloze 时，把完整的 'to verb' 作为 answer");
     expect(prompt).not.toContain("storyCharacters");
     expect(prompt).not.toContain('"requirements"');
     expect(prompt.match(/"paragraphBudgets"/g)).toHaveLength(1);
@@ -293,17 +301,17 @@ describe("Step4 fixed-slot production contract", () => {
       outlineChapterId: "chapter-1",
       paragraphIndex: 1,
       template: current.paragraphs[1].template,
-      slots: [{ id: "WF1", kind: "wordForm", knowledgePointKey: "KP2", answer: "stay", cue: "stay" }],
+      slots: [{ id: "GR2", kind: "wordForm", knowledgePointKey: "KP2", answer: "stay", cue: "stay" }],
     }]);
 
     expect(repaired.paragraphs[0]).toEqual(current.paragraphs[0]);
-    expect(repaired.slots.find((slot) => slot.id === "OC1")).toEqual(current.slots.find((slot) => slot.id === "OC1"));
+    expect(repaired.slots.find((slot) => slot.id === "GR1")).toEqual(current.slots.find((slot) => slot.id === "GR1"));
     expect(repaired.slots.find((slot) => slot.id === "VOC1")).toEqual(current.slots.find((slot) => slot.id === "VOC1"));
   });
 
   test("accepts an automatic repair only when the whole failed chapter becomes valid", () => {
     const broken = validChapter();
-    broken.paragraphs[1].template = broken.paragraphs[1].template.replace("{{WF1}}", "stay");
+    broken.paragraphs[1].template = broken.paragraphs[1].template.replace("{{GR2}}", "stay");
     const previous = compileChapterTemplate(broken, requirements).issues;
 
     expect(repairFullyResolvesChapter(previous, compileChapterTemplate(validChapter(), requirements).issues)).toBe(true);

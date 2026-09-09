@@ -20,12 +20,12 @@ describe("teaching plan policy", () => {
     expect(recommendedChapterWordCount("C2", "layered")).toBe(180);
   });
 
-  it("starts grammar practice with five option cloze and five word-form questions", () => {
-    expect(defaultPracticeConfig()).toEqual({ enabled: true, grammar: { optionCloze: 5, wordForm: 5 } });
+  it("starts grammar practice with both types and one total", () => {
+    expect(defaultPracticeConfig()).toEqual({ enabled: true, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 10 } });
   });
 
-  it("starts正文 with four choice, three transformation, and three vocabulary questions", () => {
-    expect(defaultReadingExerciseConfig()).toEqual({ enabled: true, grammar: { optionCloze: 4, wordForm: 3 }, vocabulary: { chineseHint: 3 } });
+  it("starts正文 with all types and independent grammar and vocabulary totals", () => {
+    expect(defaultReadingExerciseConfig()).toEqual({ enabled: true, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 7 }, vocabulary: { enabledTypes: ["chineseHint"], total: 3 } });
   });
 
   it("recommends正文 pages from CEFR reading density", () => {
@@ -45,6 +45,6 @@ describe("teaching plan policy", () => {
     expect(balancedPageSizes(6)).toEqual([3, 3]);
     expect(balancedPageSizes(9)).toEqual([5, 4]);
     expect(balancedPageSizes(11)).toEqual([4, 4, 3]);
-    expect(practicePageCount({ optionCloze: 6, wordForm: 9 })).toBe(4);
+    expect(practicePageCount({ enabledTypes: ["optionCloze", "wordForm"], total: 15 })).toBe(3);
   });
 });

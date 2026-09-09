@@ -518,6 +518,29 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByText(/任务已经提交，本次操作只会执行一次/)).toBeInTheDocument();
   });
 
+  test("keeps one operation card from local submission through persisted loading", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    render(<CourseContentWorkspace initialState={{ ...initialState, status: "empty", chapters: [], mainIdea: null, homework: null }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "开始生成" }));
+
+    expect(screen.getAllByTestId("content-operation-card")).toHaveLength(1);
+    expect(screen.queryByTestId("ai-operation-status")).not.toBeInTheDocument();
+    expect(screen.getByTestId("content-operation-card")).toHaveTextContent("生成全部章节正文与课后阅读");
+  });
+
+  test("shows only failed and repair events inside failure reasons", () => {
+    const messages = [
+      { id: "running", role: "assistant", content: "系统正在生成全部章节正文、正文内互动题和课后阅读。", kind: "operation", status: "running", operation: "reading", requestId: "request-1", title: "正在生成阅读内容", createdAt: "2026-08-10T00:00:00.000Z" },
+      { id: "failed", role: "assistant", content: "正文候选结构无效", kind: "operation", status: "failed", operation: "reading", requestId: "request-1", title: "阅读内容生成未完成", createdAt: "2026-08-10T00:01:00.000Z" },
+    ] as CourseContentState["messages"];
+    render(<CourseContentWorkspace initialState={{ ...initialState, status: "failed", errorMessage: "正文候选结构无效", messages }} />);
+
+    const card = screen.getByTestId("content-operation-card");
+    expect(card).toHaveTextContent("正文候选结构无效");
+    expect(card).not.toHaveTextContent("系统正在生成全部章节正文");
+  });
+
   test("keeps the reading confirmation before loading and preserves all records after exercises finish", async () => {
     let resolveGeneration!: (response: Response) => void;
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { resolveGeneration = resolve; })));

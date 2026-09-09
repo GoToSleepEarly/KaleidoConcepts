@@ -1,10 +1,19 @@
-import type { EnglishLevel, GrammarExerciseCounts, GrammarPracticeConfig, ReadingExerciseConfig, StoryComplexity } from "@/lib/contracts/api";
+import type { EnglishLevel, GrammarExercisePlan, GrammarExerciseType, GrammarPracticeConfig, ReadingExerciseConfig, StoryComplexity } from "@/lib/contracts/api";
 import { STORY_CHAPTER_WORD_HARD_RANGE, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 
 export const MIN_CHAPTER_TARGET_WORD_COUNT = STORY_CHAPTER_WORD_HARD_RANGE[0];
 export const MAX_CHAPTER_TARGET_WORD_COUNT = 200;
 export const MIN_READING_PAGE_COUNT = 1;
 export const MAX_READING_PAGE_COUNT = 3;
+export const DEFAULT_READING_GRAMMAR_TOTAL = 7;
+export const DEFAULT_READING_VOCABULARY_TOTAL = 3;
+export const DEFAULT_PRACTICE_GRAMMAR_TOTAL = 10;
+export const DEFAULT_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT = 5;
+export const MIN_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT = 5;
+export const MAX_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT = 10;
+export const MAX_GRAMMAR_EXERCISE_TOTAL = 100;
+export const READING_EXERCISE_DENSITY_WARNING_TOTAL = 10;
+export const ALL_GRAMMAR_EXERCISE_TYPES: GrammarExerciseType[] = ["optionCloze", "wordForm"];
 
 const READING_PAGE_DENSITY: Record<EnglishLevel, { min: number; ideal: number; max: number }> = {
   Starter: { min: 35, ideal: 45, max: 55 },
@@ -21,19 +30,23 @@ export function recommendedChapterWordCount(level: EnglishLevel, storyComplexity
 }
 
 export function defaultPracticeConfig(enabled = true): GrammarPracticeConfig {
-  return { enabled, grammar: { optionCloze: 5, wordForm: 5 } };
+  return { enabled, grammar: { enabledTypes: [...ALL_GRAMMAR_EXERCISE_TYPES], total: DEFAULT_PRACTICE_GRAMMAR_TOTAL } };
 }
 
 export function defaultReadingExerciseConfig(): ReadingExerciseConfig {
-  return { enabled: true, grammar: { optionCloze: 4, wordForm: 3 }, vocabulary: { chineseHint: 3 } };
+  return {
+    enabled: true,
+    grammar: { enabledTypes: [...ALL_GRAMMAR_EXERCISE_TYPES], total: DEFAULT_READING_GRAMMAR_TOTAL },
+    vocabulary: { enabledTypes: ["chineseHint"], total: DEFAULT_READING_VOCABULARY_TOTAL },
+  };
 }
 
 export function readingExerciseTotal(config: ReadingExerciseConfig) {
-  return config.grammar.optionCloze + config.grammar.wordForm + config.vocabulary.chineseHint;
+  return config.grammar.total + config.vocabulary.total;
 }
 
-export function grammarExerciseTotal(counts: GrammarExerciseCounts) {
-  return counts.optionCloze + counts.wordForm;
+export function grammarExerciseTotal(plan: GrammarExercisePlan) {
+  return plan.total;
 }
 
 export function readingPageDensity(level: EnglishLevel) {
@@ -59,6 +72,6 @@ export function balancedPageSizes(total: number, pageCapacity = 5) {
   return Array.from({ length: pageCount }, (_, index) => base + (index < remainder ? 1 : 0));
 }
 
-export function practicePageCount(counts: GrammarExerciseCounts) {
-  return balancedPageSizes(counts.optionCloze).length + balancedPageSizes(counts.wordForm).length;
+export function practicePageCount(plan: GrammarExercisePlan) {
+  return balancedPageSizes(plan.total).length;
 }

@@ -21,6 +21,7 @@ import {
   type ReadingTemplatePromptContext,
 } from "@/lib/server/ai/course-content-template";
 import {
+  AiJsonResponseError,
   generatedExercisesSchema,
   generatedModificationSchema,
   parseAiJson,
@@ -159,10 +160,9 @@ export function buildReadingPromptContext(input: CourseContentPromptInput) {
         paragraphCount,
         grammarPoints: selectedPoints(plan.knowledgePointIds, points),
         ...(knowledgePointUsagePlan ? { knowledgePointUsagePlan } : {}),
-        exerciseCounts: {
-          optionCloze: plan.readingExercises.grammar.optionCloze,
-          wordForm: plan.readingExercises.grammar.wordForm,
-          vocabulary: plan.readingExercises.vocabulary.chineseHint,
+        exercisePlan: {
+          grammar: { ...plan.readingExercises.grammar },
+          vocabulary: { ...plan.readingExercises.vocabulary },
         },
       };
     }),
@@ -183,9 +183,9 @@ export function buildReadingTemplateRequirements(input: CourseContentPromptInput
       narrativeTense: "past" as const,
       paragraphCount: plan.paragraphCount,
       targetWordCount: plan.targetWordCount ?? 90,
-      optionClozeCount: plan.readingExercises.grammar.optionCloze,
-      wordFormCount: plan.readingExercises.grammar.wordForm,
-      vocabularyCount: plan.readingExercises.vocabulary.chineseHint,
+      grammarCount: plan.readingExercises.grammar.total,
+      enabledGrammarTypes: [...plan.readingExercises.grammar.enabledTypes],
+      vocabularyCount: plan.readingExercises.vocabulary.total,
       grammarPoints,
     };
   });
@@ -235,7 +235,7 @@ export function buildExercisePromptContext(input: CourseContentPromptInput, clea
       title: clean.title,
       cleanText: clean.cleanText,
       knowledgePointKeys: selectedPoints(plan.knowledgePointIds, points).map((point) => point.key),
-      counts: { ...plan.chapterPractice.grammar },
+      exercisePlan: { ...plan.chapterPractice.grammar },
     }];
   });
   const homeworkKeys = input.plan.afterClassPractice.practice.enabled
@@ -251,7 +251,11 @@ export function buildExercisePromptContext(input: CourseContentPromptInput, clea
     homework: {
       enabled: input.plan.afterClassPractice.practice.enabled,
       knowledgePointKeys: homeworkKeys,
-      counts: input.plan.afterClassPractice.practice.enabled ? { ...input.plan.afterClassPractice.practice.grammar } : { optionCloze: 0, wordForm: 0 },
+      enabledTypes: input.plan.afterClassPractice.practice.enabled ? [...input.plan.afterClassPractice.practice.enabledTypes] : [],
+      questionsPerKnowledgePoint: input.plan.afterClassPractice.practice.questionsPerKnowledgePoint,
+      total: input.plan.afterClassPractice.practice.enabled
+        ? homeworkKeys.length * input.plan.afterClassPractice.practice.questionsPerKnowledgePoint
+        : 0,
     },
   };
 }
@@ -327,9 +331,6 @@ function jsonOnly(instructions: string[], context: unknown) {
 }
 
 const schemaDescriptions = {
-  reading: "{chapters:[{outlineChapterId,paragraphs:[{parts:[textPart|optionGrammarPart|wordFormGrammarPart|vocabularyPart]}]}],mainIdea:{text}}；textPart={type:'text',text}；optionGrammarPart={type:'grammar',exerciseType:'optionCloze',knowledgePointKey,answer,distractors:[string,string]}；wordFormGrammarPart={type:'grammar',exerciseType:'wordForm',knowledgePointKey,answer,baseForm}；vocabularyPart={type:'vocabulary',answer,canonicalForm,meaningZh}",
-  readingRepair: "{chapters:[{outlineChapterId,paragraphs:[{parts:[textPart|optionGrammarPart|wordFormGrammarPart|vocabularyPart]}]}]}；各 part 字段与首次正文契约完全一致",
-  mainIdea: "{text}",
   exercises: "{chapters:[{outlineChapterId,questions:[optionQuestion|wordFormQuestion]}],homeworkGrammar:[optionQuestion|wordFormQuestion]}；optionQuestion={type:'optionCloze',knowledgePointKey,before,after,answer,distractors:[string,string]}；wordFormQuestion={type:'wordForm',knowledgePointKey,before,after,answer,baseForm}",
   modification: "{kind,chapter?,paragraph?,questions?,mainIdea?}；只保留 kind 对应的一个结果字段；chapter/paragraph 的 part 和 questions 使用正文与练习的严格题型契约",
 } as const;
@@ -341,7 +342,7 @@ const questionPositionRule = "before 是空格前文本，after 是空格后文�
 const vocabularyQualityRule = "词汇题选择对当前 CEFR 学生有复用价值、能脱离本句复习的实词或常用词组；不要选择人物名、地名、纯功能词、缩写、带连字符的词或同一 canonicalForm 的重复项目。canonicalForm 使用词典原形，meaningZh 必须对应当前语境。";
 
 export const courseContentPromptExamples = {
-  reading: "正确的正文 parts 示例：optionCloze 片段=[{\"type\":\"text\",\"text\":\"Yesterday, Mia \"},{\"type\":\"grammar\",\"exerciseType\":\"optionCloze\",\"knowledgePointKey\":\"KP1\",\"answer\":\"found\",\"distractors\":[\"finds\",\"will find\"]},{\"type\":\"text\",\"text\":\" the hidden door.\"}]；wordForm 片段=[{\"type\":\"text\",\"text\":\"Later, she \"},{\"type\":\"grammar\",\"exerciseType\":\"wordForm\",\"knowledgePointKey\":\"KP1\",\"answer\":\"opened\",\"baseForm\":\"open\"},{\"type\":\"text\",\"text\":\" it carefully.\"}]；vocabulary={\"type\":\"vocabulary\",\"answer\":\"looked after\",\"canonicalForm\":\"look after\",\"meaningZh\":\"照顾\"}。题目 answer 拼回前后 text 后必须语法正确。",
+  modificationReading: "正确的正文 parts 示例：optionCloze 片段=[{\"type\":\"text\",\"text\":\"Yesterday, Mia \"},{\"type\":\"grammar\",\"exerciseType\":\"optionCloze\",\"knowledgePointKey\":\"KP1\",\"answer\":\"found\",\"distractors\":[\"finds\",\"will find\"]},{\"type\":\"text\",\"text\":\" the hidden door.\"}]；wordForm 片段=[{\"type\":\"text\",\"text\":\"Later, she \"},{\"type\":\"grammar\",\"exerciseType\":\"wordForm\",\"knowledgePointKey\":\"KP1\",\"answer\":\"opened\",\"baseForm\":\"open\"},{\"type\":\"text\",\"text\":\" it carefully.\"}]；vocabulary={\"type\":\"vocabulary\",\"answer\":\"looked after\",\"canonicalForm\":\"look after\",\"meaningZh\":\"照顾\"}。题目 answer 拼回前后 text 后必须语法正确。",
   questions: "正确的独立题目示例：optionCloze={\"type\":\"optionCloze\",\"knowledgePointKey\":\"KP1\",\"before\":\"Yesterday, Mia \",\"after\":\" the hidden door.\",\"answer\":\"found\",\"distractors\":[\"finds\",\"will find\"]}；wordForm={\"type\":\"wordForm\",\"knowledgePointKey\":\"KP1\",\"before\":\"Yesterday, Mia \",\"after\":\" the hidden door.\",\"answer\":\"found\",\"baseForm\":\"find\"}。程序渲染为 Yesterday, Mia ______ (find) the hidden door.，提示紧跟空格。",
 } as const;
 
@@ -362,8 +363,52 @@ export const readingStoryQualityRules = [
 
 function modificationOutputRules(targetType: string) {
   if (targetType === "chapter_practice" || targetType === "homework") return [optionOutputRule, optionQualityRule, wordFormOutputRule, questionPositionRule, courseContentPromptExamples.questions];
-  if (targetType === "chapter" || targetType === "paragraph") return [...readingStoryQualityRules, optionOutputRule, optionQualityRule, wordFormOutputRule, vocabularyQualityRule, ...readingGrammarCoherenceRules, courseContentPromptExamples.reading];
+  if (targetType === "chapter" || targetType === "paragraph") return [...readingStoryQualityRules, optionOutputRule, optionQualityRule, wordFormOutputRule, vocabularyQualityRule, ...readingGrammarCoherenceRules, courseContentPromptExamples.modificationReading];
   return [];
+}
+
+const independentExerciseDistributionRule = "章节目标先让各知识点题量尽量接近；所有目标都在 enabledTypes 中尽量均匀分配题型。多个题型都适配同一知识点时，优先使用当前数量较少的题型；只有知识点与某题型明显不适配时才允许偏斜，不要求机械平均。课后目标在保证每个知识点精确 questionsPerKnowledgePoint 道的同时，每个知识点内部也按同一原则分配。";
+
+const exerciseGenerationInstructions = [
+  "生成全部章节练习和课后语法练习，只返回 {chapters:[{outlineChapterId,questions}],homeworkGrammar} 的严格 JSON。每个目标的题型只能来自 enabledTypes，题目总数必须等于 total。knowledgePointKey 只能取所属目标 knowledgePointKeys；其定义和官方 Unit 统一见 context.knowledgePoints。章节练习必须覆盖全部知识点；课后练习的每个知识点必须精确生成 questionsPerKnowledgePoint 道题。",
+  independentExerciseDistributionRule,
+  "question 只能是 optionCloze={type,knowledgePointKey,before,after,answer,distractors:[两个]} 或 wordForm={type,knowledgePointKey,before,after,answer,baseForm}，不得混用字段。",
+  optionOutputRule,
+  optionQualityRule,
+  wordFormOutputRule,
+  questionPositionRule,
+  "英语正确性最高：每个答案回填句必须在语法、时态与体、主谓一致、单复数、代词、助动词、介词、语序和时间逻辑上正确，并严格符合 englishLevel 与 cefrWritingProfile；不得为覆盖或题量保留错误英语。",
+  courseContentPromptExamples.questions,
+  "章节题只依据本章 cleanText 改编，不复制原句、不与原文冲突；课后题不得依赖正文。所有题干和答案使用自然、完整、符合等级的英文，不为考语法制造不合常理的情节；严格满足各目标 exercisePlan 或课后逐知识点题量。",
+  "输出前逐题回填 answer 和每个 distractor，再逐目标核对 ID、总题量、题型白名单、知识点覆盖、课后逐知识点题量与必填字段；先修正全部问题，不输出核对过程。",
+];
+
+export function buildExerciseGenerationPrompt(input: CourseContentPromptInput, cleanChapters: CleanChapterInput[]) {
+  return jsonOnly(exerciseGenerationInstructions, buildExercisePromptContext(input, cleanChapters));
+}
+
+export function buildExerciseRepairPrompt(
+  input: CourseContentPromptInput,
+  failedTargets: Array<{ id: string; issues: string[] }>,
+  currentExercises: z.infer<typeof generatedExercisesSchema>,
+  cleanChapters: CleanChapterInput[],
+) {
+  const context = buildExercisePromptContext(input, cleanChapters);
+  const targets = failedTargets.map((failed) => failed.id === "homework"
+    ? { kind: "homework", spec: context.homework, currentQuestions: currentExercises.homeworkGrammar, issues: failed.issues }
+    : { kind: "chapter", spec: context.chapters.find((chapter) => chapter.id === failed.id), currentQuestions: currentExercises.chapters.find((chapter) => chapter.outlineChapterId === failed.id)?.questions ?? [], issues: failed.issues });
+  return jsonOnly([
+    "一次修复 targets 中全部失败练习目标；只重写失败目标，不返回成功目标。",
+    "章节目标返回到 chapters；若无失败章节则 chapters=[]。课后目标返回到 homeworkGrammar；若课后未失败则 homeworkGrammar=[]。严格解决每个目标的全部 issues。",
+    independentExerciseDistributionRule,
+    optionOutputRule,
+    optionQualityRule,
+    wordFormOutputRule,
+    questionPositionRule,
+    ...cefrWritingQualityRules,
+    courseContentPromptExamples.questions,
+    "保持每个目标要求的 id、总题量、enabledTypes 白名单和 knowledgePointKeys 覆盖；课后目标还必须保持每个知识点精确 questionsPerKnowledgePoint 道。知识点定义与官方 Unit 见 knowledgePoints。输出前核对全部必填字段，不要输出核对过程。",
+  ], { englishLevel: context.englishLevel, cefrWritingProfile: context.cefrWritingProfile, grammarSource: context.grammarSource, knowledgePoints: context.knowledgePoints, targets });
 }
 
 export function contentReadingTimeoutMs(value = process.env.COURSE_CONTENT_GENERATION_TIMEOUT_MS) {
@@ -422,53 +467,50 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
     }
     throw new Error(parseMessage);
   };
+  const parseWithDiagnostics = <Schema extends z.ZodTypeAny>(
+    text: string,
+    schema: Schema,
+    message: string,
+    operation: string,
+    startedAt: number,
+  ): z.output<Schema> => {
+    try {
+      return parseAiJson(text, schema, message);
+    } catch (error) {
+      if (error instanceof AiJsonResponseError) {
+        error.operation = operation;
+        error.latencyMs = Date.now() - startedAt;
+        devAiLog({ operation, phase: "error", payload: { stage: "schema_parse", ...error.diagnostics }, error });
+      }
+      throw error;
+    }
+  };
 
   return {
-    generateReading: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider) => {
+    generateReading: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, onCandidateReady?: () => Promise<void>) => {
       const requirements = buildReadingTemplateRequirements(input);
       const context = buildReadingTemplatePromptContext(input);
+      const candidateStartedAt = Date.now();
       const candidateResponse = await callWithUsage(writingProvider, "content_generate_reading_candidates_v3", buildReadingTemplatePrompt(context), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 6_500 });
-      const candidateOutput = parseAiJson(candidateResponse.text, readingCandidateEnvelopeSchema, "正文候选结构无效");
+      const candidateOutput = parseWithDiagnostics(candidateResponse.text, readingCandidateEnvelopeSchema, "正文候选结构无效", "content_generate_reading_candidates_v3", candidateStartedAt);
+      await onCandidateReady?.();
+      const finalStartedAt = Date.now();
       const finalResponse = await callWithUsage(writingProvider, "content_finalize_reading_questions_v3", buildReadingTemplateFinalizationPrompt(candidateOutput, context), contentReadingTimeoutMs(), { reasoningEffort: "high", maxOutputTokens: 6_500 });
-      const review = parseAiJson(finalResponse.text, readingReviewBundleSchema, "正文题目审核结构无效");
+      const review = parseWithDiagnostics(finalResponse.text, readingReviewBundleSchema, "正文题目审核结构无效", "content_finalize_reading_questions_v3", finalStartedAt);
       const payload = applyReadingReview(candidateOutput, review);
       return { ...parseReadingTemplatePayload(payload, requirements), candidateUsage: candidateResponse.usage, usage: finalResponse.usage };
     },
 
     repairReading: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, targets: ReadingTemplateRepairTarget[], mainIdeaTarget?: { current: { text: string } | null; issues: string[] }) => {
+      const startedAt = Date.now();
       const response = await callWithUsage(writingProvider, "content_repair_reading_v2", buildReadingTemplateRepairPrompt(targets, buildReadingTemplatePromptContext(input), mainIdeaTarget), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 6_500 });
-      return { ...parseAiJson(response.text, chapterTemplateRepairBundleSchema, "正文最小修复结构解析失败"), usage: response.usage };
+      return { ...parseWithDiagnostics(response.text, chapterTemplateRepairBundleSchema, "正文最小修复结构解析失败", "content_repair_reading_v2", startedAt), usage: response.usage };
     },
 
-    generateExercises: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, cleanChapters: CleanChapterInput[]) => structuredCall(writingProvider, "content_generate_exercises", jsonOnly([
-      "生成全部章节练习和课后语法练习，只返回 {chapters:[{outlineChapterId,questions}],homeworkGrammar} 的严格 JSON。knowledgePointKey 只能取所属目标 knowledgePointKeys；其定义和官方 Unit 统一见 context.knowledgePoints，每个目标知识点至少被一道题独立考查。",
-      "question 只能是 optionCloze={type,knowledgePointKey,before,after,answer,distractors:[两个]} 或 wordForm={type,knowledgePointKey,before,after,answer,baseForm}，不得混用字段。",
-      optionOutputRule,
-      optionQualityRule,
-      wordFormOutputRule,
-      questionPositionRule,
-      "英语正确性最高：每个答案回填句必须在语法、时态与体、主谓一致、单复数、代词、助动词、介词、语序和时间逻辑上正确，并严格符合 englishLevel 与 cefrWritingProfile；不得为覆盖或题量保留错误英语。",
-      courseContentPromptExamples.questions,
-      "章节题只依据本章 cleanText 改编，不复制原句、不与原文冲突；课后题不得依赖正文。所有题干和答案使用自然、完整、符合等级的英文，不为考语法制造不合常理的情节；严格满足各目标 counts。",
-      "输出前逐题回填 answer 和每个 distractor，再逐目标核对 ID、两种题量、知识点覆盖与必填字段；先修正全部问题，不输出核对过程。",
-    ], buildExercisePromptContext(input, cleanChapters)), generatedExercisesSchema, "exercises", "练习结构解析失败", undefined, { reasoningEffort: "medium" }),
+    generateExercises: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, cleanChapters: CleanChapterInput[]) => structuredCall(writingProvider, "content_generate_exercises", buildExerciseGenerationPrompt(input, cleanChapters), generatedExercisesSchema, "exercises", "练习结构解析失败", undefined, { reasoningEffort: "medium" }),
 
     repairExercises: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, failedTargets: Array<{ id: string; issues: string[] }>, currentExercises: z.infer<typeof generatedExercisesSchema>, cleanChapters: CleanChapterInput[]) => {
-      const context = buildExercisePromptContext(input, cleanChapters);
-      const targets = failedTargets.map((failed) => failed.id === "homework"
-        ? { kind: "homework", spec: context.homework, currentQuestions: currentExercises.homeworkGrammar, issues: failed.issues }
-        : { kind: "chapter", spec: context.chapters.find((chapter) => chapter.id === failed.id), currentQuestions: currentExercises.chapters.find((chapter) => chapter.outlineChapterId === failed.id)?.questions ?? [], issues: failed.issues });
-      return structuredCall(writingProvider, "content_repair_exercises", jsonOnly([
-        "一次修复 targets 中全部失败练习目标；只重写失败目标，不返回成功目标。",
-        "章节目标返回到 chapters；若无失败章节则 chapters=[]。课后目标返回到 homeworkGrammar；若课后未失败则 homeworkGrammar=[]。严格解决每个目标的全部 issues。",
-        optionOutputRule,
-        optionQualityRule,
-        wordFormOutputRule,
-        questionPositionRule,
-        ...cefrWritingQualityRules,
-        courseContentPromptExamples.questions,
-        "保持每个目标要求的 id、题量和 knowledgePointKeys 覆盖；知识点定义与官方 Unit 见 knowledgePoints。输出前核对全部必填字段，不要输出核对过程。",
-      ], { englishLevel: context.englishLevel, cefrWritingProfile: context.cefrWritingProfile, grammarSource: context.grammarSource, knowledgePoints: context.knowledgePoints, targets }), generatedExercisesSchema, "exercises", "练习修复结构解析失败");
+      return structuredCall(writingProvider, "content_repair_exercises", buildExerciseRepairPrompt(input, failedTargets, currentExercises, cleanChapters), generatedExercisesSchema, "exercises", "练习修复结构解析失败");
     },
 
     modifyContent: async (writingProvider: StoryWritingProvider, targetType: string, target: unknown, instruction: string, constraints: unknown, relatedContext: Record<string, unknown>) => structuredCall(writingProvider, "content_modify_target", jsonOnly([

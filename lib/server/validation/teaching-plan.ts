@@ -2,7 +2,22 @@ import { z } from "zod";
 
 import type { StoryComplexity, TeachingPlan } from "@/lib/contracts/api";
 import { defaultStoryComplexity } from "@/lib/domain/story-length-policy";
-import { defaultPracticeConfig, defaultReadingExerciseConfig, grammarExerciseTotal, MAX_CHAPTER_TARGET_WORD_COUNT, MAX_READING_PAGE_COUNT, MIN_CHAPTER_TARGET_WORD_COUNT, MIN_READING_PAGE_COUNT, recommendedChapterWordCount, recommendedReadingPageCount } from "@/lib/domain/teaching-plan-policy";
+import {
+  ALL_GRAMMAR_EXERCISE_TYPES,
+  defaultPracticeConfig,
+  defaultReadingExerciseConfig,
+  DEFAULT_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
+  grammarExerciseTotal,
+  MAX_CHAPTER_TARGET_WORD_COUNT,
+  MAX_GRAMMAR_EXERCISE_TOTAL,
+  MAX_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
+  MAX_READING_PAGE_COUNT,
+  MIN_CHAPTER_TARGET_WORD_COUNT,
+  MIN_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
+  MIN_READING_PAGE_COUNT,
+  recommendedChapterWordCount,
+  recommendedReadingPageCount,
+} from "@/lib/domain/teaching-plan-policy";
 
 export const englishLevelSchema = z.union([
   z.literal("Starter"),
@@ -14,20 +29,24 @@ export const englishLevelSchema = z.union([
   z.literal("C2"),
 ]);
 
-const grammarCountsSchema = z.object({
-  optionCloze: z.number().int().min(0).max(20),
-  wordForm: z.number().int().min(0).max(20),
+const grammarTypeSchema = z.enum(["optionCloze", "wordForm"]);
+const grammarPlanSchema = z.object({
+  enabledTypes: z.array(grammarTypeSchema).max(2).refine((types) => new Set(types).size === types.length),
+  total: z.number().int().min(0).max(MAX_GRAMMAR_EXERCISE_TOTAL),
 });
 
 const exerciseConfigSchema = z.object({
   enabled: z.boolean(),
-  grammar: grammarCountsSchema,
-  vocabulary: z.object({ chineseHint: z.number().int().min(0).max(8) }),
+  grammar: grammarPlanSchema,
+  vocabulary: z.object({
+    enabledTypes: z.array(z.literal("chineseHint")).max(1),
+    total: z.number().int().min(0).max(MAX_GRAMMAR_EXERCISE_TOTAL),
+  }),
 });
 
 const practiceConfigSchema = z.object({
   enabled: z.boolean(),
-  grammar: grammarCountsSchema,
+  grammar: grammarPlanSchema,
 });
 
 export const teachingPlanSchema = z.object({
@@ -56,7 +75,11 @@ export const teachingPlanSchema = z.object({
     enabled: z.boolean(),
     vocabularyReviewEnabled: z.boolean(),
     knowledgePointIds: z.array(z.string().min(1)),
-    practice: practiceConfigSchema,
+    practice: z.object({
+      enabled: z.boolean(),
+      enabledTypes: z.array(grammarTypeSchema).max(2).refine((types) => new Set(types).size === types.length),
+      questionsPerKnowledgePoint: z.number().int().min(MIN_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT).max(MAX_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT),
+    }),
     touched: z.object({
       knowledgePointIds: z.boolean(),
       practice: z.boolean(),
@@ -92,7 +115,7 @@ export function buildTeachingPlanDraft(input: {
       const targetWordCount = recommendedChapterWordCount(input.englishLevel, input.storyComplexity ?? defaultStoryComplexity(input.englishLevel));
       const readingExercises = chapter.recommendedKnowledgePointIds.length
         ? defaultReadingExerciseConfig()
-        : { ...defaultReadingExerciseConfig(), grammar: { optionCloze: 0, wordForm: 0 } };
+        : { ...defaultReadingExerciseConfig(), grammar: { enabledTypes: [], total: 0 } };
       return {
         outlineChapterId: chapter.id,
         targetWordCount,
@@ -102,7 +125,7 @@ export function buildTeachingPlanDraft(input: {
         readingExercises,
         chapterPractice: chapter.recommendedKnowledgePointIds.length
           ? defaultPracticeConfig(false)
-          : { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } },
+          : defaultPracticeConfig(false),
         touched: {
           targetWordCount: false,
           paragraphCount: false,
@@ -117,7 +140,11 @@ export function buildTeachingPlanDraft(input: {
       enabled: false,
       vocabularyReviewEnabled: false,
       knowledgePointIds: recommendedKnowledgePointIds,
-      practice: defaultPracticeConfig(false),
+      practice: {
+        enabled: false,
+        enabledTypes: [...ALL_GRAMMAR_EXERCISE_TYPES],
+        questionsPerKnowledgePoint: DEFAULT_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
+      },
       touched: { knowledgePointIds: false, practice: false },
     },
     updatedAt: input.updatedAt,
@@ -129,11 +156,12 @@ function sameIds(left: string[], right: string[]) {
   return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
-function requireGrammarPractice(enabled: boolean, counts: TeachingPlan["chapters"][number]["chapterPractice"]["grammar"], messagePrefix: string, max: number) {
+function requireGrammarPractice(enabled: boolean, grammar: TeachingPlan["chapters"][number]["chapterPractice"]["grammar"], messagePrefix: string) {
   if (!enabled) return;
-  const count = grammarExerciseTotal(counts);
+  const count = grammarExerciseTotal(grammar);
+  if (!grammar.enabledTypes.length) throw new TeachingPlanValidationError(`${messagePrefix}至少选择一种题型。`);
   if (count < 1) throw new TeachingPlanValidationError(`${messagePrefix}至少保留 1 道语法题。`);
-  if (count > max) throw new TeachingPlanValidationError(`${messagePrefix}题量不能超过 ${max} 道。`);
+  if (count > MAX_GRAMMAR_EXERCISE_TOTAL) throw new TeachingPlanValidationError(`${messagePrefix}题量不能超过 ${MAX_GRAMMAR_EXERCISE_TOTAL} 道。`);
 }
 
 export function validateTeachingPlanForConfirm(plan: TeachingPlan, outlineChapterIds: string[]) {
@@ -154,16 +182,19 @@ export function validateTeachingPlanForConfirm(plan: TeachingPlan, outlineChapte
     }
     if (!chapter.knowledgePointIds.length) {
       if (grammarExerciseTotal(chapter.readingExercises.grammar) !== 0) throw new TeachingPlanValidationError(`${label}没有知识点，正文语法题应为 0。`);
-      if (chapter.chapterPractice.enabled || grammarExerciseTotal(chapter.chapterPractice.grammar) !== 0) throw new TeachingPlanValidationError(`${label}没有知识点，不能开启章节语法练习。`);
-      continue;
-    }
-    if (!chapter.readingExercises.enabled || grammarExerciseTotal(chapter.readingExercises.grammar) < 1) {
+      if (chapter.chapterPractice.enabled) throw new TeachingPlanValidationError(`${label}没有知识点，不能开启章节语法练习。`);
+    } else if (!chapter.readingExercises.enabled || !chapter.readingExercises.grammar.enabledTypes.length || grammarExerciseTotal(chapter.readingExercises.grammar) < 1) {
       throw new TeachingPlanValidationError(`${label}至少保留 1 道正文语法题。`);
-    }
-    if (grammarExerciseTotal(chapter.readingExercises.grammar) < chapter.knowledgePointIds.length) {
+    } else if (grammarExerciseTotal(chapter.readingExercises.grammar) < chapter.knowledgePointIds.length) {
       throw new TeachingPlanValidationError(`${label}正文语法题数量不能少于知识点数量。`);
     }
-    requireGrammarPractice(chapter.chapterPractice.enabled, chapter.chapterPractice.grammar, `${label}章节练习`, 20);
+    if (chapter.readingExercises.vocabulary.enabledTypes.length && chapter.readingExercises.vocabulary.total < 1) {
+      throw new TeachingPlanValidationError(`${label}词汇题至少保留 1 题。`);
+    }
+    if (!chapter.readingExercises.vocabulary.enabledTypes.length && chapter.readingExercises.vocabulary.total !== 0) {
+      throw new TeachingPlanValidationError(`${label}未选择词汇题型，词汇题总数应为 0。`);
+    }
+    requireGrammarPractice(chapter.chapterPractice.enabled, chapter.chapterPractice.grammar, `${label}章节练习`);
     if (chapter.chapterPractice.enabled && grammarExerciseTotal(chapter.chapterPractice.grammar) < chapter.knowledgePointIds.length) {
       throw new TeachingPlanValidationError(`${label}章节练习语法题数量不能少于知识点数量。`);
     }
@@ -183,10 +214,9 @@ export function validateTeachingPlanForConfirm(plan: TeachingPlan, outlineChapte
     if (plan.afterClassPractice.knowledgePointIds.some((id) => !chapterKnowledgePoints.has(id))) {
       throw new TeachingPlanValidationError("课后练习知识点只能从章节知识点中选择。");
     }
-    requireGrammarPractice(plan.afterClassPractice.practice.enabled, plan.afterClassPractice.practice.grammar, "课后练习", 40);
-    if (grammarExerciseTotal(plan.afterClassPractice.practice.grammar) < plan.afterClassPractice.knowledgePointIds.length) {
-      throw new TeachingPlanValidationError("课后语法题数量不能少于所选知识点数量。");
-    }
+    if (!plan.afterClassPractice.practice.enabledTypes.length) throw new TeachingPlanValidationError("课后练习至少选择一种题型。");
+    const homeworkTotal = plan.afterClassPractice.knowledgePointIds.length * plan.afterClassPractice.practice.questionsPerKnowledgePoint;
+    if (homeworkTotal > MAX_GRAMMAR_EXERCISE_TOTAL) throw new TeachingPlanValidationError(`课后练习题量不能超过 ${MAX_GRAMMAR_EXERCISE_TOTAL} 道。`);
   }
 }
 

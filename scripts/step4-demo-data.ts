@@ -28,8 +28,8 @@ function planChapters(scenario: Scenario, knowledgePointIds: string[]) {
     paragraphCount: 2,
     knowledgePointIds: [knowledgePointIds[(order - 1) % knowledgePointIds.length]],
     readingExerciseMode: "interactive",
-    readingExercises: { enabled: true, grammar: { optionCloze: 1, wordForm: 1 }, vocabulary: { chineseHint: 1 } },
-    chapterPractice: { enabled: true, grammar: { optionCloze: 1, wordForm: 0 } },
+    readingExercises: { enabled: true, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 2 }, vocabulary: { enabledTypes: ["chineseHint"], total: 1 } },
+    chapterPractice: { enabled: true, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 1 } },
     touched: { targetWordCount: false, paragraphCount: false, knowledgePointIds: false, readingExerciseMode: false, readingExercises: false, chapterPractice: false },
   }));
 }
@@ -104,7 +104,7 @@ async function createBaseCourse(scenario: Scenario, knowledgePointIds: string[])
           englishLevel: "B1",
           mainIdeaTargetWordCount: 130,
           chapters: planChapters(scenario, knowledgePointIds),
-          afterClassPractice: { enabled: true, vocabularyReviewEnabled: true, knowledgePointIds, practice: { enabled: true, grammar: { optionCloze: 1, wordForm: 1 } }, touched: { knowledgePointIds: false, practice: false } },
+          afterClassPractice: { enabled: true, vocabularyReviewEnabled: true, knowledgePointIds, practice: { enabled: true, enabledTypes: ["optionCloze", "wordForm"], questionsPerKnowledgePoint: 5 }, touched: { knowledgePointIds: false, practice: false } },
           confirmedAt: new Date(),
         },
       },
@@ -126,7 +126,18 @@ async function seedDemoCourses() {
     contentVersion: 2,
     chapters: generatedChapters(scenario, knowledgePointIds),
     mainIdea: { id: "main-idea", title: "Main Idea Reading Practice", text: "Mia and Leo use evidence, teamwork, and careful communication to repair the harbor signal and guide a boat home safely." },
-    homework: { grammar: [{ id: "hq-1", type: "wordForm", knowledgePointId: knowledgePointIds[0], before: "They ", after: " the route in time.", answer: "fixed", baseForm: "fix" }], vocabularyMatching: [{ id: "v-1-1", canonicalForm: "warning light", meaningZh: "警示灯" }] },
+    homework: {
+      grammar: knowledgePointIds.flatMap((knowledgePointId, pointIndex) => Array.from({ length: 5 }, (_, questionIndex) => ({
+        id: `hq-${pointIndex + 1}-${questionIndex + 1}`,
+        type: "wordForm" as const,
+        knowledgePointId,
+        before: "They ",
+        after: ` the route in time (${questionIndex + 1}).`,
+        answer: "fixed",
+        baseForm: "fix",
+      }))),
+      vocabularyMatching: [{ id: "v-1-1", canonicalForm: "warning light", meaningZh: "警示灯" }],
+    },
   });
 
   await prisma.courseLessonContent.create({ data: { courseId: courseId("empty"), status: "empty", sourceRevision: "step4-demo-empty" } });

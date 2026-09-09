@@ -7,7 +7,7 @@ import { AlertCircle, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
 import { AutoGrowTextarea } from "@/components/ui/auto-grow-textarea";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { AiOperationStatusCard, CourseAiWorkspaceFrame, type AiOperationPresentation } from "@/features/courses/components/course-ai-workspace";
+import { CourseAiWorkspaceFrame, type AiOperationPresentation } from "@/features/courses/components/course-ai-workspace";
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
 import { PreviewSlide } from "@/features/courses/components/course-slide-deck";
@@ -32,6 +32,13 @@ type ContentSection = {
 };
 type ModificationTarget = { value: string; label: string };
 type ContentMobileView = "chat" | "preview";
+type OptimisticContentOperation = {
+  requestId: string;
+  type: "reading" | "exercises" | "modify";
+  createdAt: string;
+  targetType?: CourseContentState["messages"][number]["targetType"];
+  targetId?: string;
+};
 type TimelineItem =
   | { kind: "message"; index: number; message: CourseContentState["messages"][number] }
   | { kind: "repair-history"; key: string; messages: CourseContentState["messages"] }
@@ -98,6 +105,12 @@ function contentOperationPresentation(type: "reading" | "exercises" | "modify", 
     steps: ["准备故事、难度和章节约束", "生成全部章节正文与课后阅读", "逐章检查正文结构", "修复未通过的内容区域", "检查课后阅读并保存"],
     preserveMessage: regenerating ? "新内容通过检查前，当前版本不会被覆盖。" : undefined,
   };
+}
+
+function contentOperationRunningCopy(type: OptimisticContentOperation["type"]) {
+  if (type === "reading") return "系统正在生成全部章节正文、正文内互动题和课后阅读。";
+  if (type === "exercises") return "系统正在根据已确认正文生成章节练习和课后练习。";
+  return "系统正在按指定范围修改，原内容会保留到新版本通过检查。";
 }
 
 function findLastIndexCompat<T>(items: T[], predicate: (item: T) => boolean) {
@@ -171,7 +184,6 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
   const [selectedSection, setSelectedSection] = useState(initialState.chapters[0] ? `reading:${initialState.chapters[0].id}` : "main-idea");
   const [selectedPage, setSelectedPage] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(() => (initialState.operation ? new Date(initialState.operation.startedAt).getTime() : null));
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -180,6 +192,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
   const [pendingNavigationHref, setPendingNavigationHref] = useState<string | null>(null);
   const [instruction, setInstruction] = useState("");
   const [optimisticTeacherMessage, setOptimisticTeacherMessage] = useState<{ requestId: string; content: string } | null>(null);
+  const [optimisticOperation, setOptimisticOperation] = useState<OptimisticContentOperation | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [navigating, setNavigating] = useState(false);
@@ -290,20 +303,60 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       items.push({ kind: "repair-history", key: `repair-history-${message.id}`, messages: completedRepairs });
       index = nextIndex - 1;
     }
+    const optimisticTeacherVisible = optimisticTeacherMessage && !state.messages.some((message) => message.requestId === optimisticTeacherMessage.requestId || (!message.requestId && message.role === "teacher" && message.content === optimisticTeacherMessage.content));
+    if (optimisticTeacherVisible) {
+      items.push({
+        kind: "message",
+        index: state.messages.length,
+        message: {
+          id: `optimistic-teacher-${optimisticTeacherMessage.requestId}`,
+          role: "teacher",
+          content: optimisticTeacherMessage.content,
+          requestId: optimisticTeacherMessage.requestId,
+          createdAt: optimisticOperation?.createdAt ?? new Date().toISOString(),
+          ...(optimisticOperation?.targetType ? { targetType: optimisticOperation.targetType, targetId: optimisticOperation.targetId } : {}),
+        },
+      });
+    }
+    const persistedType = state.operation?.type
+      ?? (state.status === "generating_reading" ? "reading" : state.status === "generating_exercises" ? "exercises" : null);
+    const pendingOperation = optimisticOperation ?? (persistedType
+      ? { requestId: state.operation?.id ?? `active-${persistedType}`, type: persistedType, createdAt: state.operation?.startedAt ?? new Date().toISOString() }
+      : null);
+    const alreadyHasOperation = pendingOperation && items.some((item) => item.kind === "operation" && (
+      item.requestId === pendingOperation.requestId
+      || item.messages.some((message) => message.kind === "operation" && message.status === "running")
+    ));
+    if (pendingOperation && !alreadyHasOperation) {
+      const presentation = contentOperationPresentation(pendingOperation.type, state.phase, undefined, regeneratingKind === pendingOperation.type);
+      const latestTargetMessage = [...state.messages].reverse().find((message) => message.role === "teacher" && message.targetType && message.targetId);
+      const targetType = pendingOperation.targetType ?? (pendingOperation.type === "modify" ? latestTargetMessage?.targetType : undefined);
+      const targetId = pendingOperation.targetId ?? (pendingOperation.type === "modify" ? latestTargetMessage?.targetId : undefined);
+      items.push({
+        kind: "operation",
+        key: `operation-${pendingOperation.requestId}`,
+        requestId: pendingOperation.requestId,
+        messages: [{
+          id: `optimistic-${pendingOperation.requestId}`,
+          role: "assistant",
+          content: contentOperationRunningCopy(pendingOperation.type),
+          kind: "operation",
+          status: "running",
+          operation: pendingOperation.type,
+          requestId: pendingOperation.requestId,
+          title: presentation.title,
+          createdAt: pendingOperation.createdAt,
+          ...(targetType ? { targetType, targetId } : {}),
+        }],
+      });
+    }
     return items;
-  }, [latestRepairMessageIndex, repairInProgress, state.messages, state.status]);
-  const visibleOptimisticTeacherMessage = optimisticTeacherMessage && !state.messages.some((message) => message.requestId === optimisticTeacherMessage.requestId || (!message.requestId && message.role === "teacher" && message.content === optimisticTeacherMessage.content)) ? optimisticTeacherMessage : null;
-  const persistedModifyMessage = [...state.messages].reverse().find((message) => message.role === "teacher" && message.targetType && message.targetId);
-  const persistedModifyTarget = persistedModifyMessage?.targetType && persistedModifyMessage.targetId ? targets.find((target) => target.value === `${persistedModifyMessage.targetType}:${persistedModifyMessage.targetId}`) : undefined;
-  const activeOperationType = state.operation?.type ?? (state.status === "generating_reading" ? "reading" : state.status === "generating_exercises" ? "exercises" : busy && visibleOptimisticTeacherMessage ? "modify" : null);
+  }, [latestRepairMessageIndex, optimisticOperation, optimisticTeacherMessage, regeneratingKind, repairInProgress, state.messages, state.operation, state.phase, state.status]);
   const latestStructuredOperation = [...timelineItems].reverse().find((item): item is Extract<TimelineItem, { kind: "operation" }> => item.kind === "operation");
   const latestStructuredStatus = latestStructuredOperation ? [...latestStructuredOperation.messages].reverse().find((message) => message.kind === "operation")?.status : null;
-  const latestStructuredType = latestStructuredOperation ? [...latestStructuredOperation.messages].reverse().find((message) => message.kind === "operation")?.operation : null;
   const latestStructuredReadingSuccess = [...timelineItems].reverse().find((item): item is Extract<TimelineItem, { kind: "operation" }> => item.kind === "operation" && [...item.messages].reverse().some((message) => message.kind === "operation" && message.operation === "reading" && message.status === "succeeded"));
-  const hasStructuredRunningOperation = latestStructuredStatus === "running" && latestStructuredType === activeOperationType;
   const hasStructuredFailure = latestStructuredStatus === "failed";
   const hasStructuredReadingSuccess = Boolean(latestStructuredReadingSuccess);
-  const isRegenerating = activeOperationType === regeneratingKind;
   const furthestStep = Math.max(courseStageStep(state.course.currentStage), state.status === "confirmed" ? 5 : 4);
 
   useEffect(() => {
@@ -385,6 +438,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
   async function generate(kind: "reading" | "exercises", regenerate = false, preserveDownstream = false) {
     const previousState = state;
     const requestId = createRequestId();
+    setOptimisticOperation({ requestId, type: kind, createdAt: new Date().toISOString() });
     if (kind === "exercises" && !regenerate) setOptimisticTeacherMessage({ requestId, content: exerciseConfirmationMessage });
     const requestToken = beginRequest();
     setStartedAt(Date.now());
@@ -407,18 +461,23 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       if (requestEpoch.current !== requestToken) return;
       if (response.status === 409 && body.requiresReset) {
         setState(previousState);
+        setOptimisticOperation(null);
         setDestructiveRegeneration(kind);
         return;
       }
       if (!response.ok) throw new Error(body.message || "生成失败");
       setState(body);
+      setOptimisticOperation(null);
       if (kind === "exercises") setOptimisticTeacherMessage(null);
       if (kind === "reading" && body.chapters[0]) {
         setSelectedSection(`reading:${body.chapters[0].id}`);
         setSelectedPage(0);
       }
     } catch (caught) {
-      if (requestEpoch.current === requestToken) setError(caught instanceof Error ? caught.message : "生成失败");
+      if (requestEpoch.current === requestToken) {
+        setOptimisticOperation(null);
+        setError(caught instanceof Error ? caught.message : "生成失败");
+      }
     } finally {
       setRegeneratingKind(null);
       finishRequest(requestToken);
@@ -427,7 +486,6 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
 
   async function confirm() {
     const requestToken = beginRequest();
-    setConfirming(true);
     setError(null);
     try {
       const response = await fetch(`/api/courses/${state.course.id}/content/confirm`, { method: "POST" });
@@ -437,7 +495,6 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
     } catch (caught) {
       if (requestEpoch.current === requestToken) setError(caught instanceof Error ? caught.message : "确认失败");
     } finally {
-      setConfirming(false);
       finishRequest(requestToken);
     }
   }
@@ -457,6 +514,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
         setModifyTarget("");
         setInstruction("");
         setOptimisticTeacherMessage(null);
+        setOptimisticOperation(null);
         setResetOpen(false);
       }
     } catch (caught) {
@@ -475,6 +533,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
     if (separator < 0 || !targetId || !draft) return;
     const requestId = createRequestId();
     setOptimisticTeacherMessage({ requestId, content: draft });
+    setOptimisticOperation({ requestId, type: "modify", createdAt: new Date().toISOString(), targetType: targetType as CourseContentState["messages"][number]["targetType"], targetId });
     setInstruction("");
     const requestToken = beginRequest();
     setStartedAt(Date.now());
@@ -494,12 +553,14 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       if (!response.ok) throw new Error(body.message || "修改失败；原内容已保留");
       setState(body);
       setOptimisticTeacherMessage(null);
+      setOptimisticOperation(null);
       setModifyTarget("");
       setMobileView("preview");
     } catch (caught) {
       if (requestEpoch.current !== requestToken) return;
       setInstruction(draft);
       setOptimisticTeacherMessage(null);
+      setOptimisticOperation(null);
       setError(caught instanceof Error ? caught.message : "修改失败；原内容已保留");
       try {
         const latest = await fetch(`/api/courses/${state.course.id}/content`, {
@@ -687,12 +748,6 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
                   {item.message.content}
                 </ContentChatMessage>
               ))}
-              {visibleOptimisticTeacherMessage ? <ContentChatMessage role="teacher">{visibleOptimisticTeacherMessage.content}</ContentChatMessage> : null}
-              {activeOperationType && !confirming && !hasStructuredRunningOperation ? (
-                <AssistantMessage>
-                  <AiOperationStatusCard elapsedSeconds={elapsed} persisted={Boolean(state.operation) || (!busy && isGenerating)} presentation={contentOperationPresentation(activeOperationType, state.phase, (currentTarget ?? persistedModifyTarget)?.label, isRegenerating)} />
-                </AssistantMessage>
-              ) : null}
               {!isWorking && state.status === "failed" && !hasStructuredFailure ? (
                 <TimelineCard
                   footer={<Button className="w-full" onClick={() => generate("reading")}><RotateCcw className="size-4" />{mainIdeaFailed ? "重试课后阅读" : "重试未通过内容"}</Button>}
@@ -1105,7 +1160,9 @@ function TimelineOperationCard({ messages, requestId, phase, elapsedSeconds, tar
   const status = (terminal?.status ?? "running") as TimelineStatus;
   const operation = latest.operation ?? "reading";
   const presentation = contentOperationPresentation(operation, phase, targetLabel);
-  const details = status === "failed" ? messages : messages.filter((message) => message.id !== latest.id);
+  const details = status === "failed"
+    ? messages.filter((message) => message.kind === "repair" || (message.kind === "operation" && message.status === "failed"))
+    : messages.filter((message) => message.id !== latest.id);
   const footer = onContinue && onRegenerateReading ? (
     <ReadingReadyActions onContinue={onContinue} onRegenerate={onRegenerateReading} />
   ) : onRetry ? (
@@ -1120,7 +1177,7 @@ function TimelineOperationCard({ messages, requestId, phase, elapsedSeconds, tar
       {status === "running" ? (
         <div className="mt-3 rounded-lg bg-muted/60 px-3 py-2.5">
           <p className="flex items-center gap-2 font-medium text-foreground"><LoaderCircle aria-hidden className="size-3.5 animate-spin text-primary motion-reduce:animate-none" />{presentation.steps[Math.min(presentation.currentStep, presentation.steps.length - 1)]}</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{elapsedSeconds < 90 ? "任务进度会自动保存，无需刷新或重复提交。" : "长内容可能仍在处理，可以稍后返回查看。"}</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{elapsedSeconds < 30 ? "任务已经提交，本次操作只会执行一次。" : elapsedSeconds < 90 ? "任务进度会自动保存，无需刷新或重复提交。" : "长内容可能仍在处理，可以稍后返回查看。"}</p>
         </div>
       ) : null}
       {details.length ? (

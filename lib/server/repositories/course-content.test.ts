@@ -1,23 +1,58 @@
 import { describe, expect, test, vi } from "vitest";
 
+import { readingCandidateEnvelopeSchema } from "@/lib/server/ai/course-content-template";
 import type { CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
-import { CourseContentConflictError, courseContentSemanticRepairAttempts, exerciseQuestionIssues, generateCourseExercises, generateCourseReading, modifyCourseContent, recoverStaleCourseContentOperation, requiresExerciseAi, resetCourseContent, type CourseContentDb } from "@/lib/server/repositories/course-content";
+import { CourseContentConflictError, courseContentSemanticRepairAttempts, exerciseQuestionIssues, generateCourseExercises, generateCourseReading, modifyCourseContent, recordContentAiStructureFailure, recoverStaleCourseContentOperation, requiresExerciseAi, resetCourseContent, type CourseContentDb } from "@/lib/server/repositories/course-content";
+import { AiJsonResponseError, parseAiJson } from "@/lib/server/validation/course-content";
 
 describe("course content repository", () => {
   test("allows at most one semantic repair per generation stage", () => {
     expect(courseContentSemanticRepairAttempts).toBe(1);
   });
+
+  test("persists candidate schema diagnostics with the operation request id", async () => {
+    let error: AiJsonResponseError | null = null;
+    try {
+      parseAiJson('{"candidateVersion":"wrong","chapters":[],"mainIdea":{"text":""}}', readingCandidateEnvelopeSchema, "正文候选结构无效");
+    } catch (caught) {
+      error = caught as AiJsonResponseError;
+    }
+    error!.operation = "content_generate_reading_candidates_v3";
+    error!.latencyMs = 1234;
+    const create = vi.fn(async () => ({}));
+
+    await recordContentAiStructureFailure(
+      { aiGenerationLog: { create } } as unknown as CourseContentDb,
+      "course-1",
+      { id: "generation-1", requestId: "request-1" },
+      "quickrouter_gpt",
+      error!,
+      5,
+    );
+
+    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      requestId: "generation-1:request-1:step4-reading:candidate:structure-failure",
+      operation: "reading_v2_candidate",
+      status: "failed",
+      latencyMs: 1234,
+      outputSnapshot: expect.objectContaining({
+        failureType: "schema_mismatch",
+        schemaIssues: expect.any(Array),
+        rawResponsePreview: '{"candidateVersion":"wrong","chapters":[],"mainIdea":{"text":""}}',
+      }),
+    }) });
+  });
   test("skips the exercise AI stage when Step 3 has no grammar exercises", () => {
     const plan = {
-      chapters: [{ chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } } }],
-      afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } } },
+      chapters: [{ chapterPractice: { enabled: false, grammar: { enabledTypes: [], total: 0 } } }],
+      afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: [], practice: { enabled: false, enabledTypes: [], questionsPerKnowledgePoint: 5 } },
     };
 
     expect(requiresExerciseAi(plan as never)).toBe(false);
     expect(requiresExerciseAi({ ...plan, afterClassPractice: { ...plan.afterClassPractice, enabled: true, vocabularyReviewEnabled: true } } as never)).toBe(false);
     expect(requiresExerciseAi({
       ...plan,
-      chapters: [{ chapterPractice: { enabled: true, grammar: { optionCloze: 1, wordForm: 0 } } }],
+      chapters: [{ chapterPractice: { enabled: true, grammar: { enabledTypes: ["optionCloze"], total: 1 } } }],
     } as never)).toBe(true);
   });
 
@@ -25,14 +60,13 @@ describe("course content repository", () => {
     const issues = exerciseQuestionIssues(
       [{ id: "kp-1", label: "一般过去时" }, { id: "kp-2", label: "现在进行时" }],
       ["kp-1", "kp-2"],
-      { optionCloze: 2, wordForm: 1 },
+      { enabledTypes: ["optionCloze", "wordForm"], total: 3 },
       [{ id: "q1", type: "optionCloze", knowledgePointId: "kp-1", before: "Mia ", after: " home.", answer: "went", options: ["went", "goes", "going"] }],
     );
 
     expect(issues).toEqual([
       "未覆盖知识点：现在进行时",
-      "选项填空数量应为 2，实际 1",
-      "给词变形数量应为 1，实际 0",
+      "语法题总数应为 3，实际 1",
     ]);
     expect(issues.join(" ")).not.toContain("kp-2");
     expect(issues.join(" ")).not.toContain("optionCloze");
@@ -43,7 +77,7 @@ describe("course content repository", () => {
     const issues = exerciseQuestionIssues(
       [{ id: "kp-1", label: "一般过去时" }],
       ["kp-1"],
-      { optionCloze: 2, wordForm: 2 },
+      { enabledTypes: ["optionCloze", "wordForm"], total: 4 },
       [
         { id: "q1", type: "optionCloze", knowledgePointId: "kp-1", before: "A ", after: ".", answer: "went", options: ["went"] },
         { id: "q2", type: "optionCloze", knowledgePointId: "kp-1", before: "B ", after: ".", answer: "saw" },
@@ -55,6 +89,25 @@ describe("course content repository", () => {
     expect(issues).toEqual([
       "2 道选项填空的选项结构无效",
       "2 道给词变形缺少原形提示",
+    ]);
+  });
+
+  test("rejects unselected question types and enforces the exact homework count per knowledge point", () => {
+    const questions = [
+      { id: "q1", type: "optionCloze" as const, knowledgePointId: "kp-1", before: "A ", after: ".", answer: "went", options: ["went", "goes", "going"] },
+      { id: "q2", type: "wordForm" as const, knowledgePointId: "kp-2", before: "B ", after: ".", answer: "saw", baseForm: "see" },
+    ];
+
+    expect(exerciseQuestionIssues(
+      [{ id: "kp-1", label: "一般过去时" }, { id: "kp-2", label: "现在进行时" }],
+      ["kp-1", "kp-2"],
+      { enabledTypes: ["optionCloze"], total: 10, questionsPerKnowledgePoint: 5 },
+      questions,
+    )).toEqual([
+      "语法题总数应为 10，实际 2",
+      "1 道题使用了未选择的题型",
+      "一般过去时 应有 5 题，实际 1",
+      "现在进行时 应有 5 题，实际 1",
     ]);
   });
 
@@ -233,11 +286,11 @@ describe("course content repository", () => {
     const generatedText = `${Array.from({ length: 49 }, (_, index) => `word${index + 1}`).join(" ")} `;
     const generateReading = vi.fn(async () => ({
       envelopeError: null,
-      chapters: [{ outlineChapterId: "chapter-1", generated: { outlineChapterId: "chapter-1", paragraphs: [{ template: `${generatedText}{{WF1}}` }], slots: [{ id: "WF1", kind: "wordForm" as const, knowledgePointKey: "G1", answer: "found", cue: "find" }] }, parseError: null }],
+      chapters: [{ outlineChapterId: "chapter-1", generated: { outlineChapterId: "chapter-1", paragraphs: [{ template: `${generatedText}{{GR1}}` }], slots: [{ id: "GR1", kind: "wordForm" as const, knowledgePointKey: "G1", answer: "found", cue: "find" }] }, parseError: null }],
       mainIdea: { title: "Main Idea", text: Array(178).fill("summary").join(" ") },
       mainIdeaError: null,
     }));
-    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v4" as const, repairs: [], mainIdea: { text: Array(120).fill("summary").join(" ") } }));
+    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v5" as const, repairs: [], mainIdea: { text: Array(120).fill("summary").join(" ") } }));
     const generateExercises = vi.fn();
     const deps = { generateReading, repairReading, generateExercises } as unknown as CourseContentGenerationDeps;
 
@@ -289,14 +342,14 @@ describe("course content repository", () => {
       aiGenerationLog: { create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "ai-log", ...data })) },
     } as unknown as CourseContentDb;
     const words = Array.from({ length: 49 }, (_, index) => `word${index + 1}`).join(" ");
-    const generatedChapter = (id: string, template: string) => ({ outlineChapterId: id, paragraphs: [{ template }], slots: [{ id: "WF1", kind: "wordForm" as const, knowledgePointKey: "G1", answer: "found", cue: "find" }] });
-    const chapter1 = generatedChapter("chapter-1", `${words} {{WF1}}`);
+    const generatedChapter = (id: string, template: string) => ({ outlineChapterId: id, paragraphs: [{ template }], slots: [{ id: "GR1", kind: "wordForm" as const, knowledgePointKey: "G1", answer: "found", cue: "find" }] });
+    const chapter1 = generatedChapter("chapter-1", `${words} {{GR1}}`);
     const chapter2 = generatedChapter("chapter-2", `${words} stayed`);
     const generateReading = vi.fn(async () => ({ envelopeError: null, chapters: [
       { outlineChapterId: "chapter-1", generated: chapter1, parseError: null },
       { outlineChapterId: "chapter-2", generated: chapter2, parseError: null },
     ], mainIdea: { text: Array(120).fill("summary").join(" ") }, mainIdeaError: null, candidateUsage: { inputTokens: 70, outputTokens: 50, visibleOutputTokens: 45, reasoningTokens: 5, totalTokens: 120 }, usage: { inputTokens: 100, outputTokens: 80, visibleOutputTokens: 60, reasoningTokens: 20, totalTokens: 180 } }));
-    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v4" as const, repairs: [{ kind: "paragraph" as const, outlineChapterId: "chapter-2", paragraphIndex: 0, template: `${words} {{WF1}}`, slots: [] }], usage: { inputTokens: 40, outputTokens: 20, visibleOutputTokens: 15, reasoningTokens: 5, totalTokens: 60 } }));
+    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v5" as const, repairs: [{ kind: "paragraph" as const, outlineChapterId: "chapter-2", paragraphIndex: 0, template: `${words} {{GR1}}`, slots: [] }], usage: { inputTokens: 40, outputTokens: 20, visibleOutputTokens: 15, reasoningTokens: 5, totalTokens: 60 } }));
     const deps = { generateReading, repairReading } as unknown as CourseContentGenerationDeps;
 
     const result = await generateCourseReading(db, "course-1", "request-1", deps);

@@ -50,8 +50,8 @@ function state(): TeachingPlanState {
           paragraphCount: 2,
           knowledgePointIds: ["grammar-1"],
           readingExerciseMode: "complete",
-          readingExercises: { enabled: true, grammar: { optionCloze: 4, wordForm: 3 }, vocabulary: { chineseHint: 3 } },
-          chapterPractice: { enabled: true, grammar: { optionCloze: 5, wordForm: 5 } },
+          readingExercises: { enabled: true, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 7 }, vocabulary: { enabledTypes: ["chineseHint"], total: 3 } },
+          chapterPractice: { enabled: true, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 10 } },
           touched: { targetWordCount: false, paragraphCount: false, readingExerciseMode: false, readingExercises: false, chapterPractice: false },
         },
         {
@@ -60,8 +60,8 @@ function state(): TeachingPlanState {
           paragraphCount: 2,
           knowledgePointIds: ["grammar-2"],
           readingExerciseMode: "complete",
-          readingExercises: { enabled: true, grammar: { optionCloze: 4, wordForm: 3 }, vocabulary: { chineseHint: 3 } },
-          chapterPractice: { enabled: true, grammar: { optionCloze: 5, wordForm: 5 } },
+          readingExercises: { enabled: true, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 7 }, vocabulary: { enabledTypes: ["chineseHint"], total: 3 } },
+          chapterPractice: { enabled: true, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 10 } },
           touched: { targetWordCount: false, paragraphCount: false, readingExerciseMode: false, readingExercises: false, chapterPractice: false },
         },
       ],
@@ -69,7 +69,7 @@ function state(): TeachingPlanState {
         enabled: false,
         vocabularyReviewEnabled: false,
         knowledgePointIds: ["grammar-1", "grammar-2"],
-        practice: { enabled: false, grammar: { optionCloze: 5, wordForm: 5 } },
+        practice: { enabled: false, enabledTypes: ["optionCloze", "wordForm"], questionsPerKnowledgePoint: 5 },
         touched: { knowledgePointIds: false, practice: false },
       },
       updatedAt: "2026-08-07T00:00:00.000Z",
@@ -98,7 +98,12 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.queryByText("B1", { selector: "span" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("第 1 章正文页数")).toHaveValue(2);
     expect(screen.getByLabelText("第 1 章目标词数")).toHaveValue(180);
-    expect(screen.getByLabelText("第 1 章章节练习选项填空数量")).toHaveValue(5);
+    expect(screen.getByLabelText("第 1 章章节练习总题数数量")).toHaveValue(10);
+    expect(screen.getByLabelText("第 1 章正文语法题总数数量")).toHaveValue(7);
+    expect(screen.getByLabelText("第 1 章正文词汇题总数数量")).toHaveValue(3);
+    expect(screen.getByLabelText("第 1 章正文语法选项填空")).toBeChecked();
+    expect(screen.getByLabelText("第 1 章正文语法给词变形")).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "中文提示写词" })).toBeChecked();
     expect(screen.getByText(/AI 推荐：适合用过去时/)).toBeInTheDocument();
     expect(screen.getByLabelText("第 1 章目标词数")).toHaveAttribute("min", "60");
     expect(screen.getByLabelText("第 1 章目标词数")).toHaveAttribute("max", "200");
@@ -107,6 +112,16 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.getByLabelText("第 1 章正文页数")).toHaveAttribute("step", "1");
     expect(screen.queryByText(/推荐 .*词|只有低于|推荐.*页/)).not.toBeInTheDocument();
     expect(screen.queryByText("部分配置保留了你的修改。")).not.toBeInTheDocument();
+  });
+
+  test("warns without blocking when reading exercise density exceeds ten", () => {
+    render(<CourseTeachingPlanWorkspace initialState={state()} />);
+
+    expect(screen.queryByText(/正文练习密度过大/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("第 1 章正文语法题总数增加"));
+
+    expect(screen.getByText(/正文练习密度过大/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认并进入文案与练习" })).toBeEnabled();
   });
 
   test("recommends two pages for A2 90 words and preserves a teacher page choice after word edits", () => {
@@ -172,11 +187,13 @@ describe("CourseTeachingPlanWorkspace", () => {
   test("shows fixed正文 categories and defaults without matching", () => {
     render(<CourseTeachingPlanWorkspace initialState={state()} />);
 
-    expect(screen.getByText("语法")).toBeInTheDocument();
-    expect(screen.getByText("词汇词组")).toBeInTheDocument();
-    expect(screen.getByLabelText("第 1 章正文选项填空数量")).toHaveValue(4);
-    expect(screen.getByLabelText("第 1 章正文给词变形数量")).toHaveValue(3);
-    expect(screen.getByLabelText("第 1 章正文中文提示写词数量")).toHaveValue(3);
+    expect(screen.getByText("语法题")).toBeInTheDocument();
+    expect(screen.getByText("词汇题")).toBeInTheDocument();
+    expect(screen.getByLabelText("第 1 章正文语法题总数数量")).toHaveValue(7);
+    expect(screen.getByLabelText("第 1 章正文词汇题总数数量")).toHaveValue(3);
+    expect(screen.getByLabelText("第 1 章正文语法选项填空")).toBeChecked();
+    expect(screen.getByLabelText("第 1 章正文语法给词变形")).toBeChecked();
+    expect(screen.getByText("中文提示写词")).toBeInTheDocument();
     expect(screen.queryByLabelText("第 1 章正文中英配对数量")).not.toBeInTheDocument();
     expect(screen.getAllByText("举例：Summer ______ (found / lost / painted) the glowing map.").length).toBeGreaterThan(0);
   });
@@ -334,19 +351,18 @@ describe("CourseTeachingPlanWorkspace", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "重置教学规划？" })).not.toBeInTheDocument());
   });
 
-  test("deletes and restores optional正文 exercise types without saving early", async () => {
+  test("toggles the single vocabulary type without saving early", async () => {
     const fetchMock = vi.fn(async (_url, options: RequestInit) => Response.json({ plan: JSON.parse(String(options.body)).plan }));
     vi.stubGlobal("fetch", fetchMock);
     render(<CourseTeachingPlanWorkspace initialState={state()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "第 1 章正文删除题型 中文提示写词" }));
-    expect(screen.queryByLabelText("第 1 章正文中文提示写词数量")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "中文提示写词" }));
+    expect(screen.getByRole("checkbox", { name: "中文提示写词" })).not.toBeChecked();
     expect(fetchMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "添加正文题型" }));
-    expect(screen.getByRole("button", { name: "添加中文提示写词" })).toHaveTextContent("The map showed a secret");
-    fireEvent.click(screen.getByRole("button", { name: "添加中文提示写词" }));
-    expect(screen.getByLabelText("第 1 章正文中文提示写词数量")).toHaveValue(3);
+    fireEvent.click(screen.getByRole("checkbox", { name: "中文提示写词" }));
+    expect(screen.getByRole("checkbox", { name: "中文提示写词" })).toBeChecked();
+    expect(screen.getByLabelText("第 1 章正文词汇题总数数量")).toHaveValue(3);
   });
 
   test("selects knowledge points from grammar library and warns after more than three", () => {
@@ -391,22 +407,19 @@ describe("CourseTeachingPlanWorkspace", () => {
   test("keeps chapter practice limited to selectable grammar exercise types", () => {
     render(<CourseTeachingPlanWorkspace initialState={state()} />);
 
-    expect(screen.getByLabelText("第 1 章章节练习选项填空数量")).toHaveValue(5);
-    expect(screen.getByLabelText("第 1 章章节练习给词变形数量")).toHaveValue(5);
+    expect(screen.getByLabelText("第 1 章章节练习总题数数量")).toHaveValue(10);
+    expect(screen.getByLabelText("第 1 章章节练习选项填空")).toBeChecked();
+    expect(screen.getByLabelText("第 1 章章节练习给词变形")).toBeChecked();
     expect(screen.queryByLabelText("第 1 章章节练习中文提示写词数量")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "第 1 章章节练习删除题型 给词变形" }));
-    expect(screen.queryByLabelText("第 1 章章节练习给词变形数量")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "添加章节练习题型" }));
-    expect(screen.getByRole("button", { name: "添加给词变形" })).toHaveTextContent("Yesterday, Mia");
-    fireEvent.click(screen.getByRole("button", { name: "添加给词变形" }));
-    expect(screen.getByLabelText("第 1 章章节练习给词变形数量")).toHaveValue(5);
+    fireEvent.click(screen.getByLabelText("第 1 章章节练习给词变形"));
+    expect(screen.getByLabelText("第 1 章章节练习给词变形")).not.toBeChecked();
   });
 
   test("applies current chapter settings to all chapters without overwriting knowledge points", () => {
     render(<CourseTeachingPlanWorkspace initialState={state()} />);
 
     fireEvent.click(screen.getByRole("radio", { name: /边读边练/ }));
-    fireEvent.click(screen.getByLabelText("第 1 章正文选项填空增加"));
+    fireEvent.click(screen.getByLabelText("第 1 章正文语法题总数增加"));
 
     const desktopSidebar = screen.getByTestId("teaching-plan-desktop-sidebar");
     fireEvent.click(within(desktopSidebar).getByRole("tab", { name: /第 2 章/ }));
@@ -421,7 +434,7 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.queryByText("一般过去时 · Past Simple · Unit 1")).not.toBeInTheDocument();
     expect(screen.getByLabelText("第 2 章目标词数")).toHaveValue(180);
     expect(screen.getByRole("radio", { name: /边读边练/ })).toBeChecked();
-    expect(screen.getByLabelText("第 2 章正文选项填空数量")).toHaveValue(5);
+    expect(screen.getByLabelText("第 2 章正文语法题总数数量")).toHaveValue(8);
   });
 
   test("explains chapter-practice scope and skips chapters without knowledge points", () => {
@@ -429,8 +442,8 @@ describe("CourseTeachingPlanWorkspace", () => {
     input.plan.chapters[1] = {
       ...input.plan.chapters[1],
       knowledgePointIds: [],
-      readingExercises: { ...input.plan.chapters[1].readingExercises, grammar: { optionCloze: 0, wordForm: 0 } },
-      chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } },
+      readingExercises: { ...input.plan.chapters[1].readingExercises, grammar: { enabledTypes: [], total: 0 } },
+      chapterPractice: { ...input.plan.chapters[1].chapterPractice, enabled: false },
     };
     render(<CourseTeachingPlanWorkspace initialState={input} />);
 
@@ -492,6 +505,9 @@ describe("CourseTeachingPlanWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "语法习题已关闭" }));
 
     expect(screen.getByText("已默认选中各章节使用的知识点；取消勾选即可排除不需要考查的内容。")).toBeInTheDocument();
+    expect(screen.getByText("2 个知识点 × 5 题 = 10 题 · 预计约 2 页")).toBeInTheDocument();
+    expect(screen.getByLabelText("课后练习选项填空")).toBeChecked();
+    expect(screen.getByLabelText("课后练习给词变形")).toBeChecked();
     expect(screen.getByLabelText("一般过去时 · Past Simple · Unit 1")).toBeChecked();
     expect(screen.getByLabelText("特殊疑问句 · Wh- Questions · Unit 2")).toBeChecked();
     fireEvent.click(screen.getByLabelText("一般过去时 · Past Simple · Unit 1"));
@@ -522,7 +538,7 @@ describe("CourseTeachingPlanWorkspace", () => {
     const withoutVocabulary = state();
     withoutVocabulary.plan.chapters = withoutVocabulary.plan.chapters.map((chapter) => ({
       ...chapter,
-      readingExercises: { ...chapter.readingExercises, vocabulary: { chineseHint: 0 } },
+      readingExercises: { ...chapter.readingExercises, vocabulary: { enabledTypes: [], total: 0 } },
     }));
     render(<CourseTeachingPlanWorkspace initialState={withoutVocabulary} />);
 

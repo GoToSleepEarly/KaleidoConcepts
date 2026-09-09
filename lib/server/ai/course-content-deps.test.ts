@@ -4,6 +4,8 @@ import type { StoryContentIntent, TeachingPlanState } from "@/lib/contracts/api"
 import { englishWordRangesForTarget, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import {
   buildExercisePromptContext,
+  buildExerciseGenerationPrompt,
+  buildExerciseRepairPrompt,
   buildModificationPromptContext,
   buildPromptParts,
   buildPromptQuestions,
@@ -30,8 +32,8 @@ const input = {
   plan: {
     courseId: "c1", status: "confirmed", englishLevel: "A2",
     mainIdeaTargetWordCount: 120,
-    chapters: [{ outlineChapterId: "ch1", targetWordCount: 90, paragraphCount: 2, knowledgePointIds: ["kp1"], readingExerciseMode: "interactive", readingExercises: { enabled: true, grammar: { optionCloze: 2, wordForm: 1 }, vocabulary: { chineseHint: 2 } }, chapterPractice: { enabled: true, grammar: { optionCloze: 3, wordForm: 2 } }, touched: { targetWordCount: true, paragraphCount: false, knowledgePointIds: true, readingExerciseMode: true, readingExercises: true, chapterPractice: true } }],
-    afterClassPractice: { enabled: true, vocabularyReviewEnabled: true, knowledgePointIds: ["kp1"], practice: { enabled: true, grammar: { optionCloze: 2, wordForm: 2 } }, touched: { knowledgePointIds: true, practice: true } },
+    chapters: [{ outlineChapterId: "ch1", targetWordCount: 90, paragraphCount: 2, knowledgePointIds: ["kp1"], readingExerciseMode: "interactive", readingExercises: { enabled: true, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 3 }, vocabulary: { enabledTypes: ["chineseHint"], total: 2 } }, chapterPractice: { enabled: true, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 5 } }, touched: { targetWordCount: true, paragraphCount: false, knowledgePointIds: true, readingExerciseMode: true, readingExercises: true, chapterPractice: true } }],
+    afterClassPractice: { enabled: true, vocabularyReviewEnabled: true, knowledgePointIds: ["kp1"], practice: { enabled: true, enabledTypes: ["optionCloze", "wordForm"], questionsPerKnowledgePoint: 5 }, touched: { knowledgePointIds: true, practice: true } },
     updatedAt: "", confirmedAt: "",
   },
   promptPeople: [
@@ -81,9 +83,9 @@ describe("course content prompt contexts", () => {
   });
 
   test("provides minimal unambiguous examples for every generated exercise shape", () => {
-    expect(courseContentPromptExamples.reading).toContain('"exerciseType":"optionCloze"');
-    expect(courseContentPromptExamples.reading).toContain('"exerciseType":"wordForm"');
-    expect(courseContentPromptExamples.reading).toContain('"type":"vocabulary"');
+    expect(courseContentPromptExamples.modificationReading).toContain('"exerciseType":"optionCloze"');
+    expect(courseContentPromptExamples.modificationReading).toContain('"exerciseType":"wordForm"');
+    expect(courseContentPromptExamples.modificationReading).toContain('"type":"vocabulary"');
     expect(courseContentPromptExamples.questions).toContain('"before":"Yesterday, Mia "');
     expect(courseContentPromptExamples.questions).toContain('"after":" the hidden door."');
     expect(courseContentPromptExamples.questions).toContain('"distractors":["finds","will find"]');
@@ -146,7 +148,7 @@ describe("course content prompt contexts", () => {
         id: "ch1", order: 1, title: "Milo出发", summary: "Linda帮助Milo。", targetWordCount: 90, acceptedWordCountRange: [75, 110], generationAimRange: [80, 100], paragraphCount: 2,
         grammarPoints: [{ key: "KP1", label: "一般过去时" }],
         knowledgePointUsagePlan: "一般过去时：用于描述Milo已经完成的开门动作。",
-        exerciseCounts: { optionCloze: 2, wordForm: 1, vocabulary: 2 },
+        exercisePlan: { grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 3 }, vocabulary: { enabledTypes: ["chineseHint"], total: 2 } },
       }],
       mainIdea: { targetWordCount: 120, preferredRange: [115, 125], acceptedRange: [110, 130] },
     });
@@ -201,8 +203,8 @@ describe("course content prompt contexts", () => {
       narrativeTense: "past",
       paragraphCount: 2,
       targetWordCount: 90,
-      optionClozeCount: 2,
-      wordFormCount: 1,
+      grammarCount: 3,
+      enabledGrammarTypes: ["optionCloze", "wordForm"],
       vocabularyCount: 2,
       grammarPoints: [{ key: "G1", label: "一般过去时", knowledgePointId: "kp1" }],
     }]);
@@ -227,10 +229,25 @@ describe("course content prompt contexts", () => {
       englishLevel: "A2",
       cefrWritingProfile: cefrWritingProfile("A2"),
       knowledgePoints: [{ key: "KP1", label: "一般过去时" }],
-      chapters: [{ id: "ch1", title: "Milo出发", cleanText: "Milo opened the door.", knowledgePointKeys: ["KP1"], counts: { optionCloze: 3, wordForm: 2 } }],
-      homework: { enabled: true, knowledgePointKeys: ["KP1"], counts: { optionCloze: 2, wordForm: 2 } },
+      chapters: [{ id: "ch1", title: "Milo出发", cleanText: "Milo opened the door.", knowledgePointKeys: ["KP1"], exercisePlan: { enabledTypes: ["optionCloze", "wordForm"], total: 5 } }],
+      homework: { enabled: true, knowledgePointKeys: ["KP1"], enabledTypes: ["optionCloze", "wordForm"], questionsPerKnowledgePoint: 5, total: 5 },
     });
     expect(JSON.stringify(context)).not.toContain("paragraphCount");
+  });
+
+  test("makes selected exercise types balanced by default while allowing knowledge-point fit to override", () => {
+    const cleanChapters = [{ outlineChapterId: "ch1", title: "Milo出发", cleanText: "Milo opened the door." }];
+    const generationPrompt = buildExerciseGenerationPrompt(input, cleanChapters);
+    const repairPrompt = buildExerciseRepairPrompt(input, [{ id: "ch1", issues: ["题型分配不合理"] }], {
+      chapters: [{ outlineChapterId: "ch1", questions: [] }],
+      homeworkGrammar: [],
+    }, cleanChapters);
+
+    for (const prompt of [generationPrompt, repairPrompt]) {
+      expect(prompt).toContain("优先使用当前数量较少的题型");
+      expect(prompt).toContain("只有知识点与某题型明显不适配时才允许偏斜");
+      expect(prompt).toContain("每个知识点内部也按同一原则分配");
+    }
   });
 
   test("converts persisted failed chapters back to the clean AI reading contract before repair", () => {

@@ -200,15 +200,55 @@ function extractJsonObject(text: string) {
   return text;
 }
 
+const AI_RAW_RESPONSE_LOG_LIMIT = 20_000;
+
+export type AiJsonFailureDiagnostics = {
+  failureType: "invalid_json" | "schema_mismatch";
+  schemaIssues: Array<{ path: string; code: string; message: string }>;
+  rawResponsePreview: string;
+  rawResponseLength: number;
+  rawResponseTruncated: boolean;
+};
+
+export class AiJsonResponseError extends Error {
+  operation?: string;
+  latencyMs?: number;
+
+  constructor(message: string, readonly diagnostics: AiJsonFailureDiagnostics, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "AiJsonResponseError";
+  }
+}
+
+function rawResponseDiagnostics(text: string) {
+  return {
+    rawResponsePreview: text.slice(0, AI_RAW_RESPONSE_LOG_LIMIT),
+    rawResponseLength: text.length,
+    rawResponseTruncated: text.length > AI_RAW_RESPONSE_LOG_LIMIT,
+  };
+}
+
 export function parseAiJson<Schema extends z.ZodTypeAny>(text: string, schema: Schema, message: string): z.output<Schema> {
   const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   let value: unknown;
   try { value = JSON.parse(cleaned); }
   catch (firstError) {
     try { value = JSON.parse(extractJsonObject(cleaned)); }
-    catch { throw new Error(message, { cause: firstError }); }
+    catch {
+      throw new AiJsonResponseError(message, {
+        failureType: "invalid_json",
+        schemaIssues: [{ path: "$", code: "invalid_json", message: firstError instanceof Error ? firstError.message : "无法解析 JSON" }],
+        ...rawResponseDiagnostics(text),
+      }, { cause: firstError });
+    }
   }
   const parsed = schema.safeParse(value);
-  if (!parsed.success) throw new Error(message, { cause: parsed.error });
+  if (!parsed.success) {
+    throw new AiJsonResponseError(message, {
+      failureType: "schema_mismatch",
+      schemaIssues: parsed.error.issues.map((issue) => ({ path: issue.path.length ? issue.path.join(".") : "$", code: issue.code, message: issue.message })),
+      ...rawResponseDiagnostics(text),
+    }, { cause: parsed.error });
+  }
   return parsed.data as z.output<Schema>;
 }

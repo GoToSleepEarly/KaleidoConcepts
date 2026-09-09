@@ -530,19 +530,34 @@ export type GrammarCatalogResponse = {
 };
 export type TeachingPlanStatus = "draft" | "confirmed";
 export type GrammarExerciseType = "optionCloze" | "wordForm";
+export type ReadingVocabularyType = "chineseHint";
 export type ReadingExerciseMode = "complete" | "interactive";
 
-export type GrammarExerciseCounts = Record<GrammarExerciseType, number>;
+export type GrammarExercisePlan = {
+  enabledTypes: GrammarExerciseType[];
+  total: number;
+};
+
+export type VocabularyExercisePlan = {
+  enabledTypes: ReadingVocabularyType[];
+  total: number;
+};
 
 export type ReadingExerciseConfig = {
   enabled: boolean;
-  grammar: GrammarExerciseCounts;
-  vocabulary: { chineseHint: number };
+  grammar: GrammarExercisePlan;
+  vocabulary: VocabularyExercisePlan;
 };
 
 export type GrammarPracticeConfig = {
   enabled: boolean;
-  grammar: GrammarExerciseCounts;
+  grammar: GrammarExercisePlan;
+};
+
+export type AfterClassGrammarPracticeConfig = {
+  enabled: boolean;
+  enabledTypes: GrammarExerciseType[];
+  questionsPerKnowledgePoint: number;
 };
 
 export type TeachingPlanChapter = {
@@ -567,7 +582,7 @@ export type AfterClassPracticeConfig = {
   enabled: boolean;
   vocabularyReviewEnabled: boolean;
   knowledgePointIds: string[];
-  practice: GrammarPracticeConfig;
+  practice: AfterClassGrammarPracticeConfig;
   touched: {
     knowledgePointIds: boolean;
     practice: boolean;

@@ -12,7 +12,25 @@ import { GrammarKnowledgePointPickerDialog } from "@/features/courses/components
 import { KnowledgePointPickerDialog } from "@/features/courses/components/knowledge-point-picker-dialog";
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
 import type { EnglishLevel, GrammarBookCatalog, GrammarExerciseType, GrammarPracticeConfig, ReadingExerciseMode, TeachingPlan, TeachingPlanChapter, TeachingPlanState } from "@/lib/contracts/api";
-import { grammarExerciseTotal, MAX_CHAPTER_TARGET_WORD_COUNT, MAX_READING_PAGE_COUNT, MIN_CHAPTER_TARGET_WORD_COUNT, MIN_READING_PAGE_COUNT, practicePageCount, readingPageCount, readingPageDensity, recommendedReadingPageCount } from "@/lib/domain/teaching-plan-policy";
+import {
+  ALL_GRAMMAR_EXERCISE_TYPES,
+  DEFAULT_READING_GRAMMAR_TOTAL,
+  DEFAULT_READING_VOCABULARY_TOTAL,
+  grammarExerciseTotal,
+  MAX_CHAPTER_TARGET_WORD_COUNT,
+  MAX_GRAMMAR_EXERCISE_TOTAL,
+  MAX_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
+  MAX_READING_PAGE_COUNT,
+  MIN_CHAPTER_TARGET_WORD_COUNT,
+  MIN_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
+  MIN_READING_PAGE_COUNT,
+  practicePageCount,
+  READING_EXERCISE_DENSITY_WARNING_TOTAL,
+  readingExerciseTotal,
+  readingPageCount,
+  readingPageDensity,
+  recommendedReadingPageCount,
+} from "@/lib/domain/teaching-plan-policy";
 import { cn } from "@/lib/utils";
 import { readJsonResponse } from "@/lib/utils/response-json";
 
@@ -52,13 +70,16 @@ function hasValidExercisePlan(plan: TeachingPlan) {
     if (!chapterReady(chapter)) return false;
     const readingCount = grammarExerciseTotal(chapter.readingExercises.grammar);
     const practiceCount = grammarExerciseTotal(chapter.chapterPractice.grammar);
-    if (!chapter.knowledgePointIds.length) return chapter.readingExercises.enabled && readingCount === 0 && !chapter.chapterPractice.enabled && practiceCount === 0;
-    return chapter.readingExercises.enabled && readingCount >= chapter.knowledgePointIds.length && (!chapter.chapterPractice.enabled || practiceCount >= chapter.knowledgePointIds.length);
+    if (!chapter.knowledgePointIds.length) return chapter.readingExercises.enabled && readingCount === 0 && !chapter.chapterPractice.enabled;
+    return chapter.readingExercises.enabled
+      && chapter.readingExercises.grammar.enabledTypes.length > 0
+      && readingCount >= chapter.knowledgePointIds.length
+      && (!chapter.chapterPractice.enabled || (chapter.chapterPractice.grammar.enabledTypes.length > 0 && practiceCount >= chapter.knowledgePointIds.length));
   });
   if (!chaptersValid || !plan.chapters.some((chapter) => chapter.knowledgePointIds.length)) return false;
   if (!plan.afterClassPractice.enabled) return true;
   if (!plan.afterClassPractice.practice.enabled) return plan.afterClassPractice.vocabularyReviewEnabled;
-  return grammarExerciseTotal(plan.afterClassPractice.practice.grammar) >= Math.max(1, plan.afterClassPractice.knowledgePointIds.length);
+  return plan.afterClassPractice.practice.enabledTypes.length > 0 && plan.afterClassPractice.knowledgePointIds.length > 0;
 }
 
 function exercisePlanIssue(plan: TeachingPlan) {
@@ -68,13 +89,15 @@ function exercisePlanIssue(plan: TeachingPlan) {
     if (!validIntegerInRange(chapter.paragraphCount, MIN_READING_PAGE_COUNT, MAX_READING_PAGE_COUNT)) return `${label}正文页数需为 ${MIN_READING_PAGE_COUNT}–${MAX_READING_PAGE_COUNT} 之间的整数`;
     const readingCount = grammarExerciseTotal(chapter.readingExercises.grammar);
     const practiceCount = grammarExerciseTotal(chapter.chapterPractice.grammar);
-    if (!chapter.knowledgePointIds.length && (readingCount > 0 || chapter.chapterPractice.enabled || practiceCount > 0)) return `${label}没有知识点，请关闭语法题和章节练习`;
+    if (!chapter.knowledgePointIds.length && (readingCount > 0 || chapter.chapterPractice.enabled)) return `${label}没有知识点，请关闭语法题和章节练习`;
+    if (chapter.knowledgePointIds.length && !chapter.readingExercises.grammar.enabledTypes.length) return `${label}正文至少选择一种语法题型`;
     if (chapter.knowledgePointIds.length && readingCount < chapter.knowledgePointIds.length) return `${label}正文语法题少于知识点数量`;
     if (chapter.chapterPractice.enabled && practiceCount < chapter.knowledgePointIds.length) return `${label}章节练习题少于知识点数量`;
   }
   if (!plan.chapters.some((chapter) => chapter.knowledgePointIds.length)) return "整门课程至少需要分配 1 个知识点";
   if (plan.afterClassPractice.enabled && !plan.afterClassPractice.vocabularyReviewEnabled && !plan.afterClassPractice.practice.enabled) return "课后练习至少保留词汇复习或语法习题";
-  if (plan.afterClassPractice.practice.enabled && grammarExerciseTotal(plan.afterClassPractice.practice.grammar) < Math.max(1, plan.afterClassPractice.knowledgePointIds.length)) return "课后语法题少于所选知识点数量";
+  if (plan.afterClassPractice.practice.enabled && !plan.afterClassPractice.practice.enabledTypes.length) return "课后语法习题至少选择一种题型";
+  if (plan.afterClassPractice.practice.enabled && !plan.afterClassPractice.knowledgePointIds.length) return "课后语法习题还没有选择知识点";
   return "";
 }
 
@@ -666,10 +689,10 @@ function ChapterEditor({ chapter, outline, index, englishLevel, knowledgePoints,
       ...current,
       knowledgePointIds: ids,
       ...(!ids.length ? {
-        readingExercises: { ...current.readingExercises, grammar: { optionCloze: 0, wordForm: 0 } },
-        chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } },
+        readingExercises: { ...current.readingExercises, grammar: { enabledTypes: [], total: 0 } },
+        chapterPractice: { ...current.chapterPractice, enabled: false },
       } : current.knowledgePointIds.length ? {} : {
-        readingExercises: { ...current.readingExercises, grammar: { optionCloze: 4, wordForm: 3 } },
+        readingExercises: { ...current.readingExercises, grammar: { enabledTypes: [...ALL_GRAMMAR_EXERCISE_TYPES], total: DEFAULT_READING_GRAMMAR_TOTAL } },
       }),
       touched: {
         ...current.touched,
@@ -797,8 +820,8 @@ function ChapterEditor({ chapter, outline, index, englishLevel, knowledgePoints,
                             ...current,
                             knowledgePointIds: current.knowledgePointIds.filter((pointId) => pointId !== id),
                             ...(current.knowledgePointIds.length === 1 ? {
-                              readingExercises: { ...current.readingExercises, grammar: { optionCloze: 0, wordForm: 0 } },
-                              chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } },
+                              readingExercises: { ...current.readingExercises, grammar: { enabledTypes: [], total: 0 } },
+                              chapterPractice: { ...current.chapterPractice, enabled: false },
                             } : {}),
                             touched: {
                               ...current.touched,
@@ -925,7 +948,6 @@ function ChapterEditor({ chapter, outline, index, englishLevel, knowledgePoints,
               <GrammarPracticeEditor
                 ariaPrefix={`${chapterLabel}章节练习`}
                 config={chapter.chapterPractice}
-                max={20}
                 onChange={(config) =>
                   onChange((current) => ({
                     ...current,
@@ -983,223 +1005,93 @@ function ToggleHeader({ disabled = false, enabled, label, onChange }: { disabled
 }
 
 function ReadingExerciseEditor({ config, ariaPrefix, grammarDisabled = false, onChange }: { config: TeachingPlanChapter["readingExercises"]; ariaPrefix: string; grammarDisabled?: boolean; onChange: (config: TeachingPlanChapter["readingExercises"]) => void }) {
-  const [adding, setAdding] = useState(false);
-  const invalid = !grammarDisabled && grammarExerciseTotal(config.grammar) < 1;
-  const grammarRow = (type: GrammarExerciseType) => (
-    <div className="grid gap-3 rounded-md border border-border bg-background p-3 sm:grid-cols-[minmax(0,1fr)_220px]" key={type}>
-      <div className="min-w-0">
-        <div className="text-sm font-semibold text-foreground">{grammarLabels[type]}</div>
-        <div className="mt-1 text-xs leading-5 text-muted-foreground">{grammarExamples[type]}</div>
-      </div>
-      <div className="flex items-center justify-end gap-2">
-        <Stepper
-          ariaPrefix={ariaPrefix}
-          label={grammarLabels[type]}
-          max={8}
-          onChange={(count) =>
-            onChange({
-              ...config,
-              enabled: true,
-              grammar: { ...config.grammar, [type]: count },
-            })
-          }
-          value={config.grammar[type]}
-        />
-        <button aria-label={`${ariaPrefix}删除题型 ${grammarLabels[type]}`} className="flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onChange({ ...config, grammar: { ...config.grammar, [type]: 0 } })} type="button">
-          <X className="size-4" />
-        </button>
-      </div>
-    </div>
-  );
-  const missingGrammar = (["optionCloze", "wordForm"] as GrammarExerciseType[]).filter((type) => config.grammar[type] === 0);
-  const vocabularyEnabled = config.vocabulary.chineseHint > 0;
-  const hasMissing = (!grammarDisabled && missingGrammar.length > 0) || !vocabularyEnabled;
+  const densityHigh = readingExerciseTotal(config) > READING_EXERCISE_DENSITY_WARNING_TOTAL;
   return (
     <div className="mt-5 space-y-4">
-      <div>
-        <div className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground">语法</div>
-        <div className="space-y-2">
-          {grammarDisabled ? <div className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-3 text-sm text-muted-foreground">本章未分配知识点，不生成语法题。</div> : null}
-          {!grammarDisabled && config.grammar.optionCloze > 0 ? grammarRow("optionCloze") : null}
-          {!grammarDisabled && config.grammar.wordForm > 0 ? grammarRow("wordForm") : null}
-          {!grammarDisabled && !grammarExerciseTotal(config.grammar) ? <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 px-3 py-3 text-sm text-amber-800">至少添加一种语法题型，才能覆盖本章知识点。</div> : null}
-        </div>
-      </div>
-      <div>
-        <div className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground">词汇词组</div>
-        {vocabularyEnabled ? (
-          <div className="grid gap-3 rounded-md border border-border bg-background p-3 sm:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-foreground">中文提示写词</div>
-              <div className="mt-1 text-xs leading-5 text-muted-foreground">{vocabularyExample}</div>
-            </div>
-            <div className="flex items-center justify-end gap-2">
-              <Stepper
-                ariaPrefix={ariaPrefix}
-                label="中文提示写词"
-                max={8}
-                onChange={(count) =>
-                  onChange({
-                    ...config,
-                    enabled: true,
-                    vocabulary: { chineseHint: count },
-                  })
-                }
-                value={config.vocabulary.chineseHint}
-              />
-              <button aria-label={`${ariaPrefix}删除题型 中文提示写词`} className="flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onChange({ ...config, vocabulary: { chineseHint: 0 } })} type="button">
-                <X className="size-4" />
-              </button>
-            </div>
+      <div className="rounded-md border border-border bg-background p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-foreground">语法题</div>
+            <div className="mt-1 text-xs text-muted-foreground">AI 根据知识点匹配度分配题型，并尽量均匀覆盖。</div>
           </div>
-        ) : (
-          <p className="rounded-md border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">当前不生成正文词汇题。</p>
+          {!grammarDisabled ? <Stepper ariaPrefix={ariaPrefix} label="语法题总数" max={MAX_GRAMMAR_EXERCISE_TOTAL} min={1} onChange={(total) => onChange({ ...config, grammar: { ...config.grammar, total } })} value={config.grammar.total} /> : null}
+        </div>
+        {grammarDisabled ? <div className="mt-3 rounded-md border border-dashed border-border bg-muted/20 px-3 py-3 text-sm text-muted-foreground">本章未分配知识点，不生成语法题。</div> : (
+          <ExerciseTypeSelector
+            ariaPrefix={`${ariaPrefix}语法`}
+            enabledTypes={config.grammar.enabledTypes}
+            onChange={(enabledTypes) => onChange({ ...config, grammar: { ...config.grammar, enabledTypes } })}
+          />
         )}
       </div>
-      {hasMissing ? (
-        <div>
-          <Button aria-expanded={adding} onClick={() => setAdding((current) => !current)} size="sm" type="button" variant="outline">
-            <Plus className="size-4" />
-            添加正文题型
-          </Button>
-          {adding ? (
-            <div className="mt-2 grid gap-2 rounded-md border border-border bg-muted/30 p-2 sm:grid-cols-2">
-              {!grammarDisabled ? missingGrammar.map((type) => (
-                <AddExerciseTypeCard
-                  example={grammarExamples[type]}
-                  key={type}
-                  label={grammarLabels[type]}
-                  onClick={() => {
-                    onChange({
-                      ...config,
-                      enabled: true,
-                      grammar: {
-                        ...config.grammar,
-                        [type]: type === "optionCloze" ? 4 : 3,
-                      },
-                    });
-                    setAdding(false);
-                  }}
-                />
-              )) : null}
-              {!vocabularyEnabled ? (
-                <AddExerciseTypeCard
-                  example={vocabularyExample}
-                  label="中文提示写词"
-                  onClick={() => {
-                    onChange({
-                      ...config,
-                      enabled: true,
-                      vocabulary: { chineseHint: 3 },
-                    });
-                    setAdding(false);
-                  }}
-                />
-              ) : null}
-            </div>
-          ) : null}
+      <div className="rounded-md border border-border bg-background p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-foreground">词汇题</div>
+            <div className="mt-1 text-xs leading-5 text-muted-foreground">{vocabularyExample}</div>
+          </div>
+          {config.vocabulary.enabledTypes.length ? <Stepper ariaPrefix={ariaPrefix} label="词汇题总数" max={MAX_GRAMMAR_EXERCISE_TOTAL} min={1} onChange={(total) => onChange({ ...config, vocabulary: { ...config.vocabulary, total } })} value={config.vocabulary.total} /> : null}
         </div>
-      ) : null}
-      {invalid ? <p className="text-sm font-medium text-amber-700">至少保留一种语法题型</p> : <p className="text-xs text-muted-foreground">{grammarDisabled ? "本章仅保留阅读与词汇内容。" : "题型可按章节增删；词汇题不参与语法知识点覆盖。"}</p>}
+        <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2 text-sm">
+          <input
+            checked={config.vocabulary.enabledTypes.includes("chineseHint")}
+            className="size-4 accent-primary"
+            onChange={(event) => onChange({ ...config, vocabulary: event.target.checked ? { enabledTypes: ["chineseHint"], total: Math.max(1, config.vocabulary.total || DEFAULT_READING_VOCABULARY_TOTAL) } : { enabledTypes: [], total: 0 } })}
+            type="checkbox"
+          />
+          <span className="font-medium text-foreground">中文提示写词</span>
+        </label>
+      </div>
+      {densityHigh ? <p className="rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">正文练习密度过大：共 {readingExerciseTotal(config)} 题，建议确认是否影响阅读连贯性。</p> : null}
     </div>
   );
 }
 
-function GrammarPracticeEditor({ config, max, ariaPrefix, onChange }: { config: GrammarPracticeConfig; max: number; ariaPrefix: string; onChange: (config: GrammarPracticeConfig) => void }) {
-  const [adding, setAdding] = useState(false);
-  const active = (["optionCloze", "wordForm"] as GrammarExerciseType[]).filter((type) => config.grammar[type] > 0);
-  const missing = (["optionCloze", "wordForm"] as GrammarExerciseType[]).filter((type) => config.grammar[type] === 0);
+function ExerciseTypeSelector({ ariaPrefix, enabledTypes, onChange }: { ariaPrefix: string; enabledTypes: GrammarExerciseType[]; onChange: (types: GrammarExerciseType[]) => void }) {
+  return (
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      {ALL_GRAMMAR_EXERCISE_TYPES.map((type) => (
+        <label className={cn("flex min-h-11 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm", enabledTypes.includes(type) ? "border-primary-200 bg-primary-50/50" : "border-border bg-background")} key={type}>
+          <input
+            aria-label={`${ariaPrefix}${grammarLabels[type]}`}
+            checked={enabledTypes.includes(type)}
+            className="size-4 accent-primary"
+            onChange={(event) => {
+              const next = new Set(enabledTypes);
+              if (event.target.checked) next.add(type);
+              else next.delete(type);
+              onChange(ALL_GRAMMAR_EXERCISE_TYPES.filter((item) => next.has(item)));
+            }}
+            type="checkbox"
+          />
+          <span><span className="block font-medium text-foreground">{grammarLabels[type]}</span><span className="mt-0.5 block text-xs text-muted-foreground">{grammarExamples[type]}</span></span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function GrammarPracticeEditor({ config, ariaPrefix, onChange }: { config: GrammarPracticeConfig; ariaPrefix: string; onChange: (config: GrammarPracticeConfig) => void }) {
   return (
     <div className="mt-4 space-y-3">
-      <p className="text-xs text-muted-foreground">只考查语法知识点；每页最多 5 题，超出后均衡分页。</p>
-      {active.map((type) => (
-        <div className="grid gap-3 rounded-md border border-primary-200 bg-primary-50/40 p-3 sm:grid-cols-[minmax(0,1fr)_220px]" key={type}>
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-foreground">{grammarLabels[type]}</div>
-            <div className="mt-1 text-xs leading-5 text-muted-foreground">{grammarExamples[type]}</div>
-          </div>
-          <div className="flex items-center justify-end gap-2">
-            <Stepper
-              ariaPrefix={ariaPrefix}
-              label={grammarLabels[type]}
-              max={max}
-              onChange={(count) =>
-                onChange({
-                  ...config,
-                  enabled: true,
-                  grammar: { ...config.grammar, [type]: count },
-                })
-              }
-              value={config.grammar[type]}
-            />
-            <button
-              aria-label={`${ariaPrefix}删除题型 ${grammarLabels[type]}`}
-              className="flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() =>
-                onChange({
-                  ...config,
-                  grammar: { ...config.grammar, [type]: 0 },
-                })
-              }
-              type="button"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        </div>
-      ))}
-      {!active.length ? <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 px-3 py-3 text-sm text-amber-800">已开启练习，请至少添加一种语法题型。</div> : null}
-      {missing.length ? (
-        <div>
-          <Button aria-expanded={adding} onClick={() => setAdding((current) => !current)} size="sm" type="button" variant="outline">
-            <Plus className="size-4" />
-            添加{ariaPrefix.includes("章节") ? "章节练习" : "课后练习"}题型
-          </Button>
-          {adding ? (
-            <div className="mt-2 grid gap-2 rounded-md border border-border bg-muted/30 p-2 sm:grid-cols-2">
-              {missing.map((type) => (
-                <AddExerciseTypeCard
-                  example={grammarExamples[type]}
-                  key={type}
-                  label={grammarLabels[type]}
-                  onClick={() => {
-                    onChange({
-                      ...config,
-                      enabled: true,
-                      grammar: { ...config.grammar, [type]: 5 },
-                    });
-                    setAdding(false);
-                  }}
-                />
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-      <p className="text-xs font-medium text-muted-foreground">预计 {practicePageCount(config.grammar)} 页</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">AI 自动分配题型并尽量均匀覆盖知识点。</p>
+        <Stepper ariaPrefix={ariaPrefix} label="总题数" max={MAX_GRAMMAR_EXERCISE_TOTAL} min={1} onChange={(total) => onChange({ ...config, grammar: { ...config.grammar, total } })} value={config.grammar.total} />
+      </div>
+      <ExerciseTypeSelector ariaPrefix={ariaPrefix} enabledTypes={config.grammar.enabledTypes} onChange={(enabledTypes) => onChange({ ...config, grammar: { ...config.grammar, enabledTypes } })} />
+      {!config.grammar.enabledTypes.length ? <p className="text-sm font-medium text-amber-700">至少选择一种题型</p> : null}
+      <p className="text-xs font-medium text-muted-foreground">共 {config.grammar.total} 题 · 预计约 {practicePageCount(config.grammar)} 页</p>
     </div>
   );
 }
 
-function AddExerciseTypeCard({ label, example, onClick }: { label: string; example: string; onClick: () => void }) {
-  return (
-    <button aria-label={`添加${label}`} className="min-h-24 rounded-md border border-border bg-background p-3 text-left shadow-sm transition-[border-color,background-color,box-shadow] hover:border-primary-200 hover:bg-primary-50/50 hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={onClick} type="button">
-      <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-        <Plus className="size-4 text-primary" />
-        添加{label}
-      </span>
-      <span className="mt-2 block text-xs leading-5 text-muted-foreground">{example}</span>
-    </button>
-  );
-}
-
-function Stepper({ ariaPrefix, label, value, max, onChange }: { ariaPrefix: string; label: string; value: number; max: number; onChange: (count: number) => void }) {
+function Stepper({ ariaPrefix, label, value, min = 1, max, onChange }: { ariaPrefix: string; label: string; value: number; min?: number; max: number; onChange: (count: number) => void }) {
   return (
     <div className="flex items-center justify-end gap-2">
-      <button aria-label={`${ariaPrefix}${label}减少`} className="flex size-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary-200 hover:text-foreground" onClick={() => onChange(Math.max(1, value - 1))} type="button">
+      <button aria-label={`${ariaPrefix}${label}减少`} className="flex size-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary-200 hover:text-foreground" onClick={() => onChange(Math.max(min, value - 1))} type="button">
         <Minus className="size-4" />
       </button>
-      <input aria-label={`${ariaPrefix}${label}数量`} className="h-8 w-14 rounded-md border border-input bg-background text-center text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" max={max} min={1} onChange={(event) => onChange(Math.max(1, Math.min(max, Number(event.target.value) || 1)))} type="number" value={value} />
+      <input aria-label={`${ariaPrefix}${label}数量`} className="h-8 w-14 rounded-md border border-input bg-background text-center text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" max={max} min={min} onChange={(event) => onChange(Math.max(min, Math.min(max, Number(event.target.value) || min)))} type="number" value={value} />
       <button aria-label={`${ariaPrefix}${label}增加`} className="flex size-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary-200 hover:text-foreground" onClick={() => onChange(Math.min(max, value + 1))} type="button">
         <Plus className="size-4" />
       </button>
@@ -1207,10 +1099,28 @@ function Stepper({ ariaPrefix, label, value, max, onChange }: { ariaPrefix: stri
   );
 }
 
+function AfterClassGrammarEditor({ practice, knowledgePointCount, onChange }: { practice: TeachingPlan["afterClassPractice"]["practice"]; knowledgePointCount: number; onChange: (practice: TeachingPlan["afterClassPractice"]["practice"]) => void }) {
+  const total = knowledgePointCount * practice.questionsPerKnowledgePoint;
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-foreground">每个知识点题数</p>
+          <p className="mt-1 text-xs text-muted-foreground">每个知识点保证相同题量，AI 根据匹配度分配题型。</p>
+        </div>
+        <Stepper ariaPrefix="课后练习" label="每个知识点题数" max={MAX_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT} min={MIN_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT} onChange={(questionsPerKnowledgePoint) => onChange({ ...practice, questionsPerKnowledgePoint })} value={practice.questionsPerKnowledgePoint} />
+      </div>
+      <ExerciseTypeSelector ariaPrefix="课后练习" enabledTypes={practice.enabledTypes} onChange={(enabledTypes) => onChange({ ...practice, enabledTypes })} />
+      {!practice.enabledTypes.length ? <p className="text-sm font-medium text-amber-700">至少选择一种题型</p> : null}
+      <p className="text-xs font-medium text-muted-foreground">{knowledgePointCount} 个知识点 × {practice.questionsPerKnowledgePoint} 题 = {total} 题 · 预计约 {Math.ceil(total / 5)} 页</p>
+    </div>
+  );
+}
+
 function AfterClassEditor({ plan, knowledgePoints, knowledgePointIds, afterClassNeedsReview, onChange }: { plan: TeachingPlan; knowledgePoints: TeachingPlanState["knowledgePoints"]; knowledgePointIds: string[]; afterClassNeedsReview: boolean; onChange: (updater: (config: TeachingPlan["afterClassPractice"]) => TeachingPlan["afterClassPractice"]) => void }) {
   const availablePoints = knowledgePoints.filter((point) => knowledgePointIds.includes(point.id));
   const decisionMade = true;
-  const includesVocabularyReview = plan.chapters.some((chapter) => chapter.readingExercises.vocabulary.chineseHint > 0);
+  const includesVocabularyReview = plan.chapters.some((chapter) => chapter.readingExercises.vocabulary.enabledTypes.includes("chineseHint") && chapter.readingExercises.vocabulary.total > 0);
   return (
     <section className="rounded-lg bg-card p-5 shadow-sm">
       <div>
@@ -1230,7 +1140,8 @@ function AfterClassEditor({ plan, knowledgePoints, knowledgePointIds, afterClass
               knowledgePointIds: !current.knowledgePointIds.length || !current.touched.knowledgePointIds ? knowledgePointIds : current.knowledgePointIds,
               practice: {
                 enabled: !includesVocabularyReview,
-                grammar: grammarExerciseTotal(current.practice.grammar) ? current.practice.grammar : { optionCloze: 5, wordForm: 5 },
+                enabledTypes: current.practice.enabledTypes.length ? current.practice.enabledTypes : [...ALL_GRAMMAR_EXERCISE_TYPES],
+                questionsPerKnowledgePoint: Math.max(MIN_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT, current.practice.questionsPerKnowledgePoint),
               },
               touched: { ...current.touched, practice: true },
             }))
@@ -1288,7 +1199,7 @@ function AfterClassEditor({ plan, knowledgePoints, knowledgePointIds, afterClass
                   }))
                 }
               />
-              <p className="mt-2 text-xs leading-5 text-muted-foreground">仅本模块与下方语法知识点联动，按所选知识点生成选项填空或给词填空。</p>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">仅本模块与下方语法知识点联动，按所选知识点生成选项填空或给词变形。</p>
               {plan.afterClassPractice.practice.enabled ? (
                 <>
                   <div className="mt-5 border-t border-primary-100 pt-4 text-sm font-medium text-foreground">课后考查知识点</div>
@@ -1318,10 +1229,9 @@ function AfterClassEditor({ plan, knowledgePoints, knowledgePointIds, afterClass
                       </label>
                     ))}
                   </div>
-                  <GrammarPracticeEditor
-                    ariaPrefix="课后练习"
-                    config={plan.afterClassPractice.practice}
-                    max={20}
+                  <AfterClassGrammarEditor
+                    knowledgePointCount={plan.afterClassPractice.knowledgePointIds.length}
+                    practice={plan.afterClassPractice.practice}
                     onChange={(practice) =>
                       onChange((current) => ({
                         ...current,

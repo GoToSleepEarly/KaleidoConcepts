@@ -59,11 +59,11 @@ async function main() {
       paragraphCount: 2,
       knowledgePointIds: [pointIds[index]],
       readingExerciseMode: "interactive",
-      readingExercises: { enabled: true, grammar: { optionCloze: 4, wordForm: 3 }, vocabulary: { chineseHint: 3 } },
-      chapterPractice: { enabled: true, grammar: { optionCloze: 2, wordForm: 2 } },
+      readingExercises: { enabled: true, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 7 }, vocabulary: { enabledTypes: ["chineseHint"], total: 3 } },
+      chapterPractice: { enabled: true, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 4 } },
       touched: { targetWordCount: true, paragraphCount: false, knowledgePointIds: false, readingExerciseMode: false, readingExercises: false, chapterPractice: true },
     })),
-    afterClassPractice: { enabled: true, vocabularyReviewEnabled: true, knowledgePointIds: pointIds, practice: { enabled: true, grammar: { optionCloze: 3, wordForm: 2 } }, touched: { knowledgePointIds: false, practice: true } },
+    afterClassPractice: { enabled: true, vocabularyReviewEnabled: true, knowledgePointIds: pointIds, practice: { enabled: true, enabledTypes: ["optionCloze", "wordForm"], questionsPerKnowledgePoint: 5 }, touched: { knowledgePointIds: false, practice: true } },
   };
 
   const resolved = path.resolve(outputPath);
