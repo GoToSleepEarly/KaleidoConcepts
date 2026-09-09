@@ -17,6 +17,7 @@ import {
   cefrWritingProfile,
   cefrWritingQualityRules,
   contentReadingTimeoutMs,
+  courseContentReviewReasoningEffort,
   courseContentFormatRepairAttempts,
   courseContentPromptExamples,
   readingGrammarCoherenceRules,
@@ -233,6 +234,10 @@ describe("course content prompt contexts", () => {
       homework: { enabled: true, knowledgePointKeys: ["KP1"], enabledTypes: ["optionCloze", "wordForm"], questionsPerKnowledgePoint: 5, total: 5 },
     });
     expect(JSON.stringify(context)).not.toContain("paragraphCount");
+  });
+
+  test("uses medium reasoning for the large second-pass reading review", () => {
+    expect(courseContentReviewReasoningEffort).toBe("medium");
   });
 
   test("makes selected exercise types balanced by default while allowing knowledge-point fit to override", () => {

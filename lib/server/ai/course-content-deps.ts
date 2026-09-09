@@ -417,6 +417,7 @@ export function contentReadingTimeoutMs(value = process.env.COURSE_CONTENT_GENER
 }
 
 export const courseContentFormatRepairAttempts = 1;
+export const courseContentReviewReasoningEffort = "medium" as const;
 
 export function createCourseContentGenerationDeps(settings: AiProviderSettingsInput = "quickrouter") {
   const provider = createStoryOutlineProvider(undefined, settings);
@@ -496,7 +497,7 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
       const candidateOutput = parseWithDiagnostics(candidateResponse.text, readingCandidateEnvelopeSchema, "正文候选结构无效", "content_generate_reading_candidates_v3", candidateStartedAt);
       await onCandidateReady?.();
       const finalStartedAt = Date.now();
-      const finalResponse = await callWithUsage(writingProvider, "content_finalize_reading_questions_v3", buildReadingTemplateFinalizationPrompt(candidateOutput, context), contentReadingTimeoutMs(), { reasoningEffort: "high", maxOutputTokens: 6_500 });
+      const finalResponse = await callWithUsage(writingProvider, "content_finalize_reading_questions_v3", buildReadingTemplateFinalizationPrompt(candidateOutput, context), contentReadingTimeoutMs(), { reasoningEffort: courseContentReviewReasoningEffort, maxOutputTokens: 6_500 });
       const review = parseWithDiagnostics(finalResponse.text, readingReviewBundleSchema, "正文题目审核结构无效", "content_finalize_reading_questions_v3", finalStartedAt);
       const payload = applyReadingReview(candidateOutput, review);
       return { ...parseReadingTemplatePayload(payload, requirements), candidateUsage: candidateResponse.usage, usage: finalResponse.usage };
