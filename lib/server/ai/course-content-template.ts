@@ -4,7 +4,7 @@ import type { CourseContentChapter, CourseContentParagraph, CourseContentPart, S
 import { buildCleanParagraphText, englishWordCount, stableShuffle, validateParagraphParts } from "@/lib/domain/course-content";
 import { englishWordRangesForTarget } from "@/lib/domain/story-length-policy";
 
-export const STEP4_CONTENT_CONTRACT_VERSION = "step4.content.v8" as const;
+export const STEP4_CONTENT_CONTRACT_VERSION = "step4.content.v9" as const;
 export const STEP4_READING_CANDIDATE_VERSION = "step4.reading-candidate.v5" as const;
 
 const requiredText = z.string().trim().min(1);

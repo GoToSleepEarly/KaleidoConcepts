@@ -458,6 +458,22 @@ function assertExactChapterKeys(actual: string[], expected: string[], message: s
   }
 }
 
+type ReadingRepairIdentity =
+  | { kind: "paragraph"; outlineChapterId: string; paragraphIndex: number }
+  | { kind: "chapter"; outlineChapterId: string };
+
+export function assertReadingRepairCoverage(repairs: ReadingRepairIdentity[], expected: string[]) {
+  const actualKeys = [...new Set(repairs.map((repair) => repair.outlineChapterId))];
+  assertExactChapterKeys(actualKeys, expected, "正文修复章节短键不完整");
+  for (const key of actualKeys) {
+    const chapterRepairs = repairs.filter((repair) => repair.outlineChapterId === key);
+    const wholeChapterRepairs = chapterRepairs.filter((repair) => repair.kind === "chapter");
+    if (wholeChapterRepairs.length && chapterRepairs.length > 1) throw new Error(`正文修复整章与段落修复混用：${key}`);
+    const paragraphIndices = chapterRepairs.flatMap((repair) => repair.kind === "paragraph" ? [repair.paragraphIndex] : []);
+    if (new Set(paragraphIndices).size !== paragraphIndices.length) throw new Error(`正文修复同一段落重复：${key}`);
+  }
+}
+
 export function createCourseContentGenerationDeps(settings: AiProviderSettingsInput = "quickrouter") {
   const provider = createStoryOutlineProvider(undefined, settings);
   const callWithUsage = async (
@@ -567,7 +583,7 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
       const startedAt = Date.now();
       const response = await callWithUsage(writingProvider, "content_repair_reading_v2", buildReadingTemplateRepairPrompt(keyedTargets, buildReadingTemplatePromptContext(chapterProtocol.input), mainIdeaTarget), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 6_500 });
       const bundle = parseWithDiagnostics(response.text, chapterTemplateRepairBundleSchema, "正文最小修复结构解析失败", "content_repair_reading_v2", startedAt);
-      assertExactChapterKeys(bundle.repairs.map((repair) => repair.outlineChapterId), keyedTargets.map((target) => target.requirements.outlineChapterId), "正文修复章节短键不完整");
+      assertReadingRepairCoverage(bundle.repairs, keyedTargets.map((target) => target.requirements.outlineChapterId));
       const repairs = bundle.repairs.map((repair) => {
         const outlineChapterId = chapterProtocol.toOutlineChapterId(repair.outlineChapterId);
         return repair.kind === "chapter"

@@ -19,6 +19,7 @@ import {
   contentReadingTimeoutMs,
   courseContentReviewReasoningEffort,
   createCourseContentChapterKeyProtocol,
+  assertReadingRepairCoverage,
   courseContentFormatRepairAttempts,
   courseContentPromptExamples,
   readingGrammarCoherenceRules,
@@ -51,6 +52,27 @@ const input = {
 };
 
 describe("course content prompt contexts", () => {
+  test("allows multiple paragraph repairs for one chapter while rejecting ambiguous duplicates", () => {
+    expect(() => assertReadingRepairCoverage([
+      { kind: "paragraph", outlineChapterId: "C1", paragraphIndex: 0 },
+      { kind: "paragraph", outlineChapterId: "C1", paragraphIndex: 1 },
+      { kind: "chapter", outlineChapterId: "C2" },
+    ], ["C1", "C2"])).not.toThrow();
+
+    expect(() => assertReadingRepairCoverage([
+      { kind: "paragraph", outlineChapterId: "C1", paragraphIndex: 0 },
+      { kind: "paragraph", outlineChapterId: "C1", paragraphIndex: 0 },
+    ], ["C1"])).toThrow("同一段落重复");
+    expect(() => assertReadingRepairCoverage([
+      { kind: "chapter", outlineChapterId: "C1" },
+      { kind: "paragraph", outlineChapterId: "C1", paragraphIndex: 0 },
+    ], ["C1"])).toThrow("整章与段落修复混用");
+    expect(() => assertReadingRepairCoverage([
+      { kind: "paragraph", outlineChapterId: "C1", paragraphIndex: 0 },
+      { kind: "paragraph", outlineChapterId: "C3", paragraphIndex: 0 },
+    ], ["C1", "C2"])).toThrow("修复章节短键不完整");
+  });
+
   test("defines distinct CEFR writing profiles and preserves story facts across levels", () => {
     expect(cefrWritingProfile("Starter")).toContain("Pre-A1/Starter");
     expect(cefrWritingProfile("A2")).toContain("基础从句");

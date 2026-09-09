@@ -338,7 +338,7 @@ describe("course content repository", () => {
       mainIdea: { title: "Main Idea", text: Array(178).fill("summary").join(" ") },
       mainIdeaError: null,
     }));
-    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v8" as const, repairs: [], mainIdea: { text: Array(120).fill("summary").join(" ") } }));
+    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v9" as const, repairs: [], mainIdea: { text: Array(120).fill("summary").join(" ") } }));
     const generateExercises = vi.fn();
     const deps = { generateReading, repairReading, generateExercises } as unknown as CourseContentGenerationDeps;
 
@@ -397,7 +397,7 @@ describe("course content repository", () => {
       { outlineChapterId: "chapter-1", generated: chapter1, parseError: null },
       { outlineChapterId: "chapter-2", generated: chapter2, parseError: null },
     ], mainIdea: { text: Array(120).fill("summary").join(" ") }, mainIdeaError: null, candidateUsage: { inputTokens: 70, outputTokens: 50, visibleOutputTokens: 45, reasoningTokens: 5, totalTokens: 120 }, usage: { inputTokens: 100, outputTokens: 80, visibleOutputTokens: 60, reasoningTokens: 20, totalTokens: 180 } }));
-    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v8" as const, repairs: [{ kind: "paragraph" as const, outlineChapterId: "chapter-2", paragraphIndex: 0, template: `${words} {{GR1}}`, slots: [] }], usage: { inputTokens: 40, outputTokens: 20, visibleOutputTokens: 15, reasoningTokens: 5, totalTokens: 60 } }));
+    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v9" as const, repairs: [{ kind: "paragraph" as const, outlineChapterId: "chapter-2", paragraphIndex: 0, template: `${words} {{GR1}}`, slots: [] }], usage: { inputTokens: 40, outputTokens: 20, visibleOutputTokens: 15, reasoningTokens: 5, totalTokens: 60 } }));
     const deps = { generateReading, repairReading } as unknown as CourseContentGenerationDeps;
 
     const result = await generateCourseReading(db, "course-1", "request-1", deps);
