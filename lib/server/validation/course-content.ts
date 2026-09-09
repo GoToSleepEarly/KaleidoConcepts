@@ -200,6 +200,44 @@ function extractJsonObject(text: string) {
   return text;
 }
 
+function removeUnmatchedJsonClosers(text: string) {
+  const stack: Array<"{" | "["> = [];
+  let result = "";
+  let inString = false;
+  let escaped = false;
+  for (const character of text) {
+    if (inString) {
+      result += character;
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      result += character;
+      continue;
+    }
+    if (character === "{" || character === "[") {
+      stack.push(character);
+      result += character;
+      continue;
+    }
+    if (character === "}" || character === "]") {
+      const matchingOpener = character === "}" ? "{" : "[";
+      if (stack.at(-1) === matchingOpener) {
+        stack.pop();
+        result += character;
+      } else if (stack.includes(matchingOpener)) {
+        result += character;
+      }
+      continue;
+    }
+    result += character;
+  }
+  return result;
+}
+
 const AI_RAW_RESPONSE_LOG_LIMIT = 20_000;
 
 export type AiJsonFailureDiagnostics = {
@@ -231,16 +269,24 @@ function rawResponseDiagnostics(text: string) {
 export function parseAiJson<Schema extends z.ZodTypeAny>(text: string, schema: Schema, message: string): z.output<Schema> {
   const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   let value: unknown;
-  try { value = JSON.parse(cleaned); }
-  catch (firstError) {
-    try { value = JSON.parse(extractJsonObject(cleaned)); }
-    catch {
+  let parseError: unknown;
+  const extracted = extractJsonObject(cleaned);
+  const candidates = [...new Set([cleaned, extracted, removeUnmatchedJsonClosers(extracted)])];
+  for (const candidate of candidates) {
+    try {
+      value = JSON.parse(candidate);
+      parseError = undefined;
+      break;
+    } catch (error) {
+      parseError = error;
+    }
+  }
+  if (parseError) {
       throw new AiJsonResponseError(message, {
         failureType: "invalid_json",
-        schemaIssues: [{ path: "$", code: "invalid_json", message: firstError instanceof Error ? firstError.message : "无法解析 JSON" }],
+        schemaIssues: [{ path: "$", code: "invalid_json", message: parseError instanceof Error ? parseError.message : "无法解析 JSON" }],
         ...rawResponseDiagnostics(text),
-      }, { cause: firstError });
-    }
+      }, { cause: parseError });
   }
   const parsed = schema.safeParse(value);
   if (!parsed.success) {

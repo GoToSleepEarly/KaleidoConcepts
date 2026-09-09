@@ -79,6 +79,12 @@ describe("course content AI schema", () => {
     expect(parseAiJson(text, generatedExercisesSchema, "failed")).toEqual({ chapters: [], homeworkGrammar: [] });
   });
 
+  test("removes an unequivocally unmatched closing bracket outside JSON strings", () => {
+    const text = '我正在逐章检查，最终只返回 JSON。\n{"chapters":[],"homeworkGrammar":[]]}';
+
+    expect(parseAiJson(text, generatedExercisesSchema, "failed")).toEqual({ chapters: [], homeworkGrammar: [] });
+  });
+
   test("preserves actionable schema paths and a bounded raw response when AI JSON has the wrong shape", () => {
     const raw = JSON.stringify({ candidateVersion: "wrong", chapters: [{ outlineChapterId: "chapter-1" }], mainIdea: { text: "" } });
 
