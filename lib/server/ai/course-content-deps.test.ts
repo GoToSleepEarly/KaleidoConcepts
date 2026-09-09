@@ -18,6 +18,7 @@ import {
   cefrWritingQualityRules,
   contentReadingTimeoutMs,
   courseContentReviewReasoningEffort,
+  createCourseContentChapterKeyProtocol,
   courseContentFormatRepairAttempts,
   courseContentPromptExamples,
   readingGrammarCoherenceRules,
@@ -238,6 +239,37 @@ describe("course content prompt contexts", () => {
 
   test("uses medium reasoning for the large second-pass reading review", () => {
     expect(courseContentReviewReasoningEffort).toBe("medium");
+  });
+
+  test("replaces database chapter IDs with short keys at the AI boundary", () => {
+    const second = structuredClone(input.outline.chapters[0]);
+    second.id = "a-very-long-second-database-id";
+    second.order = 2;
+    const secondPlan = structuredClone(input.plan.chapters[0]);
+    secondPlan.outlineChapterId = second.id;
+    const expanded = structuredClone(input);
+    expanded.outline.chapters.push(second);
+    expanded.plan.chapters.push(secondPlan);
+
+    const protocol = createCourseContentChapterKeyProtocol(expanded);
+
+    expect(protocol.input.outline.chapters.map((chapter) => chapter.id)).toEqual(["C1", "C2"]);
+    expect(protocol.input.plan.chapters.map((chapter) => chapter.outlineChapterId)).toEqual(["C1", "C2"]);
+    expect(protocol.toKey("a-very-long-second-database-id")).toBe("C2");
+    expect(protocol.toOutlineChapterId("C2")).toBe("a-very-long-second-database-id");
+    expect(() => protocol.toOutlineChapterId("C3")).toThrow("AI 返回未知章节短键：C3");
+    const readingContext = buildReadingTemplatePromptContext(protocol.input);
+    const exerciseContext = buildExercisePromptContext(protocol.input, [
+      { outlineChapterId: "C1", title: "One", cleanText: "One." },
+      { outlineChapterId: "C2", title: "Two", cleanText: "Two." },
+    ]);
+    expect(readingContext.chapters.map((chapter) => chapter.id)).toEqual(["C1", "C2"]);
+    expect(exerciseContext.chapters.map((chapter) => chapter.id)).toEqual(["C1", "C2"]);
+    expect(JSON.stringify({ readingContext, exerciseContext })).not.toContain("a-very-long-second-database-id");
+
+    const duplicate = structuredClone(expanded);
+    duplicate.outline.chapters[1].id = duplicate.outline.chapters[0].id;
+    expect(() => createCourseContentChapterKeyProtocol(duplicate)).toThrow("课程大纲章节 ID 重复");
   });
 
   test("makes selected exercise types balanced by default while allowing knowledge-point fit to override", () => {

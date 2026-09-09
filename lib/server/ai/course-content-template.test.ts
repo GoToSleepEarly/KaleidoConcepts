@@ -149,7 +149,7 @@ describe("Step4 fixed-slot production contract", () => {
       mainIdea: { targetWordCount: 20, preferredRange: [18, 22] as [number, number], acceptedRange: [15, 25] as [number, number] },
     };
     const candidate = {
-      candidateVersion: "step4.reading-candidate.v2",
+      candidateVersion: "step4.reading-candidate.v3",
       chapters: [{ outlineChapterId: "chapter-1", paragraphs: [{ template: "Mia {{GR1}} ready." }], slots: [{ id: "GR1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "is" }] }],
       mainIdea: { text: "Mia follows a plan." },
     };
@@ -173,7 +173,7 @@ describe("Step4 fixed-slot production contract", () => {
 
   test("merges reviewed slots and only changed paragraphs into the final reading contract", () => {
     const candidate = {
-      candidateVersion: "step4.reading-candidate.v2",
+      candidateVersion: "step4.reading-candidate.v3",
       chapters: [{
         outlineChapterId: "chapter-1",
         paragraphs: [{ template: "Yesterday, Mia {{GR1}} home." }, { template: "She must {{GR2}} the {{VOC1}}." }],

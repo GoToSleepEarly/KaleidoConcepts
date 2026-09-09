@@ -43,6 +43,39 @@ export type ReadingTemplateRepairTarget = {
   parseError?: string | null;
 };
 
+export function createCourseContentChapterKeyProtocol(input: CourseContentPromptInput) {
+  const entries = input.outline.chapters.map((chapter, index) => ({ outlineChapterId: chapter.id, key: `C${index + 1}` }));
+  if (new Set(entries.map((entry) => entry.outlineChapterId)).size !== entries.length) throw new Error("课程大纲章节 ID 重复，无法建立 AI 短键映射");
+  const keyByOutlineChapterId = new Map(entries.map((entry) => [entry.outlineChapterId, entry.key]));
+  const outlineChapterIdByKey = new Map(entries.map((entry) => [entry.key, entry.outlineChapterId]));
+  const toKey = (outlineChapterId: string) => {
+    const key = keyByOutlineChapterId.get(outlineChapterId);
+    if (!key) throw new Error(`找不到章节对应的 AI 短键：${outlineChapterId}`);
+    return key;
+  };
+  const toOutlineChapterId = (key: string) => {
+    const outlineChapterId = outlineChapterIdByKey.get(key);
+    if (!outlineChapterId) throw new Error(`AI 返回未知章节短键：${key}`);
+    return outlineChapterId;
+  };
+  return {
+    input: {
+      ...input,
+      outline: {
+        ...input.outline,
+        chapters: input.outline.chapters.map((chapter) => ({ ...chapter, id: toKey(chapter.id) })),
+      },
+      plan: {
+        ...input.plan,
+        chapters: input.plan.chapters.map((chapter) => ({ ...chapter, outlineChapterId: toKey(chapter.outlineChapterId) })),
+      },
+    } satisfies CourseContentPromptInput,
+    keys: entries.map((entry) => entry.key),
+    toKey,
+    toOutlineChapterId,
+  };
+}
+
 function replacePersonNames(value: string, people: CourseContentPromptPerson[]) {
   return people.reduce((text, person) => person.chineseName ? text.replaceAll(person.chineseName, person.englishName) : text, value);
 }
@@ -331,7 +364,7 @@ function jsonOnly(instructions: string[], context: unknown) {
 }
 
 const schemaDescriptions = {
-  exercises: "{chapters:[{outlineChapterId,questions:[optionQuestion|wordFormQuestion]}],homeworkGrammar:[optionQuestion|wordFormQuestion]}；optionQuestion={type:'optionCloze',knowledgePointKey,before,after,answer,distractors:[string,string]}；wordFormQuestion={type:'wordForm',knowledgePointKey,before,after,answer,baseForm}",
+  exercises: "{chapters:[{outlineChapterId:'C1'等输入章节短键,questions:[optionQuestion|wordFormQuestion]}],homeworkGrammar:[optionQuestion|wordFormQuestion]}；optionQuestion={type:'optionCloze',knowledgePointKey,before,after,answer,distractors:[string,string]}；wordFormQuestion={type:'wordForm',knowledgePointKey,before,after,answer,baseForm}",
   modification: "{kind,chapter?,paragraph?,questions?,mainIdea?}；只保留 kind 对应的一个结果字段；chapter/paragraph 的 part 和 questions 使用正文与练习的严格题型契约",
 } as const;
 
@@ -370,7 +403,7 @@ function modificationOutputRules(targetType: string) {
 const independentExerciseDistributionRule = "章节目标先让各知识点题量尽量接近；所有目标都在 enabledTypes 中尽量均匀分配题型。多个题型都适配同一知识点时，优先使用当前数量较少的题型；只有知识点与某题型明显不适配时才允许偏斜，不要求机械平均。课后目标在保证每个知识点精确 questionsPerKnowledgePoint 道的同时，每个知识点内部也按同一原则分配。";
 
 const exerciseGenerationInstructions = [
-  "生成全部章节练习和课后语法练习，只返回 {chapters:[{outlineChapterId,questions}],homeworkGrammar} 的严格 JSON。每个目标的题型只能来自 enabledTypes，题目总数必须等于 total。knowledgePointKey 只能取所属目标 knowledgePointKeys；其定义和官方 Unit 统一见 context.knowledgePoints。章节练习必须覆盖全部知识点；课后练习的每个知识点必须精确生成 questionsPerKnowledgePoint 道题。",
+  "生成全部章节练习和课后语法练习，只返回 {chapters:[{outlineChapterId,questions}],homeworkGrammar} 的严格 JSON。outlineChapterId 必须原样复制 context.chapters 中对应的 C1/C2 等章节短键，不得返回或猜测数据库 ID。每个目标的题型只能来自 enabledTypes，题目总数必须等于 total。knowledgePointKey 只能取所属目标 knowledgePointKeys；其定义和官方 Unit 统一见 context.knowledgePoints。章节练习必须覆盖全部知识点；课后练习的每个知识点必须精确生成 questionsPerKnowledgePoint 道题。",
   independentExerciseDistributionRule,
   "question 只能是 optionCloze={type,knowledgePointKey,before,after,answer,distractors:[两个]} 或 wordForm={type,knowledgePointKey,before,after,answer,baseForm}，不得混用字段。",
   optionOutputRule,
@@ -380,7 +413,7 @@ const exerciseGenerationInstructions = [
   "英语正确性最高：每个答案回填句必须在语法、时态与体、主谓一致、单复数、代词、助动词、介词、语序和时间逻辑上正确，并严格符合 englishLevel 与 cefrWritingProfile；不得为覆盖或题量保留错误英语。",
   courseContentPromptExamples.questions,
   "章节题只依据本章 cleanText 改编，不复制原句、不与原文冲突；课后题不得依赖正文。所有题干和答案使用自然、完整、符合等级的英文，不为考语法制造不合常理的情节；严格满足各目标 exercisePlan 或课后逐知识点题量。",
-  "输出前逐题回填 answer 和每个 distractor，再逐目标核对 ID、总题量、题型白名单、知识点覆盖、课后逐知识点题量与必填字段；先修正全部问题，不输出核对过程。",
+  "输出前逐题回填 answer 和每个 distractor，再逐目标核对章节短键、总题量、题型白名单、知识点覆盖、课后逐知识点题量与必填字段；先修正全部问题，不输出核对过程。",
 ];
 
 export function buildExerciseGenerationPrompt(input: CourseContentPromptInput, cleanChapters: CleanChapterInput[]) {
@@ -418,6 +451,10 @@ export function contentReadingTimeoutMs(value = process.env.COURSE_CONTENT_GENER
 
 export const courseContentFormatRepairAttempts = 1;
 export const courseContentReviewReasoningEffort = "medium" as const;
+
+function assertExactChapterKeys(actual: string[], expected: string[], message: string) {
+  if (!sameStringSet(actual, expected) || new Set(actual).size !== actual.length) throw new Error(message);
+}
 
 export function createCourseContentGenerationDeps(settings: AiProviderSettingsInput = "quickrouter") {
   const provider = createStoryOutlineProvider(undefined, settings);
@@ -490,29 +527,73 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
 
   return {
     generateReading: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, onCandidateReady?: () => Promise<void>) => {
+      const chapterProtocol = createCourseContentChapterKeyProtocol(input);
       const requirements = buildReadingTemplateRequirements(input);
-      const context = buildReadingTemplatePromptContext(input);
+      const context = buildReadingTemplatePromptContext(chapterProtocol.input);
       const candidateStartedAt = Date.now();
       const candidateResponse = await callWithUsage(writingProvider, "content_generate_reading_candidates_v3", buildReadingTemplatePrompt(context), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 6_500 });
       const candidateOutput = parseWithDiagnostics(candidateResponse.text, readingCandidateEnvelopeSchema, "正文候选结构无效", "content_generate_reading_candidates_v3", candidateStartedAt);
+      assertExactChapterKeys(candidateOutput.chapters.map((chapter) => chapter.outlineChapterId), chapterProtocol.keys, "正文候选章节短键不完整");
       await onCandidateReady?.();
       const finalStartedAt = Date.now();
       const finalResponse = await callWithUsage(writingProvider, "content_finalize_reading_questions_v3", buildReadingTemplateFinalizationPrompt(candidateOutput, context), contentReadingTimeoutMs(), { reasoningEffort: courseContentReviewReasoningEffort, maxOutputTokens: 6_500 });
       const review = parseWithDiagnostics(finalResponse.text, readingReviewBundleSchema, "正文题目审核结构无效", "content_finalize_reading_questions_v3", finalStartedAt);
       const payload = applyReadingReview(candidateOutput, review);
-      return { ...parseReadingTemplatePayload(payload, requirements), candidateUsage: candidateResponse.usage, usage: finalResponse.usage };
+      const restoredPayload = {
+        ...payload,
+        chapters: payload.chapters.map((chapter) => ({
+          ...chapter,
+          outlineChapterId: chapterProtocol.toOutlineChapterId(chapter.outlineChapterId),
+        })),
+      };
+      return { ...parseReadingTemplatePayload(restoredPayload, requirements), candidateUsage: candidateResponse.usage, usage: finalResponse.usage };
     },
 
     repairReading: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, targets: ReadingTemplateRepairTarget[], mainIdeaTarget?: { current: { text: string } | null; issues: string[] }) => {
+      const chapterProtocol = createCourseContentChapterKeyProtocol(input);
+      const keyedTargets = targets.map((target) => ({
+        ...target,
+        current: target.current ? { ...target.current, outlineChapterId: chapterProtocol.toKey(target.current.outlineChapterId) } : null,
+        requirements: { ...target.requirements, outlineChapterId: chapterProtocol.toKey(target.requirements.outlineChapterId) },
+      }));
       const startedAt = Date.now();
-      const response = await callWithUsage(writingProvider, "content_repair_reading_v2", buildReadingTemplateRepairPrompt(targets, buildReadingTemplatePromptContext(input), mainIdeaTarget), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 6_500 });
-      return { ...parseWithDiagnostics(response.text, chapterTemplateRepairBundleSchema, "正文最小修复结构解析失败", "content_repair_reading_v2", startedAt), usage: response.usage };
+      const response = await callWithUsage(writingProvider, "content_repair_reading_v2", buildReadingTemplateRepairPrompt(keyedTargets, buildReadingTemplatePromptContext(chapterProtocol.input), mainIdeaTarget), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 6_500 });
+      const bundle = parseWithDiagnostics(response.text, chapterTemplateRepairBundleSchema, "正文最小修复结构解析失败", "content_repair_reading_v2", startedAt);
+      assertExactChapterKeys(bundle.repairs.map((repair) => repair.outlineChapterId), keyedTargets.map((target) => target.requirements.outlineChapterId), "正文修复章节短键不完整");
+      const repairs = bundle.repairs.map((repair) => {
+        const outlineChapterId = chapterProtocol.toOutlineChapterId(repair.outlineChapterId);
+        return repair.kind === "chapter"
+          ? { ...repair, outlineChapterId, chapter: { ...repair.chapter, outlineChapterId } }
+          : { ...repair, outlineChapterId };
+      });
+      return { ...bundle, repairs, usage: response.usage };
     },
 
-    generateExercises: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, cleanChapters: CleanChapterInput[]) => structuredCall(writingProvider, "content_generate_exercises", buildExerciseGenerationPrompt(input, cleanChapters), generatedExercisesSchema, "exercises", "练习结构解析失败", undefined, { reasoningEffort: "medium" }),
+    generateExercises: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, cleanChapters: CleanChapterInput[]) => {
+      const chapterProtocol = createCourseContentChapterKeyProtocol(input);
+      const keyedCleanChapters = cleanChapters.map((chapter) => ({ ...chapter, outlineChapterId: chapterProtocol.toKey(chapter.outlineChapterId) }));
+      const generated = await structuredCall(writingProvider, "content_generate_exercises", buildExerciseGenerationPrompt(chapterProtocol.input, keyedCleanChapters), generatedExercisesSchema, "exercises", "练习结构解析失败", undefined, { reasoningEffort: "medium" });
+      assertExactChapterKeys(generated.chapters.map((chapter) => chapter.outlineChapterId), chapterProtocol.keys, "练习章节短键不完整");
+      return {
+        ...generated,
+        chapters: generated.chapters.map((chapter) => ({ ...chapter, outlineChapterId: chapterProtocol.toOutlineChapterId(chapter.outlineChapterId) })),
+      };
+    },
 
     repairExercises: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, failedTargets: Array<{ id: string; issues: string[] }>, currentExercises: z.infer<typeof generatedExercisesSchema>, cleanChapters: CleanChapterInput[]) => {
-      return structuredCall(writingProvider, "content_repair_exercises", buildExerciseRepairPrompt(input, failedTargets, currentExercises, cleanChapters), generatedExercisesSchema, "exercises", "练习修复结构解析失败");
+      const chapterProtocol = createCourseContentChapterKeyProtocol(input);
+      const keyedFailedTargets = failedTargets.map((target) => ({ ...target, id: target.id === "homework" ? target.id : chapterProtocol.toKey(target.id) }));
+      const keyedCurrentExercises = {
+        ...currentExercises,
+        chapters: currentExercises.chapters.map((chapter) => ({ ...chapter, outlineChapterId: chapterProtocol.toKey(chapter.outlineChapterId) })),
+      };
+      const keyedCleanChapters = cleanChapters.map((chapter) => ({ ...chapter, outlineChapterId: chapterProtocol.toKey(chapter.outlineChapterId) }));
+      const repaired = await structuredCall(writingProvider, "content_repair_exercises", buildExerciseRepairPrompt(chapterProtocol.input, keyedFailedTargets, keyedCurrentExercises, keyedCleanChapters), generatedExercisesSchema, "exercises", "练习修复结构解析失败");
+      assertExactChapterKeys(repaired.chapters.map((chapter) => chapter.outlineChapterId), keyedFailedTargets.filter((target) => target.id !== "homework").map((target) => target.id), "练习修复章节短键不完整");
+      return {
+        ...repaired,
+        chapters: repaired.chapters.map((chapter) => ({ ...chapter, outlineChapterId: chapterProtocol.toOutlineChapterId(chapter.outlineChapterId) })),
+      };
     },
 
     modifyContent: async (writingProvider: StoryWritingProvider, targetType: string, target: unknown, instruction: string, constraints: unknown, relatedContext: Record<string, unknown>) => structuredCall(writingProvider, "content_modify_target", jsonOnly([
