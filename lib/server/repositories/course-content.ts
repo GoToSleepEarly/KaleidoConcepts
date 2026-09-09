@@ -576,16 +576,22 @@ export async function recordContentAiStructureFailure(
   targetCount: number,
 ) {
   if (!db.aiGenerationLog?.create) return;
-  const callType = error.operation === "content_finalize_reading_questions_v3"
-    ? "final"
-    : error.operation === "content_repair_reading_v2"
-      ? "repair"
-      : "candidate";
+  const aiOperation = error.operation ?? "";
+  const isExerciseFailure = aiOperation.startsWith("content_generate_exercises") || aiOperation.startsWith("content_repair_exercises");
+  const callType = isExerciseFailure
+    ? aiOperation.startsWith("content_repair_exercises") ? "repair" : "generate"
+    : aiOperation === "content_finalize_reading_questions_v3"
+      ? "final"
+      : aiOperation === "content_repair_reading_v2"
+        ? "repair"
+        : "candidate";
+  const logOperation = isExerciseFailure ? `exercises_${callType}` : `reading_v2_${callType}`;
+  const requestScope = isExerciseFailure ? `step4-exercises:${callType}` : `step4-reading:${callType}`;
   await db.aiGenerationLog.create({ data: {
-    requestId: `${operation.id}:${operation.requestId}:step4-reading:${callType}:structure-failure`,
+    requestId: `${operation.id}:${operation.requestId}:${requestScope}:structure-failure`,
     courseId,
     stage: "content",
-    operation: `reading_v2_${callType}`,
+    operation: logOperation,
     status: "failed",
     writingProvider,
     inputSnapshot: {
@@ -787,6 +793,9 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
     }
     throw new Error("练习生成未完成");
   } catch (error) {
+    if (error instanceof AiJsonResponseError) {
+      await recordContentAiStructureFailure(db, courseId, operation, writingProvider, error, state.plan.chapters.length + (state.plan.afterClassPractice.practice.enabled ? 1 : 0));
+    }
     const message = error instanceof Error ? error.message : "练习生成失败";
     await failOperation(db, courseId, operation, message, options.regenerate ? content.status : "reading_ready", courseContentGenerationFailureStatus(error));
     throw error;

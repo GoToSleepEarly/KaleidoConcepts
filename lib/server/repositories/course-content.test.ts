@@ -4,7 +4,7 @@ import { readingCandidateEnvelopeSchema } from "@/lib/server/ai/course-content-t
 import type { CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
 import { AiProviderResultUnknownError } from "@/lib/server/ai/story-outline-provider";
 import { CourseContentConflictError, courseContentGenerationFailureStatus, courseContentSemanticRepairAttempts, exerciseQuestionIssues, generateCourseExercises, generateCourseReading, modifyCourseContent, recordContentAiStructureFailure, recoverStaleCourseContentOperation, requiresExerciseAi, resetCourseContent, type CourseContentDb } from "@/lib/server/repositories/course-content";
-import { AiJsonResponseError, parseAiJson } from "@/lib/server/validation/course-content";
+import { AiJsonResponseError, generatedExercisesSchema, parseAiJson } from "@/lib/server/validation/course-content";
 
 describe("course content repository", () => {
   test("allows at most one semantic repair per generation stage", () => {
@@ -46,6 +46,35 @@ describe("course content repository", () => {
         schemaIssues: expect.any(Array),
         rawResponsePreview: '{"candidateVersion":"wrong","chapters":[],"mainIdea":{"text":""}}',
       }),
+    }) });
+  });
+
+  test("persists exercise schema diagnostics instead of leaving them only in process logs", async () => {
+    let error: AiJsonResponseError | null = null;
+    try {
+      parseAiJson('{"chapters":[{"outlineChapterId":"C1","questions":[{"type":"wordForm"}]}],"homeworkGrammar":[]}', generatedExercisesSchema, "练习结构解析失败");
+    } catch (caught) {
+      error = caught as AiJsonResponseError;
+    }
+    error!.operation = "content_generate_exercises_repair_format";
+    error!.latencyMs = 4321;
+    const create = vi.fn(async () => ({}));
+
+    await recordContentAiStructureFailure(
+      { aiGenerationLog: { create } } as unknown as CourseContentDb,
+      "course-1",
+      { id: "generation-1", requestId: "request-1" },
+      "quickrouter_gpt",
+      error!,
+      6,
+    );
+
+    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      requestId: "generation-1:request-1:step4-exercises:generate:structure-failure",
+      operation: "exercises_generate",
+      latencyMs: 4321,
+      inputSnapshot: expect.objectContaining({ aiOperation: "content_generate_exercises_repair_format", targetCount: 6 }),
+      outputSnapshot: expect.objectContaining({ failureType: "schema_mismatch", schemaIssues: expect.any(Array) }),
     }) });
   });
   test("skips the exercise AI stage when Step 3 has no grammar exercises", () => {
@@ -309,7 +338,7 @@ describe("course content repository", () => {
       mainIdea: { title: "Main Idea", text: Array(178).fill("summary").join(" ") },
       mainIdeaError: null,
     }));
-    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v7" as const, repairs: [], mainIdea: { text: Array(120).fill("summary").join(" ") } }));
+    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v8" as const, repairs: [], mainIdea: { text: Array(120).fill("summary").join(" ") } }));
     const generateExercises = vi.fn();
     const deps = { generateReading, repairReading, generateExercises } as unknown as CourseContentGenerationDeps;
 
@@ -368,7 +397,7 @@ describe("course content repository", () => {
       { outlineChapterId: "chapter-1", generated: chapter1, parseError: null },
       { outlineChapterId: "chapter-2", generated: chapter2, parseError: null },
     ], mainIdea: { text: Array(120).fill("summary").join(" ") }, mainIdeaError: null, candidateUsage: { inputTokens: 70, outputTokens: 50, visibleOutputTokens: 45, reasoningTokens: 5, totalTokens: 120 }, usage: { inputTokens: 100, outputTokens: 80, visibleOutputTokens: 60, reasoningTokens: 20, totalTokens: 180 } }));
-    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v7" as const, repairs: [{ kind: "paragraph" as const, outlineChapterId: "chapter-2", paragraphIndex: 0, template: `${words} {{GR1}}`, slots: [] }], usage: { inputTokens: 40, outputTokens: 20, visibleOutputTokens: 15, reasoningTokens: 5, totalTokens: 60 } }));
+    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v8" as const, repairs: [{ kind: "paragraph" as const, outlineChapterId: "chapter-2", paragraphIndex: 0, template: `${words} {{GR1}}`, slots: [] }], usage: { inputTokens: 40, outputTokens: 20, visibleOutputTokens: 15, reasoningTokens: 5, totalTokens: 60 } }));
     const deps = { generateReading, repairReading } as unknown as CourseContentGenerationDeps;
 
     const result = await generateCourseReading(db, "course-1", "request-1", deps);

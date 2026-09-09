@@ -453,7 +453,9 @@ export const courseContentFormatRepairAttempts = 1;
 export const courseContentReviewReasoningEffort = "medium" as const;
 
 function assertExactChapterKeys(actual: string[], expected: string[], message: string) {
-  if (!sameStringSet(actual, expected) || new Set(actual).size !== actual.length) throw new Error(message);
+  if (!sameStringSet(actual, expected) || new Set(actual).size !== actual.length) {
+    throw new Error(`${message}（期望：${expected.join("、") || "空"}；实际：${actual.join("、") || "空"}）`);
+  }
 }
 
 export function createCourseContentGenerationDeps(settings: AiProviderSettingsInput = "quickrouter") {
@@ -493,12 +495,18 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
     timeoutMs?: number,
     options: { reasoningEffort?: "low" | "medium" | "high"; maxOutputTokens?: number } = {},
   ): Promise<z.output<Schema>> => {
+    let responseStartedAt = Date.now();
     let raw = await call(writingProvider, operation, prompt, timeoutMs, options);
     for (let round = 0; round <= courseContentFormatRepairAttempts; round += 1) {
       try { return parseAiJson(raw, schema, parseMessage); }
       catch (error) {
+        if (error instanceof AiJsonResponseError) {
+          error.operation = round === 0 ? operation : `${operation}_repair_format`;
+          error.latencyMs = Date.now() - responseStartedAt;
+        }
         devAiLog({ operation, phase: "error", payload: { stage: "schema_parse", round: round + 1, parseMessage }, error });
         if (round === courseContentFormatRepairAttempts) throw error;
+        responseStartedAt = Date.now();
         raw = await call(writingProvider, `${operation}_repair_format`, jsonOnly([
           "只做一次 JSON 或 Schema 格式整理，不重新创作语义内容。删除多余字段，并把已经存在的旧字段机械转换为 expectedSchema；缺少答案、正文、题干或知识点等语义内容时不得编造。不得改写故事、题干、答案或知识点。",
         ], { rawOutput: raw, expectedSchema: schemaDescriptions[schemaKey], parseError: error instanceof Error ? error.message : parseMessage }), timeoutMs);

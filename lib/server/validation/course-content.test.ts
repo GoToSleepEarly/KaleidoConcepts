@@ -106,4 +106,21 @@ describe("course content AI schema", () => {
       ]));
     }
   });
+
+  test("keeps both ends of an oversized invalid response for truncation diagnosis", () => {
+    const raw = `response-start-${"x".repeat(21_000)}-response-end`;
+
+    try {
+      parseAiJson(raw, generatedExercisesSchema, "练习结构解析失败");
+      throw new Error("expected parsing to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AiJsonResponseError);
+      const diagnostics = (error as AiJsonResponseError).diagnostics;
+      expect(diagnostics.rawResponseTruncated).toBe(true);
+      expect(diagnostics.rawResponsePreview.length).toBeLessThanOrEqual(20_000);
+      expect(diagnostics.rawResponsePreview).toContain("response-start");
+      expect(diagnostics.rawResponsePreview).toContain("response-end");
+      expect(diagnostics.rawResponsePreview).toContain("响应日志中间已省略");
+    }
+  });
 });

@@ -11,6 +11,7 @@ import {
   paragraphWordBudgets,
   parseReadingTemplatePayload,
   repairFullyResolvesChapter,
+  chapterTemplateRepairBundleSchema,
   requiredChapterSlotIds,
   type ChapterTemplateRequirements,
   type GeneratedChapterTemplate,
@@ -149,7 +150,7 @@ describe("Step4 fixed-slot production contract", () => {
       mainIdea: { targetWordCount: 20, preferredRange: [18, 22] as [number, number], acceptedRange: [15, 25] as [number, number] },
     };
     const candidate = {
-      candidateVersion: "step4.reading-candidate.v4",
+      candidateVersion: "step4.reading-candidate.v5",
       chapters: [{ outlineChapterId: "chapter-1", paragraphs: [{ template: "Mia {{GR1}} ready." }], slots: [{ id: "GR1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "is" }] }],
       mainIdea: { text: "Mia follows a plan." },
     };
@@ -173,34 +174,33 @@ describe("Step4 fixed-slot production contract", () => {
 
   test("allows candidate word-form slots to defer cue completion to the strict final review", () => {
     const candidate = {
-      candidateVersion: "step4.reading-candidate.v4",
       chapters: [{
         outlineChapterId: "chapter-1",
         paragraphs: [{ template: "Yesterday, Mia {{GR1}} home." }, { template: "She must {{GR2}} the {{VOC1}}." }],
         slots: [
-          { id: "GR1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "go" },
+          { id: "GR1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "go", distractors: ["ignored", "candidate", "options"], note: "candidate-only metadata" },
           { id: "GR2", kind: "wordForm", knowledgePointKey: "KP2", answer: "carry" },
-          { id: "VOC1", kind: "vocabulary", answer: "map", canonicalForm: "map", meaningZh: "地图" },
+          { id: "VOC1", kind: "vocabulary", answer: "map" },
         ],
       }],
-      mainIdea: { text: "Mia follows the map." },
+      mainIdea: { text: "Mia follows the map.", title: "Model title is ignored" },
     };
     const result = applyReadingReview(candidate, {
-      contractVersion: STEP4_CONTENT_CONTRACT_VERSION,
       chapters: [{
         outlineChapterId: "chapter-1",
-        paragraphPatches: [{ paragraphIndex: 0, template: "Yesterday, Mia {{GR1}} home safely." }],
+        note: "review metadata is ignored",
         slots: [
           { id: "GR1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "went", distractors: ["goes", "will go"] },
           { id: "GR2", kind: "wordForm", knowledgePointKey: "KP2", answer: "carry", cue: "carry" },
           { id: "VOC1", kind: "vocabulary", answer: "map", canonicalForm: "map", meaningZh: "地图" },
         ],
       }],
+      auditNote: "reviewed",
     });
 
-    expect(result.chapters[0]?.paragraphs).toEqual([{ template: "Yesterday, Mia {{GR1}} home safely." }, { template: "She must {{GR2}} the {{VOC1}}." }]);
+    expect(result.chapters[0]?.paragraphs).toEqual(candidate.chapters[0].paragraphs);
     expect(result.chapters[0]?.slots[0]).toMatchObject({ answer: "went", distractors: ["goes", "will go"] });
-    expect(result.mainIdea).toEqual(candidate.mainIdea);
+    expect(result.mainIdea).toEqual({ text: "Mia follows the map." });
     expect(() => applyReadingReview(candidate, {
       contractVersion: STEP4_CONTENT_CONTRACT_VERSION,
       chapters: [{
@@ -209,6 +209,20 @@ describe("Step4 fixed-slot production contract", () => {
         slots: [{ id: "GR2", kind: "wordForm", knowledgePointKey: "KP2", answer: "carry" }],
       }],
     })).toThrow(/cue/);
+  });
+
+  test("defaults omitted repair change lists without weakening final slot validation", () => {
+    const paragraphRepair = chapterTemplateRepairBundleSchema.parse({
+      repairs: [{ kind: "paragraph", outlineChapterId: "chapter-1", paragraphIndex: 0, template: "Mia waits.", explanation: "text-only repair" }],
+      explanation: "repair metadata",
+    });
+    expect(paragraphRepair.repairs[0]).toMatchObject({ kind: "paragraph", slots: [] });
+
+    const mainIdeaOnly = chapterTemplateRepairBundleSchema.parse({
+      mainIdea: { text: "Mia follows a plan.", title: "Ignored title" },
+    });
+    expect(mainIdeaOnly.repairs).toEqual([]);
+    expect(mainIdeaOnly.contractVersion).toBe(STEP4_CONTENT_CONTRACT_VERSION);
   });
 
   test("leaves uncertain grammar meaning to the model while retaining deterministic structure checks", () => {

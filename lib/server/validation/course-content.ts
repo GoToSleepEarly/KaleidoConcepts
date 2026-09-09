@@ -259,8 +259,12 @@ export class AiJsonResponseError extends Error {
 }
 
 function rawResponseDiagnostics(text: string) {
+  const omissionMarker = "\n...[响应日志中间已省略]...\n";
+  const preview = text.length <= AI_RAW_RESPONSE_LOG_LIMIT
+    ? text
+    : `${text.slice(0, Math.ceil((AI_RAW_RESPONSE_LOG_LIMIT - omissionMarker.length) / 2))}${omissionMarker}${text.slice(-Math.floor((AI_RAW_RESPONSE_LOG_LIMIT - omissionMarker.length) / 2))}`;
   return {
-    rawResponsePreview: text.slice(0, AI_RAW_RESPONSE_LOG_LIMIT),
+    rawResponsePreview: preview,
     rawResponseLength: text.length,
     rawResponseTruncated: text.length > AI_RAW_RESPONSE_LOG_LIMIT,
   };
