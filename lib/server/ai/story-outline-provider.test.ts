@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+vi.mock("undici", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("undici")>();
+  return {
+    ...actual,
+    fetch: (input: Parameters<typeof actual.fetch>[0], init?: Parameters<typeof actual.fetch>[1]) =>
+      globalThis.fetch(input as RequestInfo, init as RequestInit) as unknown as ReturnType<typeof actual.fetch>,
+  };
+});
+
 import {
   AiProviderResultUnknownError,
   StoryOutlineIncompleteResponseError,

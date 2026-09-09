@@ -1,4 +1,4 @@
-import { Agent, type Dispatcher } from "undici";
+import { Agent, fetch as undiciFetch, type Dispatcher, type RequestInit as UndiciRequestInit } from "undici";
 
 import type { StoryWritingProvider } from "@/lib/contracts/api";
 import { aiProviderBaseUrl, normalizeAiProviderSettings, type AiGateway, type AiProviderSettingsInput } from "@/lib/ai-gateway";
@@ -90,8 +90,6 @@ function textDispatcher(requestTimeoutMs: number) {
   textDispatchers.set(transportTimeout, dispatcher);
   return dispatcher;
 }
-
-type UndiciRequestInit = RequestInit & { dispatcher: Dispatcher };
 
 function configFromEnvironment(input: AiProviderSettingsInput): ProviderConfig {
   const settings = normalizeAiProviderSettings(input);
@@ -215,7 +213,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     let response: Response | null = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        response = await fetch(`${activeConfig.baseUrl ?? "https://api.quickrouter.ai"}/v1/responses`, {
+        response = await undiciFetch(`${activeConfig.baseUrl ?? "https://api.quickrouter.ai"}/v1/responses`, {
           method: "POST",
           headers: {
             Accept: "application/json",
@@ -225,7 +223,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(timeoutMs),
           dispatcher: textDispatcher(timeoutMs),
-        } as UndiciRequestInit);
+        } as UndiciRequestInit) as unknown as Response;
         break;
       } catch (error) {
         const retrying = attempt === 1 && canRetryBeforeConnection(error);
@@ -311,7 +309,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         const timeoutMs = timeoutOverride ?? activeConfig.timeoutMs;
-        response = await fetch(`${activeConfig.baseUrl}/chat/completions`, {
+        response = await undiciFetch(`${activeConfig.baseUrl}/chat/completions`, {
           method: "POST",
           headers: {
             Accept: "application/json",
@@ -321,7 +319,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(timeoutMs),
           dispatcher: textDispatcher(timeoutMs),
-        } as UndiciRequestInit);
+        } as UndiciRequestInit) as unknown as Response;
         break;
       } catch (error) {
         const retrying = attempt === 1 && canRetryBeforeConnection(error);
