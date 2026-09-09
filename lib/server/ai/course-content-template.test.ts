@@ -91,7 +91,7 @@ describe("Step4 fixed-slot production contract", () => {
     expect(wholeChapterTooLong).not.toEqual(expect.arrayContaining([expect.objectContaining({ code: "paragraph_word_count" })]));
   });
 
-  test("passes the Step 2 usage plan and a compact valid JSON example to the model", () => {
+  test("passes explicit dynamic paragraph and slot counts without a misleading static example", () => {
     const prompt = buildReadingTemplatePrompt({
       storyTitle: "A Door",
       storySummary: "Mia opens a door.",
@@ -109,8 +109,11 @@ describe("Step4 fixed-slot production contract", () => {
     const fixedInstructionLines = prompt.slice(0, prompt.indexOf("<context>")).split("\n");
     expect(prompt).toContain("knowledgePointUsagePlan");
     expect(prompt).toContain("用于描述 Mia 的计划");
-    expect(prompt).toContain("<formatExample>");
-    expect(prompt.slice(prompt.indexOf("<formatExample>"), prompt.indexOf("</formatExample>"))).toContain("{{VOC3}}");
+    expect(prompt).not.toContain("<formatExample>");
+    expect(prompt).toContain('"paragraphCount":2');
+    expect(prompt).toContain('"grammarCount":2');
+    expect(prompt).toContain('"vocabularyCount":1');
+    expect(prompt).toContain('"totalSlotCount":3');
     expect(prompt).toContain("contentIntent 是已确认的最终内容目标");
     expect(prompt).toContain("faithful");
     expect(prompt).toContain("observer");
@@ -242,6 +245,98 @@ describe("Step4 fixed-slot production contract", () => {
     expect(mainIdeaOnly.contractVersion).toBe(STEP4_CONTENT_CONTRACT_VERSION);
   });
 
+  test("normalizes paragraph-local slots from a whole-chapter AI repair", () => {
+    const parsed = chapterTemplateRepairBundleSchema.parse({
+      repairs: [{
+        kind: "chapter",
+        outlineChapterId: "chapter-1",
+        chapter: {
+          outlineChapterId: "chapter-1",
+          paragraphs: [
+            {
+              template: "Mia {{GR1}} the map.",
+              slots: [{ id: "GR1", kind: "wordForm", knowledgePointKey: "KP1", answer: "found", cue: "find" }],
+            },
+            {
+              template: "She followed {{VOC1}}.",
+              slots: [{ id: "VOC1", kind: "vocabulary", answer: "a clue", canonicalForm: "clue", meaningZh: "线索" }],
+            },
+          ],
+        },
+      }],
+    });
+
+    const repair = parsed.repairs[0];
+    expect(repair).toMatchObject({ kind: "chapter" });
+    if (repair?.kind !== "chapter") throw new Error("expected a whole-chapter repair");
+    expect(repair.chapter.paragraphs).toEqual([
+      { template: "Mia {{GR1}} the map." },
+      { template: "She followed {{VOC1}}." },
+    ]);
+    expect(repair.chapter.slots.map((slot) => slot.id)).toEqual(["GR1", "VOC1"]);
+  });
+
+  test("normalizes paragraph-local slots from the first reading response", () => {
+    const parsed = readingGenerationEnvelopeSchema.parse({
+      contractVersion: STEP4_CONTENT_CONTRACT_VERSION,
+      chapters: [{
+        outlineChapterId: "chapter-1",
+        paragraphs: [{
+          template: "Mia {{GR1}} the map.",
+          slots: [{ id: "GR1", kind: "wordForm", knowledgePointKey: "KP1", answer: "found", cue: "find" }],
+        }],
+      }],
+      mainIdea: { text: "Mia follows the map." },
+    });
+
+    expect(parsed.chapters[0]).toEqual({
+      outlineChapterId: "chapter-1",
+      paragraphs: [{ template: "Mia {{GR1}} the map." }],
+      slots: [{ id: "GR1", kind: "wordForm", knowledgePointKey: "KP1", answer: "found", cue: "find" }],
+    });
+  });
+
+  test("keeps conflicting duplicate slots visible for deterministic final rejection", () => {
+    const parsed = chapterTemplateRepairBundleSchema.parse({
+      repairs: [{
+        kind: "chapter",
+        outlineChapterId: "chapter-1",
+        chapter: {
+          outlineChapterId: "chapter-1",
+          paragraphs: [{
+            template: "Mia {{GR1}} the map.",
+            slots: [{ id: "GR1", kind: "wordForm", knowledgePointKey: "KP1", answer: "found", cue: "find" }],
+          }],
+          slots: [{ id: "GR1", kind: "wordForm", knowledgePointKey: "KP1", answer: "lost", cue: "lose" }],
+        },
+      }],
+    });
+
+    const repair = parsed.repairs[0];
+    if (repair?.kind !== "chapter") throw new Error("expected a whole-chapter repair");
+    expect(repair.chapter.slots).toHaveLength(2);
+    expect(compileChapterTemplate(repair.chapter, requirements).issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "slot_set" }),
+    ]));
+  });
+
+  test("deduplicates only the same slot repeated across root and paragraph placement", () => {
+    const slot = { id: "GR1", kind: "wordForm", knowledgePointKey: "KP1", answer: "found", cue: "find" } as const;
+    const crossLevel = readingGenerationEnvelopeSchema.parse({
+      contractVersion: STEP4_CONTENT_CONTRACT_VERSION,
+      chapters: [{ outlineChapterId: "chapter-1", paragraphs: [{ template: "Mia {{GR1}} it.", slots: [slot] }], slots: [slot] }],
+      mainIdea: { text: "Mia finds it." },
+    });
+    const sameLevel = readingGenerationEnvelopeSchema.parse({
+      contractVersion: STEP4_CONTENT_CONTRACT_VERSION,
+      chapters: [{ outlineChapterId: "chapter-1", paragraphs: [{ template: "Mia {{GR1}} it." }], slots: [slot, slot] }],
+      mainIdea: { text: "Mia finds it." },
+    });
+
+    expect(crossLevel.chapters[0]?.slots).toHaveLength(1);
+    expect(sameLevel.chapters[0]?.slots).toHaveLength(2);
+  });
+
   test("leaves uncertain grammar meaning to the model while retaining deterministic structure checks", () => {
     const generated = validChapter();
     generated.slots = generated.slots.map((slot) => slot.id === "GR2"
@@ -289,6 +384,8 @@ describe("Step4 fixed-slot production contract", () => {
     expect(prompt).not.toContain("storyCharacters");
     expect(prompt).not.toContain('"requirements"');
     expect(prompt.match(/"paragraphBudgets"/g)).toHaveLength(1);
+    expect(prompt).toContain('"repairMode":"chapter"');
+    expect(prompt).toContain("chapter.slots");
   });
 
   test("gives a Main Idea-only repair the compact whole-story arc without successful chapter text", () => {

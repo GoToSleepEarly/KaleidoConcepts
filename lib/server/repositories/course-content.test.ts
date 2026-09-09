@@ -1,14 +1,23 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { readingGenerationEnvelopeSchema } from "@/lib/server/ai/course-content-template";
+import { STEP4_CONTENT_CONTRACT_VERSION, readingGenerationEnvelopeSchema } from "@/lib/server/ai/course-content-template";
 import type { CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
 import { AiProviderResultUnknownError } from "@/lib/server/ai/story-outline-provider";
-import { CourseContentConflictError, courseContentGenerationFailureStatus, courseContentSemanticRepairAttempts, exerciseQuestionIssues, generateCourseExercises, generateCourseReading, modifyCourseContent, recordContentAiStructureFailure, recoverStaleCourseContentOperation, requiresExerciseAi, resetCourseContent, type CourseContentDb } from "@/lib/server/repositories/course-content";
+import { CourseContentConflictError, courseContentGenerationFailureStatus, courseContentSemanticRepairAttempts, exerciseQuestionIssues, generateCourseExercises, generateCourseReading, modifyCourseContent, recordContentAiStructureFailure, recoverStaleCourseContentOperation, requiresExerciseAi, resetCourseContent, shouldRegenerateFailedReading, type CourseContentDb } from "@/lib/server/repositories/course-content";
 import { AiJsonResponseError, generatedExercisesSchema, parseAiJson } from "@/lib/server/validation/course-content";
 
 describe("course content repository", () => {
   test("allows at most one semantic repair per generation stage", () => {
     expect(courseContentSemanticRepairAttempts).toBe(1);
+  });
+
+  test("freshly regenerates only when every persisted chapter has structural damage", () => {
+    const structural = (code: "paragraph_count" | "slot_set") => ({ structuredIssues: [{ code, message: code }] });
+    const wordOnly = { structuredIssues: [{ code: "word_count" as const, message: "too short" }] };
+
+    expect(shouldRegenerateFailedReading([structural("paragraph_count"), structural("slot_set")], 2)).toBe(true);
+    expect(shouldRegenerateFailedReading([structural("paragraph_count"), wordOnly], 2)).toBe(false);
+    expect(shouldRegenerateFailedReading([structural("paragraph_count")], 2)).toBe(false);
   });
 
   test("marks an ambiguous provider timeout as an unknown result instead of a safe failure", () => {
@@ -23,7 +32,7 @@ describe("course content repository", () => {
     } catch (caught) {
       error = caught as AiJsonResponseError;
     }
-    error!.operation = "content_generate_reading_v4";
+    error!.operation = "content_generate_reading_v5";
     error!.latencyMs = 1234;
     const create = vi.fn(async () => ({}));
 
@@ -411,7 +420,7 @@ describe("course content repository", () => {
       { outlineChapterId: "chapter-1", generated: chapter1, parseError: null },
       { outlineChapterId: "chapter-2", generated: chapter2, parseError: null },
     ], mainIdea: { text: Array(120).fill("summary").join(" ") }, mainIdeaError: null, usage: { inputTokens: 100, outputTokens: 80, visibleOutputTokens: 60, reasoningTokens: 20, totalTokens: 180 }, latencyMs: 4321 }));
-    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v10" as const, repairs: [{ kind: "paragraph" as const, outlineChapterId: "chapter-2", paragraphIndex: 0, template: `${words} {{GR1}}`, slots: [] }], usage: { inputTokens: 40, outputTokens: 20, visibleOutputTokens: 15, reasoningTokens: 5, totalTokens: 60 }, latencyMs: 1234 }));
+    const repairReading = vi.fn(async () => ({ contractVersion: STEP4_CONTENT_CONTRACT_VERSION, repairs: [{ kind: "paragraph" as const, outlineChapterId: "chapter-2", paragraphIndex: 0, template: `${words} {{GR1}}`, slots: [] }], usage: { inputTokens: 40, outputTokens: 20, visibleOutputTokens: 15, reasoningTokens: 5, totalTokens: 60 }, latencyMs: 1234 }));
     const deps = { generateReading, repairReading } as unknown as CourseContentGenerationDeps;
 
     const result = await generateCourseReading(db, "course-1", "request-1", deps);

@@ -565,9 +565,9 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
       const requirements = buildReadingTemplateRequirements(input);
       const context = buildReadingTemplatePromptContext(chapterProtocol.input);
       const generationStartedAt = Date.now();
-      const response = await callWithUsage(writingProvider, "content_generate_reading_v4", buildReadingTemplatePrompt(context), contentReadingTimeoutMs(), { reasoningEffort: courseContentReasoningEfforts.readingGeneration, maxOutputTokens: 6_500 });
+      const response = await callWithUsage(writingProvider, "content_generate_reading_v5", buildReadingTemplatePrompt(context), contentReadingTimeoutMs(), { reasoningEffort: courseContentReasoningEfforts.readingGeneration, maxOutputTokens: 6_500 });
       const latencyMs = Date.now() - generationStartedAt;
-      const payload = parseWithDiagnostics(response.text, readingGenerationEnvelopeSchema, "阅读内容结构无效", "content_generate_reading_v4", generationStartedAt);
+      const payload = parseWithDiagnostics(response.text, readingGenerationEnvelopeSchema, "阅读内容结构无效", "content_generate_reading_v5", generationStartedAt);
       assertExactChapterKeys(payload.chapters.map((chapter) => chapter.outlineChapterId), chapterProtocol.keys, "阅读内容章节短键不完整");
       await onGenerationReady?.();
       const restoredPayload = {
@@ -588,9 +588,9 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
         requirements: { ...target.requirements, outlineChapterId: chapterProtocol.toKey(target.requirements.outlineChapterId) },
       }));
       const startedAt = Date.now();
-      const response = await callWithUsage(writingProvider, "content_repair_reading_v2", buildReadingTemplateRepairPrompt(keyedTargets, buildReadingTemplatePromptContext(chapterProtocol.input), mainIdeaTarget), contentReadingTimeoutMs(), { reasoningEffort: courseContentReasoningEfforts.readingRepair, maxOutputTokens: 6_500 });
+      const response = await callWithUsage(writingProvider, "content_repair_reading_v3", buildReadingTemplateRepairPrompt(keyedTargets, buildReadingTemplatePromptContext(chapterProtocol.input), mainIdeaTarget), contentReadingTimeoutMs(), { reasoningEffort: courseContentReasoningEfforts.readingRepair, maxOutputTokens: 6_500 });
       const latencyMs = Date.now() - startedAt;
-      const bundle = parseWithDiagnostics(response.text, chapterTemplateRepairBundleSchema, "正文最小修复结构解析失败", "content_repair_reading_v2", startedAt);
+      const bundle = parseWithDiagnostics(response.text, chapterTemplateRepairBundleSchema, "正文最小修复结构解析失败", "content_repair_reading_v3", startedAt);
       assertReadingRepairCoverage(bundle.repairs, keyedTargets.map((target) => target.requirements.outlineChapterId));
       const repairs = bundle.repairs.map((repair) => {
         const outlineChapterId = chapterProtocol.toOutlineChapterId(repair.outlineChapterId);

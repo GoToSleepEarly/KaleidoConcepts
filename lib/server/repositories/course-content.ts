@@ -68,6 +68,16 @@ const mainIdeaTitle = "Main Idea Reading Practice";
 const operationLeaseMs = 90_000;
 const operationHeartbeatMs = 25_000;
 export const courseContentSemanticRepairAttempts = 1;
+const structuralReadingIssueCodes = new Set<ChapterTemplateIssue["code"]>(["paragraph_count", "slot_set", "marker_set", "part_structure"]);
+
+export function shouldRegenerateFailedReading(
+  chapterResults: Array<{ structuredIssues: ChapterTemplateIssue[] }>,
+  expectedChapterCount: number,
+) {
+  return chapterResults.length === expectedChapterCount
+    && chapterResults.length > 0
+    && chapterResults.every((result) => result.structuredIssues.some((issue) => structuralReadingIssueCodes.has(issue.code)));
+}
 
 function leaseDeadline(now = new Date()) { return new Date(now.getTime() + operationLeaseMs); }
 
@@ -584,11 +594,11 @@ export async function recordContentAiStructureFailure(
   const isExerciseFailure = aiOperation.startsWith("content_generate_exercises") || aiOperation.startsWith("content_repair_exercises");
   const callType = isExerciseFailure
     ? aiOperation.startsWith("content_repair_exercises") ? "repair" : "generate"
-    : aiOperation === "content_generate_reading_v4"
+    : aiOperation === "content_generate_reading_v5"
       ? "generate"
       : aiOperation === "content_finalize_reading_questions_v3"
       ? "final"
-      : aiOperation === "content_repair_reading_v2"
+      : aiOperation === "content_repair_reading_v3"
         ? "repair"
         : "candidate";
   const logOperation = isExerciseFailure ? `exercises_${callType}` : `reading_v2_${callType}`;
@@ -624,10 +634,32 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
   return withLease(db, operation.id, async () => {
   try {
     const requirementById = new Map(requirements.map((requirement) => [requirement.outlineChapterId, requirement]));
-    const reusableChapters = !options.regenerate && current.status === "failed" && Array.isArray(current.chapters) && current.chapters.length
+    const persistedRetryChapters = !options.regenerate && current.status === "failed" && Array.isArray(current.chapters) && current.chapters.length
       ? structuredClone(current.chapters as CourseContentChapter[])
       : null;
-    const reusableMainIdea = !options.regenerate && current.status === "failed" && current.mainIdea
+    const persistedRetryMatchesRequirements = Boolean(
+      persistedRetryChapters
+      && persistedRetryChapters.length === requirements.length
+      && persistedRetryChapters.every((chapter) => requirementById.has(chapter.outlineChapterId)),
+    );
+    const persistedRetryResults = persistedRetryMatchesRequirements ? persistedRetryChapters!.map((chapter) => {
+      const requirement = requirementById.get(chapter.outlineChapterId)!;
+      const knowledgePointKeyById = new Map(requirement.grammarPoints.flatMap((point) => point.knowledgePointId ? [[point.knowledgePointId, point.key] as const] : []));
+      const draft = decompileChapterTemplate(chapter, knowledgePointKeyById);
+      const normalized = normalizeTemplateChapter(state, draft, requirement, "历史失败章节需要重新校验");
+      const messages = validateChapter(state, normalized.chapter);
+      return {
+        ...normalized,
+        chapter: { ...normalized.chapter, validationIssues: [...new Set([...normalized.structuredIssues.map((issue) => issue.message), ...messages])] },
+        parseError: normalized.structuredIssues.length || messages.length ? "历史失败章节需要重新校验" : null,
+        requirement,
+      };
+    }) : null;
+    const reusableChapters = persistedRetryChapters && persistedRetryResults
+      && !shouldRegenerateFailedReading(persistedRetryResults, requirements.length)
+      ? persistedRetryChapters
+      : null;
+    const reusableMainIdea = reusableChapters && current.mainIdea
       ? structuredClone(current.mainIdea as { title: string; text: string })
       : null;
     const generatedReading = reusableChapters ? null : await deps.generateReading(state, writingProvider, async () => {
@@ -635,18 +667,7 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
     });
     await updateOwnedContent(db, courseId, operation, { phase: "validating_chapters" });
     let chapterResults = reusableChapters
-      ? reusableChapters.map((chapter) => {
-          const requirement = requirementById.get(chapter.outlineChapterId)!;
-          const knowledgePointKeyById = new Map(requirement.grammarPoints.flatMap((point) => point.knowledgePointId ? [[point.knowledgePointId, point.key] as const] : []));
-          const messages = validateChapter(state, chapter);
-          return {
-            chapter: { ...chapter, validationIssues: messages },
-            draft: decompileChapterTemplate(chapter, knowledgePointKeyById),
-            structuredIssues: messages.map((message) => ({ code: "part_structure" as const, message })),
-            parseError: messages.length ? "历史失败章节需要重新校验" : null,
-            requirement,
-          };
-        })
+      ? persistedRetryResults!
       : requirements.map((requirement) => {
           const parsed = generatedReading!.chapters.find((chapter) => chapter.outlineChapterId === requirement.outlineChapterId);
           const normalized = normalizeTemplateChapter(state, parsed?.generated ?? null, requirement, parsed?.parseError);
