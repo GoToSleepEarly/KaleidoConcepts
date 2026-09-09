@@ -369,7 +369,7 @@ const schemaDescriptions = {
 
 const optionOutputRule = "选项填空必须返回 answer 和 distractors；distractors 恰好两个、互不重复且都不等于 answer。禁止返回 options，程序会把 answer 与 distractors 合并并打乱。";
 const optionQualityRule = "两个干扰项必须与答案属于相同词性或语法维度；每项都必须是标准英语中真实存在、拼写正确的完整词形或结构，禁止虚构变形或残缺助动词、情态动词结构。分别把 answer 和每个 distractor 拼回 before+空格+after：只要干扰项在当前语法、时间线和语义中也成立，就先改写 before/after 提供决定性线索；不能把‘不如 answer 合适’当作错误，也不要使用明显无关的随机词。";
-const wordFormOutputRule = "给词填空必须返回 answer 和 baseForm；baseForm 是括号提示词，answer 必须使完整句正确且空格本身考查绑定知识点。构成目标语法的功能词、助动词或情态词必须包含在 answer 内，不得预先写进 before/after；若目标是 to + verb，answer 必须是完整的 'to verb'，不得把 to 放进 before 后只让学生照抄 verb。仅在句子其他位置出现知识点不算考查。answer 可按句法变化或与 baseForm 相同，不得为制造变化写错句子。";
+const wordFormOutputRule = "给词填空必须返回 answer 和 baseForm；baseForm 是横线后括号内展示的给词提示，必须是 answer 中目标实词的词典原形，并与 knowledgePointKey、answer 构成清楚的词形或语法结构关系，例如 answer='went' 时 baseForm='go'，answer='was waiting' 时 baseForm='wait'。answer 必须使完整句正确且空格本身考查绑定知识点。构成目标语法的功能词、助动词或情态词必须包含在 answer 内，不得预先写进 before/after；若目标是 to + verb，answer 必须是完整的 'to verb'，不得把 to 放进 before 后只让学生照抄 verb。仅在句子其他位置出现知识点不算考查。answer 可按句法变化或与 baseForm 相同，不得为制造变化写错句子。";
 const questionPositionRule = "before 是空格前文本，after 是空格后文本；不得包含下划线、题号、括号提示或答案，程序会在两者之间插入空格和提示。";
 const vocabularyQualityRule = "词汇题选择对当前 CEFR 学生有复用价值、能脱离本句复习的实词或常用词组；不要选择人物名、地名、纯功能词、缩写、带连字符的词或同一 canonicalForm 的重复项目。canonicalForm 使用词典原形，meaningZh 必须对应当前语境。";
 

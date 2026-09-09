@@ -129,6 +129,9 @@ describe("Step4 fixed-slot production contract", () => {
     expect(prompt).toContain("answer 选择本身必须由绑定知识点决定");
     expect(prompt).toContain("功能词、助动词或情态词必须包含在 answer 内");
     expect(prompt).toContain("优先使用当前数量较少的题型");
+    expect(prompt).toContain("任意两段的题目数目标相差不超过 1");
+    expect(prompt).toContain("各段完整 clean text 的词数同样围绕 paragraphBudgets.preferredRange 尽可能均衡");
+    expect(prompt).toContain("answer='was waiting' 时 cue='wait'");
     expect(prompt).toContain("仅允许 optionCloze 时，把完整的 'to verb' 作为 answer");
     expect(prompt).not.toContain("若目标是 to + verb，必须让该 GR 槽位使用 wordForm");
     expect(prompt).toContain("仅在完整句其他位置出现知识点");
@@ -183,6 +186,8 @@ describe("Step4 fixed-slot production contract", () => {
     expect(prompt).toContain("标准、完整且拼写正确的 distractors");
     expect(prompt).toContain("提供决定性线索");
     expect(prompt).toContain("优先使用当前数量较少的题型");
+    expect(prompt).toContain("任意两段的题目数目标相差不超过 1");
+    expect(prompt).toContain("answer='was waiting' 时 cue='wait'");
     expect(prompt).toContain("仅允许 optionCloze 时，把完整的 'to verb' 作为 answer");
     expect(prompt).not.toContain("若目标是 to + verb，必须使用 wordForm");
     expect(prompt).toContain('"candidate"');

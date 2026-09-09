@@ -328,6 +328,7 @@ describe("course content prompt contexts", () => {
       expect(prompt).toContain("优先使用当前数量较少的题型");
       expect(prompt).toContain("只有知识点与某题型明显不适配时才允许偏斜");
       expect(prompt).toContain("每个知识点内部也按同一原则分配");
+      expect(prompt).toContain("answer='was waiting' 时 baseForm='wait'");
     }
   });
 
