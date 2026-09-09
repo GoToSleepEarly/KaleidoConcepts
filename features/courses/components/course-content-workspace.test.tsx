@@ -70,13 +70,16 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByRole("tab", { name: "课后阅读" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: "课后练习" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: "正文" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByTestId("content-primary-tabs")).toHaveClass("border-b", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
-    expect(screen.getByRole("tab", { name: "第 1 章" })).toHaveClass("border-b-2");
+    expect(screen.getByTestId("content-primary-tabs")).toHaveClass("rounded-lg", "bg-muted", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
+    expect(screen.getByRole("tab", { name: "第 1 章" })).toHaveClass("bg-primary", "rounded-md");
     expect(screen.getByRole("tab", { name: "第 1 章" })).toHaveClass("shrink-0", "whitespace-nowrap");
-    expect(screen.getByTestId("content-secondary-tabs")).toHaveClass("border-b", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
+    expect(screen.getByTestId("content-secondary-tabs")).toHaveClass("rounded-lg", "bg-muted/70", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
+    expect(screen.getByRole("tab", { name: "正文" })).toHaveClass("bg-card", "shadow-sm");
     expect(screen.queryByRole("tab", { name: "练习" })).not.toBeInTheDocument();
-    expect(screen.getByText("1 / 1 页")).toBeInTheDocument();
+    expect(screen.getByText("第 1 / 1 页")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上一页" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "上一页" })).toHaveTextContent("上一页");
+    expect(screen.getByRole("button", { name: "下一页" })).toHaveTextContent("下一页");
     expect(screen.getByText("(find)")).toBeInTheDocument();
     expect(screen.getByText("(隐藏的门，6+4个字母)")).toBeInTheDocument();
     expect(screen.getByText("(1)")).toBeInTheDocument();
@@ -91,7 +94,7 @@ describe("CourseContentWorkspace", () => {
     render(<CourseContentWorkspace initialState={initialState} />);
     fireEvent.click(screen.getByRole("tab", { name: "课后阅读" }));
     expect(screen.getByRole("tab", { name: "课后阅读" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "课后阅读", selected: true })).toHaveClass("border-b-2");
+    expect(screen.getByRole("tab", { name: "课后阅读", selected: true })).toHaveClass("bg-primary", "rounded-md");
     expect(screen.getByText("A complete story summary.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "课后练习" }));
     expect(screen.getByRole("tab", { name: "课后练习" })).toHaveAttribute("aria-selected", "true");
@@ -116,7 +119,7 @@ describe("CourseContentWorkspace", () => {
     const generatedAction = screen.getByRole("button", { name: "词汇配对由正文词汇自动汇总" });
     expect(generatedAction).toBeDisabled();
     expect(generatedAction).toHaveClass("w-20");
-    expect(screen.getByText("2 / 2 页")).toBeInTheDocument();
+    expect(screen.getByText("第 2 / 2 页")).toBeInTheDocument();
   });
 
   test("shows only the Chinese vocabulary hint in complete-reading mode", () => {
@@ -159,7 +162,7 @@ describe("CourseContentWorkspace", () => {
     const questions = Array.from({ length: 6 }, (_, index) => ({ id: `q${index + 1}`, type: "optionCloze" as const, knowledgePointId: "kp1", before: `Question ${index + 1} `, after: ".", answer: "found", options: ["found", "finds", "finding"] }));
     render(<CourseContentWorkspace initialState={{ ...initialState, chapters: initialState.chapters.map((chapter) => ({ ...chapter, chapterPractice: questions })) }} />);
     fireEvent.click(screen.getByRole("tab", { name: "练习" }));
-    expect(screen.getByText("1 / 2 页")).toBeInTheDocument();
+    expect(screen.getByText("第 1 / 2 页")).toBeInTheDocument();
     expect(screen.getByRole("article").querySelectorAll("ol > li")).toHaveLength(3);
   });
 
@@ -256,7 +259,7 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByTestId("content-preview-scroll")).toHaveClass("overflow-y-scroll", "overscroll-contain", "[scrollbar-gutter:stable]", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
   });
 
-  test("keeps Step 4 history, composer, and preview controls dense", () => {
+  test("keeps Step 4 history and composer dense while making preview navigation explicit", () => {
     render(<CourseContentWorkspace initialState={{
       ...initialState,
       messages: [
@@ -273,7 +276,9 @@ describe("CourseContentWorkspace", () => {
     expect(screen.getByLabelText("修改要求")).toHaveAttribute("rows", "1");
     expect(screen.getByLabelText("修改要求")).toHaveClass("block", "min-h-13", "max-h-28", "resize-none", "pr-16");
     expect(screen.getByRole("button", { name: "发送修改要求" })).toHaveClass("absolute", "bottom-1", "right-1", "size-11", "rounded-full", "bg-primary-50", "text-primary", "p-0");
-    expect(screen.getByTestId("content-preview-toolbar")).toHaveClass("space-y-0", "px-3", "py-1");
+    expect(screen.getByTestId("content-preview-toolbar")).toHaveClass("space-y-2", "p-3");
+    expect(screen.getAllByText("选择章节").length).toBeGreaterThan(0);
+    expect(screen.getByText("查看内容")).toBeInTheDocument();
     expect(screen.getByTestId("content-preview-toolbar")).toContainElement(screen.getByTestId("content-page-controls"));
     expect(screen.getByTestId("content-preview-scroll")).toHaveClass("p-3");
   });
@@ -483,7 +488,7 @@ describe("CourseContentWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "第 1 章 · 正文第 2 页" }));
 
     expect(screen.getByText("The selected second page.")).toBeInTheDocument();
-    expect(screen.getByText("2 / 2 页")).toBeInTheDocument();
+    expect(screen.getByText("第 2 / 2 页")).toBeInTheDocument();
   });
 
   test("uses the styled repair-range picker instead of a native select", () => {
@@ -524,9 +529,35 @@ describe("CourseContentWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "开始生成" }));
 
+    expect(screen.getByText("开始生成阅读内容").closest("article")).toHaveTextContent("按钮操作");
     expect(screen.getAllByTestId("content-operation-card")).toHaveLength(1);
     expect(screen.queryByTestId("ai-operation-status")).not.toBeInTheDocument();
-    expect(screen.getByTestId("content-operation-card")).toHaveTextContent("生成全部章节正文与课后阅读");
+    expect(screen.getByTestId("content-operation-card")).toHaveTextContent("生成正文、互动题和课后阅读");
+    expect(screen.getByTestId("content-operation-card")).toHaveTextContent("检查结构、题量和篇幅");
+    expect(screen.getByTestId("content-operation-card")).toHaveTextContent("已用时");
+    expect(screen.getByTestId("content-operation-card")).toHaveTextContent("预计用时 5–10 分钟");
+  });
+
+  test("keeps Step 4 operation source, retry count, duration, and completed actions in styled history", () => {
+    const messages = [
+      { id: "teacher", role: "teacher", content: "重新生成阅读内容", requestId: "reading-2", details: { triggerSource: "ui_action", triggerLabel: "重新生成阅读内容", retryAttempt: 2 }, createdAt: "2026-08-10T00:00:00.000Z" },
+      { id: "reading-running", role: "assistant", content: "正在生成。", kind: "operation", status: "running", operation: "reading", requestId: "reading-2", title: "正在重新生成阅读内容", details: { retryAttempt: 2 }, createdAt: "2026-08-10T00:00:01.000Z" },
+      { id: "reading-done", role: "assistant", content: "已经生成。", kind: "operation", status: "succeeded", operation: "reading", requestId: "reading-2", title: "阅读内容已生成", details: { retryAttempt: 2, durationMs: 65000 }, createdAt: "2026-08-10T00:01:06.000Z" },
+      { id: "exercise-running", role: "assistant", content: "正在生成练习。", kind: "operation", status: "running", operation: "exercises", requestId: "exercise-1", title: "正在生成章节与课后练习", createdAt: "2026-08-10T00:02:00.000Z" },
+      { id: "exercise-done", role: "assistant", content: "练习已生成。", kind: "operation", status: "succeeded", operation: "exercises", requestId: "exercise-1", title: "章节与课后练习已生成", details: { durationMs: 30000 }, createdAt: "2026-08-10T00:02:30.000Z" },
+    ] as CourseContentState["messages"];
+
+    render(<CourseContentWorkspace initialState={{ ...initialState, status: "ready", messages }} />);
+
+    const teacherAction = screen.getAllByText("重新生成阅读内容").map((element) => element.closest("article")).find((article) => article?.textContent?.includes("按钮操作"));
+    expect(teacherAction).toHaveTextContent("按钮操作");
+    expect(teacherAction).toHaveTextContent("第 2 次尝试");
+    const readingCard = screen.getAllByTestId("content-operation-card")[0]!;
+    expect(readingCard).toHaveTextContent("执行用时 1 分 05 秒");
+    expect(readingCard).toHaveTextContent("第 2 次尝试");
+    expect(readingCard).toHaveClass("border-l-4", "border-l-emerald-500");
+    expect(screen.getByRole("button", { name: "确认并生成练习" })).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "重新生成阅读内容" }).some((button) => button.hasAttribute("disabled"))).toBe(true);
   });
 
   test("shows only failed and repair events inside failure reasons", () => {
@@ -624,7 +655,7 @@ describe("CourseContentWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "重新生成阅读内容" }));
     fireEvent.click(screen.getByRole("button", { name: "重新开始" }));
-    fireEvent.click(screen.getByRole("button", { name: "删除文案与练习并重新开始" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除并重置文案与练习" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "开始生成" })).toBeInTheDocument());
 
     resolveGeneration(Response.json(initialState));
@@ -737,7 +768,7 @@ describe("CourseContentWorkspace", () => {
     ));
   });
 
-  test("confirms preserving old downstream content before regenerating completed content", async () => {
+  test("confirms deleting downstream content after regenerated content succeeds", async () => {
     Object.assign(HTMLDialogElement.prototype, {
       showModal(this: HTMLDialogElement) { this.setAttribute("open", ""); },
       close(this: HTMLDialogElement) { this.removeAttribute("open"); },
@@ -750,19 +781,19 @@ describe("CourseContentWorkspace", () => {
     render(<CourseContentWorkspace initialState={completedState} />);
 
     fireEvent.click(screen.getByRole("button", { name: "重新生成阅读内容" }));
-    await waitFor(() => expect(screen.getByRole("heading", { name: "继续重新生成？" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "修改将重置后续流程" })).toBeInTheDocument());
     expect(screen.getByText(/视觉资源、图片和预览发布设置/)).toBeInTheDocument();
     expect(screen.queryByText(/Step/)).not.toBeInTheDocument();
-    expect(screen.getByText(/不会自动更新，也不会被删除/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "继续重新生成" }));
+    expect(screen.getByRole("dialog", { name: "修改将重置后续流程" })).toHaveTextContent("成功后，视觉资源、图片和预览发布设置会被删除");
+    fireEvent.click(screen.getByRole("button", { name: "确认并开始生成" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith(
-      "/api/courses/course-1/content/reading/generate?regenerate=true&preserveDownstream=true",
+      "/api/courses/course-1/content/reading/generate?regenerate=true&resetDownstream=true",
       expect.objectContaining({ method: "POST" }),
     ));
   });
 
-  test("clears only Step4 records and keeps later stages after confirmation", async () => {
+  test("clears Step4 and all later stages after confirmation", async () => {
     Object.assign(HTMLDialogElement.prototype, {
       showModal(this: HTMLDialogElement) { this.setAttribute("open", ""); },
       close(this: HTMLDialogElement) { this.removeAttribute("open"); },
@@ -774,12 +805,12 @@ describe("CourseContentWorkspace", () => {
     render(<CourseContentWorkspace initialState={staleState} />);
     expect(screen.getByText("当前内容仍是旧版本。")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重新开始" }));
-    expect(screen.getByRole("heading", { name: "重新开始" })).toBeInTheDocument();
-    expect(screen.getByText(/将删除当前文案与练习并重新开始/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "重置文案与练习？" })).toBeInTheDocument();
+    expect(screen.getByText(/将删除当前文案与练习、视觉资源/)).toBeInTheDocument();
     expect(screen.getByText(/视觉资源、图片和预览发布设置/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
-    expect(screen.getByText(/不会被删除/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "删除文案与练习并重新开始" }));
+    expect(screen.getByText(/并重新开始本阶段/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "删除并重置文案与练习" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/courses/course-1/content/reset", { method: "POST" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "开始生成" })).toBeInTheDocument());
     expect(screen.queryByText("当前内容仍是旧版本。")).not.toBeInTheDocument();

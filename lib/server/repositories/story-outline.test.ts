@@ -190,6 +190,21 @@ function createDb(overrides: Partial<StoryOutlineDb> = {}) {
     $transaction: async (callback) => callback(db),
     ...overrides,
   } as StoryOutlineDb & { state: typeof state };
+  Object.assign(db, {
+    courseTeachingPlan: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    courseContentChatMessage: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    courseContentGeneration: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    courseLessonContent: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    courseImage: {
+      findMany: vi.fn(async () => []),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+    },
+    courseVisualImageSlot: { updateMany: vi.fn(async () => ({ count: 0 })), deleteMany: vi.fn(async () => ({ count: 0 })) },
+    courseCharacterVisual: { updateMany: vi.fn(async () => ({ count: 0 })), deleteMany: vi.fn(async () => ({ count: 0 })) },
+    courseVisualResourcePlan: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    coursePresentation: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+  });
   return db;
 }
 
@@ -531,6 +546,11 @@ describe("story outline repository", () => {
     expect(state.directions).toHaveLength(1);
     expect(state.outline).toBeNull();
     expect(state.chatMessages.some((message) => message.role === "system")).toBe(false);
+    const directionResultMessage = [...state.chatMessages].reverse().find((message) => message.role === "assistant" && message.metadata?.operationTitle === "生成 3 个故事方向");
+    expect(directionResultMessage).toEqual(expect.objectContaining({
+      source: "ai",
+      metadata: expect.objectContaining({ operationTitle: "生成 3 个故事方向", durationMs: expect.any(Number) }),
+    }));
     expect(db.state.messages.filter((message) => message.content === "我确认这份创作理解。")).toHaveLength(1);
     expect(db.state.messages.some((message) => message.content === "我确认需求")).toBe(false);
     expect(db.state.messages.some((message) => message.content === "创作需求已确认，正在创作 3 个不同的故事方向。")).toBe(true);
@@ -1229,6 +1249,35 @@ describe("story outline repository", () => {
     expect(state.referenceMaterials).toEqual([]);
     expect(state.outline).toBeNull();
     expect(state.coursePeople.length).toBeGreaterThan(0);
+  });
+
+  test("clears Step 2 and all downstream stages atomically when restarting an old outline", async () => {
+    const db = createDb();
+    db.state.course = {
+      ...db.state.course,
+      currentStage: "preview",
+      staleFromStage: "story_outline",
+      lifecycleStatus: "published",
+    };
+
+    const state = await resetStoryOutline(db, "course-1");
+
+    expect(state.course.staleFromStage).toBeNull();
+    expect(db.state.course).toMatchObject({
+      currentStage: "story_outline",
+      staleFromStage: null,
+      lifecycleStatus: "draft",
+    });
+  });
+
+  test("clears a legacy stale marker when restarting Step 2", async () => {
+    const db = createDb();
+    db.state.course = { ...db.state.course, currentStage: "preview", staleFromStage: "audience" };
+
+    const state = await resetStoryOutline(db, "course-1");
+
+    expect(state.course.staleFromStage).toBeNull();
+    expect(state.course.currentStage).toBe("story_outline");
   });
 
   test("confirms the story outline and advances to teaching plan", async () => {

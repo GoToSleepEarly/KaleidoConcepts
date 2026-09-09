@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { readingCandidateEnvelopeSchema } from "@/lib/server/ai/course-content-template";
+import { readingGenerationEnvelopeSchema } from "@/lib/server/ai/course-content-template";
 import type { CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
 import { AiProviderResultUnknownError } from "@/lib/server/ai/story-outline-provider";
 import { CourseContentConflictError, courseContentGenerationFailureStatus, courseContentSemanticRepairAttempts, exerciseQuestionIssues, generateCourseExercises, generateCourseReading, modifyCourseContent, recordContentAiStructureFailure, recoverStaleCourseContentOperation, requiresExerciseAi, resetCourseContent, type CourseContentDb } from "@/lib/server/repositories/course-content";
@@ -16,14 +16,14 @@ describe("course content repository", () => {
     expect(courseContentGenerationFailureStatus(new Error("校验失败"))).toBe("failed");
   });
 
-  test("persists candidate schema diagnostics with the operation request id", async () => {
+  test("persists one-pass reading schema diagnostics with the operation request id", async () => {
     let error: AiJsonResponseError | null = null;
     try {
-      parseAiJson('{"candidateVersion":"wrong","chapters":[],"mainIdea":{"text":""}}', readingCandidateEnvelopeSchema, "正文候选结构无效");
+      parseAiJson('{"contractVersion":"wrong","chapters":[],"mainIdea":{"text":""}}', readingGenerationEnvelopeSchema, "阅读内容结构无效");
     } catch (caught) {
       error = caught as AiJsonResponseError;
     }
-    error!.operation = "content_generate_reading_candidates_v3";
+    error!.operation = "content_generate_reading_v4";
     error!.latencyMs = 1234;
     const create = vi.fn(async () => ({}));
 
@@ -37,14 +37,14 @@ describe("course content repository", () => {
     );
 
     expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({
-      requestId: "generation-1:request-1:step4-reading:candidate:structure-failure",
-      operation: "reading_v2_candidate",
+      requestId: "generation-1:request-1:step4-reading:generate:structure-failure",
+      operation: "reading_v2_generate",
       status: "failed",
       latencyMs: 1234,
       outputSnapshot: expect.objectContaining({
         failureType: "schema_mismatch",
         schemaIssues: expect.any(Array),
-        rawResponsePreview: '{"candidateVersion":"wrong","chapters":[],"mainIdea":{"text":""}}',
+        rawResponsePreview: '{"contractVersion":"wrong","chapters":[],"mainIdea":{"text":""}}',
       }),
     }) });
   });
@@ -281,6 +281,17 @@ describe("course content repository", () => {
         return callback(db as unknown as CourseContentDb);
       }),
     };
+    Object.assign(db, {
+      courseImage: {
+        findMany: vi.fn(async () => []),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+      },
+      courseVisualImageSlot: { updateMany: vi.fn(async () => ({ count: 0 })), deleteMany: vi.fn(async () => ({ count: 0 })) },
+      courseCharacterVisual: { updateMany: vi.fn(async () => ({ count: 0 })), deleteMany: vi.fn(async () => ({ count: 0 })) },
+      courseVisualResourcePlan: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      coursePresentation: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    });
 
     const result = await resetCourseContent(db as unknown as CourseContentDb, "course-1");
 
@@ -294,7 +305,8 @@ describe("course content repository", () => {
     course = { ...course, currentStage: "preview", staleFromStage: null };
     const resetWithLaterStages = await resetCourseContent(db as unknown as CourseContentDb, "course-1");
 
-    expect(resetWithLaterStages.course.staleFromStage).toBe("visual_resources");
+    expect(resetWithLaterStages.course.staleFromStage).toBeNull();
+    expect(resetWithLaterStages.course.currentStage).toBe("content");
   });
 
   test("generates chapters and Main Idea together, then uses the one shared repair budget for an invalid Main Idea", async () => {
@@ -305,7 +317,7 @@ describe("course content repository", () => {
     let content = { id: "content-1", courseId: "course-1", status: "empty", phase: null, writingProvider: "quickrouter_gpt", sourceRevision: "", contentVersion: 0, chapters: [] as unknown[], mainIdea: null as unknown, homework: null, exercisesStale: false, errorMessage: null as string | null, updatedAt: now };
     let generation: Record<string, unknown> | null = null;
     const applyData = (current: Record<string, unknown>, data: Record<string, unknown>) => Object.fromEntries(Object.entries({ ...current, ...data }).map(([key, value]) => [key, typeof value === "object" && value && "increment" in value ? Number(current[key] ?? 0) + Number(Reflect.get(value, "increment")) : value]));
-    const messages: Array<{ id: string; role: "teacher" | "assistant" | "system"; content: string; kind?: string; status?: string; operation?: string; requestId?: string; title?: string; eventKey?: string; createdAt: Date }> = [];
+    const messages: Array<{ id: string; role: "teacher" | "assistant" | "system"; content: string; kind?: string; status?: string; operation?: string; requestId?: string; title?: string; details?: Record<string, unknown>; eventKey?: string; createdAt: Date }> = [];
     const db = {
       course: { findUnique: vi.fn(async () => course), update: vi.fn(async () => course) },
       courseStoryOutline: { findUnique: vi.fn(async () => outline) },
@@ -357,9 +369,11 @@ describe("course content repository", () => {
     expect((repairReading.mock.calls as unknown[][])[0]?.[2]).toEqual([]);
     expect((repairReading.mock.calls as unknown[][])[0]?.[3]).toMatchObject({ issues: [expect.stringContaining("Main Idea")] });
     expect(result.mainIdea?.title).toBe("Main Idea Reading Practice");
-    expect(messages.some((message) => message.content.includes("一次统一修复全部失败位置"))).toBe(true);
+    expect(messages.some((message) => message.content.includes("正在统一修复"))).toBe(true);
+    expect(messages.find((message) => message.requestId === "request-1" && message.role === "teacher")).toMatchObject({ content: "开始生成阅读内容", details: { triggerSource: "ui_action", retryAttempt: 1 } });
     expect(messages.map((message) => message.content)).toContain("我确认阅读内容，请生成章节与课后练习。");
     expect(messages.filter((message) => message.requestId === "request-1" && message.kind === "operation").map((message) => message.status)).toEqual(["running", "succeeded"]);
+    expect(messages.find((message) => message.requestId === "request-1" && message.status === "succeeded")?.details).toMatchObject({ retryAttempt: 1, durationMs: expect.any(Number) });
     expect(messages.filter((message) => message.requestId === "request-2" && message.kind === "operation").map((message) => message.status)).toEqual(["running", "succeeded"]);
     expect(messages.find((message) => message.requestId === "request-1" && message.kind === "repair")).toMatchObject({ operation: "reading", title: "自动检查与修复" });
     expect(exerciseResult.messages.map((message) => message.content)).toEqual(messages.map((message) => message.content));
@@ -396,8 +410,8 @@ describe("course content repository", () => {
     const generateReading = vi.fn(async () => ({ envelopeError: null, chapters: [
       { outlineChapterId: "chapter-1", generated: chapter1, parseError: null },
       { outlineChapterId: "chapter-2", generated: chapter2, parseError: null },
-    ], mainIdea: { text: Array(120).fill("summary").join(" ") }, mainIdeaError: null, candidateUsage: { inputTokens: 70, outputTokens: 50, visibleOutputTokens: 45, reasoningTokens: 5, totalTokens: 120 }, usage: { inputTokens: 100, outputTokens: 80, visibleOutputTokens: 60, reasoningTokens: 20, totalTokens: 180 } }));
-    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v9" as const, repairs: [{ kind: "paragraph" as const, outlineChapterId: "chapter-2", paragraphIndex: 0, template: `${words} {{GR1}}`, slots: [] }], usage: { inputTokens: 40, outputTokens: 20, visibleOutputTokens: 15, reasoningTokens: 5, totalTokens: 60 } }));
+    ], mainIdea: { text: Array(120).fill("summary").join(" ") }, mainIdeaError: null, usage: { inputTokens: 100, outputTokens: 80, visibleOutputTokens: 60, reasoningTokens: 20, totalTokens: 180 }, latencyMs: 4321 }));
+    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v10" as const, repairs: [{ kind: "paragraph" as const, outlineChapterId: "chapter-2", paragraphIndex: 0, template: `${words} {{GR1}}`, slots: [] }], usage: { inputTokens: 40, outputTokens: 20, visibleOutputTokens: 15, reasoningTokens: 5, totalTokens: 60 }, latencyMs: 1234 }));
     const deps = { generateReading, repairReading } as unknown as CourseContentGenerationDeps;
 
     const result = await generateCourseReading(db, "course-1", "request-1", deps);
@@ -408,9 +422,8 @@ describe("course content repository", () => {
     expect(Reflect.get((repairReading.mock.calls as unknown[][])[0]?.[2] as object, "0")).toMatchObject({ requirements: { outlineChapterId: "chapter-2" } });
     expect(result.chapters[0]?.paragraphs.flatMap((paragraph) => paragraph.parts).some((part) => part.type === "grammar" && part.answer === "found")).toBe(true);
     expect(result.chapters[1]?.validationIssues).toEqual([]);
-    expect(db.aiGenerationLog?.create).toHaveBeenCalledTimes(3);
-    expect(db.aiGenerationLog?.create).toHaveBeenCalledWith({ data: expect.objectContaining({ operation: "reading_v2_candidate", outputSnapshot: expect.objectContaining({ tokenUsage: expect.objectContaining({ totalTokens: 120 }), phase: "candidate_positions" }) }) });
-    expect(db.aiGenerationLog?.create).toHaveBeenCalledWith({ data: expect.objectContaining({ operation: "reading_v2_final", outputSnapshot: expect.objectContaining({ tokenUsage: expect.objectContaining({ totalTokens: 180 }), firstPassReady: false }) }) });
-    expect(db.aiGenerationLog?.create).toHaveBeenCalledWith({ data: expect.objectContaining({ operation: "reading_v2_repair", outputSnapshot: expect.objectContaining({ tokenUsage: expect.objectContaining({ totalTokens: 60 }), resolvedChapterCount: 1 }) }) });
+    expect(db.aiGenerationLog?.create).toHaveBeenCalledTimes(2);
+    expect(db.aiGenerationLog?.create).toHaveBeenCalledWith({ data: expect.objectContaining({ operation: "reading_v2_generate", latencyMs: 4321, outputSnapshot: expect.objectContaining({ tokenUsage: expect.objectContaining({ totalTokens: 180 }), firstPassReady: false }) }) });
+    expect(db.aiGenerationLog?.create).toHaveBeenCalledWith({ data: expect.objectContaining({ operation: "reading_v2_repair", latencyMs: 1234, outputSnapshot: expect.objectContaining({ tokenUsage: expect.objectContaining({ totalTokens: 60 }), resolvedChapterCount: 1 }) }) });
   });
 });

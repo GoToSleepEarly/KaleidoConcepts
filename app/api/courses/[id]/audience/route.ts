@@ -27,11 +27,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const body: unknown = await request.json().catch(() => null);
   const parsed = courseAudienceSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ message: "请完整填写课程名称、授课人物、时长、英语难度和知识点" }, { status: 400 });
-  const preserveDownstream = typeof body === "object" && body !== null && "preserveDownstream" in body && body.preserveDownstream === true;
+  const resetDownstream = typeof body === "object" && body !== null && "resetDownstream" in body && body.resetDownstream === true;
   const { id } = await params;
   try {
     const db = getDb();
-    const course = await updateCourseAudience(db, id, parsed.data, preserveDownstream);
+    const course = await updateCourseAudience(db, id, parsed.data, resetDownstream);
     return NextResponse.json({ course });
   } catch (error) {
     if (error instanceof CourseNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });

@@ -7,11 +7,11 @@ import { ArrowLeft, ArrowRight, BookOpen, Bot, Check, CircleHelp, Loader2, Penci
 import { AutoGrowTextarea } from "@/components/ui/auto-grow-textarea";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { AiOperationStatusCard, CourseAiWorkspaceFrame, type AiOperationPresentation } from "@/features/courses/components/course-ai-workspace";
+import { AiHistoryCard, AiOperationStatusCard, CourseAiWorkspaceFrame, formatAiDuration, type AiHistoryStatus, type AiOperationEstimate, type AiOperationPresentation } from "@/features/courses/components/course-ai-workspace";
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
-import type { CourseSourceReference, CourseStoryChatAction, CourseStoryMessageInput, CourseStoryOutline, CourseStoryOutlineState, CourseStoryDirection, PresetOption, StoryComplexity } from "@/lib/contracts/api";
+import type { CourseSourceReference, CourseStoryChatAction, CourseStoryChatMessage, CourseStoryMessageInput, CourseStoryOutline, CourseStoryOutlineState, CourseStoryDirection, PresetOption, StoryComplexity } from "@/lib/contracts/api";
 import { chineseDisplayLength, normalizeStoryChapterCount, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import { cn } from "@/lib/utils";
 import { createRequestId } from "@/lib/utils/request-id";
@@ -29,6 +29,13 @@ type PendingOutlineMutation = {
     restoreRandomSupplement?: string;
     preserveComposer?: boolean;
   };
+};
+
+type OptimisticTeacherMessage = {
+  requestId: string;
+  content: string;
+  source: "teacher_input" | "ui_action";
+  createdAt: string;
 };
 
 const STORY_GUIDE_DISMISSED_KEY = "pblstudio.story-outline-guide.dismissed.v1";
@@ -101,6 +108,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const [tone, setTone] = useState("");
   const [customTone, setCustomTone] = useState("");
   const [pending, setPending] = useState(initialState.operation?.status === "running");
+  const [confirmingOutline, setConfirmingOutline] = useState(false);
   const [pendingLabel, setPendingLabel] = useState(() => operationLoadingLabel(initialState.operation?.phase));
   const [pendingAction, setPendingAction] = useState(initialState.operation?.action ?? "idea");
   const [pendingSeconds, setPendingSeconds] = useState(() => initialState.operation?.status === "running" ? elapsedOperationSeconds(initialState.operation.startedAt) : 0);
@@ -108,7 +116,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const [error, setError] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
   const [pendingOutlineMutation, setPendingOutlineMutation] = useState<PendingOutlineMutation | null>(null);
-  const [optimisticTeacherMessage, setOptimisticTeacherMessage] = useState("");
+  const [optimisticTeacherMessage, setOptimisticTeacherMessage] = useState<OptimisticTeacherMessage | null>(null);
   const [composerIntent, setComposerIntent] = useState<ComposerIntent | null>(null);
   const [pendingNavigationHref, setPendingNavigationHref] = useState<string | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
@@ -129,6 +137,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const resolvedTone = tone === "__custom__" ? customTone.trim() : tone;
   const hasCurrentRetryAction = state.operation?.status === "failed" && state.chatMessages.some((chat) => chat.actions.some((action) => action.action === "retry_operation" && (!action.targetId || action.targetId === state.operation?.requestId)));
   const latestAssistantMessageId = [...state.chatMessages].reverse().find((chat) => chat.role === "assistant")?.id;
+  const interactionPending = pending || confirmingOutline;
   const resultVersion = `${resultTab}:${state.outline?.updatedAt ?? ""}:${state.referenceMaterials.map((item) => item.updatedAt).join("|")}:${state.directions.map((item) => `${item.createdAt}:${item.selectedAt ?? ""}`).join("|")}`;
 
   const applyNextState = useCallback((nextState: CourseStoryOutlineState) => {
@@ -255,8 +264,8 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
           setPendingLabel(operationRunning ? operationLoadingLabel(nextState.operation?.phase) : "");
           if (nextState.operation?.status === "failed" && nextState.operation.errorMessage) setError(nextState.operation.errorMessage);
         }
-        if (optimisticTeacherMessage && nextState.chatMessages.some((chat) => chat.role === "teacher" && chat.content === optimisticTeacherMessage)) {
-          setOptimisticTeacherMessage("");
+        if (optimisticTeacherMessage && nextState.chatMessages.some((chat) => chat.role === "teacher" && chat.requestId === optimisticTeacherMessage.requestId)) {
+          setOptimisticTeacherMessage(null);
         }
       } catch {
         // 轮询只用于补充等待反馈，失败时保留当前界面并等待主请求返回。
@@ -281,7 +290,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
       preserveComposer?: boolean;
     } = {},
   ) {
-    if (input.action && outlineMutationActions.has(input.action) && input.preserveDownstream !== true && courseStageStep(stateRef.current.course.currentStage) >= 3) {
+    if (input.action && outlineMutationActions.has(input.action) && input.resetDownstream !== true && courseStageStep(stateRef.current.course.currentStage) >= 3) {
       setPendingOutlineMutation({ input, label, options });
       return false;
     }
@@ -298,7 +307,12 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     setPendingAction(input.action ?? input.mode);
     setError("");
     requestInFlight.current = true;
-    setOptimisticTeacherMessage(optimisticMessage);
+    setOptimisticTeacherMessage(optimisticMessage ? {
+      requestId,
+      content: optimisticMessage,
+      source: input.triggerSource ?? (input.action ? "ui_action" : "teacher_input"),
+      createdAt: new Date().toISOString(),
+    } : null);
     if (!options.preserveComposer) setMessage("");
     if (input.mode === "random") setRandomSupplement("");
     try {
@@ -356,7 +370,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
       setPending(operationStillRunning);
       setPendingSeconds(0);
       setPendingLabel(reconciledPendingLabel);
-      setOptimisticTeacherMessage("");
+      setOptimisticTeacherMessage(null);
     }
     return requestAccepted;
   }
@@ -384,9 +398,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   }
 
   async function confirm() {
-    setPendingSeconds(0);
-    setPending(true);
-    setPendingLabel("正在确认故事大纲...");
+    setConfirmingOutline(true);
     setError("");
     try {
       const response = await fetch(`/api/courses/${state.course.id}/story-outline/confirm`, { method: "POST" });
@@ -396,9 +408,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "故事大纲确认失败");
     } finally {
-      setPending(false);
-      setPendingSeconds(0);
-      setPendingLabel("");
+      setConfirmingOutline(false);
     }
   }
 
@@ -423,7 +433,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     focusComposerAtEnd(prefix);
   }
 
-  async function handleAction(action: CourseStoryChatAction, preserveDownstream = false) {
+  async function handleAction(action: CourseStoryChatAction, resetDownstream = false) {
     if (action.action === "modify_requirements") {
       continueModify("我想调整创作需求：");
       return;
@@ -476,7 +486,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
         targetId: action.targetId,
         ...(action.action === "confirm_requirements" || action.action === "confirm_mainline" ? { expectedStateRevision: stateRef.current.stateRevision } : {}),
         researchPlan: action.researchPlan,
-        preserveDownstream,
+        resetDownstream,
       },
       label,
       {
@@ -537,7 +547,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
             <span className="hidden sm:inline">操作指引</span>
           </Button>
           {hasStepContent ? (
-            <Button aria-label="重新开始本轮构思" disabled={pending} onClick={() => setResetOpen(true)} type="button" variant="outline">
+            <Button aria-label="重新开始本轮构思" disabled={interactionPending} onClick={() => setResetOpen(true)} type="button" variant="outline">
               <RotateCcw className="size-4" />
               <span className="hidden md:inline">重新开始本轮构思</span>
             </Button>
@@ -555,11 +565,11 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
               {hasUnsentInput ? "输入内容尚未发送" : state.alignment?.artifactsOutdated === true ? "故事设置或创作需求已变化，需要重新生成故事成果" : state.outline ? "故事大纲已生成，可以进入教学规划" : "还需：生成故事大纲"}
             </p>
             <div className="flex gap-2">
-              <Button disabled={pending} onClick={() => navigate(`/courses/${state.course.id}/create/audience`)} type="button" variant="outline">
+              <Button disabled={interactionPending} onClick={() => navigate(`/courses/${state.course.id}/create/audience`)} type="button" variant="outline">
                 <ArrowLeft className="size-4" />
                 上一步
               </Button>
-              <Button disabled={pending || settingsSaving || !state.outline || state.alignment?.artifactsOutdated === true} loading={pending && pendingLabel === "正在确认故事大纲..."} onClick={() => (courseStageStep(state.course.currentStage) >= 3 ? navigate(`/courses/${state.course.id}/create/teaching-plan`) : void confirm())} type="button">
+              <Button disabled={pending || confirmingOutline || settingsSaving || !state.outline || state.alignment?.artifactsOutdated === true} loading={confirmingOutline} onClick={() => (courseStageStep(state.course.currentStage) >= 3 ? navigate(`/courses/${state.course.id}/create/teaching-plan`) : void confirm())} type="button">
                 下一步：教学规划
                 <ArrowRight className="size-4" />
               </Button>
@@ -632,27 +642,42 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                   <input aria-label="补充要求（可选）" className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" onChange={(event) => setRandomSupplement(event.target.value)} placeholder="例如：希望学生成为大侦探" value={randomSupplement} />
                 </label>
                 {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
-                <Button className="w-full" disabled={pending || settingsSaving} type="submit">
+                <Button className="w-full" disabled={interactionPending || settingsSaving} type="submit">
                   <Sparkles className="size-4" />
                   生成 3 个故事方向
                 </Button>
               </form>
             ) : null}
-            {state.chatMessages.map((chat) => (
-              <div className={cn("flex items-start gap-2", chat.role === "teacher" ? "justify-end" : "justify-start")} key={chat.id}>
+            {state.chatMessages.map((chat) => {
+              const operationMessage = chat.role === "assistant" && Boolean(chat.requestId || chat.action || chat.source === "ai" || storyMessageMetadataString(chat, "operationTitle"));
+              const currentOperationMessage = chat.role === "assistant" && (chat.requestId ? chat.requestId === state.operation?.requestId : (!chat.source || chat.source === "legacy") && chat.id === latestAssistantMessageId);
+              const currentOperationStatus: AiHistoryStatus | undefined = state.operation?.status === "result_unknown"
+                ? "failed"
+                : state.operation?.status === "superseded" ? "stale" : state.operation?.status;
+              const historicalOperationStatus: AiHistoryStatus = chat.actions.some((action) => action.action === "retry_operation") ? "failed" : "succeeded";
+              const status: AiHistoryStatus | undefined = operationMessage
+                ? currentOperationMessage && currentOperationStatus ? currentOperationStatus : historicalOperationStatus
+                : currentOperationMessage && state.operation?.status === "succeeded" ? "succeeded" : undefined;
+              const durationSeconds = storyMessageDurationSeconds(chat) ?? (currentOperationMessage && state.operation?.status !== "running" ? operationDurationSeconds(state.operation) : null);
+              return (
+              <div className={cn("flex items-start gap-2", chat.role === "teacher" ? "justify-end" : "justify-start")} key={chat.role === "teacher" && chat.requestId ? `teacher:${chat.requestId}` : chat.id}>
                 {chat.role !== "teacher" ? <ChatAvatar role="assistant" /> : null}
-                <article className={cn("max-w-[calc(100%-2.5rem)] rounded-lg px-3 py-2 text-sm", !hasResultContent && "max-w-2xl", chat.role === "teacher" ? "bg-primary text-primary-foreground" : chat.id === latestAssistantMessageId && state.operation?.status === "succeeded" ? "border border-emerald-200 bg-emerald-50 text-emerald-950" : "bg-muted text-foreground")} data-testid={chat.id === latestAssistantMessageId && state.operation?.status === "succeeded" ? "ai-operation-completion" : undefined}>
-                  {chat.id === latestAssistantMessageId && state.operation?.status === "succeeded" ? <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><Check aria-hidden className="size-3.5" />处理完成</p> : null}
+                <AiHistoryCard
+                  className={cn("max-w-[calc(100%-2.5rem)]", !hasResultContent && "max-w-2xl")}
+                  createdAt={chat.createdAt}
+                  meta={chat.role === "assistant" && (durationSeconds !== null || (chat.retryAttempt && chat.retryAttempt > 1)) ? <>{durationSeconds !== null ? <span>执行用时 {formatAiDuration(durationSeconds)}</span> : null}{chat.retryAttempt && chat.retryAttempt > 1 ? <span>第 {chat.retryAttempt} 次尝试</span> : null}</> : undefined}
+                  requestId={chat.requestId}
+                  role={chat.role === "teacher" ? "teacher" : "assistant"}
+                  status={status}
+                  targetLabel={chat.role === "teacher" && chat.source && chat.source !== "legacy" ? `${chat.source === "ui_action" ? "按钮操作" : "手动输入"}${chat.retryAttempt && chat.retryAttempt > 1 ? ` · 第 ${chat.retryAttempt} 次尝试` : ""}` : operationMessage && chat.retryAttempt && chat.retryAttempt > 1 ? `第 ${chat.retryAttempt} 次尝试` : undefined}
+                  testId={currentOperationMessage && state.operation?.status === "succeeded" ? "ai-operation-completion" : operationMessage ? "story-operation-history-card" : undefined}
+                  statusEmphasis={chat.role === "assistant"}
+                  title={chat.role === "teacher" ? "我的要求" : operationMessage ? storyMessageOperationTitle(chat) : "AI 助手"}
+                >
                   <p className="whitespace-pre-wrap leading-6">{chat.content}</p>
-                  {chat.role === "teacher" && chat.source && chat.source !== "legacy" ? (
-                    <p className="mt-1 text-[11px] leading-4 opacity-70">
-                      {chat.source === "ui_action" ? "按钮操作" : "手动输入"}
-                      {chat.retryAttempt && chat.retryAttempt > 1 ? ` · 第 ${chat.retryAttempt} 次尝试` : ""}
-                    </p>
-                  ) : null}
                   {chat.id === latestAlignmentQuestionMessageId && state.alignment?.status !== "ready_for_confirmation" && state.alignment?.status !== "confirmed" && chat.actions.some((action) => action.action === "submit_alignment_answers" && action.questions?.length) ? (
                     <AlignmentQuestionForm
-                      disabled={pending}
+                      disabled={interactionPending}
                       onSubmit={async (answers, readableMessage) => {
                         await postMessage(
                           {
@@ -670,42 +695,41 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                       questions={chat.actions.find((action) => action.action === "submit_alignment_answers")?.questions ?? []}
                     />
                   ) : null}
-                  {chat.actions.some((action) => isVisibleChatAction(action, state.operation, state.alignment, chat.id === latestMainlineActionMessageId)) ? (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {chat.actions
-                        .filter((action) => isVisibleChatAction(action, state.operation, state.alignment, chat.id === latestMainlineActionMessageId))
-                        .map((action) => (
-                          <Button disabled={pending} key={action.id} onClick={() => void handleAction(action)} size="sm" type="button" variant="outline">
+                  {chat.actions.some((action) => action.action !== "submit_alignment_answers") ? (
+                     <div className="mt-2 flex flex-wrap gap-2">
+                       {chat.actions
+                         .filter((action) => action.action !== "submit_alignment_answers")
+                         .map((action) => (
+                           <Button disabled={interactionPending || !isCurrentChatAction(action, state.operation, state.alignment, chat.id === latestMainlineActionMessageId)} key={action.id} onClick={() => void handleAction(action)} size="sm" type="button" variant="outline">
                             {action.action === "request_reference_search" || action.action === "choose_reference_search" ? <Search className="size-4" /> : <Sparkles className="size-4" />}
                             {action.label}
                           </Button>
                         ))}
                     </div>
                   ) : null}
-                </article>
+                </AiHistoryCard>
                 {chat.role === "teacher" ? <ChatAvatar role="teacher" /> : null}
               </div>
-            ))}
+              );
+            })}
             {optimisticTeacherMessage ? (
               <div className="flex items-start justify-end gap-2">
-                <article className={cn("max-w-[calc(100%-2.5rem)] rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground", !hasResultContent && "max-w-2xl")}>
-                  <p className="whitespace-pre-wrap leading-6">{optimisticTeacherMessage}</p>
-                </article>
+                <AiHistoryCard className={cn("max-w-[calc(100%-2.5rem)]", !hasResultContent && "max-w-2xl")} createdAt={optimisticTeacherMessage.createdAt} requestId={optimisticTeacherMessage.requestId} role="teacher" targetLabel={optimisticTeacherMessage.source === "ui_action" ? "按钮操作" : "手动输入"} title="我的要求">
+                  <p className="whitespace-pre-wrap leading-6">{optimisticTeacherMessage.content}</p>
+                </AiHistoryCard>
                 <ChatAvatar role="teacher" />
               </div>
             ) : null}
-            {pending && pendingLabel && pendingLabel !== "正在确认故事大纲..." ? (
+            {pending && pendingLabel ? (
               <div className="flex items-start gap-2">
                 <ChatAvatar role="assistant" />
-                <AiOperationStatusCard compact elapsedSeconds={pendingSeconds} persisted={state.operation?.status === "running"} presentation={storyOperationPresentation(state.operation?.action ?? pendingAction, state.operation?.phase)} />
+                <AiOperationStatusCard compact elapsedSeconds={pendingSeconds} estimate={storyOperationEstimate(state.operation?.action ?? pendingAction, state.operation?.phase)} persisted={state.operation?.status === "running"} presentation={storyOperationPresentation(state.operation?.action ?? pendingAction, state.operation?.phase)} />
               </div>
             ) : null}
             {!pending && state.operation?.status === "failed" && !hasCurrentRetryAction ? (
               <div className="flex items-start gap-2">
                 <ChatAvatar role="assistant" />
-                <div className="max-w-[calc(100%-2.5rem)] space-y-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  <p>{state.operation.errorMessage || "当前步骤处理失败"}</p>
-                  <Button
+                <AiHistoryCard footer={<Button
                     onClick={() =>
                       void handleAction({
                         id: "retry-operation",
@@ -718,8 +742,9 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                     variant="outline"
                   >
                     {state.operation?.phase === "generating_outline" ? "重新生成故事大纲" : "重试本步"}
-                  </Button>
-                </div>
+                  </Button>} status="failed" statusEmphasis title={storyOperationPresentation(state.operation.action, state.operation.phase).title.replace(/^正在/u, "")}>
+                  <p>{state.operation.errorMessage || "当前步骤处理失败"}</p>
+                </AiHistoryCard>
               </div>
             ) : null}
           </div>
@@ -750,7 +775,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                     <AutoGrowTextarea aria-label="故事想法" className={cn("block w-full resize-none overflow-y-hidden rounded-md border border-input bg-background px-3 text-sm leading-5 outline-none focus:border-primary focus:ring-2 focus:ring-primary-100", conversationStarted ? "min-h-13 max-h-32 py-4 pr-16" : "mt-2 min-h-13 max-h-32 py-4")} onChange={(event) => setMessage(event.target.value)} placeholder={conversationStarted ? "继续补充故事要求，或说明希望如何修改" : "输入你的故事想法"} ref={inputRef} rows={1} value={message} />
                   </label>
                   {conversationStarted ? (
-                    <Button aria-label={pending ? "处理中" : "发送"} className="absolute bottom-1 right-1 size-11 min-h-11 min-w-11 rounded-full bg-primary-50 p-0 text-primary shadow-none hover:bg-primary-100 hover:text-primary" disabled={pending || settingsSaving || (mode === "idea" && !message.trim())} type="submit" variant="ghost">
+                    <Button aria-label={interactionPending ? "处理中" : "发送"} className="absolute bottom-1 right-1 size-11 min-h-11 min-w-11 rounded-full bg-primary-50 p-0 text-primary shadow-none hover:bg-primary-100 hover:text-primary" disabled={interactionPending || settingsSaving || (mode === "idea" && !message.trim())} type="submit" variant="ghost">
                       {pending ? <Loader2 className="size-4 animate-spin" /> : <Send aria-hidden="true" className="size-4" />}
                     </Button>
                   ) : null}
@@ -758,7 +783,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                 {error ? <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
                 {!conversationStarted ? (
                   <div className="mt-3">
-                    <Button className="w-full" disabled={pending || settingsSaving || (mode === "idea" && !message.trim())} type="submit">
+                    <Button className="w-full" disabled={interactionPending || settingsSaving || (mode === "idea" && !message.trim())} type="submit">
                     {pending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
                       {pending ? "处理中" : "开始讨论故事"}
                     </Button>
@@ -811,7 +836,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                 )
               }
               outline={state.outline}
-              pending={pending}
+              pending={interactionPending}
               references={state.referenceMaterials}
               resultTab={resultTab}
               setResultTab={setResultTab}
@@ -861,17 +886,17 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
         />
       ) : null}
       {resetOpen ? (
-        <Dialog onClose={() => setResetOpen(false)} open title="重新开始本轮构思？">
+        <Dialog description="将删除本阶段及全部后续成果" onClose={() => setResetOpen(false)} open title="重置故事大纲？">
           <div className="space-y-5 p-5 sm:p-6">
-            <p className="text-sm leading-6 text-muted-foreground">将删除当前故事构思并重新开始。教学规划及后续内容不会被删除，但仍会保留旧版本。</p>
+            <p className="text-sm leading-6 text-muted-foreground">将删除当前故事构思、教学规划、文案与练习、视觉资源和预览设置，并重新开始故事构思。</p>
             {error && resetOpen ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
             <div className="flex justify-end gap-2">
               <Button disabled={pending} onClick={() => setResetOpen(false)} type="button" variant="outline">
-                保留当前内容
+                取消
               </Button>
               <Button disabled={pending} onClick={() => void resetStep()} type="button">
                 {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-                删除故事构思并重新开始
+                删除并重置故事大纲
               </Button>
             </div>
           </div>
@@ -907,9 +932,9 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
         </Dialog>
       ) : null}
       {pendingOutlineMutation ? (
-        <Dialog description="后续内容将保留旧版本" onClose={() => setPendingOutlineMutation(null)} open title={pendingOutlineMutation.input.action === "regenerate_outline" ? "重新生成故事大纲？" : "继续修改故事大纲？"}>
+        <Dialog description="本次操作尚未开始" onClose={() => setPendingOutlineMutation(null)} open title="修改将重置后续流程">
           <div className="space-y-5 p-5 sm:p-6">
-            <p className="text-sm leading-6 text-muted-foreground">本次修改成功后，教学规划及后续内容不会自动更新，也不会被删除。请进入对应阶段手动重置。</p>
+            <p className="text-sm leading-6 text-muted-foreground">本次 AI 生成成功后，教学规划、文案与练习、视觉资源和预览设置会被删除，需要重新生成。生成失败不会影响当前课程。</p>
             <div className="flex justify-end gap-2">
               <Button disabled={pending} onClick={() => setPendingOutlineMutation(null)} type="button" variant="outline">
                 取消
@@ -919,11 +944,11 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                 onClick={() => {
                   const pendingMutation = pendingOutlineMutation;
                   setPendingOutlineMutation(null);
-                  if (pendingMutation) void postMessage({ ...pendingMutation.input, preserveDownstream: true }, pendingMutation.label, pendingMutation.options);
+                  if (pendingMutation) void postMessage({ ...pendingMutation.input, resetDownstream: true }, pendingMutation.label, pendingMutation.options);
                 }}
                 type="button"
               >
-                {pendingOutlineMutation.input.action === "regenerate_outline" ? "继续重新生成" : "继续修改"}
+                确认并开始生成
               </Button>
             </div>
           </div>
@@ -1238,9 +1263,9 @@ function storyOperationPresentation(action: string, phase?: NonNullable<CourseSt
   }
   if (phase === "preparing_reference") {
     return {
-      title: "正在准备故事创作",
-      currentStep: 0,
-      steps: ["确认需要的背景范围", "准备故事方向或大纲", "保存本轮结果"],
+      title: "正在准备故事背景",
+      currentStep: 1,
+      steps: ["读取已确认的创作要求", "整理必要背景资料", "决定生成主线、方向或大纲", "保存本轮结果"],
     };
   }
   if (phase === "searching_reference") {
@@ -1248,6 +1273,13 @@ function storyOperationPresentation(action: string, phase?: NonNullable<CourseSt
       title: "正在联网整理参考资料",
       currentStep: 1,
       steps: ["确认查询对象与范围", "查找可核实资料", "提取事实和改编边界", "保存参考资料"],
+    };
+  }
+  if (phase === "generating_mainline") {
+    return {
+      title: "正在生成故事主线",
+      currentStep: 1,
+      steps: ["整理背景与创作要求", "生成故事主线", "检查人物和任务", "保存主线供确认"],
     };
   }
   if (phase === "generating_directions" || action === "generate_directions") {
@@ -1303,6 +1335,42 @@ function storyOperationPresentation(action: string, phase?: NonNullable<CourseSt
   };
 }
 
+function storyOperationHistoryTitle(action: string) {
+  return storyOperationPresentation(action).title.replace(/^正在/u, "");
+}
+
+function storyMessageMetadataString(message: CourseStoryChatMessage, key: string) {
+  const value = message.metadata?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function storyMessageOperationTitle(message: CourseStoryChatMessage) {
+  return storyMessageMetadataString(message, "operationTitle") ?? storyOperationHistoryTitle(message.action ?? "idea");
+}
+
+function storyMessageDurationSeconds(message: CourseStoryChatMessage) {
+  const durationMs = message.metadata?.durationMs;
+  return typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs >= 0 ? Math.round(durationMs / 1000) : null;
+}
+
+function operationDurationSeconds(operation: CourseStoryOutlineState["operation"]) {
+  if (!operation) return null;
+  const startedAt = new Date(operation.startedAt).getTime();
+  const updatedAt = new Date(operation.updatedAt).getTime();
+  if (!Number.isFinite(startedAt) || !Number.isFinite(updatedAt) || updatedAt < startedAt) return null;
+  return Math.round((updatedAt - startedAt) / 1000);
+}
+
+function storyOperationEstimate(action: string, phase?: NonNullable<CourseStoryOutlineState["operation"]>["phase"]): AiOperationEstimate {
+  if (phase === "searching_reference") return { label: "2–5 分钟", maxSeconds: 300 };
+  if (phase === "preparing_reference") return { label: "1–3 分钟", maxSeconds: 180 };
+  if (phase === "generating_mainline") return { label: "1–3 分钟", maxSeconds: 180 };
+  if (phase === "generating_directions" || action === "generate_directions") return { label: "2–4 分钟", maxSeconds: 240 };
+  if (phase === "generating_outline" || ["confirm_direction", "confirm_mainline", "generate_from_reference", "regenerate_outline"].includes(action)) return { label: "3–5 分钟", maxSeconds: 300 };
+  if (phase === "revising" || ["revise_direction", "revise_mainline", "revise_outline", "revise_chapter", "confirm_story_change"].includes(action)) return { label: "1–3 分钟", maxSeconds: 180 };
+  return { label: "1–2 分钟", maxSeconds: 120 };
+}
+
 function operationLoadingLabel(phase?: NonNullable<CourseStoryOutlineState["operation"]>["phase"]) {
   if (!phase) return "";
   switch (phase) {
@@ -1312,6 +1380,8 @@ function operationLoadingLabel(phase?: NonNullable<CourseStoryOutlineState["oper
       return "正在准备故事创作...";
     case "searching_reference":
       return "正在整理参考资料...";
+    case "generating_mainline":
+      return "正在生成故事主线...";
     case "generating_directions":
       return "正在生成故事方向...";
     case "generating_outline":
@@ -1323,7 +1393,7 @@ function operationLoadingLabel(phase?: NonNullable<CourseStoryOutlineState["oper
   }
 }
 
-function isVisibleChatAction(action: CourseStoryChatAction, operation: CourseStoryOutlineState["operation"], alignment: CourseStoryOutlineState["alignment"], isLatestMainlineMessage = false) {
+function isCurrentChatAction(action: CourseStoryChatAction, operation: CourseStoryOutlineState["operation"], alignment: CourseStoryOutlineState["alignment"], isLatestMainlineMessage = false) {
   if (action.action === "submit_alignment_answers") return false;
   if (action.action === "confirm_requirements") return !alignment || alignment.status === "ready_for_confirmation";
   if (action.action === "confirm_mainline" || action.action === "revise_mainline") return isLatestMainlineMessage && (!alignment || alignment.mainlineCard?.status === "pending_confirmation");

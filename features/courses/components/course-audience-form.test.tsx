@@ -239,7 +239,7 @@ describe("CourseAudienceForm basic information UI", () => {
       if (url.includes("/api/people?role=student")) return Response.json({ people: [{ id: "student-1", role: "student", chineseName: "夏天", englishName: "Summer", age: 9, gender: "female", activeVisual: { id: "v2", publicUrl: "/student.png", sourceMode: "description", createdAt: "" }, visualStatus: "ready", createdAt: "", updatedAt: "" }] });
       if (url === "/api/courses/course-1/audience" && init?.method === "PUT") {
         const body = JSON.parse(String(init.body));
-        return body.preserveDownstream
+        return body.resetDownstream
           ? Response.json({ course: { id: "course-1" } })
           : Response.json({ message: "需要确认", requiresReset: true, affectedResources: ["故事大纲", "教学规划"] }, { status: 409 });
       }
@@ -252,11 +252,11 @@ describe("CourseAudienceForm basic information UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "A2" }));
     fireEvent.click(screen.getByRole("button", { name: "下一步：故事大纲" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "后续内容需要更新" });
+    const dialog = await screen.findByRole("dialog", { name: "修改将重置后续流程" });
     expect(within(dialog).getByText("故事大纲")).toBeInTheDocument();
-    expect(within(dialog).getByText(/系统不会自动删除/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "保存修改并继续" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "后续内容需要更新" })).not.toBeInTheDocument());
+    expect(within(dialog).getByText(/会被删除/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认修改并重置后续流程" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "修改将重置后续流程" })).not.toBeInTheDocument());
     expect(fetchMock.mock.calls.filter((call) => String(call[0]) === "/api/courses/course-1/audience" && (call[1] as RequestInit | undefined)?.method === "PUT")).toHaveLength(2);
   });
 });

@@ -7,7 +7,7 @@ import { AlertCircle, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
 import { AutoGrowTextarea } from "@/components/ui/auto-grow-textarea";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { CourseAiWorkspaceFrame, type AiOperationPresentation } from "@/features/courses/components/course-ai-workspace";
+import { AiHistoryCard, CourseAiWorkspaceFrame, formatAiDuration, type AiHistoryStatus, type AiOperationPresentation } from "@/features/courses/components/course-ai-workspace";
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
 import { PreviewSlide } from "@/features/courses/components/course-slide-deck";
@@ -38,6 +38,13 @@ type OptimisticContentOperation = {
   createdAt: string;
   targetType?: CourseContentState["messages"][number]["targetType"];
   targetId?: string;
+};
+type OptimisticTeacherMessage = {
+  requestId: string;
+  content: string;
+  createdAt: string;
+  source: "teacher_input" | "ui_action";
+  triggerLabel: string;
 };
 type TimelineItem =
   | { kind: "message"; index: number; message: CourseContentState["messages"][number] }
@@ -79,7 +86,7 @@ function contentMobileSummary(state: CourseContentState) {
   return `${state.course.englishLevel} · 内容就绪`;
 }
 
-function contentOperationPresentation(type: "reading" | "exercises" | "modify", phase: CourseContentState["phase"], target?: string, regenerating = false): AiOperationPresentation {
+function contentOperationPresentation(type: "reading" | "exercises" | "modify", phase: CourseContentState["phase"], target?: string, regenerating = false, hasRepair = false): AiOperationPresentation {
   if (type === "modify") {
     return {
       title: "正在修改课程内容",
@@ -98,11 +105,15 @@ function contentOperationPresentation(type: "reading" | "exercises" | "modify", 
       preserveMessage: regenerating ? "新练习通过检查前，当前版本不会被覆盖。" : undefined,
     };
   }
-  const currentStep = phase === "validating_chapters" ? 2 : phase === "repairing_chapters" ? 3 : phase === "validating_main_idea" || phase === "repairing_main_idea" ? 4 : 1;
+  const currentStep = phase === "repairing_chapters" || phase === "repairing_main_idea"
+    ? 2
+    : phase === "validating_chapters" || phase === "validating_main_idea"
+      ? hasRepair ? 3 : 1
+      : 0;
   return {
     title: regenerating ? "正在重新生成阅读内容" : "正在生成阅读内容",
     currentStep,
-    steps: ["准备故事、难度和章节约束", "生成全部章节正文与课后阅读", "逐章检查正文结构", "修复未通过的内容区域", "检查课后阅读并保存"],
+    steps: ["生成正文、互动题和课后阅读", "检查结构、题量和篇幅", "调整未通过的内容", "复核并保存结果"],
     preserveMessage: regenerating ? "新内容通过检查前，当前版本不会被覆盖。" : undefined,
   };
 }
@@ -191,12 +202,13 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
   const [targetPickerOpen, setTargetPickerOpen] = useState(false);
   const [pendingNavigationHref, setPendingNavigationHref] = useState<string | null>(null);
   const [instruction, setInstruction] = useState("");
-  const [optimisticTeacherMessage, setOptimisticTeacherMessage] = useState<{ requestId: string; content: string } | null>(null);
+  const [optimisticTeacherMessage, setOptimisticTeacherMessage] = useState<OptimisticTeacherMessage | null>(null);
   const [optimisticOperation, setOptimisticOperation] = useState<OptimisticContentOperation | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [navigating, setNavigating] = useState(false);
   const [destructiveRegeneration, setDestructiveRegeneration] = useState<"reading" | "exercises" | null>(null);
+  const [destructiveModification, setDestructiveModification] = useState(false);
   const [regeneratingKind, setRegeneratingKind] = useState<"reading" | "exercises" | null>(null);
   const [mobileView, setMobileView] = useState<ContentMobileView>(() => initialMobileView(initialState));
   const [previewExpanded, setPreviewExpanded] = useState(false);
@@ -303,7 +315,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       items.push({ kind: "repair-history", key: `repair-history-${message.id}`, messages: completedRepairs });
       index = nextIndex - 1;
     }
-    const optimisticTeacherVisible = optimisticTeacherMessage && !state.messages.some((message) => message.requestId === optimisticTeacherMessage.requestId || (!message.requestId && message.role === "teacher" && message.content === optimisticTeacherMessage.content));
+    const optimisticTeacherVisible = optimisticTeacherMessage && !state.messages.some((message) => message.role === "teacher" && (message.requestId === optimisticTeacherMessage.requestId || (!message.requestId && message.content === optimisticTeacherMessage.content)));
     if (optimisticTeacherVisible) {
       items.push({
         kind: "message",
@@ -313,7 +325,8 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
           role: "teacher",
           content: optimisticTeacherMessage.content,
           requestId: optimisticTeacherMessage.requestId,
-          createdAt: optimisticOperation?.createdAt ?? new Date().toISOString(),
+          createdAt: optimisticTeacherMessage.createdAt,
+          details: { triggerSource: optimisticTeacherMessage.source, triggerLabel: optimisticTeacherMessage.triggerLabel },
           ...(optimisticOperation?.targetType ? { targetType: optimisticOperation.targetType, targetId: optimisticOperation.targetId } : {}),
         },
       });
@@ -435,11 +448,15 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
     if (preview) preview.scrollTop = preview.scrollHeight;
   }, [mobileView, selectedSection, selectedPage, state.contentVersion]);
 
-  async function generate(kind: "reading" | "exercises", regenerate = false, preserveDownstream = false) {
+  async function generate(kind: "reading" | "exercises", regenerate = false, resetDownstream = false) {
     const previousState = state;
     const requestId = createRequestId();
-    setOptimisticOperation({ requestId, type: kind, createdAt: new Date().toISOString() });
-    if (kind === "exercises" && !regenerate) setOptimisticTeacherMessage({ requestId, content: exerciseConfirmationMessage });
+    const createdAt = new Date().toISOString();
+    const actionLabel = kind === "reading"
+      ? regenerate ? "重新生成阅读内容" : state.status === "failed" ? (mainIdeaFailed ? "重试课后阅读" : "重试未通过内容") : "开始生成阅读内容"
+      : regenerate ? "重新生成章节与课后练习" : state.status === "failed" ? "重试章节与课后练习" : exerciseConfirmationMessage;
+    setOptimisticOperation({ requestId, type: kind, createdAt });
+    setOptimisticTeacherMessage({ requestId, content: actionLabel, createdAt, source: "ui_action", triggerLabel: actionLabel });
     const requestToken = beginRequest();
     setStartedAt(Date.now());
     setElapsed(0);
@@ -452,7 +469,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       errorMessage: null,
     }));
     try {
-      const query = regenerate ? `?regenerate=true${preserveDownstream ? "&preserveDownstream=true" : ""}` : "";
+      const query = regenerate ? `?regenerate=true${resetDownstream ? "&resetDownstream=true" : ""}` : "";
       const response = await fetch(`/api/courses/${state.course.id}/content/${kind}/generate${query}`, { method: "POST", headers: { "Idempotency-Key": requestId } });
       const body = (await response.json()) as CourseContentState & {
         message?: string;
@@ -461,6 +478,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       if (requestEpoch.current !== requestToken) return;
       if (response.status === 409 && body.requiresReset) {
         setState(previousState);
+        setOptimisticTeacherMessage(null);
         setOptimisticOperation(null);
         setDestructiveRegeneration(kind);
         return;
@@ -468,7 +486,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       if (!response.ok) throw new Error(body.message || "生成失败");
       setState(body);
       setOptimisticOperation(null);
-      if (kind === "exercises") setOptimisticTeacherMessage(null);
+      setOptimisticTeacherMessage(null);
       if (kind === "reading" && body.chapters[0]) {
         setSelectedSection(`reading:${body.chapters[0].id}`);
         setSelectedPage(0);
@@ -525,22 +543,23 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
     }
   }
 
-  async function modify() {
+  async function modify(resetDownstream = false) {
     const separator = modifyTarget.indexOf(":");
     const targetType = modifyTarget.slice(0, separator);
     const targetId = modifyTarget.slice(separator + 1);
     const draft = instruction.trim();
     if (separator < 0 || !targetId || !draft) return;
     const requestId = createRequestId();
-    setOptimisticTeacherMessage({ requestId, content: draft });
-    setOptimisticOperation({ requestId, type: "modify", createdAt: new Date().toISOString(), targetType: targetType as CourseContentState["messages"][number]["targetType"], targetId });
+    const createdAt = new Date().toISOString();
+    setOptimisticTeacherMessage({ requestId, content: draft, createdAt, source: "teacher_input", triggerLabel: "发送修改要求" });
+    setOptimisticOperation({ requestId, type: "modify", createdAt, targetType: targetType as CourseContentState["messages"][number]["targetType"], targetId });
     setInstruction("");
     const requestToken = beginRequest();
     setStartedAt(Date.now());
     setElapsed(0);
     setError(null);
     try {
-      const response = await fetch(`/api/courses/${state.course.id}/content/modify`, {
+      const response = await fetch(`/api/courses/${state.course.id}/content/modify${resetDownstream ? "?resetDownstream=true" : ""}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -550,6 +569,13 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       });
       const body = await response.json();
       if (requestEpoch.current !== requestToken) return;
+      if (response.status === 409 && body.requiresReset) {
+        setInstruction(draft);
+        setOptimisticTeacherMessage(null);
+        setOptimisticOperation(null);
+        setDestructiveModification(true);
+        return;
+      }
       if (!response.ok) throw new Error(body.message || "修改失败；原内容已保留");
       setState(body);
       setOptimisticTeacherMessage(null);
@@ -737,14 +763,14 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
                 />
               ) : item.kind === "repair-history" ? (
                 <AssistantMessage key={item.key}>
-                  <RepairHistoryGroup messages={item.messages.map((message) => message.content)} />
+                  <RepairHistoryGroup messages={item.messages} />
                 </AssistantMessage>
               ) : isRepairMessage(item.message.content) ? (
                 <AssistantMessage key={item.message.id}>
-                  <RepairMessage failed={state.status === "failed" && item.index === latestRepairMessageIndex} message={item.message.content} working={repairInProgress && item.index === latestRepairMessageIndex} />
+                  <RepairMessage failed={state.status === "failed" && item.index === latestRepairMessageIndex} message={item.message} working={repairInProgress && item.index === latestRepairMessageIndex} />
                 </AssistantMessage>
               ) : (
-                <ContentChatMessage createdAt={item.message.createdAt} key={item.message.id} role={item.message.role === "teacher" ? "teacher" : "assistant"} system={item.message.role === "system"} targetLabel={item.message.targetType && item.message.targetId ? targets.find((target) => target.value === `${item.message.targetType}:${item.message.targetId}`)?.label : undefined}>
+                <ContentChatMessage createdAt={item.message.createdAt} details={item.message.details} key={item.message.role === "teacher" && item.message.requestId ? `teacher-${item.message.requestId}` : item.message.id} role={item.message.role === "teacher" ? "teacher" : "assistant"} system={item.message.role === "system"} targetLabel={item.message.targetType && item.message.targetId ? targets.find((target) => target.value === `${item.message.targetType}:${item.message.targetId}`)?.label : undefined}>
                   {item.message.content}
                 </ContentChatMessage>
               ))}
@@ -832,7 +858,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
               </div>
               <div className="relative" data-testid="content-inline-composer">
                 <AutoGrowTextarea aria-label="修改要求" className="block min-h-13 max-h-28 w-full resize-none overflow-y-hidden rounded-md border border-input bg-background px-3 py-4 pr-16 text-sm leading-5 outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary-100 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground" disabled={!composerEnabled} maxLength={1000} onChange={(event) => setInstruction(event.target.value)} placeholder={placeholder} ref={inputRef} rows={1} value={instruction} />
-                <Button aria-label="发送修改要求" className="absolute bottom-1 right-1 size-11 min-h-11 min-w-11 rounded-full bg-primary-50 p-0 text-primary shadow-none hover:bg-primary-100 hover:text-primary" disabled={!composerEnabled || !modifyTarget || !instruction.trim()} onClick={modify} variant="ghost">
+                <Button aria-label="发送修改要求" className="absolute bottom-1 right-1 size-11 min-h-11 min-w-11 rounded-full bg-primary-50 p-0 text-primary shadow-none hover:bg-primary-100 hover:text-primary" disabled={!composerEnabled || !modifyTarget || !instruction.trim()} onClick={() => void modify()} variant="ghost">
                   <Send aria-hidden="true" className="size-4" />
                 </Button>
               </div>
@@ -843,63 +869,71 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
         {sections.length > 0 && selected ? (
           <main className={cn("h-full min-h-0 min-w-0 overflow-hidden rounded-lg border border-border bg-muted/30 shadow-sm", mobileView === "chat" && "hidden xl:block")} data-testid="content-preview-pane">
             <section aria-label="课程内容预览" className="flex h-full min-h-0 min-w-0 flex-col rounded-lg">
-              <div className="space-y-0 border-b border-border bg-card px-3 py-1" data-testid="content-preview-toolbar">
-                <label className="flex min-h-11 items-center gap-2 border-b border-border xl:hidden">
-                  <span className="shrink-0 text-xs font-medium text-muted-foreground">查看</span>
+              <div className="space-y-2 border-b border-border bg-card p-3" data-testid="content-preview-toolbar">
+                <label className="flex min-h-11 items-center gap-2 xl:hidden">
+                  <span className="shrink-0 text-xs font-semibold text-foreground">选择章节</span>
                   <select aria-label="选择课程内容" className="min-h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm font-medium text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary-100" onChange={(event) => selectTopLevel(event.target.value)} value={selectedTopLevel}>
                     {state.chapters.map((chapter) => <option key={chapter.id} value={`chapter:${chapter.id}`}>第 {chapter.order} 章</option>)}
                     {state.mainIdea ? <option value="reading">课后阅读</option> : null}
                     {sections.some((section) => section.kind === "homework") ? <option value="homework">课后练习</option> : null}
                   </select>
                 </label>
-                <div aria-label="课程内容" className="hidden gap-x-1 overflow-x-auto whitespace-nowrap border-b border-border [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:flex" data-testid="content-primary-tabs" role="tablist">
+                <div className="hidden min-w-0 items-center gap-3 xl:flex">
+                  <span className="shrink-0 text-xs font-semibold text-foreground">选择章节</span>
+                  <div aria-label="课程内容" className="flex min-w-0 gap-1 overflow-x-auto whitespace-nowrap rounded-lg bg-muted p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-testid="content-primary-tabs" role="tablist">
                   {state.chapters.map((chapter) => {
                     const active = selectedTopLevel === `chapter:${chapter.id}`;
                     return (
-                      <button aria-selected={active} className={cn("-mb-px min-h-10 shrink-0 whitespace-nowrap border-b-2 px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:border-primary-200 hover:text-foreground")} key={chapter.id} onClick={() => selectSection(`reading:${chapter.id}`)} role="tab" title={chapter.title} type="button">
+                      <button aria-selected={active} className={cn("min-h-9 shrink-0 whitespace-nowrap rounded-md px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-card hover:text-foreground")} key={chapter.id} onClick={() => selectSection(`reading:${chapter.id}`)} role="tab" title={chapter.title} type="button">
                         第 {chapter.order} 章
                       </button>
                     );
                   })}
                   {state.mainIdea ? (
-                    <button aria-selected={selectedTopLevel === "reading"} className={cn("-mb-px min-h-10 shrink-0 whitespace-nowrap border-b-2 px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selectedTopLevel === "reading" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:border-primary-200 hover:text-foreground")} onClick={() => selectSection("main-idea")} role="tab" type="button">
+                    <button aria-selected={selectedTopLevel === "reading"} className={cn("min-h-9 shrink-0 rounded-md px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", selectedTopLevel === "reading" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-card hover:text-foreground")} onClick={() => selectSection("main-idea")} role="tab" type="button">
                       课后阅读
                     </button>
                   ) : null}
                   {sections.some((section) => section.kind === "homework") ? (
-                    <button aria-selected={selectedTopLevel === "homework"} className={cn("-mb-px min-h-10 shrink-0 whitespace-nowrap border-b-2 px-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selectedTopLevel === "homework" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:border-primary-200 hover:text-foreground")} onClick={() => selectSection("homework")} role="tab" type="button">
+                    <button aria-selected={selectedTopLevel === "homework"} className={cn("min-h-9 shrink-0 rounded-md px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", selectedTopLevel === "homework" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-card hover:text-foreground")} onClick={() => selectSection("homework")} role="tab" type="button">
                       课后练习
                     </button>
                   ) : null}
+                  </div>
                 </div>
 
-                <div className="flex min-h-10 min-w-0 items-center justify-between gap-2 overflow-hidden">
-                  <div className="inline-flex min-h-10 min-w-0 overflow-x-auto whitespace-nowrap border-b border-border [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-testid="content-secondary-tabs" {...(selectedChapter ? { "aria-label": "章节内容", role: "tablist" } : {})}>
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border pt-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 text-xs font-semibold text-foreground">查看内容</span>
+                    <div className="inline-flex min-h-10 min-w-0 overflow-x-auto whitespace-nowrap rounded-lg border border-border bg-muted/70 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-testid="content-secondary-tabs" {...(selectedChapter ? { "aria-label": "章节内容", role: "tablist" } : {})}>
                     {selectedChapter ? (
                       <>
-                        <button aria-selected={selected.kind === "reading"} className={cn("-mb-px min-h-10 shrink-0 whitespace-nowrap border-b-2 px-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selected.kind === "reading" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")} onClick={() => selectSection(`reading:${selectedChapter.id}`)} role="tab" type="button">
+                        <button aria-selected={selected.kind === "reading"} className={cn("min-h-8 shrink-0 rounded-md px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", selected.kind === "reading" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => selectSection(`reading:${selectedChapter.id}`)} role="tab" type="button">
                           正文
                         </button>
                         {sections.some((section) => section.id === `practice:${selectedChapter.id}`) ? (
-                          <button aria-selected={selected.kind === "practice"} className={cn("-mb-px min-h-10 shrink-0 whitespace-nowrap border-b-2 px-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", selected.kind === "practice" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")} onClick={() => selectSection(`practice:${selectedChapter.id}`)} role="tab" type="button">
+                          <button aria-selected={selected.kind === "practice"} className={cn("min-h-8 shrink-0 rounded-md px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", selected.kind === "practice" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => selectSection(`practice:${selectedChapter.id}`)} role="tab" type="button">
                             练习
                           </button>
                         ) : null}
                       </>
                     ) : (
-                      <span aria-current="page" className="-mb-px inline-flex min-h-10 shrink-0 items-center whitespace-nowrap border-b-2 border-primary px-4 text-sm font-medium text-primary">
+                      <span aria-current="page" className="inline-flex min-h-8 shrink-0 items-center whitespace-nowrap rounded-md bg-card px-4 text-sm font-semibold text-primary shadow-sm">
                         {selected.label}
                       </span>
                     )}
+                    </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-1" data-testid="content-page-controls">
-                    <Button aria-label="上一页" disabled={!canGoBack} onClick={goPreviousPage} size="icon-sm" variant="ghost">
+                  <div className="flex shrink-0 items-center gap-2 rounded-lg border border-border bg-background p-1" data-testid="content-page-controls">
+                    <Button aria-label="上一页" disabled={!canGoBack} onClick={goPreviousPage} size="sm" variant="ghost">
                       <ChevronLeft className="size-4" />
+                      <span>上一页</span>
                     </Button>
-                    <span aria-live="polite" className="min-w-16 text-center text-xs font-semibold tabular-nums text-foreground">
-                      {pageIndex + 1} / {selected.pageCount} 页
+                    <span aria-live="polite" className="min-w-20 text-center text-xs font-semibold tabular-nums text-foreground">
+                      第 {pageIndex + 1} / {selected.pageCount} 页
                     </span>
-                    <Button aria-label="下一页" disabled={!canGoForward} onClick={goNextPage} size="icon-sm" variant="ghost">
+                    <Button aria-label="下一页" disabled={!canGoForward} onClick={goNextPage} size="sm" variant="ghost">
+                      <span>下一页</span>
                       <ChevronRight className="size-4" />
                     </Button>
                     <Button aria-label="放大查看当前页" className="xl:hidden" onClick={() => setPreviewExpanded(true)} size="icon-sm" variant="ghost">
@@ -928,9 +962,9 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       </div>
       </CourseAiWorkspaceFrame>
       {resetOpen ? (
-        <Dialog onClose={() => setResetOpen(false)} open title="重新开始">
+        <Dialog description="将删除本阶段及全部后续成果" onClose={() => setResetOpen(false)} open title="重置文案与练习？">
           <div className="space-y-5 p-5 sm:p-6">
-            <p className="text-pretty text-sm leading-6 text-muted-foreground">将删除当前文案与练习并重新开始。视觉资源、图片和预览发布设置不会被删除，但仍会保留旧版本。</p>
+            <p className="text-pretty text-sm leading-6 text-muted-foreground">将删除当前文案与练习、视觉资源、图片和预览发布设置，并重新开始本阶段。</p>
             {error && resetOpen ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
             <div className="flex justify-end gap-2">
               <Button disabled={resetting} onClick={() => setResetOpen(false)} type="button" variant="outline">
@@ -938,7 +972,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
               </Button>
               <Button disabled={resetting} onClick={() => void resetStep()} type="button" variant="destructive">
                 {resetting ? <LoaderCircle className="size-4 animate-spin" /> : null}
-                删除文案与练习并重新开始
+                删除并重置文案与练习
               </Button>
             </div>
           </div>
@@ -981,11 +1015,11 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
         </Dialog>
       ) : null}
       {destructiveRegeneration ? (
-        <Dialog description="后续内容将保留旧版本" onClose={() => setDestructiveRegeneration(null)} open title="继续重新生成？">
+        <Dialog description="本次操作尚未开始" onClose={() => setDestructiveRegeneration(null)} open title="修改将重置后续流程">
           <div className="space-y-5 p-5 sm:p-6">
             <p className="text-pretty text-sm leading-6 text-muted-foreground">
               重新生成{destructiveRegeneration === "reading" ? "正文" : "练习"}
-              后，视觉资源、图片和预览发布设置不会自动更新，也不会被删除。请进入对应阶段手动重置。
+              成功后，视觉资源、图片和预览发布设置会被删除，需要重新生成。生成失败不会影响当前课程。
             </p>
             <div className="flex justify-end gap-2">
               <Button disabled={busy} onClick={() => setDestructiveRegeneration(null)} type="button" variant="outline">
@@ -1000,8 +1034,19 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
                 }}
                 type="button"
               >
-                继续重新生成
+                确认并开始生成
               </Button>
+            </div>
+          </div>
+        </Dialog>
+      ) : null}
+      {destructiveModification ? (
+        <Dialog description="本次操作尚未开始" onClose={() => setDestructiveModification(false)} open title="修改将重置后续流程">
+          <div className="space-y-5 p-5 sm:p-6">
+            <p className="text-pretty text-sm leading-6 text-muted-foreground">本次 AI 修改成功后，视觉资源、图片和预览发布设置会被删除，需要重新生成。修改失败不会影响当前课程。</p>
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setDestructiveModification(false)} type="button" variant="outline">取消</Button>
+              <Button onClick={() => { setDestructiveModification(false); void modify(true); }} type="button">确认并开始生成</Button>
             </div>
           </div>
         </Dialog>
@@ -1073,53 +1118,25 @@ function AssistantMessage({ children }: { children: React.ReactNode }) {
   );
 }
 
-type TimelineStatus = "running" | "succeeded" | "failed" | "stale";
+type TimelineStatus = AiHistoryStatus;
 
-function timelineTime(value?: string) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
-}
-
-function TimelineStatusBadge({ status }: { status: TimelineStatus }) {
-  const labels = { running: "进行中", succeeded: "已完成", failed: "未完成", stale: "需更新" } as const;
-  const Icon = status === "running" ? LoaderCircle : status === "succeeded" ? CheckCircle2 : AlertCircle;
-  return (
-    <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", status === "running" ? "bg-primary-50 text-primary-700" : status === "succeeded" ? "bg-emerald-50 text-emerald-700" : status === "failed" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700")}>
-      <Icon aria-hidden className={cn("size-3", status === "running" && "animate-spin motion-reduce:animate-none")} />
-      {labels[status]}
-    </span>
-  );
-}
-
-function TimelineCard({ children, role = "assistant", title, status, createdAt, targetLabel, footer, accent = false, wide = false, testId, requestId }: { children: React.ReactNode; role?: "assistant" | "teacher"; title: string; status?: TimelineStatus; createdAt?: string; targetLabel?: string; footer?: React.ReactNode; accent?: boolean; wide?: boolean; testId?: string; requestId?: string }) {
+function TimelineCard({ children, role = "assistant", title, status, createdAt, targetLabel, meta, footer, accent = false, statusEmphasis = false, wide = false, testId, requestId }: { children: React.ReactNode; role?: "assistant" | "teacher"; title: string; status?: TimelineStatus; createdAt?: string; targetLabel?: string; meta?: React.ReactNode; footer?: React.ReactNode; accent?: boolean; statusEmphasis?: boolean; wide?: boolean; testId?: string; requestId?: string }) {
   const isTeacher = role === "teacher";
-  const time = timelineTime(createdAt);
   return (
     <div className={cn("flex items-start gap-1.5", isTeacher ? "justify-end" : "justify-start")}>
       {!isTeacher ? <ContentChatAvatar role="assistant" /> : null}
-      <article className={cn("rounded-xl border p-3 text-sm shadow-sm", wide ? "w-full max-w-xl" : "w-fit max-w-[calc(100%-2.25rem)]", isTeacher ? "border-primary-100 bg-primary-50 text-foreground" : accent ? "border-primary-200 bg-primary-50/70" : "border-border bg-card text-foreground")} data-chat-action={accent ? "" : undefined} data-chat-bubble data-request-id={requestId} data-testid={testId}>
-        <header className="flex min-w-0 items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="text-balance text-sm font-semibold leading-5 text-foreground">{title}</h3>
-            {targetLabel ? <p className="mt-0.5 truncate text-xs font-medium text-muted-foreground">{targetLabel}</p> : null}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {status ? <TimelineStatusBadge status={status} /> : null}
-            {time ? <time className="text-xs tabular-nums text-muted-foreground" dateTime={createdAt}>{time}</time> : null}
-          </div>
-        </header>
-        <div className="mt-2 whitespace-pre-wrap text-pretty text-sm leading-6">{children}</div>
-        {footer ? <footer className="mt-3 border-t border-border/80 pt-3">{footer}</footer> : null}
-      </article>
+      <AiHistoryCard accent={accent} createdAt={createdAt} footer={footer} meta={meta} requestId={requestId} role={role} status={status} statusEmphasis={statusEmphasis} targetLabel={targetLabel} testId={testId} title={title} wide={wide}>{children}</AiHistoryCard>
       {isTeacher ? <ContentChatAvatar role="teacher" /> : null}
     </div>
   );
 }
 
-function ContentChatMessage({ children, role, system = false, createdAt, targetLabel }: { children: React.ReactNode; role: "assistant" | "teacher"; system?: boolean; createdAt?: string; targetLabel?: string }) {
-  return <TimelineCard createdAt={createdAt} role={role} targetLabel={targetLabel} title={role === "teacher" ? "我的要求" : system ? "系统记录" : "AI 助手"}>{children}</TimelineCard>;
+function ContentChatMessage({ children, role, system = false, createdAt, targetLabel, details }: { children: React.ReactNode; role: "assistant" | "teacher"; system?: boolean; createdAt?: string; targetLabel?: string; details?: Record<string, unknown> | null }) {
+  const source = details?.triggerSource === "ui_action" ? "按钮操作" : details?.triggerSource === "teacher_input" ? "手动输入" : null;
+  const retryAttempt = typeof details?.retryAttempt === "number" ? details.retryAttempt : null;
+  const meta = source || (retryAttempt && retryAttempt > 1) ? <><span>{source}</span>{retryAttempt && retryAttempt > 1 ? <span>第 {retryAttempt} 次尝试</span> : null}</> : undefined;
+  const title = role === "teacher" ? (source === "按钮操作" ? "老师操作" : "我的要求") : system ? "系统记录" : "AI 助手";
+  return <TimelineCard createdAt={createdAt} meta={meta} role={role} targetLabel={targetLabel} title={title}>{children}</TimelineCard>;
 }
 
 function ChatAction({ title, children }: { title: string; children: React.ReactNode }) {
@@ -1130,14 +1147,14 @@ function TimelineNoticeCard({ title, children }: { title: string; children: Reac
   return <TimelineCard status="stale" title={title}>{children}</TimelineCard>;
 }
 
-function ReadingReadyActions({ onContinue, onRegenerate }: { onContinue: () => void; onRegenerate: () => void }) {
+function ReadingReadyActions({ onContinue, onRegenerate, disabled = false }: { onContinue?: () => void; onRegenerate?: () => void; disabled?: boolean }) {
   return (
     <div className="grid gap-2 sm:grid-cols-2">
-      <Button onClick={onContinue} size="sm">
+      <Button disabled={disabled || !onContinue} onClick={onContinue} size="sm">
         确认并生成练习
         <ChevronRight className="size-4" />
       </Button>
-      <Button onClick={onRegenerate} size="sm" variant="outline">
+      <Button disabled={disabled || !onRegenerate} onClick={onRegenerate} size="sm" variant="outline">
         <RotateCcw className="size-4" />
         重新生成阅读内容
       </Button>
@@ -1159,25 +1176,49 @@ function TimelineOperationCard({ messages, requestId, phase, elapsedSeconds, tar
   const terminal = [...operationEvents].reverse().find((message) => message.status === "succeeded" || message.status === "failed");
   const status = (terminal?.status ?? "running") as TimelineStatus;
   const operation = latest.operation ?? "reading";
-  const presentation = contentOperationPresentation(operation, phase, targetLabel);
+  const presentation = contentOperationPresentation(operation, phase, targetLabel, false, messages.some((message) => message.kind === "repair"));
   const details = status === "failed"
     ? messages.filter((message) => message.kind === "repair" || (message.kind === "operation" && message.status === "failed"))
     : messages.filter((message) => message.id !== latest.id);
-  const footer = onContinue && onRegenerateReading ? (
-    <ReadingReadyActions onContinue={onContinue} onRegenerate={onRegenerateReading} />
-  ) : onRetry ? (
-    <Button className="w-full" onClick={onRetry} size="sm">
+  const retryAttempt = operationDetailNumber(terminal ?? latest, "retryAttempt") ?? operationDetailNumber(latest, "retryAttempt") ?? 1;
+  const recordedDurationMs = operationDetailNumber(terminal ?? latest, "durationMs");
+  const firstEventAt = new Date(operationEvents[0]?.createdAt ?? latest.createdAt).getTime();
+  const terminalAt = terminal ? new Date(terminal.createdAt).getTime() : Number.NaN;
+  const durationSeconds = recordedDurationMs !== null
+    ? Math.round(recordedDurationMs / 1000)
+    : Number.isFinite(firstEventAt) && Number.isFinite(terminalAt) ? Math.max(0, Math.round((terminalAt - firstEventAt) / 1000)) : null;
+  const meta = status !== "running" && (durationSeconds !== null || retryAttempt > 1) ? <>{durationSeconds !== null ? <span>执行用时 {formatAiDuration(durationSeconds)}</span> : null}{retryAttempt > 1 ? <span>第 {retryAttempt} 次尝试</span> : null}</> : undefined;
+  const footer = status === "succeeded" && operation === "reading" ? (
+    <ReadingReadyActions disabled={!onContinue || !onRegenerateReading} onContinue={onContinue} onRegenerate={onRegenerateReading} />
+  ) : status === "failed" ? (
+    <Button className="w-full" disabled={!onRetry} onClick={onRetry} size="sm">
       <RotateCcw className="size-4" />
       重试本次操作
     </Button>
   ) : undefined;
+  const estimate = operation === "reading" ? "5–10 分钟" : operation === "exercises" ? "2–5 分钟" : "1–3 分钟";
   return (
-    <TimelineCard createdAt={latest.createdAt} footer={footer} requestId={requestId} status={status} targetLabel={targetLabel} testId="content-operation-card" title={latest.title ?? presentation.title} wide={Boolean(onContinue || status === "failed")}>
+    <TimelineCard createdAt={latest.createdAt} footer={footer} meta={meta} requestId={requestId} status={status} statusEmphasis targetLabel={targetLabel} testId="content-operation-card" title={latest.title ?? presentation.title} wide={status !== "running" || Boolean(onContinue)}>
       <p className="text-muted-foreground">{status === "failed" ? "已完成的内容已保存，只需重试未通过的部分。" : onContinue ? "阅读内容已保存。确认后即可生成章节与课后练习。" : latest.content}</p>
       {status === "running" ? (
         <div className="mt-3 rounded-lg bg-muted/60 px-3 py-2.5">
-          <p className="flex items-center gap-2 font-medium text-foreground"><LoaderCircle aria-hidden className="size-3.5 animate-spin text-primary motion-reduce:animate-none" />{presentation.steps[Math.min(presentation.currentStep, presentation.steps.length - 1)]}</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{elapsedSeconds < 30 ? "任务已经提交，本次操作只会执行一次。" : elapsedSeconds < 90 ? "任务进度会自动保存，无需刷新或重复提交。" : "长内容可能仍在处理，可以稍后返回查看。"}</p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="flex items-center gap-2 font-medium text-foreground"><LoaderCircle aria-hidden className="size-3.5 shrink-0 animate-spin text-primary motion-reduce:animate-none" />{presentation.steps[Math.min(presentation.currentStep, presentation.steps.length - 1)]}</p>
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">已用时 {elapsedSeconds > 0 ? formatAiDuration(elapsedSeconds) : "刚刚开始"}</span>
+          </div>
+          <ol aria-label="处理阶段" className="mt-3 grid gap-1.5">
+            {presentation.steps.map((step, index) => {
+              const active = index === presentation.currentStep;
+              const complete = index < presentation.currentStep;
+              return (
+                <li className={cn("flex items-center gap-2 text-xs leading-5", active ? "font-medium text-foreground" : complete ? "text-primary-700" : "text-muted-foreground")} key={step}>
+                  {complete ? <CheckCircle2 aria-hidden className="size-3.5 shrink-0 text-emerald-600" /> : active ? <LoaderCircle aria-hidden className="size-3.5 shrink-0 animate-spin text-primary motion-reduce:animate-none" /> : <span aria-hidden className="ml-0.5 size-2.5 shrink-0 rounded-full border border-border" />}
+                  <span>{step}</span>
+                </li>
+              );
+            })}
+          </ol>
+          <p className="mt-2 border-t border-border pt-2 text-xs leading-5 text-muted-foreground"><span className="font-medium text-foreground">预计用时 {estimate}</span> · {elapsedSeconds < 30 ? "任务已经提交，本次操作只会执行一次。" : elapsedSeconds < 90 ? "任务进度会自动保存，无需刷新或重复提交。" : "长内容仍在生成或校验，可以稍后返回查看，结果会自动保存。"}</p>
         </div>
       ) : null}
       {details.length ? (
@@ -1187,7 +1228,15 @@ function TimelineOperationCard({ messages, requestId, phase, elapsedSeconds, tar
             <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" />
           </summary>
           <ol className="grid gap-2 pb-1 pt-1">
-            {details.map((message) => <li className="text-pretty leading-5" key={message.id}>{message.content}</li>)}
+            {details.map((message) => {
+              const issues = repairIssueDetails(message);
+              return (
+                <li className="text-pretty leading-5" key={message.id}>
+                  <p>{message.content}</p>
+                  {issues.length ? <ul className="mt-1.5 space-y-1 border-l border-border pl-2">{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul> : null}
+                </li>
+              );
+            })}
           </ol>
         </details>
       ) : null}
@@ -1203,8 +1252,19 @@ function isRepairMessage(content: string) {
   return content.includes("正在统一修复") || content.includes("正在单独修复");
 }
 
-function RepairMessage({ message, working, failed }: { message: string; working: boolean; failed: boolean }) {
+function operationDetailNumber(message: CourseContentState["messages"][number], key: string) {
+  const value = message.details?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function repairIssueDetails(message: CourseContentState["messages"][number]) {
+  const issues = message.details?.issues;
+  return Array.isArray(issues) ? issues.filter((issue): issue is string => typeof issue === "string") : [];
+}
+
+function RepairMessage({ message, working, failed }: { message: CourseContentState["messages"][number]; working: boolean; failed: boolean }) {
   const status = failed ? "failed" : working ? "working" : "completed";
+  const issues = repairIssueDetails(message);
   return (
     <details className={cn("group w-fit max-w-xl rounded-xl border border-border bg-card text-sm text-foreground shadow-sm", status === "failed" && "border-destructive/30")} key={status} open={status !== "completed" || undefined}>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
@@ -1212,12 +1272,15 @@ function RepairMessage({ message, working, failed }: { message: string; working:
         <span>{status === "working" ? "修复中" : status === "failed" ? "本轮修复未通过" : "修复完成"}</span>
         <ChevronRight className="ml-auto size-4 transition-transform group-open:rotate-90" />
       </summary>
-      <p className="border-t border-border px-3 py-2.5 text-pretty leading-6 text-muted-foreground">{message}</p>
+      <div className="border-t border-border px-3 py-2.5 text-pretty leading-6 text-muted-foreground">
+        <p>{message.content}</p>
+        {issues.length ? <ol className="mt-2 space-y-1 border-t border-border/70 pt-2 text-xs">{issues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ol> : null}
+      </div>
     </details>
   );
 }
 
-function RepairHistoryGroup({ messages }: { messages: string[] }) {
+function RepairHistoryGroup({ messages }: { messages: CourseContentState["messages"] }) {
   return (
     <details className="group w-fit max-w-xl rounded-xl border border-border bg-card text-sm text-foreground shadow-sm">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
@@ -1226,7 +1289,7 @@ function RepairHistoryGroup({ messages }: { messages: string[] }) {
         <ChevronRight className="ml-auto size-4 transition-transform group-open:rotate-90" />
       </summary>
       <ol className="space-y-2 border-t border-border px-3 py-2.5 leading-6 text-muted-foreground">
-        {messages.map((message, index) => <li key={`${index}-${message}`}>{index + 1}. {message}</li>)}
+        {messages.map((message, index) => <li key={message.id}>{index + 1}. {message.content}</li>)}
       </ol>
     </details>
   );

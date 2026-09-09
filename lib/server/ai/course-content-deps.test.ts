@@ -17,8 +17,9 @@ import {
   cefrWritingProfile,
   cefrWritingQualityRules,
   contentReadingTimeoutMs,
-  courseContentReviewReasoningEffort,
+  courseContentReasoningEfforts,
   createCourseContentChapterKeyProtocol,
+  assertExerciseGenerationChapterKeys,
   assertReadingRepairCoverage,
   courseContentFormatRepairAttempts,
   courseContentPromptExamples,
@@ -152,7 +153,7 @@ describe("course content prompt contexts", () => {
       paragraphs: [{ id: "paragraph-ch1-1", parts: [{ type: "text", text: `${Array(70).fill("story").join(" ")} ` }, { type: "grammar", id: "g1", exerciseType: "wordForm", knowledgePointId: "kp1", answer: "ended", baseForm: "end" }] }],
       chapterPractice: [], validationIssues: [],
     }]);
-    expect(requirements).toEqual([{ outlineChapterId: "ch1", currentWordCount: 71, targetWordCount: 90, acceptedRange: [75, 110], aimRange: [80, 100], minimumNetWordsToAdd: 4, recommendedNetWordsToAddRange: [9, 29] }]);
+    expect(requirements).toEqual([{ outlineChapterId: "ch1", currentWordCount: 71, targetWordCount: 90, acceptedRange: [75, 110], aimRange: [80, 90], minimumNetWordsToAdd: 4, recommendedNetWordsToAddRange: [9, 19] }]);
   });
 
   test("builds a minimal joint reading and Main Idea context with English names only", () => {
@@ -169,7 +170,7 @@ describe("course content prompt contexts", () => {
       people: [{ role: "teacher", englishName: "Linda" }, { role: "student", englishName: "Milo" }],
       storyCharacters: [{ displayName: "Map Guardian", storyRole: "阻止Milo找到地图；守护错误路线的角色" }],
       chapters: [{
-        id: "ch1", order: 1, title: "Milo出发", summary: "Linda帮助Milo。", targetWordCount: 90, acceptedWordCountRange: [75, 110], generationAimRange: [80, 100], paragraphCount: 2,
+        id: "ch1", order: 1, title: "Milo出发", summary: "Linda帮助Milo。", targetWordCount: 90, acceptedWordCountRange: [75, 110], generationAimRange: [80, 90], paragraphCount: 2,
         grammarPoints: [{ key: "KP1", label: "一般过去时" }],
         knowledgePointUsagePlan: "一般过去时：用于描述Milo已经完成的开门动作。",
         exercisePlan: { grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 3 }, vocabulary: { enabledTypes: ["chineseHint"], total: 2 } },
@@ -211,7 +212,7 @@ describe("course content prompt contexts", () => {
       const ranges = englishWordRangesForTarget(target);
 
       expect(step4Range).toEqual(ranges.validationRange);
-      expect(buildReadingPromptContext(changed).chapters[0].generationAimRange).toEqual(ranges.generationRange);
+      expect(buildReadingPromptContext(changed).chapters[0].generationAimRange).toEqual([ranges.generationRange[0], Math.min(target, ranges.generationRange[1])]);
       if (target === changed.lengthPolicy.english.chapterTargetWords) {
         expect(changed.lengthPolicy.english.generationRange).toEqual(ranges.generationRange);
       }
@@ -259,8 +260,29 @@ describe("course content prompt contexts", () => {
     expect(JSON.stringify(context)).not.toContain("paragraphCount");
   });
 
-  test("uses medium reasoning for the large second-pass reading review", () => {
-    expect(courseContentReviewReasoningEffort).toBe("medium");
+  test("accepts no chapter exercise payload when only after-class practice is enabled", () => {
+    const homeworkOnly = structuredClone(input);
+    homeworkOnly.plan.chapters[0].chapterPractice.enabled = false;
+    const protocol = createCourseContentChapterKeyProtocol(homeworkOnly);
+    const cleanChapters = [{ outlineChapterId: "C1", title: "Milo出发", cleanText: "Milo opened the door." }];
+
+    expect(() => assertExerciseGenerationChapterKeys([], protocol.input, cleanChapters)).not.toThrow();
+    expect(() => assertExerciseGenerationChapterKeys(["C1"], protocol.input, cleanChapters)).toThrow("练习章节短键不完整（期望：空；实际：C1）");
+
+    const withChapterPractice = createCourseContentChapterKeyProtocol(input);
+    expect(() => assertExerciseGenerationChapterKeys(["C1"], withChapterPractice.input, cleanChapters)).not.toThrow();
+    expect(() => assertExerciseGenerationChapterKeys([], withChapterPractice.input, cleanChapters)).toThrow("练习章节短键不完整（期望：C1；实际：空）");
+  });
+
+  test("uses explicit reasoning levels for every Step 4 AI operation", () => {
+    expect(courseContentReasoningEfforts).toEqual({
+      readingGeneration: "medium",
+      readingRepair: "low",
+      exerciseGeneration: "medium",
+      exerciseRepair: "low",
+      modification: "medium",
+      formatRepair: "low",
+    });
   });
 
   test("replaces database chapter IDs with short keys at the AI boundary", () => {

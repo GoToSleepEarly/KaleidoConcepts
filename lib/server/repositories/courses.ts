@@ -7,6 +7,7 @@ import type {
   Gender,
   PersonRole,
 } from "@/lib/contracts/api";
+import { clearCourseDataAfterStage, hasCourseDownstream, removeCourseImageFiles, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 
 type DbSnapshotPerson = {
   id: string;
@@ -97,7 +98,7 @@ export class CoursePersonValidationError extends Error {
 }
 
 export class CourseAudienceConflictError extends Error {
-  constructor(message = "修改授课对象会使后续内容保留为旧版本") {
+  constructor(message = "修改基础信息将重置后续流程，请确认后继续") {
     super(message);
     this.name = "CourseAudienceConflictError";
   }
@@ -200,7 +201,7 @@ export async function updateCourseAudience(
   db: CoursesDb,
   id: string,
   input: CourseAudienceInput,
-  preserveDownstream: boolean,
+  resetDownstream: boolean,
 ) {
   const current = await db.course.findUnique({ where: { id }, include: { people: true } });
   if (!current) throw new CourseNotFoundError();
@@ -215,9 +216,11 @@ export async function updateCourseAudience(
     || !sameIds(Array.isArray(current.knowledgePointIds) ? current.knowledgePointIds.filter((id): id is string => typeof id === "string").sort() : [], [...input.knowledgePointIds].sort())
     || currentTeacher !== input.teacherId
     || !sameIds(currentStudents, nextStudents);
-  const hasDownstream = !["audience", "story_outline"].includes(current.currentStage);
+  const hasDownstream = keyInputsChanged
+    ? await hasCourseDownstream(db as unknown as CourseDownstreamDb, id, "audience")
+    : false;
 
-  if (keyInputsChanged && hasDownstream && !preserveDownstream) throw new CourseAudienceConflictError();
+  if (keyInputsChanged && hasDownstream && !resetDownstream) throw new CourseAudienceConflictError();
   if (!keyInputsChanged) {
     const course = await db.course.update({ where: { id }, data: { title: input.title.trim() } });
     return mutationResult(course);
@@ -226,6 +229,7 @@ export async function updateCourseAudience(
   const update = async (tx: CoursesDb) => {
     await validateGrammarSelection(tx, input);
     const people = await snapshots(tx, input);
+    const storagePaths = await clearCourseDataAfterStage(tx as unknown as CourseDownstreamDb, id, "audience", "story_outline");
     const course = await tx.course.update({
       where: { id },
       data: {
@@ -234,15 +238,17 @@ export async function updateCourseAudience(
         englishLevel: input.englishLevel,
         grammarBookEditionId: input.grammarBookEditionId,
         knowledgePointIds: input.knowledgePointIds,
-        currentStage: hasDownstream ? current.currentStage : "story_outline",
-        staleFromStage: hasDownstream ? "story_outline" : null,
+        currentStage: "story_outline",
+        staleFromStage: null,
         lifecycleStatus: "draft",
         people: { deleteMany: {}, create: people },
       },
     });
-    return mutationResult(course);
+    return { result: mutationResult(course), storagePaths };
   };
-  return db.$transaction ? db.$transaction(update) : update(db);
+  const updated = db.$transaction ? await db.$transaction(update) : await update(db);
+  await removeCourseImageFiles(updated.storagePaths);
+  return updated.result;
 }
 
 function stagePath(id: string, stage: CourseStage) {

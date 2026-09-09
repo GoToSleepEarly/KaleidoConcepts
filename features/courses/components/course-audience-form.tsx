@@ -157,7 +157,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
     setPersonNotice(`${saved.chineseName}的人物资料已更新`);
   }
 
-  async function submitRequest(preserveDownstream = false) {
+  async function submitRequest(resetDownstream = false) {
     const payload = {
       title: title.trim(),
       teacherId: teacher!.id,
@@ -166,7 +166,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
       englishLevel,
       grammarBookEditionId,
       knowledgePointIds: selectedKnowledgePointIds,
-      ...(preserveDownstream ? { preserveDownstream: true } : {}),
+      ...(resetDownstream ? { resetDownstream: true } : {}),
     };
     return fetch(courseId ? `/api/courses/${courseId}/audience` : "/api/courses", {
       method: courseId ? "PUT" : "POST",
@@ -175,12 +175,12 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
     });
   }
 
-  async function saveAndNavigate(targetPath?: string, preserveDownstream = false) {
+  async function saveAndNavigate(targetPath?: string, resetDownstream = false) {
     if (disabledReason) { setError(`还需：${disabledReason}，当前修改尚未保存。`); return; }
     setSaving(true);
     setError("");
     try {
-      const response = await submitRequest(preserveDownstream);
+      const response = await submitRequest(resetDownstream);
       const data = await readJsonResponse<{ course?: { id: string }; message?: string; requiresReset?: boolean; affectedResources?: string[] }>(response);
       if (response.status === 409 && data.requiresReset) {
         setDownstreamChoice({ targetPath, affectedResources: data.affectedResources ?? ["故事大纲", "教学规划", "文案与练习", "视觉资源和图片", "预览发布设置"] });
@@ -300,15 +300,15 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
         />
       ) : null}
       {knowledgePickerOpen && grammarCatalog.books.length ? <GrammarKnowledgePointPickerDialog books={grammarCatalog.books} initialBookId={grammarBookEditionId || defaultGrammarBookId(englishLevel)} initialSelectedIds={selectedKnowledgePointIds} onClose={() => setKnowledgePickerOpen(false)} onConfirm={({ bookId, selectedIds }) => { setGrammarBookEditionId(bookId); setSelectedKnowledgePointIds(selectedIds); setKnowledgePickerOpen(false); }} /> : null}
-      {downstreamChoice ? <Dialog description="本次修改尚未保存" onClose={() => setDownstreamChoice(null)} open size="compact" title="后续内容需要更新">
+      {downstreamChoice ? <Dialog description="本次修改尚未保存" onClose={() => setDownstreamChoice(null)} open size="compact" title="修改将重置后续流程">
         <div className="space-y-5 p-5 sm:p-6">
           <div className="space-y-2 text-pretty text-sm leading-6">
-            <p className="text-muted-foreground">保存后，以下内容仍会保留修改前的版本：</p>
+            <p className="text-muted-foreground">确认保存后，以下内容会被删除，需要重新生成：</p>
             <ul className="list-disc pl-5 text-foreground">{downstreamChoice.affectedResources.map((item) => <li key={item}>{item}</li>)}</ul>
           </div>
-          <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-amber-950"><AlertTriangle aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-amber-600" /><div className="text-sm leading-6"><p className="font-semibold">系统不会自动删除这些内容</p><p className="text-amber-900">进入下一步后，请到对应阶段手动重置。</p></div></div>
+          <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-amber-950"><AlertTriangle aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-amber-600" /><div className="text-sm leading-6"><p className="font-semibold">此操作不可撤销</p><p className="text-amber-900">保存与后续清理会作为一次操作完成；失败时不会改变现有课程。</p></div></div>
           <div className="flex justify-end">
-            <Button disabled={saving} onClick={() => { const choice = downstreamChoice; setDownstreamChoice(null); void saveAndNavigate(choice.targetPath, true); }} type="button">保存修改并继续</Button>
+            <Button disabled={saving} onClick={() => { const choice = downstreamChoice; setDownstreamChoice(null); void saveAndNavigate(choice.targetPath, true); }} type="button">确认修改并重置后续流程</Button>
           </div>
         </div>
       </Dialog> : null}

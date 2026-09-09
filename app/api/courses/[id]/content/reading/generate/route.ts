@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createCourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
 import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
-import { hasCourseDownstream, markCourseDownstreamStale, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
+import { clearCourseAfterStage, hasCourseDownstream, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 import { getDb } from "@/lib/server/db";
 import { authenticationErrorResponse } from "@/lib/server/http/authentication";
 import { CourseContentConflictError, CourseContentSupersededError, generateCourseReading, getCourseContentState } from "@/lib/server/repositories/course-content";
@@ -11,17 +11,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!key) return NextResponse.json({ message: "缺少防重复请求标识" }, { status: 400 });
   const { id } = await params;
   const regenerate = new URL(request.url).searchParams.get("regenerate") === "true";
-  const preserveDownstream = new URL(request.url).searchParams.get("preserveDownstream") === "true";
+  const resetDownstream = new URL(request.url).searchParams.get("resetDownstream") === "true";
   try {
     const db = getDb();
     const aiGateway = await aiGatewayFromRequest(request, db);
     if (regenerate) {
       const downstreamDb = db as unknown as CourseDownstreamDb;
       const hasDownstream = await hasCourseDownstream(downstreamDb, id, "content");
-      if (hasDownstream && !preserveDownstream) return NextResponse.json({ message: "重新生成后，视觉资源和预览发布仍会保留旧版本", requiresReset: true }, { status: 409 });
+      if (hasDownstream && !resetDownstream) return NextResponse.json({ message: "重新生成成功后将重置视觉资源和预览发布", requiresReset: true }, { status: 409 });
       if (hasDownstream) {
         await generateCourseReading(db, id, key, createCourseContentGenerationDeps(aiGateway), { regenerate, writingProvider: aiGateway.writingProvider });
-        await markCourseDownstreamStale(downstreamDb, id, "content");
+        await clearCourseAfterStage(downstreamDb, id, "content", "content");
         return NextResponse.json(await getCourseContentState(db, id));
       }
     }

@@ -38,4 +38,11 @@ describe("course AI workspace primitives", () => {
     render(<AiOperationStatusCard elapsedSeconds={1} persisted={false} presentation={presentation} />);
     expect(screen.getByText("正在提交任务，请保持当前页面打开。")).toBeInTheDocument();
   });
+
+  test("formats minute-level duration and shows an honest estimate", () => {
+    render(<AiOperationStatusCard elapsedSeconds={65} estimate={{ label: "1–3 分钟", maxSeconds: 180 }} persisted presentation={presentation} />);
+
+    expect(screen.getByText("1 分 05 秒")).toHaveClass("tabular-nums");
+    expect(screen.getByText("预计 1–3 分钟")).toBeInTheDocument();
+  });
 });

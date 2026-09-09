@@ -12,9 +12,9 @@ import { getCourseDownstreamImpact, type CourseDownstreamDb } from "@/lib/server
 import { parseTeachingPlan } from "@/lib/server/validation/teaching-plan";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const body = await request.json().catch(() => ({})) as { downstreamAction?: "check" | "preserve"; plan?: unknown };
+  const body = await request.json().catch(() => ({})) as { downstreamAction?: "check" | "reset"; plan?: unknown };
   const downstreamAction = body.downstreamAction ?? "check";
-  if (!(["check", "preserve"] as const).includes(downstreamAction)) {
+  if (!(["check", "reset"] as const).includes(downstreamAction)) {
     return NextResponse.json({ message: "请选择如何处理后续内容" }, { status: 400 });
   }
   let plan;

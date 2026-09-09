@@ -19,7 +19,8 @@ import {
   recommendedReadingPageCount,
 } from "@/lib/domain/teaching-plan-policy";
 import { defaultStoryComplexity, storyLengthPolicy } from "@/lib/domain/story-length-policy";
-import { earliestCourseStage, furthestCourseStage, nextCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
+import { furthestCourseStage } from "@/lib/domain/course-stage";
+import { clearCourseDataAfterStage, hasCourseDownstream, removeCourseImageFiles, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 import { resolveGrammarBookKnowledgePoints, resolveGrammarKnowledgePoints, type GrammarContextDb } from "@/lib/server/repositories/grammar-context";
 
 type DbCourse = {
@@ -109,7 +110,7 @@ export class CourseTeachingPlanPrerequisiteError extends Error {
 }
 
 export class CourseTeachingPlanConflictError extends Error {
-  constructor(message = "当前教学规划已变更，请确认后保留后续旧版本内容") {
+  constructor(message = "修改教学规划将重置后续流程，请确认后继续") {
     super(message);
     this.name = "CourseTeachingPlanConflictError";
   }
@@ -345,16 +346,25 @@ export async function resetTeachingPlan(db: TeachingPlanDb, courseId: string) {
   const reset = async (tx: TeachingPlanDb) => {
     const course = await getCourse(tx, courseId);
     const outline = await getConfirmedOutline(tx, course);
+    const storagePaths = await clearCourseDataAfterStage(tx as unknown as CourseDownstreamDb, courseId, "story_outline", "teaching_plan");
     const draft = buildFreshTeachingPlan(course, outline);
     const saved = await tx.courseTeachingPlan.upsert({
       where: { courseId },
       create: { courseId, status: "draft", ...planWriteData(draft) },
       update: { status: "draft", confirmedAt: null, ...planWriteData(draft) },
     });
-    await tx.course.update({ where: { id: courseId }, data: { currentStage: course.currentStage, lifecycleStatus: "draft" } });
-    return toTeachingPlan(saved);
+    return { storagePaths, state: {
+      plan: toTeachingPlan(saved),
+      course: {
+        id: course.id,
+        currentStage: "teaching_plan" as const,
+        staleFromStage: null,
+      },
+    } };
   };
-  return db.$transaction ? db.$transaction(reset) : reset(db);
+  const result = db.$transaction ? await db.$transaction(reset) : await reset(db);
+  await removeCourseImageFiles(result.storagePaths);
+  return result.state;
 }
 
 export async function getTeachingPlanState(db: TeachingPlanDb, courseId: string): Promise<TeachingPlanState> {
@@ -454,7 +464,7 @@ export async function saveTeachingPlan(db: TeachingPlanDb, courseId: string, pla
   return db.$transaction ? db.$transaction(save) : save(db);
 }
 
-export type TeachingPlanDownstreamAction = "check" | "preserve";
+export type TeachingPlanDownstreamAction = "check" | "reset";
 
 function hasGeneratedCourseContent(content: DbLessonContent | null) {
   if (!content) return false;
@@ -472,11 +482,12 @@ export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, 
     let existing = await tx.courseTeachingPlan.findUnique({ where: { courseId } });
     if (!existing) throw new TeachingPlanValidationError("教学规划信息不完整");
     let plan = toTeachingPlan(existing);
-    if (!inputPlan && plan.status === "confirmed") return { plan, course: { id: course.id, currentStage: course.currentStage, staleFromStage: course.staleFromStage ?? null } };
+    if (!inputPlan && plan.status === "confirmed") return { storagePaths: [], state: { plan, course: { id: course.id, currentStage: course.currentStage, staleFromStage: course.staleFromStage ?? null } } };
     const outlineChapterIds = toOutlineState(outline).chapters.map((chapter) => chapter.id);
 
     const content = tx.courseLessonContent?.findUnique ? await tx.courseLessonContent.findUnique({ where: { courseId } }) : null;
-    const hasDownstream = hasGeneratedCourseContent(content) || !["teaching_plan", "content"].includes(course.currentStage);
+    const hasDownstream = hasGeneratedCourseContent(content)
+      || await hasCourseDownstream(tx as unknown as CourseDownstreamDb, courseId, "content");
     if (hasDownstream && downstreamAction === "check") throw new CourseTeachingPlanConflictError();
 
     if (inputPlan) {
@@ -488,10 +499,9 @@ export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, 
     validateTeachingPlanForConfirm(plan, outlineChapterIds);
 
     const confirmedAt = new Date();
-    const confirmedStaleStage = staleStageAfterConfirming(course.staleFromStage, "teaching_plan", course.currentStage);
-    const nextStaleStage = hasDownstream
-      ? earliestCourseStage(confirmedStaleStage, nextCourseStage("teaching_plan")!)
-      : confirmedStaleStage;
+    const storagePaths = hasDownstream
+      ? await clearCourseDataAfterStage(tx as unknown as CourseDownstreamDb, courseId, "teaching_plan", "content")
+      : [];
     const [saved, updatedCourse] = await Promise.all([
       tx.courseTeachingPlan.update({
         where: { courseId },
@@ -500,20 +510,22 @@ export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, 
       tx.course.update({
         where: { id: courseId },
         data: {
-          currentStage: furthestCourseStage(course.currentStage, "content"),
-          staleFromStage: nextStaleStage,
+          currentStage: hasDownstream ? "content" : furthestCourseStage(course.currentStage, "content"),
+          staleFromStage: null,
           ...(hasDownstream ? { lifecycleStatus: "draft" } : {}),
         },
       }),
     ]);
-    return {
+    return { storagePaths, state: {
       plan: toTeachingPlan(saved),
       course: {
         id: updatedCourse.id,
         currentStage: updatedCourse.currentStage,
         staleFromStage: updatedCourse.staleFromStage ?? null,
       },
-    };
+    } };
   };
-  return db.$transaction ? db.$transaction(confirm) : confirm(db);
+  const result = db.$transaction ? await db.$transaction(confirm) : await confirm(db);
+  await removeCourseImageFiles(result.storagePaths);
+  return result.state;
 }

@@ -12,6 +12,7 @@ import {
   parseReadingTemplatePayload,
   repairFullyResolvesChapter,
   chapterTemplateRepairBundleSchema,
+  readingGenerationEnvelopeSchema,
   requiredChapterSlotIds,
   type ChapterTemplateRequirements,
   type GeneratedChapterTemplate,
@@ -33,8 +34,8 @@ const requirements: ChapterTemplateRequirements = {
 
 test("allows a small natural imbalance between two paragraphs while keeping the chapter total strict", () => {
   expect(paragraphWordBudgets(150, 2)).toEqual([
-    { paragraphIndex: 0, preferredRange: [67, 83], acceptedRange: [60, 95] },
-    { paragraphIndex: 1, preferredRange: [67, 83], acceptedRange: [60, 95] },
+    { paragraphIndex: 0, preferredRange: [67, 75], acceptedRange: [60, 95] },
+    { paragraphIndex: 1, preferredRange: [67, 75], acceptedRange: [60, 95] },
   ]);
 });
 
@@ -64,7 +65,7 @@ describe("Step4 fixed-slot production contract", () => {
     expect(result.cleanText).toContain("must stay together");
   });
 
-  test("allows a three-word paragraph drift only when the whole chapter word count is valid", () => {
+  test("reports only paragraphs that actually exceed the three-word tolerance", () => {
     const generated = validChapter();
     const baseline = compileChapterTemplate(generated, requirements);
     const secondParagraphText = baseline.cleanText.slice(baseline.cleanText.indexOf("The students"));
@@ -85,10 +86,9 @@ describe("Step4 fixed-slot production contract", () => {
       expect.objectContaining({ code: "paragraph_word_count" }),
     ]));
 
-    expect(compileChapterTemplate(generated, { ...tolerantRequirements, targetWordCount: 40 }).issues).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "paragraph_word_count" }),
-      expect.objectContaining({ code: "word_count" }),
-    ]));
+    const wholeChapterTooLong = compileChapterTemplate(generated, { ...tolerantRequirements, targetWordCount: 90 }).issues;
+    expect(wholeChapterTooLong).toEqual(expect.arrayContaining([expect.objectContaining({ code: "word_count" })]));
+    expect(wholeChapterTooLong).not.toEqual(expect.arrayContaining([expect.objectContaining({ code: "paragraph_word_count" })]));
   });
 
   test("passes the Step 2 usage plan and a compact valid JSON example to the model", () => {
@@ -110,11 +110,13 @@ describe("Step4 fixed-slot production contract", () => {
     expect(prompt).toContain("knowledgePointUsagePlan");
     expect(prompt).toContain("用于描述 Mia 的计划");
     expect(prompt).toContain("<formatExample>");
-    expect(prompt).toContain("上下界均为硬验收");
+    expect(prompt.slice(prompt.indexOf("<formatExample>"), prompt.indexOf("</formatExample>"))).toContain("{{VOC3}}");
     expect(prompt).toContain("contentIntent 是已确认的最终内容目标");
     expect(prompt).toContain("faithful");
     expect(prompt).toContain("observer");
-    expect(prompt).toContain('"chapterWordBudget":{"target":120,"preferredRange":[110,130],"acceptedRange":[100,145]}');
+    expect(prompt).toContain('"chapterWordBudget":{"target":120,"preferredRange":[110,120],"acceptedRange":[100,145]}');
+    expect(prompt).toContain("acceptedRange 仅是硬验收边界，不是生成目标");
+    expect(prompt).toContain("多词 answer 的每个英文词都计入");
     expect(prompt).toContain("英语正确性最高");
     expect(prompt).toContain("不得为题量、知识点、字数或故事表达让步");
     expect(prompt).toContain('"grammarSource":{"bookTitle":"English Grammar in Use","edition":"Fifth Edition","officialLevel":"B1–B2"}');
@@ -127,12 +129,27 @@ describe("Step4 fixed-slot production contract", () => {
     expect(prompt).toContain("仅允许 optionCloze 时，把完整的 'to verb' 作为 answer");
     expect(prompt).not.toContain("若目标是 to + verb，必须让该 GR 槽位使用 wordForm");
     expect(prompt).toContain("仅在完整句其他位置出现知识点");
-    expect(prompt).toContain("候选作答点将在下一次 AI 调用中独立审核定稿");
-    expect(prompt).toContain("禁止返回 distractors 或 options");
-    expect(prompt).not.toContain('"distractors"');
+    expect(prompt).toContain("不再经过第二次整课 AI 审核");
+    expect(prompt).toContain("不要返回 options 或 baseForm");
+    expect(prompt).toContain('"distractors"');
+    expect(prompt).toContain(`"contractVersion":"${STEP4_CONTENT_CONTRACT_VERSION}"`);
+    expect(prompt.indexOf("最终逐章核对")).toBeGreaterThan(prompt.indexOf("</context>"));
+    expect(prompt).toContain("template 中提取的全部 marker ID、slots 中的全部 ID，必须分别与 requiredSlotIds 完全一致");
     expect(prompt).not.toContain("所有 Present/Future 语法槽位必须位于直接话语的引号内");
     expect(prompt).not.toContain("禁止 will + V-ing（缺少 be）");
     expect(fixedInstructionLines.length).toBeLessThanOrEqual(18);
+  });
+
+  test("accepts harmless extra response metadata but requires the current one-pass contract", () => {
+    const payload = {
+      contractVersion: STEP4_CONTENT_CONTRACT_VERSION,
+      note: "ignored",
+      chapters: [{ ...validChapter(), note: "ignored", slots: validChapter().slots.map((slot) => ({ ...slot, note: "ignored" })) }],
+      mainIdea: { text: "Mia follows a plan.", note: "ignored" },
+    };
+
+    expect(readingGenerationEnvelopeSchema.parse(payload)).not.toHaveProperty("note");
+    expect(() => readingGenerationEnvelopeSchema.parse({ ...payload, contractVersion: undefined })).toThrow();
   });
 
   test("separates candidate story writing from final question review", () => {

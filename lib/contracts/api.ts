@@ -445,7 +445,7 @@ export type CourseStoryOutlineState = {
     rootRequestId?: string;
     retryAttempt?: number;
     action: string;
-    phase: "aligning" | "repairing_alignment_format" | "preparing_reference" | "searching_reference" | "generating_directions" | "generating_outline" | "revising";
+    phase: "aligning" | "repairing_alignment_format" | "preparing_reference" | "searching_reference" | "generating_mainline" | "generating_directions" | "generating_outline" | "revising";
     status: "running" | "succeeded" | "failed" | "result_unknown" | "superseded";
     errorMessage: string | null;
     startedAt: string;
@@ -472,7 +472,7 @@ export type CourseStoryMessageInput = {
   writingProvider?: StoryWritingProvider;
   storyComplexity?: StoryComplexity;
   requestId?: string;
-  preserveDownstream?: boolean;
+  resetDownstream?: boolean;
 };
 
 export type PresetKind = "theme" | "story_type" | "story_tone" | "grammar";

@@ -102,6 +102,7 @@ function createDb() {
         state.plan = { ...state.plan, ...data, updatedAt: new Date("2026-08-07T00:20:00.000Z") };
         return state.plan;
       }),
+      deleteMany: vi.fn(async () => { state.plan = null; return { count: 1 }; }),
     },
     knowledgePoint: {
       findMany: vi.fn(async ({ where }: { where: { id?: { in: string[] }; bookEditionId?: string } }) => state.knowledgePoints.filter((point) => {
@@ -125,6 +126,17 @@ function createDb() {
     courseContentChatMessage: { deleteMany: vi.fn(async () => ({ count: 1 })) },
     $transaction: async <T>(callback: (tx: TeachingPlanDb) => Promise<T>) => callback(db),
   } as unknown as TeachingPlanDb & { state: typeof state };
+  Object.assign(db, {
+    courseImage: {
+      findMany: vi.fn(async () => []),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+    },
+    courseVisualImageSlot: { updateMany: vi.fn(async () => ({ count: 0 })), deleteMany: vi.fn(async () => ({ count: 0 })) },
+    courseCharacterVisual: { updateMany: vi.fn(async () => ({ count: 0 })), deleteMany: vi.fn(async () => ({ count: 0 })) },
+    courseVisualResourcePlan: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    coursePresentation: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+  });
   return db;
 }
 
@@ -186,16 +198,18 @@ describe("teaching plan repository", () => {
     edited.chapters[0].targetWordCount = 200;
     edited.chapters[0].knowledgePointIds = ["grammar-2"];
     await saveTeachingPlan(db, "course-1", edited);
-    db.state.course = { ...db.state.course, currentStage: "content" };
+    db.state.course = { ...db.state.course, currentStage: "content", staleFromStage: "teaching_plan" };
     db.state.contentExists = true;
 
     const reset = await resetTeachingPlan(db, "course-1");
 
-    expect(reset.status).toBe("draft");
-    expect(reset.chapters[0]).toMatchObject({ targetWordCount: 130, knowledgePointIds: ["grammar-1"] });
-    expect(reset.confirmedAt).toBeNull();
-    expect(db.state.course.currentStage).toBe("content");
-    expect(db.state.contentExists).toBe(true);
+    expect(reset.plan.status).toBe("draft");
+    expect(reset.plan.chapters[0]).toMatchObject({ targetWordCount: 130, knowledgePointIds: ["grammar-1"] });
+    expect(reset.plan.confirmedAt).toBeNull();
+    expect(reset.course.staleFromStage).toBeNull();
+    expect(db.state.course.currentStage).toBe("teaching_plan");
+    expect(db.state.course.staleFromStage).toBeNull();
+    expect(db.state.contentExists).toBe(false);
   });
 
   test("does not create a plan before story outline is confirmed", async () => {
@@ -304,7 +318,7 @@ describe("teaching plan repository", () => {
     expect(result.plan.confirmedAt).toBeTruthy();
   });
 
-  test("requires confirmation and preserves stale Step 4 content after an edited plan is reconfirmed", async () => {
+  test("requires confirmation and deletes Step 4 content after an edited plan is reconfirmed", async () => {
     const db = createDb();
     const state = await getTeachingPlanState(db, "course-1");
     await saveTeachingPlan(db, "course-1", completePlan(state.plan));
@@ -312,12 +326,12 @@ describe("teaching plan repository", () => {
     db.state.contentExists = true;
 
     await expect(confirmTeachingPlan(db, "course-1", "check")).rejects.toBeInstanceOf(CourseTeachingPlanConflictError);
-    const result = await confirmTeachingPlan(db, "course-1", "preserve");
+    const result = await confirmTeachingPlan(db, "course-1", "reset");
 
-    expect(db.state.contentExists).toBe(true);
-    expect(result.course.staleFromStage).toBe("content");
-    expect(db.courseContentChatMessage?.deleteMany).not.toHaveBeenCalled();
-    expect(db.courseContentGeneration?.deleteMany).not.toHaveBeenCalled();
+    expect(db.state.contentExists).toBe(false);
+    expect(result.course.staleFromStage).toBeNull();
+    expect(db.courseContentChatMessage?.deleteMany).toHaveBeenCalled();
+    expect(db.courseContentGeneration?.deleteMany).toHaveBeenCalled();
   });
 
   test("does not mark an untouched empty Step 4 shell stale after the plan changes", async () => {
@@ -339,18 +353,18 @@ describe("teaching plan repository", () => {
     expect(result.course.staleFromStage).toBeNull();
   });
 
-  test("confirms the new plan while preserving existing downstream content when chosen", async () => {
+  test("confirms the new plan and deletes existing downstream content when chosen", async () => {
     const db = createDb();
     const state = await getTeachingPlanState(db, "course-1");
     await saveTeachingPlan(db, "course-1", completePlan(state.plan));
     db.state.contentExists = true;
 
-    const result = await confirmTeachingPlan(db, "course-1", "preserve");
+    const result = await confirmTeachingPlan(db, "course-1", "reset");
 
     expect(result.plan.status).toBe("confirmed");
     expect(result.course.currentStage).toBe("content");
-    expect(db.state.contentExists).toBe(true);
-    expect(db.courseLessonContent?.deleteMany).not.toHaveBeenCalled();
+    expect(db.state.contentExists).toBe(false);
+    expect(db.courseLessonContent?.deleteMany).toHaveBeenCalled();
   });
 
   test("reconfirming an unchanged confirmed plan is idempotent and keeps the furthest stage", async () => {

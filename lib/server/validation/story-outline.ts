@@ -73,7 +73,7 @@ export const storyOutlineMessageSchema = z.object({
   writingProvider: storyWritingProviderSchema.optional(),
   storyComplexity: storyComplexitySchema.optional(),
   requestId: z.string().uuid().optional(),
-  preserveDownstream: z.boolean().optional(),
+  resetDownstream: z.boolean().optional(),
 });
 
 const sourceReferenceSchema = z.object({
@@ -156,7 +156,7 @@ const newStoryOutlineSchema = z.object({
 
 export const storyOutlineSaveSchema = z.object({
   outline: newStoryOutlineSchema,
-  preserveDownstream: z.boolean().optional(),
+  resetDownstream: z.boolean().optional(),
 });
 
 export const referenceMaterialUpdateSchema = sourceReferenceSchema.pick({

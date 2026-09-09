@@ -326,17 +326,22 @@ describe("CourseTeachingPlanWorkspace", () => {
   });
 
   test("resets the teaching plan from the current outline after confirmation", async () => {
+    const initial = state();
+    initial.course.currentStage = "content";
+    initial.course.staleFromStage = "teaching_plan";
     const freshPlan = {
-      ...state().plan,
-      chapters: state().plan.chapters.map((chapter, index) => ({
+      ...initial.plan,
+      chapters: initial.plan.chapters.map((chapter, index) => ({
         ...chapter,
         targetWordCount: 120,
         knowledgePointIds: [`grammar-${index + 1}`],
       })),
     };
-    const fetchMock = vi.fn(async () => Response.json({ plan: freshPlan }));
+    const fetchMock = vi.fn(async () => Response.json({ plan: freshPlan, course: { id: "course-1", currentStage: "content", staleFromStage: "content" } }));
     vi.stubGlobal("fetch", fetchMock);
-    render(<CourseTeachingPlanWorkspace initialState={state()} />);
+    render(<CourseTeachingPlanWorkspace initialState={initial} />);
+
+    expect(screen.getByText("当前内容仍是旧版本。")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "重置教学规划" }));
     expect(screen.getByRole("dialog", { name: "重置教学规划？" })).toBeInTheDocument();
@@ -349,6 +354,30 @@ describe("CourseTeachingPlanWorkspace", () => {
     ));
     await waitFor(() => expect(screen.getByLabelText("第 1 章目标词数")).toHaveValue(120));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "重置教学规划？" })).not.toBeInTheDocument());
+    expect(screen.queryByText("当前内容仍是旧版本。")).not.toBeInTheDocument();
+  });
+
+  test("makes chapter, homework, and course question totals visually scannable", () => {
+    const initial = state();
+    initial.plan.afterClassPractice = {
+      ...initial.plan.afterClassPractice,
+      enabled: true,
+      practice: { ...initial.plan.afterClassPractice.practice, enabled: true },
+    };
+    render(<CourseTeachingPlanWorkspace initialState={initial} />);
+
+    expect(screen.getByLabelText("第 1 章目标词数")).toHaveClass("text-xl", "font-bold", "tabular-nums");
+    expect(screen.getByLabelText("第 1 章正文页数")).toHaveClass("text-xl", "font-bold", "tabular-nums");
+    expect(screen.getByLabelText("第 1 章正文语法题总数数量")).toHaveClass("text-xl", "text-primary");
+    expect(screen.getByTestId("chapter-1-reading-question-count")).toHaveTextContent("10");
+    expect(screen.getByTestId("chapter-1-reading-question-count")).toHaveClass("font-bold", "tabular-nums");
+    expect(screen.getByTestId("course-question-total")).toHaveTextContent("50");
+
+    fireEvent.click(screen.getByRole("tab", { name: /课后设置/ }));
+    expect(screen.getByLabelText("课后阅读目标词数")).toHaveClass("text-xl", "font-bold", "tabular-nums");
+    expect(screen.getByTestId("homework-question-equation")).toHaveTextContent("2 × 5 = 共 10 题");
+    expect(screen.getByTestId("homework-page-estimate")).toHaveTextContent("预计约 2 页");
+    expect(screen.getByTestId("homework-page-estimate")).toHaveClass("bg-background", "text-muted-foreground");
   });
 
   test("toggles the single vocabulary type without saving early", async () => {
@@ -505,7 +534,8 @@ describe("CourseTeachingPlanWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "语法习题已关闭" }));
 
     expect(screen.getByText("已默认选中各章节使用的知识点；取消勾选即可排除不需要考查的内容。")).toBeInTheDocument();
-    expect(screen.getByText("2 个知识点 × 5 题 = 10 题 · 预计约 2 页")).toBeInTheDocument();
+    expect(screen.getByTestId("homework-question-equation")).toHaveTextContent("2 × 5 = 共 10 题");
+    expect(screen.getByTestId("homework-page-estimate")).toHaveTextContent("预计约 2 页");
     expect(screen.getByLabelText("课后练习选项填空")).toBeChecked();
     expect(screen.getByLabelText("课后练习给词变形")).toBeChecked();
     expect(screen.getByLabelText("一般过去时 · Past Simple · Unit 1")).toBeChecked();
@@ -640,21 +670,20 @@ describe("CourseTeachingPlanWorkspace", () => {
     render(<CourseTeachingPlanWorkspace initialState={{ ...state(), course: { ...state().course, currentStage: "preview" } }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "确认并进入文案与练习" }));
-    await waitFor(() => expect(screen.getByRole("heading", { name: "后续内容需要更新" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "修改将重置后续流程" })).toBeInTheDocument());
     expect(screen.getByText("视觉资源和图片")).toBeInTheDocument();
     expect(screen.queryByText("预览发布设置")).not.toBeInTheDocument();
-    expect(screen.getByText("保存后，以下内容仍会保留修改前的版本：")).toBeInTheDocument();
-    expect(screen.getByText(/系统不会自动删除/)).toBeInTheDocument();
-    const dialog = screen.getByRole("dialog", { name: "后续内容需要更新" });
-    expect(within(dialog).queryByRole("button", { name: /清空|删除/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/系统不会自动删除/).closest(".bg-amber-50")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "保存修改并继续" }));
+    expect(screen.getByText("保存成功后，以下内容会被删除，需要重新生成：")).toBeInTheDocument();
+    expect(screen.getByText(/此操作不可撤销/)).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "修改将重置后续流程" });
+    expect(within(dialog).getByRole("button", { name: "确认修改并重置后续流程" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认修改并重置后续流程" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/courses/course-1/teaching-plan/confirm",
       expect.objectContaining({ method: "POST" }),
     ));
-    expect(JSON.parse(String((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body))).toMatchObject({ downstreamAction: "preserve", plan: state().plan });
+    expect(JSON.parse(String((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body))).toMatchObject({ downstreamAction: "reset", plan: state().plan });
   });
 
   test("applies the changed plan and continues when preserving downstream content", async () => {
@@ -665,13 +694,13 @@ describe("CourseTeachingPlanWorkspace", () => {
     render(<CourseTeachingPlanWorkspace initialState={state()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "确认并进入文案与练习" }));
-    fireEvent.click(await screen.findByRole("button", { name: "保存修改并继续" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认修改并重置后续流程" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/courses/course-1/teaching-plan/confirm",
       expect.objectContaining({ method: "POST" }),
     ));
-    expect(JSON.parse(String((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body))).toMatchObject({ downstreamAction: "preserve" });
+    expect(JSON.parse(String((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body))).toMatchObject({ downstreamAction: "reset" });
     expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/content");
   });
 
@@ -689,5 +718,43 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/content");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.queryByRole("heading", { name: "当前配置已变更" })).not.toBeInTheDocument();
+  });
+
+  test("reconfirms an expired confirmed plan instead of bypassing the stale boundary", async () => {
+    const viewed = state();
+    viewed.plan.status = "confirmed";
+    viewed.plan.confirmedAt = "2026-08-07T00:10:00.000Z";
+    viewed.course.currentStage = "preview";
+    viewed.course.staleFromStage = "teaching_plan";
+    const fetchMock = vi.fn(async () => Response.json({
+      plan: viewed.plan,
+      course: { id: "course-1", currentStage: "preview", staleFromStage: "content" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseTeachingPlanWorkspace initialState={viewed} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "确认并进入文案与练习" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/courses/course-1/teaching-plan/confirm",
+      expect.objectContaining({ method: "POST" }),
+    ));
+  });
+
+  test("does not advance Step 3 while an earlier stale boundary is unresolved", async () => {
+    const viewed = state();
+    viewed.plan.status = "confirmed";
+    viewed.plan.confirmedAt = "2026-08-07T00:10:00.000Z";
+    viewed.course.currentStage = "preview";
+    viewed.course.staleFromStage = "story_outline";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseTeachingPlanWorkspace initialState={viewed} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "确认并进入文案与练习" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("请先返回提示对应的阶段处理");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(pushMock).not.toHaveBeenCalled();
   });
 });

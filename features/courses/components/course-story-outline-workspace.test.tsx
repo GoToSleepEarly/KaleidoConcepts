@@ -710,7 +710,7 @@ describe("CourseStoryOutlineWorkspace", () => {
       }],
     }} />);
 
-    expect(screen.queryByRole("button", { name: "旧确认" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "旧确认" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("故事想法"), { target: { value: "另一条尚未发送的想法" } });
     fireEvent.click(screen.getByRole("button", { name: "调整创作需求并继续" }));
 
@@ -972,7 +972,9 @@ describe("CourseStoryOutlineWorkspace", () => {
 
     const selectionMessage = screen.getByText("我选择并生成故事大纲：海底谜题");
     expect(selectionMessage).toBeInTheDocument();
-    expect(selectionMessage.closest("article")).toHaveTextContent(/^我选择并生成故事大纲：海底谜题$/);
+    expect(selectionMessage.closest("article")).toHaveTextContent("我的要求");
+    expect(selectionMessage.closest("article")).toHaveTextContent("按钮操作");
+    expect(selectionMessage.closest("article")).toHaveAttribute("data-request-id");
 
     await waitFor(() => {
       const body = fetchBody(fetchMock);
@@ -994,12 +996,12 @@ describe("CourseStoryOutlineWorkspace", () => {
     }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
-    expect(screen.getByRole("heading", { name: "重新生成故事大纲？" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "修改将重置后续流程" })).toBeInTheDocument();
     expect(fetchBodyCallCount(fetchMock)).toBe(0);
-    expect(screen.getByText(/不会自动更新，也不会被删除/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "继续重新生成" }));
+    expect(screen.getByText(/生成成功后.*会被删除/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认并开始生成" }));
 
-    await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({ action: "regenerate_outline", preserveDownstream: true }));
+    await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({ action: "regenerate_outline", resetDownstream: true }));
   });
 
   test("asks before revising a chapter that already has a teaching plan", async () => {
@@ -1016,13 +1018,13 @@ describe("CourseStoryOutlineWorkspace", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
-    expect(screen.getByRole("heading", { name: "继续修改故事大纲？" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "修改将重置后续流程" })).toBeInTheDocument();
     expect(fetchBodyCallCount(fetchMock)).toBe(0);
-    fireEvent.click(screen.getByRole("button", { name: "继续修改" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认并开始生成" }));
 
     await waitFor(() => expect(fetchBody(fetchMock)).toMatchObject({
       action: "revise_chapter",
-      preserveDownstream: true,
+      resetDownstream: true,
       targetChapterOrder: 1,
     }));
   });
@@ -1045,10 +1047,10 @@ describe("CourseStoryOutlineWorkspace", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
-    await waitFor(() => expect(screen.getByRole("heading", { name: "继续修改故事大纲？" })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "继续修改" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "修改将重置后续流程" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "确认并开始生成" }));
 
-    await waitFor(() => expect(fetchBody(fetchMock, 1)).toMatchObject({ action: "revise_chapter", preserveDownstream: true }));
+    await waitFor(() => expect(fetchBody(fetchMock, 1)).toMatchObject({ action: "revise_chapter", resetDownstream: true }));
   });
 
   test("lands on the outline when one response adds references and finishes the outline", async () => {
@@ -1412,8 +1414,67 @@ describe("CourseStoryOutlineWorkspace", () => {
       },
     }} />);
 
-    expect(screen.getByTestId("ai-operation-completion")).toHaveTextContent("处理完成");
+    expect(screen.getByTestId("ai-operation-completion")).toHaveTextContent("已完成");
     expect(screen.getByTestId("ai-operation-completion")).toHaveTextContent("故事大纲已生成，右侧显示的是最新版本。");
+  });
+
+  test("keeps completed Step 2 operations as styled history cards after newer messages arrive", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      chatMessages: [
+        {
+          id: "assistant-history",
+          courseId: "course-1",
+          role: "assistant",
+          content: "故事方向已经生成。",
+          actions: [],
+          source: "ai",
+          requestId: "request-history",
+          action: "generate_directions",
+          retryAttempt: 2,
+          metadata: { operationTitle: "生成 3 个故事方向", durationMs: 65_000 },
+          createdAt: "2026-08-30T07:58:00.000Z",
+        },
+        { id: "teacher-later", courseId: "course-1", role: "teacher", content: "我选择第一个方向。", actions: [], source: "ui_action", createdAt: "2026-08-30T07:59:00.000Z" },
+      ],
+      operation: {
+        requestId: "request-new",
+        action: "confirm_direction",
+        phase: "generating_outline",
+        status: "running",
+        errorMessage: null,
+        startedAt: "2026-08-30T07:59:00.000Z",
+        updatedAt: "2026-08-30T07:59:00.000Z",
+      },
+    }} />);
+
+    const historyCard = screen.getByTestId("story-operation-history-card");
+    expect(historyCard).toHaveTextContent("生成 3 个故事方向");
+    expect(historyCard).toHaveTextContent("已完成");
+    expect(historyCard).toHaveTextContent("第 2 次尝试");
+    expect(historyCard).toHaveTextContent("执行用时 1 分 05 秒");
+    expect(historyCard).not.toHaveTextContent("进行中");
+    expect(historyCard).toHaveClass("border", "bg-card", "shadow-sm");
+    expect(screen.getByText("我选择第一个方向。").closest("article")).toHaveTextContent("按钮操作");
+  });
+
+  test("keeps an older retryable Step 2 operation marked as failed", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      chatMessages: [{
+        id: "assistant-failed-history",
+        courseId: "course-1",
+        role: "assistant",
+        content: "故事大纲返回的内容结构不完整。",
+        actions: [{ id: "retry-old", label: "重试本步", action: "retry_operation", targetId: "request-old" }],
+        source: "ai",
+        requestId: "request-old",
+        action: "confirm_direction",
+        createdAt: "2026-08-30T07:58:00.000Z",
+      }],
+    }} />);
+
+    expect(screen.getByTestId("story-operation-history-card")).toHaveTextContent("未完成");
   });
 
   test("shows elapsed seconds and long-wait hint while generating", async () => {
@@ -1457,9 +1518,9 @@ describe("CourseStoryOutlineWorkspace", () => {
     }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "重新开始本轮构思" }));
-    expect(screen.getByText(/将删除当前故事构思并重新开始/)).toBeInTheDocument();
-    expect(screen.getByText(/教学规划及后续内容不会被删除/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "删除故事构思并重新开始" }));
+    expect(screen.getByText(/将删除当前故事构思、教学规划/)).toBeInTheDocument();
+    expect(screen.getByText(/教学规划、文案与练习、视觉资源和预览设置/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "删除并重置故事大纲" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       "/api/courses/course-1/story-outline/reset",
@@ -1648,7 +1709,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getByText("我确认这份故事主线，请生成故事大纲。")).toBeInTheDocument();
   });
 
-  test("hides expired clarification forms and mainline actions after confirmation", () => {
+  test("hides expired clarification forms and disables completed mainline actions", () => {
     render(<CourseStoryOutlineWorkspace initialState={{
       ...emptyState,
       alignment: {
@@ -1685,8 +1746,8 @@ describe("CourseStoryOutlineWorkspace", () => {
     }} />);
 
     expect(screen.queryByRole("button", { name: "确认回答并继续" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "确认主线并生成大纲" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "修改主线理解" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认主线并生成大纲" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "修改主线理解" })).toBeDisabled();
   });
 
   test("shows mainline actions only on the latest pending mainline card", () => {
@@ -1721,8 +1782,10 @@ describe("CourseStoryOutlineWorkspace", () => {
       ],
     }} />);
 
-    expect(screen.getAllByRole("button", { name: "确认主线并生成大纲" })).toHaveLength(1);
-    expect(screen.getAllByRole("button", { name: "修改主线理解" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "确认主线并生成大纲" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "确认主线并生成大纲" }).filter((button) => !button.hasAttribute("disabled"))).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "修改主线理解" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "修改主线理解" }).filter((button) => !button.hasAttribute("disabled"))).toHaveLength(1);
   });
 
   test("marks the existing outline and characters as outdated after the creative requirement changes", () => {
@@ -1767,9 +1830,30 @@ describe("CourseStoryOutlineWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "下一步：教学规划" }));
 
+    expect(screen.queryByTestId("ai-operation-status")).not.toBeInTheDocument();
     expect(screen.queryByText("正在确认故事大纲...", { exact: false })).not.toBeInTheDocument();
     resolveResponse(Response.json({ course: { id: "course-1", currentStage: "teaching_plan" } }));
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/teaching-plan"));
+  });
+
+  test("keeps completed earlier chat actions visible but disabled", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      alignment: {
+        ...outlineState.alignment!,
+        status: "confirmed",
+      },
+      chatMessages: [{
+        id: "completed-requirement-card",
+        courseId: "course-1",
+        role: "assistant",
+        content: "请确认创作理解。",
+        actions: [{ id: "confirm-requirements", label: "确认需求", action: "confirm_requirements" }],
+        createdAt: "2026-08-14T00:00:00.000Z",
+      }],
+    }} />);
+
+    expect(screen.getByRole("button", { name: "确认需求" })).toBeDisabled();
   });
 
   test("continues directly from the bottom action when an existing outline is only viewed", () => {

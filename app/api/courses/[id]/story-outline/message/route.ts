@@ -14,7 +14,7 @@ import {
   publicStoryOutlineErrorMessage,
 } from "@/lib/server/repositories/story-outline";
 import { storyOutlineMessageSchema } from "@/lib/server/validation/story-outline";
-import { hasCourseDownstream, markCourseDownstreamStale, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
+import { clearCourseAfterStage, hasCourseDownstream, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 
 const outlineMutationActions = new Set([
   "confirm_direction",
@@ -39,12 +39,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (parsed.data.action && outlineMutationActions.has(parsed.data.action)) {
       const downstreamDb = db as unknown as CourseDownstreamDb;
       const hasDownstream = await hasCourseDownstream(downstreamDb, id, "story_outline");
-      if (hasDownstream && parsed.data.preserveDownstream !== true) {
-        return NextResponse.json({ message: "修改后，后续内容仍会保留修改前的版本", requiresReset: true }, { status: 409 });
+      if (hasDownstream && parsed.data.resetDownstream !== true) {
+        return NextResponse.json({ message: "本次修改成功后将重置后续流程", requiresReset: true }, { status: 409 });
       }
       if (hasDownstream) {
         await handleStoryOutlineMessage(db, id, input, createStoryOutlineGenerationDeps(aiGateway));
-        await markCourseDownstreamStale(downstreamDb, id, "story_outline");
+        await clearCourseAfterStage(downstreamDb, id, "story_outline", "story_outline");
         return NextResponse.json(await getStoryOutlineState(db, id));
       }
     }

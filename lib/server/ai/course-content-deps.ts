@@ -7,14 +7,12 @@ import { AiProviderResultUnknownError, createStoryOutlineProvider } from "@/lib/
 import type { AiProviderSettingsInput } from "@/lib/ai-gateway";
 import { devAiLog } from "@/lib/server/ai/dev-ai-log";
 import {
-  applyReadingReview,
   buildReadingTemplatePrompt,
-  buildReadingTemplateFinalizationPrompt,
   buildReadingTemplateRepairPrompt,
   chapterTemplateRepairBundleSchema,
   parseReadingTemplatePayload,
-  readingCandidateEnvelopeSchema,
-  readingReviewBundleSchema,
+  readingGenerationEnvelopeSchema,
+  safeReadingGenerationRange,
   type ChapterTemplateIssue,
   type ChapterTemplateRequirements,
   type GeneratedChapterTemplate,
@@ -189,7 +187,7 @@ export function buildReadingPromptContext(input: CourseContentPromptInput) {
         summary: replaceNames(outline.summary),
         targetWordCount,
         acceptedWordCountRange: wordCountPolicy.validationRange,
-        generationAimRange: wordCountPolicy.generationRange,
+        generationAimRange: safeReadingGenerationRange(targetWordCount),
         paragraphCount,
         grammarPoints: selectedPoints(plan.knowledgePointIds, points),
         ...(knowledgePointUsagePlan ? { knowledgePointUsagePlan } : {}),
@@ -329,7 +327,8 @@ export function buildPromptQuestions(input: CourseContentPromptInput, questions:
 export function buildReadingRepairRequirements(input: CourseContentPromptInput, failedChapters: CourseContentChapter[]) {
   return failedChapters.map((chapter) => {
     const targetWordCount = input.plan.chapters.find((item) => item.outlineChapterId === chapter.outlineChapterId)?.targetWordCount ?? chapter.targetWordCount;
-    const { validationRange: acceptedRange, generationRange: aimRange } = englishWordRangesForTarget(targetWordCount);
+    const { validationRange: acceptedRange } = englishWordRangesForTarget(targetWordCount);
+    const aimRange = safeReadingGenerationRange(targetWordCount);
     const currentWordCount = englishWordCount(chapter.paragraphs.map(buildCleanParagraphText).join(" "));
     const base = { outlineChapterId: chapter.outlineChapterId, currentWordCount, targetWordCount, acceptedRange, aimRange };
     if (currentWordCount < acceptedRange[0]) return {
@@ -450,12 +449,23 @@ export function contentReadingTimeoutMs(value = process.env.COURSE_CONTENT_GENER
 }
 
 export const courseContentFormatRepairAttempts = 1;
-export const courseContentReviewReasoningEffort = "medium" as const;
-
+export const courseContentReasoningEfforts = {
+  readingGeneration: "medium",
+  readingRepair: "low",
+  exerciseGeneration: "medium",
+  exerciseRepair: "low",
+  modification: "medium",
+  formatRepair: "low",
+} as const;
 function assertExactChapterKeys(actual: string[], expected: string[], message: string) {
   if (!sameStringSet(actual, expected) || new Set(actual).size !== actual.length) {
     throw new Error(`${message}（期望：${expected.join("、") || "空"}；实际：${actual.join("、") || "空"}）`);
   }
+}
+
+export function assertExerciseGenerationChapterKeys(actual: string[], input: CourseContentPromptInput, cleanChapters: CleanChapterInput[]) {
+  const expected = buildExercisePromptContext(input, cleanChapters).chapters.map((chapter) => chapter.id);
+  assertExactChapterKeys(actual, expected, "练习章节短键不完整");
 }
 
 type ReadingRepairIdentity =
@@ -525,7 +535,7 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
         responseStartedAt = Date.now();
         raw = await call(writingProvider, `${operation}_repair_format`, jsonOnly([
           "只做一次 JSON 或 Schema 格式整理，不重新创作语义内容。删除多余字段，并把已经存在的旧字段机械转换为 expectedSchema；缺少答案、正文、题干或知识点等语义内容时不得编造。不得改写故事、题干、答案或知识点。",
-        ], { rawOutput: raw, expectedSchema: schemaDescriptions[schemaKey], parseError: error instanceof Error ? error.message : parseMessage }), timeoutMs);
+        ], { rawOutput: raw, expectedSchema: schemaDescriptions[schemaKey], parseError: error instanceof Error ? error.message : parseMessage }), timeoutMs, { reasoningEffort: courseContentReasoningEfforts.formatRepair });
       }
     }
     throw new Error(parseMessage);
@@ -550,19 +560,16 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
   };
 
   return {
-    generateReading: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, onCandidateReady?: () => Promise<void>) => {
+    generateReading: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, onGenerationReady?: () => Promise<void>) => {
       const chapterProtocol = createCourseContentChapterKeyProtocol(input);
       const requirements = buildReadingTemplateRequirements(input);
       const context = buildReadingTemplatePromptContext(chapterProtocol.input);
-      const candidateStartedAt = Date.now();
-      const candidateResponse = await callWithUsage(writingProvider, "content_generate_reading_candidates_v3", buildReadingTemplatePrompt(context), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 6_500 });
-      const candidateOutput = parseWithDiagnostics(candidateResponse.text, readingCandidateEnvelopeSchema, "正文候选结构无效", "content_generate_reading_candidates_v3", candidateStartedAt);
-      assertExactChapterKeys(candidateOutput.chapters.map((chapter) => chapter.outlineChapterId), chapterProtocol.keys, "正文候选章节短键不完整");
-      await onCandidateReady?.();
-      const finalStartedAt = Date.now();
-      const finalResponse = await callWithUsage(writingProvider, "content_finalize_reading_questions_v3", buildReadingTemplateFinalizationPrompt(candidateOutput, context), contentReadingTimeoutMs(), { reasoningEffort: courseContentReviewReasoningEffort, maxOutputTokens: 6_500 });
-      const review = parseWithDiagnostics(finalResponse.text, readingReviewBundleSchema, "正文题目审核结构无效", "content_finalize_reading_questions_v3", finalStartedAt);
-      const payload = applyReadingReview(candidateOutput, review);
+      const generationStartedAt = Date.now();
+      const response = await callWithUsage(writingProvider, "content_generate_reading_v4", buildReadingTemplatePrompt(context), contentReadingTimeoutMs(), { reasoningEffort: courseContentReasoningEfforts.readingGeneration, maxOutputTokens: 6_500 });
+      const latencyMs = Date.now() - generationStartedAt;
+      const payload = parseWithDiagnostics(response.text, readingGenerationEnvelopeSchema, "阅读内容结构无效", "content_generate_reading_v4", generationStartedAt);
+      assertExactChapterKeys(payload.chapters.map((chapter) => chapter.outlineChapterId), chapterProtocol.keys, "阅读内容章节短键不完整");
+      await onGenerationReady?.();
       const restoredPayload = {
         ...payload,
         chapters: payload.chapters.map((chapter) => ({
@@ -570,7 +577,7 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
           outlineChapterId: chapterProtocol.toOutlineChapterId(chapter.outlineChapterId),
         })),
       };
-      return { ...parseReadingTemplatePayload(restoredPayload, requirements), candidateUsage: candidateResponse.usage, usage: finalResponse.usage };
+      return { ...parseReadingTemplatePayload(restoredPayload, requirements), usage: response.usage, latencyMs };
     },
 
     repairReading: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, targets: ReadingTemplateRepairTarget[], mainIdeaTarget?: { current: { text: string } | null; issues: string[] }) => {
@@ -581,7 +588,8 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
         requirements: { ...target.requirements, outlineChapterId: chapterProtocol.toKey(target.requirements.outlineChapterId) },
       }));
       const startedAt = Date.now();
-      const response = await callWithUsage(writingProvider, "content_repair_reading_v2", buildReadingTemplateRepairPrompt(keyedTargets, buildReadingTemplatePromptContext(chapterProtocol.input), mainIdeaTarget), contentReadingTimeoutMs(), { reasoningEffort: "low", maxOutputTokens: 6_500 });
+      const response = await callWithUsage(writingProvider, "content_repair_reading_v2", buildReadingTemplateRepairPrompt(keyedTargets, buildReadingTemplatePromptContext(chapterProtocol.input), mainIdeaTarget), contentReadingTimeoutMs(), { reasoningEffort: courseContentReasoningEfforts.readingRepair, maxOutputTokens: 6_500 });
+      const latencyMs = Date.now() - startedAt;
       const bundle = parseWithDiagnostics(response.text, chapterTemplateRepairBundleSchema, "正文最小修复结构解析失败", "content_repair_reading_v2", startedAt);
       assertReadingRepairCoverage(bundle.repairs, keyedTargets.map((target) => target.requirements.outlineChapterId));
       const repairs = bundle.repairs.map((repair) => {
@@ -590,14 +598,14 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
           ? { ...repair, outlineChapterId, chapter: { ...repair.chapter, outlineChapterId } }
           : { ...repair, outlineChapterId };
       });
-      return { ...bundle, repairs, usage: response.usage };
+      return { ...bundle, repairs, usage: response.usage, latencyMs };
     },
 
     generateExercises: async (input: CourseContentPromptInput, writingProvider: StoryWritingProvider, cleanChapters: CleanChapterInput[]) => {
       const chapterProtocol = createCourseContentChapterKeyProtocol(input);
       const keyedCleanChapters = cleanChapters.map((chapter) => ({ ...chapter, outlineChapterId: chapterProtocol.toKey(chapter.outlineChapterId) }));
-      const generated = await structuredCall(writingProvider, "content_generate_exercises", buildExerciseGenerationPrompt(chapterProtocol.input, keyedCleanChapters), generatedExercisesSchema, "exercises", "练习结构解析失败", undefined, { reasoningEffort: "medium" });
-      assertExactChapterKeys(generated.chapters.map((chapter) => chapter.outlineChapterId), chapterProtocol.keys, "练习章节短键不完整");
+      const generated = await structuredCall(writingProvider, "content_generate_exercises", buildExerciseGenerationPrompt(chapterProtocol.input, keyedCleanChapters), generatedExercisesSchema, "exercises", "练习结构解析失败", undefined, { reasoningEffort: courseContentReasoningEfforts.exerciseGeneration });
+      assertExerciseGenerationChapterKeys(generated.chapters.map((chapter) => chapter.outlineChapterId), chapterProtocol.input, keyedCleanChapters);
       return {
         ...generated,
         chapters: generated.chapters.map((chapter) => ({ ...chapter, outlineChapterId: chapterProtocol.toOutlineChapterId(chapter.outlineChapterId) })),
@@ -612,7 +620,7 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
         chapters: currentExercises.chapters.map((chapter) => ({ ...chapter, outlineChapterId: chapterProtocol.toKey(chapter.outlineChapterId) })),
       };
       const keyedCleanChapters = cleanChapters.map((chapter) => ({ ...chapter, outlineChapterId: chapterProtocol.toKey(chapter.outlineChapterId) }));
-      const repaired = await structuredCall(writingProvider, "content_repair_exercises", buildExerciseRepairPrompt(chapterProtocol.input, keyedFailedTargets, keyedCurrentExercises, keyedCleanChapters), generatedExercisesSchema, "exercises", "练习修复结构解析失败");
+      const repaired = await structuredCall(writingProvider, "content_repair_exercises", buildExerciseRepairPrompt(chapterProtocol.input, keyedFailedTargets, keyedCurrentExercises, keyedCleanChapters), generatedExercisesSchema, "exercises", "练习修复结构解析失败", undefined, { reasoningEffort: courseContentReasoningEfforts.exerciseRepair });
       assertExactChapterKeys(repaired.chapters.map((chapter) => chapter.outlineChapterId), keyedFailedTargets.filter((target) => target.id !== "homework").map((target) => target.id), "练习修复章节短键不完整");
       return {
         ...repaired,
@@ -628,7 +636,7 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
       "如目标含题目，必须保持原题型、题量和知识点映射，并使用严格题型契约。",
       ...modificationOutputRules(targetType),
       "输出前核对目标范围、必填字段和 constraints；不要输出核对过程。",
-    ], buildModificationPromptContext(targetType, target, instruction, constraints, relatedContext)), generatedModificationSchema, "modification", "修改结果结构解析失败"),
+    ], buildModificationPromptContext(targetType, target, instruction, constraints, relatedContext)), generatedModificationSchema, "modification", "修改结果结构解析失败", undefined, { reasoningEffort: courseContentReasoningEfforts.modification }),
   };
 }
 

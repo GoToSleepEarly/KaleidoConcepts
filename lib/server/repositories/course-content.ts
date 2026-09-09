@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 
 import type { CourseContentChapter, CourseContentPart, CourseContentPhase, CourseContentState, CourseContentStatus, CourseGrammarQuestion, GrammarExercisePlan, StoryContentIntent, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
 import { buildCleanParagraphText, collectVocabularyMatching, courseContentQuestionPageSize, englishWordCount, paginateBalanced, stableShuffle, validateGrammarCoverage, validateParagraphParts } from "@/lib/domain/course-content";
-import { courseStageIndex, earliestCourseStage, furthestCourseStage, nextCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
+import { courseStageIndex, furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
+import { clearCourseDataAfterStage, removeCourseImageFiles, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 import { englishWordRangesForTarget } from "@/lib/domain/story-length-policy";
 import { readingPageCount } from "@/lib/domain/teaching-plan-policy";
 import { storyContentIntentFromAlignmentDetails } from "@/lib/domain/story-content-intent";
@@ -181,7 +182,7 @@ function validateChapter(state: TeachingPlanState, chapter: CourseContentChapter
   if (vocabulary.length !== plan.readingExercises.vocabulary.total) issues.push(`词汇题总数应为 ${plan.readingExercises.vocabulary.total}，实际 ${vocabulary.length}`);
   const actualWords = wordCount(chapter.paragraphs.map(buildCleanParagraphText).join(" "));
   const [minimumWords, maximumWords] = englishWordRangesForTarget(chapter.targetWordCount).validationRange;
-  if (actualWords < minimumWords || actualWords > maximumWords) issues.push(`正文词数目标 ${chapter.targetWordCount}，实际 ${actualWords}`);
+  if (actualWords < minimumWords || actualWords > maximumWords) issues.push(`正文词数应为 ${minimumWords}–${maximumWords}（目标 ${chapter.targetWordCount}），实际 ${actualWords}`);
   const expectedPages = readingPageCount(plan.targetWordCount ?? 90, plan.paragraphCount);
   if (chapter.paragraphs.length !== expectedPages) issues.push(`正文应分为 ${expectedPages} 个段落页，实际 ${chapter.paragraphs.length}`);
   return [...new Set(issues)];
@@ -323,6 +324,8 @@ export async function recoverStaleCourseContentOperation(db: CourseContentDb, co
         operation: generation.operation,
         baseContentVersion: generation.baseContentVersion,
         previousStatus: generation.previousStatus,
+        attempt: generation.attempt,
+        startedAt: generation.startedAt,
       };
       await tx.courseContentChatMessage.create({ data: operationTimelineMessage(courseId, interruptedOperation, "failed", data.errorMessage) });
     }
@@ -360,29 +363,13 @@ export async function resetCourseContent(db: CourseContentDb, courseId: string) 
   if (state.course.staleFromStage && courseStageIndex(state.course.staleFromStage) < courseStageIndex("content")) {
     throw new CourseContentPrerequisiteError("前序内容仍是旧版本，请先处理对应阶段");
   }
-  const clearedCurrentStaleStage = staleStageAfterConfirming(state.course.staleFromStage, "content", state.course.currentStage);
-  const nextStage = nextCourseStage("content")!;
-  const nextStaleStage = courseStageIndex(state.course.currentStage) > courseStageIndex("content")
-    ? earliestCourseStage(clearedCurrentStaleStage, nextStage)
-    : clearedCurrentStaleStage;
   const reset = async (tx: CourseContentDb) => {
-    if (!tx.courseContentChatMessage.deleteMany || !tx.courseContentGeneration.deleteMany || !tx.courseLessonContent.deleteMany) {
-      throw new Error("当前数据库不支持重新开始文案与练习");
-    }
-    await tx.courseContentChatMessage.deleteMany({ where: { courseId } });
-    await tx.courseContentGeneration.deleteMany({ where: { courseId } });
-    await tx.courseLessonContent.deleteMany({ where: { courseId } });
-    await tx.course.update({
-      where: { id: courseId },
-      data: {
-        currentStage: state.course.currentStage,
-        staleFromStage: nextStaleStage,
-        lifecycleStatus: "draft",
-      },
-    });
-    return getCourseContentState(tx, courseId);
+    const storagePaths = await clearCourseDataAfterStage(tx as unknown as CourseDownstreamDb, courseId, "teaching_plan", "content");
+    return { state: await getCourseContentState(tx, courseId), storagePaths };
   };
-  return db.$transaction ? db.$transaction((tx) => reset(tx as CourseContentDb)) : reset(db);
+  const result = db.$transaction ? await db.$transaction((tx) => reset(tx as CourseContentDb)) : await reset(db);
+  await removeCourseImageFiles(result.storagePaths);
+  return result.state;
 }
 
 type ClaimedOperation = {
@@ -393,12 +380,15 @@ type ClaimedOperation = {
   operation: ContentOperation;
   baseContentVersion: number;
   previousStatus: CourseContentStatus;
+  attempt: number;
+  startedAt: Date;
+  triggerLabel?: string;
   targetType?: MessageRecord["targetType"];
   targetId?: string;
 };
 
 type TimelineStartInput = {
-  teacherMessage?: { content: string; targetType?: MessageRecord["targetType"]; targetId?: string };
+  teacherMessage?: { content: string; targetType?: MessageRecord["targetType"]; targetId?: string; details?: Record<string, unknown> };
   targetType?: MessageRecord["targetType"];
   targetId?: string;
 };
@@ -421,6 +411,15 @@ function operationTimelineCopy(operation: ContentOperation, status: "running" | 
 
 function operationTimelineMessage(courseId: string, operation: ClaimedOperation, status: "running" | "succeeded" | "failed", content?: string) {
   const copy = operationTimelineCopy(operation.operation, status);
+  const runningTitle = status === "running" && operation.triggerLabel && /^(重新生成|重试)/.test(operation.triggerLabel)
+    ? `正在${operation.triggerLabel}`
+    : copy.title;
+  const details = {
+    retryAttempt: operation.attempt,
+    startedAt: operation.startedAt.toISOString(),
+    ...(status !== "running" ? { durationMs: Math.max(0, Date.now() - operation.startedAt.getTime()) } : {}),
+    ...(operation.targetType ? { targetType: operation.targetType, targetId: operation.targetId ?? null } : {}),
+  };
   return {
     courseId,
     role: "assistant" as const,
@@ -429,9 +428,10 @@ function operationTimelineMessage(courseId: string, operation: ClaimedOperation,
     status,
     operation: operation.operation,
     requestId: operation.requestId,
-    title: copy.title,
+    title: runningTitle,
+    details,
     eventKey: `${operation.requestId}:${status}`,
-    ...(operation.targetType ? { targetType: operation.targetType, targetId: operation.targetId ?? null, details: { targetType: operation.targetType, targetId: operation.targetId ?? null } } : {}),
+    ...(operation.targetType ? { targetType: operation.targetType, targetId: operation.targetId ?? null } : {}),
   };
 }
 
@@ -455,7 +455,7 @@ async function claim(
       }
 
       const prior = await tx.courseContentGeneration.findUnique({ where: { courseId_sourceRevision_operation: { courseId, sourceRevision: revision, operation } } });
-      if (prior?.status === "succeeded") return { claimed: false, firstAttempt: false, id: prior.id, requestId: prior.idempotencyKey, operation, baseContentVersion: prior.baseContentVersion, previousStatus: prior.previousStatus };
+      if (prior?.status === "succeeded") return { claimed: false, firstAttempt: false, id: prior.id, requestId: prior.idempotencyKey, operation, baseContentVersion: prior.baseContentVersion, previousStatus: prior.previousStatus, attempt: prior.attempt, startedAt: prior.startedAt };
       if (prior?.status === "running" && prior.leaseExpiresAt.getTime() > Date.now()) throw new CourseContentConflictError();
       const now = new Date();
       const generation = prior
@@ -471,9 +471,11 @@ async function claim(
         await tx.courseLessonContent.update!({ where: { courseId }, data: { ...startData, activeGenerationId: generation.id, errorMessage: null } });
       }
       content = { ...content, ...startData, activeGenerationId: generation.id } as ContentRecord;
-      const claimedOperation: ClaimedOperation = { claimed: true, firstAttempt: !prior, id: generation.id, requestId: idempotencyKey, operation, baseContentVersion: content.contentVersion, previousStatus: generation.previousStatus, targetType: timeline.targetType, targetId: timeline.targetId };
-      if (!prior && timeline.teacherMessage) {
-        await tx.courseContentChatMessage.create!({ data: { courseId, role: "teacher", kind: "message", requestId: idempotencyKey, eventKey: `${idempotencyKey}:teacher`, ...timeline.teacherMessage } });
+      const triggerLabel = typeof timeline.teacherMessage?.details?.triggerLabel === "string" ? timeline.teacherMessage.details.triggerLabel : undefined;
+      const claimedOperation: ClaimedOperation = { claimed: true, firstAttempt: !prior, id: generation.id, requestId: idempotencyKey, operation, baseContentVersion: content.contentVersion, previousStatus: generation.previousStatus, attempt: generation.attempt, startedAt: generation.startedAt, triggerLabel, targetType: timeline.targetType, targetId: timeline.targetId };
+      if (timeline.teacherMessage) {
+        const teacherDetails = { ...timeline.teacherMessage.details, retryAttempt: generation.attempt };
+        await tx.courseContentChatMessage.create!({ data: { courseId, role: "teacher", kind: "message", requestId: idempotencyKey, eventKey: `${idempotencyKey}:teacher`, ...timeline.teacherMessage, details: teacherDetails } });
       }
       await tx.courseContentChatMessage.create!({ data: operationTimelineMessage(courseId, claimedOperation, "running") });
       return claimedOperation;
@@ -549,12 +551,13 @@ async function recordContentAiUsage(
   operation: ClaimedOperation,
   writingProvider: StoryWritingProvider,
   idempotencyKey: string,
-  callType: "candidate" | "final" | "repair",
+  callType: "generate" | "candidate" | "final" | "repair",
   usage: unknown,
   targetCount: number,
   diagnostics: Record<string, unknown> = {},
+  latencyMs?: number,
 ) {
-  if (!db.aiGenerationLog?.create || !usage) return;
+  if (!db.aiGenerationLog?.create) return;
   await db.aiGenerationLog.create({ data: {
     requestId: `${operation.id}:${idempotencyKey}:step4-reading:${callType}`,
     courseId,
@@ -563,7 +566,8 @@ async function recordContentAiUsage(
     status: "succeeded",
     writingProvider,
     inputSnapshot: { contractVersion: STEP4_CONTENT_CONTRACT_VERSION, targetCount },
-    outputSnapshot: { tokenUsage: usage, ...diagnostics },
+    outputSnapshot: { tokenUsage: usage ?? null, ...diagnostics },
+    ...(typeof latencyMs === "number" ? { latencyMs } : {}),
   } }).catch(() => undefined);
 }
 
@@ -580,7 +584,9 @@ export async function recordContentAiStructureFailure(
   const isExerciseFailure = aiOperation.startsWith("content_generate_exercises") || aiOperation.startsWith("content_repair_exercises");
   const callType = isExerciseFailure
     ? aiOperation.startsWith("content_repair_exercises") ? "repair" : "generate"
-    : aiOperation === "content_finalize_reading_questions_v3"
+    : aiOperation === "content_generate_reading_v4"
+      ? "generate"
+      : aiOperation === "content_finalize_reading_questions_v3"
       ? "final"
       : aiOperation === "content_repair_reading_v2"
         ? "repair"
@@ -611,7 +617,8 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
   const writingProvider = options.writingProvider ?? current.writingProvider;
   const baseRevision = sourceRevision(state);
   const revision = options.regenerate ? `${baseRevision}:regenerate:${current.contentVersion + 1}` : baseRevision;
-  const operation = await claim(db, courseId, revision, "reading", idempotencyKey, { status: "generating_reading", phase: "generating_chapters", sourceRevision: baseRevision, writingProvider });
+  const actionLabel = options.regenerate ? "重新生成阅读内容" : current.status === "failed" ? "重试未通过内容" : "开始生成阅读内容";
+  const operation = await claim(db, courseId, revision, "reading", idempotencyKey, { status: "generating_reading", phase: "generating_chapters", sourceRevision: baseRevision, writingProvider }, { teacherMessage: { content: actionLabel, details: { triggerSource: "ui_action", triggerLabel: actionLabel } } });
   if (!operation.claimed) return getCourseContentState(db, courseId);
   const requirements = buildReadingTemplateRequirements(state);
   return withLease(db, operation.id, async () => {
@@ -652,14 +659,11 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
       const mainIdeaPolicy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? 120);
       const firstPassMainIdeaCount = wordCount(mainIdeaRaw.text);
       const firstPassMainIdeaValid = firstPassMainIdeaCount >= mainIdeaPolicy.acceptedRange[0] && firstPassMainIdeaCount <= mainIdeaPolicy.acceptedRange[1];
-      await recordContentAiUsage(db, courseId, operation, writingProvider, idempotencyKey, "candidate", generatedReading.candidateUsage, requirements.length, {
-        phase: "candidate_positions",
-      });
-      await recordContentAiUsage(db, courseId, operation, writingProvider, idempotencyKey, "final", generatedReading.usage, requirements.length, {
+      await recordContentAiUsage(db, courseId, operation, writingProvider, idempotencyKey, "generate", generatedReading.usage, requirements.length, {
         validChapterCount: firstPassValidChapterCount,
         mainIdeaValid: firstPassMainIdeaValid,
         firstPassReady: firstPassValidChapterCount === requirements.length && firstPassMainIdeaValid,
-      });
+      }, generatedReading.latencyMs);
     }
     await updateOwnedContent(db, courseId, operation, { chapters, mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle } });
 
@@ -673,7 +677,9 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
       const phase = failed.length ? "repairing_chapters" : "repairing_main_idea";
       await updateOwnedContent(db, courseId, operation, { phase, chapters: chapters.map((chapter) => ({ ...chapter, validationIssues: validateChapter(state, chapter) })) });
       const chapterDetails = failed.map((item) => `第 ${item.chapter.order} 章（${[...item.structuredIssues.map((issue) => issue.message), ...validateChapter(state, item.chapter)].filter((message, index, all) => all.indexOf(message) === index).join("；")}）`);
-      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${[...chapterDetails, ...(mainIdeaIssue ? [mainIdeaIssue.replaceAll("Main Idea", "课后阅读")] : [])].join("；")}。正在一次统一修复全部失败位置。`, kind: "repair", status: "running", operation: "reading", requestId: operation.requestId, title: "自动检查与修复", eventKey: `${operation.requestId}:repair:1` });
+      const repairDetails = [...chapterDetails, ...(mainIdeaIssue ? [mainIdeaIssue.replaceAll("Main Idea", "课后阅读")] : [])];
+      const repairScope = [failed.length ? `${failed.length} 个章节` : "", mainIdeaIssue ? "课后阅读" : ""].filter(Boolean).join("和");
+      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${repairScope}需要调整，正在统一修复。`, details: { issues: repairDetails }, kind: "repair", status: "running", operation: "reading", requestId: operation.requestId, title: "自动检查与修复", eventKey: `${operation.requestId}:repair:1` });
       const repairBundle = await deps.repairReading(state, writingProvider, failed.map((item) => ({
         current: item.draft,
         requirements: item.requirement,
@@ -705,7 +711,7 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
       }).length;
       if (mainIdeaIssue && repairBundle.mainIdea) mainIdeaRaw = repairBundle.mainIdea;
       mainIdeaCount = wordCount(mainIdeaRaw.text);
-      await recordContentAiUsage(db, courseId, operation, writingProvider, idempotencyKey, "repair", repairBundle.usage, failed.length + (mainIdeaIssue ? 1 : 0), { resolvedChapterCount, mainIdeaResolved: !mainIdeaIssue || (mainIdeaCount >= mainIdeaPolicy.acceptedRange[0] && mainIdeaCount <= mainIdeaPolicy.acceptedRange[1]) });
+      await recordContentAiUsage(db, courseId, operation, writingProvider, idempotencyKey, "repair", repairBundle.usage, failed.length + (mainIdeaIssue ? 1 : 0), { resolvedChapterCount, mainIdeaResolved: !mainIdeaIssue || (mainIdeaCount >= mainIdeaPolicy.acceptedRange[0] && mainIdeaCount <= mainIdeaPolicy.acceptedRange[1]) }, repairBundle.latencyMs);
       chapters = chapterResults.map((result) => result.chapter);
       await updateOwnedContent(db, courseId, operation, { chapters, mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle } });
     }
@@ -737,7 +743,8 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
   if (!Array.isArray(content.chapters) || !content.chapters.length || !content.mainIdea) throw new CourseContentPrerequisiteError("请先生成并确认正文");
   const baseRevision = `${sourceRevision(state)}:${content.contentVersion}`;
   const revision = options.regenerate ? `${baseRevision}:regenerate` : baseRevision;
-  const operation = await claim(db, courseId, revision, "exercises", idempotencyKey, { status: "generating_exercises", phase: "generating_exercises", writingProvider }, options.regenerate ? {} : { teacherMessage: { content: "我确认阅读内容，请生成章节与课后练习。" } });
+  const actionLabel = options.regenerate ? "重新生成章节与课后练习" : content.errorMessage ? "重试章节与课后练习" : "我确认阅读内容，请生成章节与课后练习。";
+  const operation = await claim(db, courseId, revision, "exercises", idempotencyKey, { status: "generating_exercises", phase: "generating_exercises", writingProvider }, { teacherMessage: { content: actionLabel, details: { triggerSource: "ui_action", triggerLabel: actionLabel } } });
   if (!operation.claimed) return getCourseContentState(db, courseId);
   return withLease(db, operation.id, async () => {
   try {
@@ -854,7 +861,7 @@ export async function modifyCourseContent(db: CourseContentDb, courseId: string,
   const content = await ensureContent(db, state);
   const writingProvider = options.writingProvider ?? content.writingProvider;
   const revision = createHash("sha256").update(`${sourceRevision(state)}:${content.contentVersion}:${input.targetType}:${input.targetId}:${input.instruction}`).digest("hex");
-  const operation = await claim(db, courseId, revision, "modify", idempotencyKey, { writingProvider }, { targetType: input.targetType, targetId: input.targetId, teacherMessage: { content: input.instruction, targetType: input.targetType, targetId: input.targetId } });
+  const operation = await claim(db, courseId, revision, "modify", idempotencyKey, { writingProvider }, { targetType: input.targetType, targetId: input.targetId, teacherMessage: { content: input.instruction, targetType: input.targetType, targetId: input.targetId, details: { triggerSource: "teacher_input", triggerLabel: "发送修改要求" } } });
   if (!operation.claimed) return getCourseContentState(db, courseId);
   return withLease(db, operation.id, async () => {
   try {

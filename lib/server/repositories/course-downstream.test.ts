@@ -1,11 +1,13 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { getCourseDownstreamImpact, hasCourseDownstream, markCourseDownstreamStale, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
+import { clearCourseAfterStage, getCourseDownstreamImpact, hasCourseDownstream, markCourseDownstreamStale, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 
 function delegate(name: string, calls: string[]) {
   return {
     deleteMany: vi.fn(async () => { calls.push(name); return { count: 1 }; }),
     findFirst: vi.fn(async () => null),
+    findMany: vi.fn(async () => []),
+    updateMany: vi.fn(async () => ({ count: 1 })),
   };
 }
 
@@ -67,6 +69,7 @@ describe("course downstream state", () => {
   test("reports only the downstream result groups that actually exist", async () => {
     const db = database([]);
     vi.mocked(db.course.findUnique).mockResolvedValue({ currentStage: "content" });
+    vi.mocked(db.courseLessonContent.findFirst!).mockResolvedValue({ courseId: "course-1" });
     vi.mocked(db.courseImage.findFirst!).mockResolvedValue({ courseId: "course-1" });
 
     await expect(getCourseDownstreamImpact(db, "course-1", "teaching_plan")).resolves.toEqual([
@@ -77,5 +80,20 @@ describe("course downstream state", () => {
       where: { courseId: "course-1" },
       select: { courseId: true },
     });
+  });
+
+  test("deletes every stage after the preserved boundary and clears stale state atomically", async () => {
+    const calls: string[] = [];
+    const db = database(calls);
+
+    await clearCourseAfterStage(db, "course-1", "teaching_plan", "content");
+
+    expect(db.courseLessonContent.deleteMany).toHaveBeenCalled();
+    expect(db.courseImage.deleteMany).toHaveBeenCalled();
+    expect(db.coursePresentation.deleteMany).toHaveBeenCalled();
+    expect(db.courseTeachingPlan.deleteMany).not.toHaveBeenCalled();
+    expect(db.courseStoryOutline.deleteMany).not.toHaveBeenCalled();
+    expect(calls).toContain("course:content:draft");
+    expect(calls.at(-1)).toBe("transactionCommitted");
   });
 });

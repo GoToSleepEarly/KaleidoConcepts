@@ -8,7 +8,7 @@ import {
   saveStoryOutline,
 } from "@/lib/server/repositories/story-outline";
 import { storyOutlineSaveSchema } from "@/lib/server/validation/story-outline";
-import { markCourseDownstreamStale, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
+import { hasCourseDownstream, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -27,9 +27,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const { id } = await params;
   try {
     const db = getDb();
-    const state = await saveStoryOutline(db, id, parsed.data.outline, parsed.data.preserveDownstream === true);
-    if (parsed.data.preserveDownstream === true) await markCourseDownstreamStale(db as unknown as CourseDownstreamDb, id, "story_outline");
-    return NextResponse.json(state);
+    const downstreamDb = db as unknown as CourseDownstreamDb;
+    const hasDownstream = await hasCourseDownstream(downstreamDb, id, "story_outline");
+    if (hasDownstream && parsed.data.resetDownstream !== true) throw new CourseStoryOutlineConflictError();
+    return NextResponse.json(await saveStoryOutline(db, id, parsed.data.outline, hasDownstream));
   } catch (error) {
     if (error instanceof CourseStoryOutlineNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });
     if (error instanceof CourseStoryOutlineConflictError) return NextResponse.json({ message: error.message, requiresReset: true }, { status: 409 });

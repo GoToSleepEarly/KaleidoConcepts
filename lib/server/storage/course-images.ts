@@ -149,6 +149,10 @@ export async function removeTemporaryCourseImage(storagePath: string) {
   await rm(resolveStorageKey(storagePath), { force: true });
 }
 
+export async function removeStoredCourseImage(storagePath: string) {
+  await rm(resolveStorageKey(storagePath), { force: true });
+}
+
 export async function removeCourseImageFiles(courseId: string) {
   if (!/^[a-zA-Z0-9_-]+$/.test(courseId)) throw new Error("课程图片目录无效");
   const root = resolveStorageDirectory("course-images");
