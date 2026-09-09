@@ -4,8 +4,8 @@ import type { CourseContentChapter, CourseContentParagraph, CourseContentPart, S
 import { buildCleanParagraphText, englishWordCount, stableShuffle, validateParagraphParts } from "@/lib/domain/course-content";
 import { englishWordRangesForTarget } from "@/lib/domain/story-length-policy";
 
-export const STEP4_CONTENT_CONTRACT_VERSION = "step4.content.v6" as const;
-export const STEP4_READING_CANDIDATE_VERSION = "step4.reading-candidate.v3" as const;
+export const STEP4_CONTENT_CONTRACT_VERSION = "step4.content.v7" as const;
+export const STEP4_READING_CANDIDATE_VERSION = "step4.reading-candidate.v4" as const;
 
 const requiredText = z.string().trim().min(1);
 const optionSlotSchema = z.object({
@@ -23,6 +23,7 @@ const wordFormSlotSchema = z.object({
   answer: requiredText,
   cue: requiredText,
 }).strict();
+const candidateWordFormSlotSchema = wordFormSlotSchema.extend({ cue: requiredText.optional() });
 const vocabularySlotSchema = z.object({
   id: z.string().regex(/^VOC\d+$/),
   kind: z.literal("vocabulary"),
@@ -32,7 +33,7 @@ const vocabularySlotSchema = z.object({
 }).strict();
 
 export const generatedContentSlotSchema = z.discriminatedUnion("kind", [optionSlotSchema, wordFormSlotSchema, vocabularySlotSchema]);
-const candidateContentSlotSchema = z.discriminatedUnion("kind", [candidateOptionSlotSchema, wordFormSlotSchema, vocabularySlotSchema]);
+const candidateContentSlotSchema = z.discriminatedUnion("kind", [candidateOptionSlotSchema, candidateWordFormSlotSchema, vocabularySlotSchema]);
 export const generatedChapterTemplateSchema = z.object({
   outlineChapterId: requiredText,
   paragraphs: z.array(z.object({ template: requiredText }).strict()).min(1),
@@ -465,7 +466,7 @@ export function buildReadingTemplateFinalizationPrompt(candidateOutput: unknown,
   return [
     "你是英语教案的最终审校编辑。完整审核 candidate 中的正文、Main Idea 和每一道嵌入题；只返回严格 JSON，不要说明或 Markdown。英语正确性是最高验收门槛。",
     "第一步审核纯正文：把每个 marker 替换为对应 answer，逐句通读全文，包括不含 marker 的句子；语法、时态与体、叙事基准时态、主谓一致、单复数、代词指代、助动词、介词、语序、事件先后和段落衔接必须全部正确。任何位置有错，都返回该段完整 paragraphPatch。",
-    `第二步审核题目：候选位置、answer、cue 和 GR 槽位的 kind 均可修改，但 kind 只能来自该章 enabledGrammarTypes；空格处的选择本身必须真实考查绑定 grammarPoint。${readingTypeAllocationRule}构成目标语法的功能词、助动词或情态词必须包含在 answer 内，不得预先泄露在 marker 外；${readingToVerbRule}optionCloze 返回两个标准、完整且拼写正确的 distractors；逐项回填后只有 answer 能同时满足当前语法、时间线和语义，否则改写局部上下文提供决定性线索。wordForm 不能只在句子其他位置体现知识点。vocabulary 三个字段须一致，answer 不含连字符。`,
+    `第二步审核题目：候选位置、answer、cue 和 GR 槽位的 kind 均可修改，但 kind 只能来自该章 enabledGrammarTypes；空格处的选择本身必须真实考查绑定 grammarPoint。${readingTypeAllocationRule}构成目标语法的功能词、助动词或情态词必须包含在 answer 内，不得预先泄露在 marker 外；${readingToVerbRule}optionCloze 返回两个标准、完整且拼写正确的 distractors；wordForm 即使候选缺少 cue，也必须在最终 slots 中补齐正确 cue。逐项回填后只有 answer 能同时满足当前语法、时间线和语义，否则改写局部上下文提供决定性线索。wordForm 不能只在句子其他位置体现知识点。vocabulary 三个字段须一致，answer 不含连字符。`,
     "保持 C1/C2 等章节短键、段落数、requiredSlotIds、题型白名单、语法与词汇总题量、知识点白名单与覆盖以及 accepted word ranges；outlineChapterId 必须原样复制短键，不得返回或猜测数据库 ID。只修错误所需的局部文字，保留候选事实、人物行动、因果、物品去向和结局，不增加新事实或支线。Main Idea 也必须英语正确并准确概括全文。",
     "返回 {contractVersion,chapters:[{outlineChapterId,paragraphPatches,slots}],mainIdea?}。paragraphPatches 只列需要修改的段落，元素为 {paragraphIndex,template}，索引从 0 开始；无修改返回 []。slots 必须返回本章全部最终 slot：option={id,kind:'optionCloze',knowledgePointKey,answer,distractors:[两个]}，wordForm={id,kind:'wordForm',knowledgePointKey,answer,cue}，vocabulary={id,kind:'vocabulary',answer,canonicalForm,meaningZh}。Main Idea 无需修改时省略 mainIdea，需要修改时返回完整 {text}。",
     "输出前再次用最终 slots 回填候选正文与所有 paragraphPatches，确认纯正文和题目两轮审核均通过；不要输出审核过程。",

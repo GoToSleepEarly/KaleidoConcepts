@@ -149,7 +149,7 @@ describe("Step4 fixed-slot production contract", () => {
       mainIdea: { targetWordCount: 20, preferredRange: [18, 22] as [number, number], acceptedRange: [15, 25] as [number, number] },
     };
     const candidate = {
-      candidateVersion: "step4.reading-candidate.v3",
+      candidateVersion: "step4.reading-candidate.v4",
       chapters: [{ outlineChapterId: "chapter-1", paragraphs: [{ template: "Mia {{GR1}} ready." }], slots: [{ id: "GR1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "is" }] }],
       mainIdea: { text: "Mia follows a plan." },
     };
@@ -171,15 +171,15 @@ describe("Step4 fixed-slot production contract", () => {
     expect(prompt).not.toContain('"storyArc"');
   });
 
-  test("merges reviewed slots and only changed paragraphs into the final reading contract", () => {
+  test("allows candidate word-form slots to defer cue completion to the strict final review", () => {
     const candidate = {
-      candidateVersion: "step4.reading-candidate.v3",
+      candidateVersion: "step4.reading-candidate.v4",
       chapters: [{
         outlineChapterId: "chapter-1",
         paragraphs: [{ template: "Yesterday, Mia {{GR1}} home." }, { template: "She must {{GR2}} the {{VOC1}}." }],
         slots: [
           { id: "GR1", kind: "optionCloze", knowledgePointKey: "KP1", answer: "go" },
-          { id: "GR2", kind: "wordForm", knowledgePointKey: "KP2", answer: "carry", cue: "carry" },
+          { id: "GR2", kind: "wordForm", knowledgePointKey: "KP2", answer: "carry" },
           { id: "VOC1", kind: "vocabulary", answer: "map", canonicalForm: "map", meaningZh: "地图" },
         ],
       }],
@@ -201,6 +201,14 @@ describe("Step4 fixed-slot production contract", () => {
     expect(result.chapters[0]?.paragraphs).toEqual([{ template: "Yesterday, Mia {{GR1}} home safely." }, { template: "She must {{GR2}} the {{VOC1}}." }]);
     expect(result.chapters[0]?.slots[0]).toMatchObject({ answer: "went", distractors: ["goes", "will go"] });
     expect(result.mainIdea).toEqual(candidate.mainIdea);
+    expect(() => applyReadingReview(candidate, {
+      contractVersion: STEP4_CONTENT_CONTRACT_VERSION,
+      chapters: [{
+        outlineChapterId: "chapter-1",
+        paragraphPatches: [],
+        slots: [{ id: "GR2", kind: "wordForm", knowledgePointKey: "KP2", answer: "carry" }],
+      }],
+    })).toThrow(/cue/);
   });
 
   test("leaves uncertain grammar meaning to the model while retaining deterministic structure checks", () => {
