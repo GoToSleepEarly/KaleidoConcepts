@@ -138,6 +138,35 @@ describe("AppShell account menu", () => {
     expect(screen.getByRole("radio", { name: /DeepSeek/ })).toBeChecked();
   });
 
+  test("does not show default choices before saved advanced settings finish loading", async () => {
+    let resolveSettings!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { resolveSettings = resolve; })));
+    render(<AppShell><div>课程内容</div></AppShell>);
+
+    fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
+
+    expect(screen.getByRole("status")).toHaveTextContent("正在读取已保存的设置");
+    expect(screen.queryByRole("radio", { name: /GPT/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /QuickRouter/ })).not.toBeInTheDocument();
+
+    resolveSettings(Response.json({ writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "direct" }));
+    await waitFor(() => expect(screen.getByRole("radio", { name: /DeepSeek/ })).toBeChecked());
+    expect(screen.getByRole("radio", { name: /Crazyrouter/ })).toBeChecked();
+  });
+
+  test("keeps default choices hidden and offers recovery when advanced settings fail to load", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ message: "数据库暂时不可用" }, { status: 500 })));
+    render(<AppShell><div>课程内容</div></AppShell>);
+
+    fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("数据库暂时不可用"));
+    expect(screen.queryByRole("radio", { name: /GPT/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新加载" })).toBeEnabled();
+  });
+
   test("loads and saves the QuickRouter base URL option", async () => {
     const request = vi.fn(async (_url: string, init?: RequestInit) => Response.json({
       writingProvider: "quickrouter_gpt",

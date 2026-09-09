@@ -5,6 +5,7 @@ import { AiGateway, KnowledgePointSource, PresetOptionKind, Prisma, PrismaClient
 
 import { grammarCatalogBooks } from "./grammar-catalog-data";
 import presetData from "./preset-data.json";
+import { existingSeedUserData } from "./seed-policy";
 
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 
@@ -15,7 +16,7 @@ async function main() {
   for (const user of presetData.users) {
     await prisma.user.upsert({
       where: { username: user.username },
-      update: { displayName: user.displayName, aiGateway: user.aiGateway as AiGateway },
+      update: existingSeedUserData(user),
       create: {
         id: user.id,
         username: user.username,

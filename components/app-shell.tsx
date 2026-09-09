@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, ChevronDown, ListChecks, LogOut, Menu, Settings2, Sparkles, Tags, UsersRound, X } from "lucide-react";
+import { BookOpen, ChevronDown, ListChecks, LoaderCircle, LogOut, Menu, Settings2, Sparkles, Tags, UsersRound, X } from "lucide-react";
 
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
@@ -344,7 +344,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           title="高级设置"
         >
           <div className="space-y-5 p-5 sm:p-6">
-            <fieldset disabled={isLoadingGateway || isSavingGateway}>
+            {isLoadingGateway ? (
+              <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground" role="status">
+                <LoaderCircle aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
+                正在读取已保存的设置…
+              </div>
+            ) : null}
+            {!isLoadingGateway && !hasLoadedGateway ? (
+              <div className="space-y-4 py-4 text-center">
+                <p className="text-sm text-destructive" role="alert">{gatewayError || "高级设置加载失败"}</p>
+                <div className="flex justify-center gap-3">
+                  <Button onClick={() => setIsAdvancedOpen(false)} type="button" variant="outline">关闭</Button>
+                  <Button onClick={() => void openAdvancedSettings()} type="button">重新加载</Button>
+                </div>
+              </div>
+            ) : null}
+            <div aria-hidden={!hasLoadedGateway || isLoadingGateway} className={cn("space-y-5", (!hasLoadedGateway || isLoadingGateway) && "hidden")}>
+              <fieldset disabled={isSavingGateway}>
               <legend className="text-sm font-semibold text-foreground">文本生成模型</legend>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">统一用于故事大纲和文案与练习，修改后从下一次 AI 请求起生效。</p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -363,8 +379,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <span className="mt-2 block text-xs leading-5 text-muted-foreground">成本更低，使用 DeepSeek 直连服务。</span>
                 </label>
               </div>
-            </fieldset>
-            <fieldset disabled={isLoadingGateway || isSavingGateway}>
+              </fieldset>
+              <fieldset disabled={isSavingGateway}>
               <legend className="text-sm font-semibold text-foreground">GPT 中转站</legend>
               <div className="mt-3 grid gap-3">
                 {AI_GATEWAYS.map((gateway) => (
@@ -379,9 +395,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </label>
                 ))}
               </div>
-            </fieldset>
-            {aiGateway === "quickrouter" ? (
-              <fieldset disabled={isLoadingGateway || isSavingGateway}>
+              </fieldset>
+              {aiGateway === "quickrouter" ? (
+                <fieldset disabled={isSavingGateway}>
                 <legend className="text-sm font-semibold text-foreground">QuickRouter Base URL</legend>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   {QUICKROUTER_ENDPOINTS.map((endpoint) => (
@@ -394,12 +410,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </label>
                   ))}
                 </div>
-              </fieldset>
-            ) : null}
-            {gatewayError ? <p className="text-sm text-destructive" role="alert">{gatewayError}</p> : null}
-            <div className="flex justify-end gap-3 border-t border-border pt-4">
-              <Button disabled={isSavingGateway} onClick={() => setIsAdvancedOpen(false)} type="button" variant="outline">取消</Button>
-              <Button disabled={isLoadingGateway || !hasLoadedGateway} loading={isSavingGateway} onClick={() => void saveAiGateway()} type="button">保存设置</Button>
+                </fieldset>
+              ) : null}
+              {gatewayError ? <p className="text-sm text-destructive" role="alert">{gatewayError}</p> : null}
+              <div className="flex justify-end gap-3 border-t border-border pt-4">
+                <Button disabled={isSavingGateway} onClick={() => setIsAdvancedOpen(false)} type="button" variant="outline">取消</Button>
+                <Button disabled={isSavingGateway} loading={isSavingGateway} onClick={() => void saveAiGateway()} type="button">保存设置</Button>
+              </div>
             </div>
           </div>
         </Dialog>
