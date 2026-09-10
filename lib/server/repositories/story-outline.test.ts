@@ -1251,6 +1251,19 @@ describe("story outline repository", () => {
     expect(state.coursePeople.length).toBeGreaterThan(0);
   });
 
+  test("records DeepSeek as the source of references researched through its official route", async () => {
+    const db = createDb();
+    const state = await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "request_reference_search",
+      targetId: "特朗普",
+      writingProvider: "deepseek-v4-pro",
+    }, deps);
+
+    expect(state.referenceMaterials[0]).toMatchObject({ name: "特朗普", researchProvider: "deepseek-v4-pro" });
+  });
+
   test("clears Step 2 and all downstream stages atomically when restarting an old outline", async () => {
     const db = createDb();
     db.state.course = {

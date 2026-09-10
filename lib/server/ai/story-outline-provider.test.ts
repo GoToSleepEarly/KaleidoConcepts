@@ -230,31 +230,30 @@ describe("createStoryOutlineProvider", () => {
     });
   });
 
-  test("uses the configured DeepSeek model for DeepSeek writing", async () => {
+  test("uses the DeepSeek-compatible Responses API for DeepSeek writing", async () => {
     process.env.DEEPSEEK_API_KEY = "deepseek-key";
     process.env.DEEPSEEK_MODEL = "deepseek-model";
     process.env.DEEPSEEK_BASE_URL = "https://deepseek.example/v1/";
     const fetchMock = vi.fn(async () =>
       Response.json({
-        choices: [{ message: { content: '{"ok":true}' }, finish_reason: "stop" }],
-        usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+        output_text: '{"ok":true}',
+        usage: { input_tokens: 12, output_tokens: 8, total_tokens: 20 },
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await createStoryOutlineProvider().generateOutline({
-      writingProvider: "deepseek-chat",
+      writingProvider: "deepseek-v4-pro",
       prompt: "生成大纲",
       maxOutputTokens: 2_000,
     });
 
     const body = fetchBody(fetchMock);
-    expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://deepseek.example/v1/chat/completions");
+    expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://deepseek.example/v1/responses");
     expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer deepseek-key");
     expect(body.model).toBe("deepseek-model");
-    expect(body.messages).toEqual([{ role: "user", content: "生成大纲" }]);
-    expect(body.max_tokens).toBe(2_000);
-    expect(body.input).toBeUndefined();
+    expect(body.input).toBe("生成大纲");
+    expect(body.max_output_tokens).toBe(2_000);
     expect(result).toEqual({
       text: '{"ok":true}',
       usage: {
@@ -299,17 +298,12 @@ describe("createStoryOutlineProvider", () => {
     ).toThrow("故事大纲服务尚未配置");
   });
 
-  test("routes only GPT writing and research through Crazyrouter while DeepSeek keeps its direct API", async () => {
+  test("routes DeepSeek writing and web search through the official Responses API", async () => {
     process.env.CRAZYROUTER_API_KEY = "crazy-key";
     process.env.DEEPSEEK_API_KEY = "deepseek-key";
     process.env.DEEPSEEK_BASE_URL = "https://api.deepseek.com";
-    const fetchMock = vi.fn(async (url: string) =>
-      url.includes("deepseek")
-        ? Response.json({
-            choices: [{ message: { content: '{"ok":true}' }, finish_reason: "stop" }],
-          })
-        : Response.json({ output_text: '{"ok":true}' }),
-    );
+    delete process.env.DEEPSEEK_MODEL;
+    const fetchMock = vi.fn(async () => Response.json({ output_text: '{"ok":true}' }));
     vi.stubGlobal("fetch", fetchMock);
     const provider = createStoryOutlineProvider(undefined, "crazyrouter");
 
@@ -317,11 +311,12 @@ describe("createStoryOutlineProvider", () => {
       writingProvider: "gpt-5.6-sol",
       prompt: "生成大纲",
     });
-    await provider.searchReference({ prompt: "整理资料" });
+    await provider.searchReference({ writingProvider: "gpt-5.6-sol", prompt: "整理资料" });
     await provider.generateOutline({
-      writingProvider: "deepseek-chat",
+      writingProvider: "deepseek-v4-pro",
       prompt: "生成大纲",
     });
+    await provider.searchReference({ writingProvider: "deepseek-v4-pro", prompt: "整理资料" });
 
     expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.crazyrouter.com/v1/responses");
     expect(fetchBody(fetchMock, 0).model).toBe("gpt-5.6-sol");
@@ -331,8 +326,15 @@ describe("createStoryOutlineProvider", () => {
       model: "gpt-5.6-sol",
       tools: [{ type: "web_search" }],
     });
-    expect((fetchMock.mock.calls[2] as unknown[] | undefined)?.[0]).toBe("https://api.deepseek.com/chat/completions");
+    expect((fetchMock.mock.calls[2] as unknown[] | undefined)?.[0]).toBe("https://api.deepseek.com/responses");
     expect(new Headers(((fetchMock.mock.calls[2] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer deepseek-key");
+    expect(fetchBody(fetchMock, 2)).toMatchObject({ model: "deepseek-v4-pro", input: "生成大纲" });
+    expect((fetchMock.mock.calls[3] as unknown[] | undefined)?.[0]).toBe("https://api.deepseek.com/responses");
+    expect(fetchBody(fetchMock, 3)).toMatchObject({
+      model: "deepseek-v4-pro",
+      tools: [{ type: "web_search" }],
+      tool_choice: { type: "web_search" },
+    });
   });
 
   test("supports a bounded low-reasoning request for structured visual plans", async () => {

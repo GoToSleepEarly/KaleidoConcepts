@@ -146,8 +146,8 @@ export type CoursesListResponse = {
   totalPages: number;
 };
 
-export type StoryWritingProvider = "gpt-5.5" | "gpt-5.6-sol" | "deepseek-chat";
-export type StoryResearchProvider = "gpt-5.6-sol" | "none";
+export type StoryWritingProvider = "gpt-5.5" | "gpt-5.6-sol" | "deepseek-v4-pro";
+export type StoryResearchProvider = "gpt-5.6-sol" | "deepseek-v4-pro" | "none";
 export type CourseStoryChatRole = "teacher" | "assistant" | "system";
 export type CourseSourceReferenceType =
   | "real_person"

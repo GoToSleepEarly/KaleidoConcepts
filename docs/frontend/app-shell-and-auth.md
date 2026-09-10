@@ -270,7 +270,7 @@ There is no second account area in the sidebar.
 
 账户菜单提供“高级设置”，只负责当前账号的 AI 模型与预置调用线路选择，不允许老师输入任意 Base URL 或 API Key。界面按真实故障边界分为“文本生成”和“图片生成”两个区块；文本与图片可独立切换，避免单一中转站故障同时阻断全部能力。联网研究跟随文本配置，人物形象、课程图片生成和图片编辑跟随图片配置。
 
-文本模型预置为 `gpt-5.5`、`gpt-5.6-sol` 和 `deepseek-chat`。GPT 模型可选择 QuickRouter 主站、QuickRouter 直连、Crazyrouter 或 Easy88AI；DeepSeek 的文本生成路线固定为官方 `https://api.deepseek.com`。固定路线仍需在界面明确展示，但因为没有第二个兼容选项，不保存一个没有选择意义的重复字段。协议层继续由 DeepSeek `/chat/completions` Adapter 处理，不能假装成 GPT `/responses`；这是协议差异，不是产品层的特殊模型。选择 DeepSeek 时，联网研究仍独立使用所选 GPT 兼容线路，因为 DeepSeek 官方文本接口不提供当前流程依赖的 `web_search`。
+文本模型预置为 `gpt-5.5`、`gpt-5.6-sol` 和 `deepseek-v4-pro`。GPT 模型可选择 QuickRouter 主站、QuickRouter 直连、Crazyrouter 或 Easy88AI；DeepSeek 的文本生成和联网研究固定使用官方 `https://api.deepseek.com`。DeepSeek 官方已经原生兼容 OpenAI Responses API，并支持服务端执行 `web_search`，因此与 GPT 共用 `/responses` 请求和响应处理，只保留 Base URL、密钥和上游模型名的预置差异，不再保留单独的 Chat Completions Adapter。固定路线仍需在界面明确展示，但因为没有第二个兼容选项，不保存一个没有选择意义的重复字段。
 
 图片模型预置为 `gpt-image-2` 与 QuickRouter 专属 `gpt-image-2-c`。`gpt-image-2` 可选择 QuickRouter、Crazyrouter 或 Easy88AI；`gpt-image-2-c` 只允许 QuickRouter。2026-09-10 使用无效图片、无生成费用的请求验证 Easy88AI `POST /v1/images/edits`：单图 `image`、多图 `image[]`、项目现有的 portrait/landscape 尺寸与 low/medium 质量参数均被端点接收并进入上游图片校验，因此开放 Easy88AI 图片生成与编辑线路。
 
@@ -291,6 +291,10 @@ There is no second account area in the sidebar.
 实现状态：已实现账户菜单设置、登录同步、数据库字段、服务端路由选择和 GPT 文本/研究/图片 provider 分流；生产部署前执行 `pnpm prisma:deploy`。
 
 2026-09-10：高级设置拆分为当前账号的文本与图片配置；文本支持 `gpt-5.5`、`gpt-5.6-sol`、DeepSeek 官方直连及 QuickRouter/Crazyrouter/Easy88AI 预置线路，图片支持主动选择 `gpt-image-2` 或 QuickRouter 专属 `gpt-image-2-c`，不再在 429 后隐式换模型。Easy88AI 免费 `/v1/models` 检查鉴权成功并确认三个目标模型 ID；后续无效图片探测确认 `/v1/images/edits` 兼容项目所需参数，因此开放 Easy88AI `gpt-image-2` 图片线路。两次检查均未获得可用生成结果，不调用付费文本或图片生成。验证通过全量 92 个测试文件 / 772 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、本地 PostgreSQL `pnpm prisma:deploy`、乱码扫描、敏感信息扫描和 `git diff --check`。首轮实现提交：`feab432`；Easy88AI 图片线路提交：`2935242`。
+
+2026-09-10：重新核对 DeepSeek 当前官方能力，确认 `https://api.deepseek.com/responses` 原生兼容 OpenAI Responses API，并支持服务端 `web_search`。账户选择 DeepSeek 后，文本准备、故事生成和联网研究统一走 DeepSeek 官方路线；界面不再展示不会生效的 GPT 中转站选项。免费 `/models` 实测当前 Key 包含 `deepseek-v4-pro`，无输入的 `/responses` 参数校验也成功到达官方端点；未执行付费生成。产品模型名、默认上游模型和环境变量示例统一改为 `deepseek-v4-pro`，迁移把历史 `deepseek-chat` 快照更新为新名称。验证通过全量 92 个测试文件 / 773 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、本地 PostgreSQL `pnpm prisma:deploy`、乱码扫描和 `git diff --check`。实现提交待完成后记录。
+
+2026-09-10：重新核对 [DeepSeek Responses API](https://api-docs.deepseek.com/guides/responses_api/) 后修正旧判断。DeepSeek 官方 `/responses` 已兼容 Codex 所用的 OpenAI Responses 结构，并在服务端执行 `web_search`；项目删除单独的 `/chat/completions` 分支，文本生成和联网研究共用现有 Responses 处理。当前 Key 的免费 `/models` 返回并确认 `deepseek-v4-pro` 可用，本地环境也配置为该模型；无输入的 `/responses` 参数校验返回预期 400，没有触发生成或费用。高级设置选择 DeepSeek 后不再展示无效的 GPT 中转站控件，历史 `deepseek-chat` 数据通过 migration 更新为 `deepseek-v4-pro`，联网资料记录保存真实 research provider。实现提交待完成后记录。
 
 2026-09-09：修复本地完整环境每次启动执行 seed 时覆盖已有账号中转站偏好的问题；已有账号 seed 更新不再包含三项可变 AI 设置。高级设置弹窗新增数据库读取 Loading 和可恢复失败态，读取完成前不再展示组件默认选项。验证通过全量 89 个测试文件 / 730 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`。实现提交：`48369d7`。
 

@@ -9,7 +9,7 @@ describe("aiGatewayFromRequest", () => {
       username: "teacher",
       password: "secret",
       displayName: "Teacher",
-      writingProvider: "deepseek-chat",
+      writingProvider: "deepseek-v4-pro",
       aiGateway: "crazyrouter",
       quickRouterEndpoint: "direct",
       imageModel: "gpt-image-2-c",
@@ -21,7 +21,7 @@ describe("aiGatewayFromRequest", () => {
     });
 
     await expect(aiGatewayFromRequest(request, { user: { findUnique } })).resolves.toEqual({
-      writingProvider: "deepseek-chat",
+      writingProvider: "deepseek-v4-pro",
       aiGateway: "crazyrouter",
       quickRouterEndpoint: "direct",
       imageModel: "gpt-image-2-c",

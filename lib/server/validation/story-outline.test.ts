@@ -10,7 +10,7 @@ describe("story outline chapter bounds", () => {
     expect(storyOutlineSettingsSchema.safeParse({ ...settings, chapterCount: 5 }).success).toBe(true);
     expect(storyOutlineSettingsSchema.safeParse({ ...settings, chapterCount: 2 }).success).toBe(false);
     expect(storyOutlineSettingsSchema.safeParse({ ...settings, chapterCount: 6 }).success).toBe(false);
-    expect(storyOutlineSettingsSchema.safeParse({ ...settings, writingProvider: "deepseek-chat" }).success).toBe(false);
+    expect(storyOutlineSettingsSchema.safeParse({ ...settings, writingProvider: "deepseek-v4-pro" }).success).toBe(false);
     expect(storyOutlineMessageSchema.safeParse({ message: "test", mode: "idea", chapterCount: 2 }).success).toBe(false);
   });
 

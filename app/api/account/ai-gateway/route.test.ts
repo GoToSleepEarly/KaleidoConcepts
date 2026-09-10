@@ -18,7 +18,7 @@ describe("account AI gateway route", () => {
   test("GET reads the current gateway from the authenticated user's database row", async () => {
     findUnique.mockResolvedValue({
       id: "user-1",
-      writingProvider: "deepseek-chat",
+      writingProvider: "deepseek-v4-pro",
       aiGateway: "crazyrouter",
       quickRouterEndpoint: "direct",
       imageModel: "gpt-image-2-c",
@@ -32,7 +32,7 @@ describe("account AI gateway route", () => {
     );
 
     await expect(response.json()).resolves.toEqual({
-      writingProvider: "deepseek-chat",
+      writingProvider: "deepseek-v4-pro",
       aiGateway: "crazyrouter",
       quickRouterEndpoint: "direct",
       imageModel: "gpt-image-2-c",
@@ -54,7 +54,7 @@ describe("account AI gateway route", () => {
     });
     update.mockResolvedValue({
       id: "user-1",
-      writingProvider: "deepseek-chat",
+      writingProvider: "deepseek-v4-pro",
       aiGateway: "crazyrouter",
       quickRouterEndpoint: "direct",
       imageModel: "gpt-image-2-c",
@@ -69,7 +69,7 @@ describe("account AI gateway route", () => {
           cookie: "kaleido.user-id=user-1",
         },
         body: JSON.stringify({
-          writingProvider: "deepseek-chat",
+          writingProvider: "deepseek-v4-pro",
           aiGateway: "crazyrouter",
           quickRouterEndpoint: "direct",
           imageModel: "gpt-image-2-c",
@@ -80,7 +80,7 @@ describe("account AI gateway route", () => {
     );
 
     await expect(response.json()).resolves.toEqual({
-      writingProvider: "deepseek-chat",
+      writingProvider: "deepseek-v4-pro",
       aiGateway: "crazyrouter",
       quickRouterEndpoint: "direct",
       imageModel: "gpt-image-2-c",
@@ -90,7 +90,7 @@ describe("account AI gateway route", () => {
     expect(update).toHaveBeenCalledWith({
       where: { id: "user-1" },
       data: {
-        writingProvider: "deepseek-chat",
+        writingProvider: "deepseek-v4-pro",
         aiGateway: "crazyrouter",
         quickRouterEndpoint: "direct",
         imageModel: "gpt-image-2-c",
@@ -104,7 +104,7 @@ describe("account AI gateway route", () => {
   test("PATCH preserves the endpoint for a cached client that only sends the gateway", async () => {
     findUnique.mockResolvedValue({
       id: "user-1",
-      writingProvider: "deepseek-chat",
+      writingProvider: "deepseek-v4-pro",
       aiGateway: "quickrouter",
       quickRouterEndpoint: "direct",
       imageModel: "gpt-image-2",
@@ -113,7 +113,7 @@ describe("account AI gateway route", () => {
     });
     update.mockResolvedValue({
       id: "user-1",
-      writingProvider: "deepseek-chat",
+      writingProvider: "deepseek-v4-pro",
       aiGateway: "crazyrouter",
       quickRouterEndpoint: "direct",
       imageModel: "gpt-image-2",
@@ -136,7 +136,7 @@ describe("account AI gateway route", () => {
     expect(update).toHaveBeenCalledWith({
       where: { id: "user-1" },
       data: {
-        writingProvider: "deepseek-chat",
+        writingProvider: "deepseek-v4-pro",
         aiGateway: "crazyrouter",
         quickRouterEndpoint: "direct",
         imageModel: "gpt-image-2",

@@ -4,7 +4,7 @@ export type AiGateway = (typeof AI_GATEWAYS)[number];
 export const QUICKROUTER_ENDPOINTS = ["main", "direct"] as const;
 export type QuickRouterEndpoint = (typeof QUICKROUTER_ENDPOINTS)[number];
 
-export const TEXT_GENERATION_MODELS = ["gpt-5.5", "gpt-5.6-sol", "deepseek-chat"] as const;
+export const TEXT_GENERATION_MODELS = ["gpt-5.5", "gpt-5.6-sol", "deepseek-v4-pro"] as const;
 export type TextGenerationModel = (typeof TEXT_GENERATION_MODELS)[number];
 
 export const IMAGE_GENERATION_MODELS = ["gpt-image-2", "gpt-image-2-c"] as const;
@@ -49,7 +49,7 @@ export const aiGatewayLabels: Record<AiGateway, string> = {
 export const textModelLabels: Record<TextGenerationModel, string> = {
   "gpt-5.5": "GPT-5.5",
   "gpt-5.6-sol": "GPT-5.6 Sol",
-  "deepseek-chat": "DeepSeek",
+  "deepseek-v4-pro": "DeepSeek V4 Pro",
 };
 
 export const imageModelLabels: Record<ImageGenerationModel, string> = {

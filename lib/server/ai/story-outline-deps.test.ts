@@ -4,7 +4,7 @@ import { createStoryOutlineGenerationDeps } from "./story-outline-deps";
 import type { StoryRequirementBrief } from "@/lib/contracts/api";
 import { storyLengthPolicy } from "@/lib/domain/story-length-policy";
 
-const generateOutlineMock = vi.fn<({ prompt }: { prompt: string }) => Promise<{ text: string }>>(async () => ({
+const generateOutlineMock = vi.fn<({ prompt }: { prompt: string; writingProvider?: string }) => Promise<{ text: string }>>(async () => ({
   text: JSON.stringify({
     title: { zh: "海底图书馆", en: "The Ocean Library" },
     summary: { zh: "学生合作完成任务。", en: "Students work together." },
@@ -24,7 +24,7 @@ const generateOutlineMock = vi.fn<({ prompt }: { prompt: string }) => Promise<{ 
     ],
   }),
 }));
-const searchReferenceMock = vi.fn<({ prompt }: { prompt: string }) => Promise<{ text: string }>>();
+const searchReferenceMock = vi.fn<({ prompt }: { prompt: string; writingProvider?: string }) => Promise<{ text: string }>>();
 
 function narrativeBrief(objective: string, fixedPlot: string | null = null): StoryRequirementBrief {
   return {
@@ -45,6 +45,42 @@ vi.mock("./story-outline-provider", () => ({
 }));
 
 describe("createStoryOutlineGenerationDeps", () => {
+  test("uses the selected DeepSeek route for text preparation and web research", async () => {
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({ status: "not_needed", reason: "无需资料" }) });
+    searchReferenceMock.mockResolvedValueOnce({
+      text: JSON.stringify([{ sourceStatus: "confirmed", summary: "资料", usableFacts: ["事实"], avoidTopics: [], adaptationBoundary: "边界" }]),
+    });
+    const deps = createStoryOutlineGenerationDeps({
+      writingProvider: "deepseek-v4-pro",
+      aiGateway: "crazyrouter",
+      quickRouterEndpoint: "main",
+      imageModel: "gpt-image-2",
+      imageGateway: "quickrouter",
+      imageQuickRouterEndpoint: "main",
+    });
+    const context = {
+      chapterCount: 3,
+      coursePeople: [],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentOutline: null,
+      englishLevel: "A2",
+      storyComplexity: "clear_linear" as const,
+      lengthPolicy: storyLengthPolicy("A2", "clear_linear", 3),
+    };
+
+    await deps.prepareBackgroundKnowledge({ ...context, task: "准备资料", confirmedRequirement: "原创故事" });
+    await deps.searchReference({
+      ...context,
+      task: "搜索资料",
+      researchPlan: { researchGoal: "核对事实", packets: [{ title: "主题", subjects: [{ name: "主题" }], researchQuestions: ["事实是什么"], storyUseGoals: ["用于故事"] }] },
+    });
+
+    expect(generateOutlineMock.mock.calls.at(-1)?.[0]).toMatchObject({ writingProvider: "deepseek-v4-pro" });
+    expect(searchReferenceMock.mock.calls.at(-1)?.[0]).toMatchObject({ writingProvider: "deepseek-v4-pro" });
+  });
+
   test("keeps generated and revised Chinese story fields when they exceed the generation target", async () => {
     const deps = createStoryOutlineGenerationDeps();
     const shared = {

@@ -291,7 +291,7 @@ function safeReferenceForWrite(
   };
 }
 
-async function persistPreparedReferences(db: StoryOutlineDb, courseId: string, references: GeneratedReference[], replaceExisting: boolean, researchProvider: "none" | "gpt-5.6-sol" = "none") {
+async function persistPreparedReferences(db: StoryOutlineDb, courseId: string, references: GeneratedReference[], replaceExisting: boolean, researchProvider: StoryResearchProvider = "none") {
   const persist = async (target: StoryOutlineDb) => {
     if (replaceExisting) await target.courseSourceReference.deleteMany({ where: { courseId } });
     for (const generated of references) {
@@ -1666,7 +1666,13 @@ async function executeStoryOutlineMessage(
     });
     const stored = await db.courseStorySetting.findUnique({ where: { courseId } });
     const details = alignmentWorkflowDetails(stored?.alignmentDetails);
-    await persistPreparedReferences(db, courseId, referencesToPersist, details.needsBackgroundRefresh === true, "gpt-5.6-sol");
+    await persistPreparedReferences(
+      db,
+      courseId,
+      referencesToPersist,
+      details.needsBackgroundRefresh === true,
+      setting.writingProvider === "deepseek-v4-pro" ? "deepseek-v4-pro" : "gpt-5.6-sol",
+    );
     await addMessage(db, courseId, "assistant", "资料已整理，请确认后继续。", [
       { id: "confirm-reference-materials", label: "确认参考资料并继续", action: "confirm_reference_materials" },
     ], operation.resultAudit("联网整理参考资料"));

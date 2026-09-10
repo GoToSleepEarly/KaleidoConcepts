@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createStoryOutlineGenerationDeps, StoryAlignmentResponseError, StoryOutlineResponseError } from "@/lib/server/ai/story-outline-deps";
 import { devAiLog } from "@/lib/server/ai/dev-ai-log";
 import { aiGatewayFromRequest } from "@/lib/server/ai/request-gateway";
-import type { AiProviderSettings } from "@/lib/ai-gateway";
+import type { AccountAiSettings } from "@/lib/ai-gateway";
 import { getDb } from "@/lib/server/db";
 import { authenticationErrorResponse } from "@/lib/server/http/authentication";
 import {
@@ -30,7 +30,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const parsed = storyOutlineMessageSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ message: "请输入故事想法或选择一个操作" }, { status: 400 });
   const { id } = await params;
-  let aiGateway: AiProviderSettings | undefined;
+  let aiGateway: AccountAiSettings | undefined;
   try {
     const db = getDb();
     const accountAiSettings = await aiGatewayFromRequest(request, db);

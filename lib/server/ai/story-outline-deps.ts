@@ -13,7 +13,7 @@ import { defaultStoryComplexity, storyLengthPolicy, type StoryLengthPolicy } fro
 
 import { devAiLog } from "./dev-ai-log";
 import { createStoryOutlineProvider } from "./story-outline-provider";
-import type { AiProviderSettingsInput } from "@/lib/ai-gateway";
+import type { AccountAiSettings, AiProviderSettingsInput } from "@/lib/ai-gateway";
 
 export class StoryAlignmentResponseError extends Error {
   readonly status = 502;
@@ -980,13 +980,14 @@ function parseAlignmentDecision(
   return result;
 }
 
-export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInput = "quickrouter") {
+export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInput | AccountAiSettings = "quickrouter") {
   let provider: ReturnType<typeof createStoryOutlineProvider> | null = null;
   const client = () => (provider ??= createStoryOutlineProvider(undefined, settings));
+  const selectedWritingProvider = typeof settings === "object" && "writingProvider" in settings ? settings.writingProvider : "gpt-5.6-sol";
   return {
     alignRequirements: async (input: StoryPromptContext & { task: string; replyContext?: "initial" | "requirement_change"; needsBackgroundRefresh?: boolean; requiredQuestionIds?: string[] }): Promise<AlignmentDecision> => {
       let { text } = await client().generateOutline({
-        writingProvider: "gpt-5.6-sol",
+        writingProvider: selectedWritingProvider,
         operation: "story_align_requirements",
         prompt: [
           "你是课程故事需求对齐引擎。你只负责把老师输入归一化为后续流程可直接消费的结构化需求；不创作方向、大纲或背景资料。",
@@ -1034,7 +1035,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           if (round === 1) throw error;
           await input.onFormatRepair?.();
           const repaired = await client().generateOutline({
-            writingProvider: "gpt-5.6-sol",
+            writingProvider: selectedWritingProvider,
             operation: "story_align_requirements_repair_format",
             prompt: [
               "修复需求对齐响应，使其满足协议；保留老师已表达的目标和所有真正阻塞项。",
@@ -1054,7 +1055,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
     },
     generateMainlineCard: async (input: StoryPromptContext & { task: string; requirementBrief: StoryRequirementBrief }) => {
       const { text } = await client().generateOutline({
-        writingProvider: "gpt-5.6-sol",
+        writingProvider: selectedWritingProvider,
         operation: "story_generate_mainline_card",
         prompt: [
           "你负责把老师已确认的需求展开成一张可确认的故事主线理解卡，不生成章节大纲，不改变需求。",
@@ -1085,7 +1086,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
     },
     prepareBackgroundKnowledge: async (input: StoryPromptContext & { task: string; confirmedRequirement: string }): Promise<BackgroundKnowledgeResult> => {
       const { text } = await client().generateOutline({
-        writingProvider: "gpt-5.6-sol",
+        writingProvider: selectedWritingProvider,
         operation: "story_prepare_background",
         prompt: [
           "你是一名儿童故事背景资料编辑，负责为后续故事创作准备准确、必要且简洁的背景知识。",
@@ -1118,7 +1119,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
     },
     checkChangeBoundary: async (input: StoryPromptContext & { task: string; targetScope: "direction" | "outline" | "chapter" }) => {
       const { text } = await client().generateOutline({
-        writingProvider: "gpt-5.6-sol",
+        writingProvider: selectedWritingProvider,
         operation: "story_check_change_boundary",
         prompt: [
           "你只判断老师的修改能否在指定范围内完成，不解释新的故事意图，也不改写任何内容。",
@@ -1146,7 +1147,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
     },
     generateDirections: async (input: StoryPromptContext & { task: string }) => {
       const { text } = await client().generateOutline({
-        writingProvider: "gpt-5.6-sol",
+        writingProvider: selectedWritingProvider,
         operation: "story_generate_directions",
         prompt: [
           input.storyMode === "faithful"
@@ -1185,7 +1186,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
     },
     reviseDirection: async (input: StoryPromptContext & { task: string; direction: unknown }) => {
       const { text } = await client().generateOutline({
-        writingProvider: "gpt-5.6-sol",
+        writingProvider: selectedWritingProvider,
         operation: "story_revise_direction",
         prompt: [
           input.storyMode === "faithful"
@@ -1222,7 +1223,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
     },
     reviseChapter: async (input: StoryPromptContext & { task: string; chapterOrder: number }) => {
       const { text } = await client().generateOutline({
-        writingProvider: "gpt-5.6-sol",
+        writingProvider: selectedWritingProvider,
         operation: "story_revise_chapter",
         prompt: [
           "你是一名资深儿童故事主编，只修改老师指定的一章故事大纲。",
@@ -1270,6 +1271,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
     },
     searchReference: async (input: StoryPromptContext & { task: string; researchPlan: CourseResearchPlan }) => {
       const { text } = await client().searchReference({
+        writingProvider: selectedWritingProvider,
         operation: "story_search_reference",
         prompt: [
           "你只做资料研究，不判断流程、不设计故事方向或大纲。请联网整理真正能支撑儿童英语 PBL 故事创作的参考资料，不要只做对象简介。",

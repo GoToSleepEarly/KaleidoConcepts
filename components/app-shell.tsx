@@ -350,46 +350,49 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </span>
                     <span className="mt-2 block text-xs leading-5 text-muted-foreground">默认选择，适合稳定生成课程内容。</span>
                   </label>
-                  <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", writingProvider === "deepseek-chat" ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")}>
+                  <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", writingProvider === "deepseek-v4-pro" ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")}>
                     <span className="flex items-center gap-2">
-                      <input checked={writingProvider === "deepseek-chat"} className="size-4" name="writing-provider" onChange={() => setWritingProvider("deepseek-chat")} type="radio" value="deepseek-chat" />
-                      <span className="text-sm font-semibold text-foreground">DeepSeek</span>
+                      <input checked={writingProvider === "deepseek-v4-pro"} className="size-4" name="writing-provider" onChange={() => setWritingProvider("deepseek-v4-pro")} type="radio" value="deepseek-v4-pro" />
+                      <span className="text-sm font-semibold text-foreground">{textModelLabels["deepseek-v4-pro"]}</span>
                     </span>
-                    <span className="mt-2 block text-xs leading-5 text-muted-foreground">成本更低，使用 DeepSeek 直连服务。</span>
+                    <span className="mt-2 block text-xs leading-5 text-muted-foreground">文本生成与联网研究均使用 DeepSeek 官方服务。</span>
                   </label>
                 </div>
-                {writingProvider === "deepseek-chat" ? <p className="mt-3 rounded-xl border border-border bg-background px-4 py-3 text-xs text-muted-foreground"><span className="font-semibold text-foreground">文本生成路线</span><span className="ml-2">DeepSeek 官方：https://api.deepseek.com</span></p> : null}
+                {writingProvider === "deepseek-v4-pro" ? <p className="mt-3 rounded-xl border border-border bg-background px-4 py-3 text-xs text-muted-foreground"><span className="font-semibold text-foreground">文本生成与联网研究路线</span><span className="ml-2">DeepSeek 官方：https://api.deepseek.com</span></p> : null}
               </fieldset>
-              <fieldset className="rounded-2xl bg-muted/35 p-4 sm:p-5" disabled={isSavingGateway}>
-                <legend className="text-sm font-semibold text-foreground">{writingProvider === "deepseek-chat" ? "联网研究线路" : "文本生成与联网研究线路"}</legend>
-                {writingProvider === "deepseek-chat" ? <p className="mt-1 text-xs leading-5 text-muted-foreground">DeepSeek 官方线路负责文本生成；联网研究仍需使用支持 web_search 的 GPT 兼容线路。</p> : null}
-                <div className="mt-3 grid gap-3">
-                  {AI_GATEWAYS.map((gateway) => (
-                    <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", aiGateway === gateway ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={gateway}>
-                      <span className="flex items-center gap-2">
-                        <input checked={aiGateway === gateway} className="size-4" name="ai-gateway" onChange={() => setAiGateway(gateway)} type="radio" value={gateway} />
-                        <span className="text-sm font-semibold text-foreground">{aiGatewayLabels[gateway]}</span>
-                      </span>
-                      <span className="mt-2 block text-xs leading-5 text-muted-foreground">{aiGatewayDescriptions[gateway]}</span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              {aiGateway === "quickrouter" ? (
-                <fieldset disabled={isSavingGateway}>
-                  <legend className="text-sm font-semibold text-foreground">QuickRouter Base URL</legend>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    {QUICKROUTER_ENDPOINTS.map((endpoint) => (
-                      <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", quickRouterEndpoint === endpoint ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={endpoint}>
-                        <span className="flex items-center gap-2">
-                          <input checked={quickRouterEndpoint === endpoint} className="size-4" name="quickrouter-endpoint" onChange={() => setQuickRouterEndpoint(endpoint)} type="radio" value={endpoint} />
-                          <span className="text-sm font-semibold text-foreground">{quickRouterEndpointLabels[endpoint]}</span>
-                        </span>
-                        <span className="mt-2 block break-all text-xs leading-5 text-muted-foreground">{quickRouterEndpointUrls[endpoint]}</span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
+              {writingProvider !== "deepseek-v4-pro" ? (
+                <>
+                  <fieldset className="rounded-2xl bg-muted/35 p-4 sm:p-5" disabled={isSavingGateway}>
+                    <legend className="text-sm font-semibold text-foreground">文本生成与联网研究线路</legend>
+                    <div className="mt-3 grid gap-3">
+                      {AI_GATEWAYS.map((gateway) => (
+                        <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", aiGateway === gateway ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={gateway}>
+                          <span className="flex items-center gap-2">
+                            <input checked={aiGateway === gateway} className="size-4" name="ai-gateway" onChange={() => setAiGateway(gateway)} type="radio" value={gateway} />
+                            <span className="text-sm font-semibold text-foreground">{aiGatewayLabels[gateway]}</span>
+                          </span>
+                          <span className="mt-2 block text-xs leading-5 text-muted-foreground">{aiGatewayDescriptions[gateway]}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                  {aiGateway === "quickrouter" ? (
+                    <fieldset disabled={isSavingGateway}>
+                      <legend className="text-sm font-semibold text-foreground">QuickRouter Base URL</legend>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {QUICKROUTER_ENDPOINTS.map((endpoint) => (
+                          <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", quickRouterEndpoint === endpoint ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={endpoint}>
+                            <span className="flex items-center gap-2">
+                              <input checked={quickRouterEndpoint === endpoint} className="size-4" name="quickrouter-endpoint" onChange={() => setQuickRouterEndpoint(endpoint)} type="radio" value={endpoint} />
+                              <span className="text-sm font-semibold text-foreground">{quickRouterEndpointLabels[endpoint]}</span>
+                            </span>
+                            <span className="mt-2 block break-all text-xs leading-5 text-muted-foreground">{quickRouterEndpointUrls[endpoint]}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ) : null}
+                </>
               ) : null}
               <fieldset className="rounded-2xl bg-muted/35 p-4 sm:p-5" disabled={isSavingGateway}>
                 <legend className="text-sm font-semibold text-foreground">图片生成与编辑</legend>

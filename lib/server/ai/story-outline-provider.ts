@@ -8,16 +8,10 @@ import { devAiLog } from "./dev-ai-log";
 type ProviderConfig = {
   apiKey: string;
   baseUrl?: string;
-  gateway?: AiGateway;
+  gateway?: AiGateway | "deepseek";
   gptModel: string;
   researchModel: string;
-  timeoutMs: number;
-};
-
-type DeepSeekConfig = {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
+  responsesPath?: string;
   timeoutMs: number;
 };
 
@@ -35,21 +29,6 @@ type ResponsesData = {
     output_tokens?: number;
     total_tokens?: number;
     output_tokens_details?: { reasoning_tokens?: number };
-  };
-};
-
-type ChatCompletionsData = {
-  choices?: Array<{
-    finish_reason?: string;
-    message?: { content?: string };
-  }>;
-  error?: { message?: string };
-  message?: string;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
-    completion_tokens_details?: { reasoning_tokens?: number };
   };
 };
 
@@ -94,7 +73,7 @@ function textDispatcher(requestTimeoutMs: number) {
   return dispatcher;
 }
 
-function configFromEnvironment(input: AiProviderSettingsInput): ProviderConfig {
+function configFromEnvironment(input: AiProviderSettingsInput): ProviderConfig & { gateway: AiGateway } {
   const settings = normalizeAiProviderSettings(input);
   const gateway = settings.aiGateway;
   const isCrazyrouter = gateway === "crazyrouter";
@@ -144,27 +123,17 @@ function responseUsage(data: ResponsesData): StoryOutlineUsage | undefined {
   };
 }
 
-function chatCompletionUsage(data: ChatCompletionsData): StoryOutlineUsage | undefined {
-  if (!data.usage) return undefined;
-  const outputTokens = data.usage.completion_tokens ?? 0;
-  const reasoningTokens = data.usage.completion_tokens_details?.reasoning_tokens ?? 0;
-  return {
-    inputTokens: data.usage.prompt_tokens ?? 0,
-    outputTokens,
-    visibleOutputTokens: Math.max(0, outputTokens - reasoningTokens),
-    reasoningTokens,
-    totalTokens: data.usage.total_tokens ?? 0,
-  };
-}
-
-function deepSeekConfigFromEnvironment(): DeepSeekConfig {
+function deepSeekConfigFromEnvironment(): ProviderConfig {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new StoryOutlineProviderConfigError("DeepSeek 服务尚未配置");
   const timeout = Number(process.env.TEXT_GENERATION_TIMEOUT_MS);
   return {
     apiKey,
     baseUrl: (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, ""),
-    model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+    gateway: "deepseek",
+    gptModel: process.env.DEEPSEEK_MODEL || "deepseek-v4-pro",
+    researchModel: process.env.DEEPSEEK_MODEL || "deepseek-v4-pro",
+    responsesPath: "/responses",
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };
 }
@@ -195,6 +164,7 @@ function isAmbiguousTimeout(error: unknown) {
 
 export function createStoryOutlineProvider(config?: ProviderConfig, selectedSettings: AiProviderSettingsInput = "quickrouter") {
   function resolvedConfig(model?: TextGenerationModel) {
+    if (model === "deepseek-v4-pro") return deepSeekConfigFromEnvironment();
     if (config)
       return {
         baseUrl: "https://api.quickrouter.ai",
@@ -216,7 +186,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     let response: Response | null = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        response = (await undiciFetch(`${activeConfig.baseUrl ?? "https://api.quickrouter.ai"}/v1/responses`, {
+        response = (await undiciFetch(`${activeConfig.baseUrl ?? "https://api.quickrouter.ai"}${activeConfig.responsesPath ?? "/v1/responses"}`, {
           method: "POST",
           headers: {
             Accept: "application/json",
@@ -320,124 +290,8 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     };
   }
 
-  async function requestDeepSeek(operation: string, prompt: string, maxOutputTokens?: number, timeoutOverride?: number) {
-    const activeConfig = deepSeekConfigFromEnvironment();
-    const body = {
-      model: activeConfig.model,
-      messages: [{ role: "user", content: prompt }],
-      ...(maxOutputTokens ? { max_tokens: maxOutputTokens } : {}),
-    };
-    const startedAt = Date.now();
-    devAiLog({ operation, phase: "request", payload: body });
-    let response: Response | null = null;
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
-      try {
-        const timeoutMs = timeoutOverride ?? activeConfig.timeoutMs;
-        response = (await undiciFetch(`${activeConfig.baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            Authorization: `Bearer ${activeConfig.apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(timeoutMs),
-          dispatcher: textDispatcher(timeoutMs),
-        } as UndiciRequestInit)) as unknown as Response;
-        break;
-      } catch (error) {
-        const retrying = attempt === 1 && canRetryBeforeConnection(error);
-        devAiLog({
-          operation,
-          phase: "error",
-          context: { gateway: "deepseek" },
-          latencyMs: Date.now() - startedAt,
-          payload: { attempt, retrying },
-          error,
-        });
-        if (retrying) continue;
-        if (isAmbiguousTimeout(error)) {
-          throw new AiProviderResultUnknownError("故事大纲服务响应超时，生成结果未能确认，请手动重试本步", { cause: error });
-        }
-        throw new Error("故事大纲服务连接失败，请稍后重试", { cause: error });
-      }
-    }
-    if (!response) throw new Error("故事大纲服务连接失败，请稍后重试");
-
-    let data: ChatCompletionsData;
-    try {
-      const rawResponse = await response.text();
-      devAiLog({
-        operation,
-        phase: "response",
-        status: response.status,
-        latencyMs: Date.now() - startedAt,
-        payload: rawResponse,
-      });
-      data = JSON.parse(rawResponse) as ChatCompletionsData;
-    } catch (error) {
-      devAiLog({
-        operation,
-        phase: "error",
-        context: { gateway: "deepseek" },
-        status: response.status,
-        latencyMs: Date.now() - startedAt,
-        error,
-      });
-      const code = transportErrorCode(error);
-      if (isAmbiguousTimeout(error) || (code && INTERRUPTED_RESPONSE_CODES.has(code))) {
-        const reason = isAmbiguousTimeout(error) ? "响应超时" : "响应中断";
-        throw new AiProviderResultUnknownError(`故事大纲服务${reason}，生成结果未能确认，请手动重试本步`, { cause: error });
-      }
-      throw new Error("故事大纲服务返回异常", { cause: error });
-    }
-    if (!response.ok) {
-      const error = new Error(data.error?.message || data.message || "故事大纲生成失败");
-      devAiLog({
-        operation,
-        phase: "error",
-        context: { gateway: "deepseek" },
-        status: response.status,
-        latencyMs: Date.now() - startedAt,
-        error,
-      });
-      throw error;
-    }
-    const usage = chatCompletionUsage(data);
-    if (data.choices?.[0]?.finish_reason === "length") {
-      const error = new StoryOutlineIncompleteResponseError("max_output_tokens", usage);
-      devAiLog({
-        operation,
-        phase: "error",
-        context: { gateway: "deepseek" },
-        status: response.status,
-        latencyMs: Date.now() - startedAt,
-        error,
-      });
-      throw error;
-    }
-    const text = data.choices?.[0]?.message?.content?.trim();
-    if (!text) {
-      const error = new Error("故事大纲服务未返回内容");
-      devAiLog({
-        operation,
-        phase: "error",
-        context: { gateway: "deepseek" },
-        status: response.status,
-        latencyMs: Date.now() - startedAt,
-        error,
-      });
-      throw error;
-    }
-    return { text, usage };
-  }
-
   return {
     generateOutline: ({ writingProvider, prompt, operation, timeoutMs, reasoningEffort, maxOutputTokens }: { writingProvider: StoryWritingProvider; prompt: string; operation?: string; timeoutMs?: number; reasoningEffort?: "low" | "medium" | "high"; maxOutputTokens?: number }) => {
-      // DeepSeek 仍使用官方直连；GPT 与联网研究使用账户选择的预置线路。
-      if (writingProvider === "deepseek-chat") {
-        return requestDeepSeek(operation || "story_outline", prompt, maxOutputTokens, timeoutMs);
-      }
       const activeConfig = resolvedConfig(writingProvider);
       return request(
         operation || "story_outline",
@@ -451,14 +305,15 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
         timeoutMs,
       );
     },
-    searchReference: ({ prompt, operation = "search_reference" }: { prompt: string; operation?: string }) => {
-      const activeConfig = resolvedConfig();
+    searchReference: ({ writingProvider = "gpt-5.6-sol", prompt, operation = "search_reference" }: { writingProvider?: StoryWritingProvider; prompt: string; operation?: string }) => {
+      const activeConfig = resolvedConfig(writingProvider);
       return request(
         operation,
         {
           model: activeConfig.researchModel,
           input: prompt,
           tools: [{ type: "web_search" }],
+          ...(activeConfig.gateway === "deepseek" ? { tool_choice: { type: "web_search" } } : {}),
         },
         activeConfig,
       );

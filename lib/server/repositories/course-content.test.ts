@@ -363,15 +363,15 @@ describe("course content repository", () => {
     const generateExercises = vi.fn();
     const deps = { generateReading, repairReading, generateExercises } as unknown as CourseContentGenerationDeps;
 
-    const result = await generateCourseReading(db, "course-1", "request-1", deps, { writingProvider: "deepseek-chat" });
+    const result = await generateCourseReading(db, "course-1", "request-1", deps, { writingProvider: "deepseek-v4-pro" });
     const exerciseResult = await generateCourseExercises(db, "course-1", "request-2", deps);
 
     expect(result.status).toBe("ready");
     expect(result.chapters[0]?.title).toBe("发光地图 / The Glowing Map");
     expect(exerciseResult.status).toBe("ready");
     expect(generateReading).toHaveBeenCalledTimes(1);
-    expect((generateReading.mock.calls as unknown[][])[0]?.[1]).toBe("deepseek-chat");
-    expect(result.writingProvider).toBe("deepseek-chat");
+    expect((generateReading.mock.calls as unknown[][])[0]?.[1]).toBe("deepseek-v4-pro");
+    expect(result.writingProvider).toBe("deepseek-v4-pro");
     expect((generateReading.mock.calls as unknown[][])[0]?.[0]).toMatchObject({ contentIntent: { kind: "concept", objective: "理解重力", learningTargets: [{ expectedUnderstanding: "物体之间会相互吸引" }] } });
     expect(generateExercises).not.toHaveBeenCalled();
     expect(repairReading).toHaveBeenCalledTimes(1);

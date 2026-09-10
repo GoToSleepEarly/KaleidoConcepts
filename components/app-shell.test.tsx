@@ -138,10 +138,10 @@ describe("AppShell account menu", () => {
     expect(screen.queryByTestId("account-menu")).not.toBeInTheDocument();
   });
 
-  test("saves the account GPT gateway from advanced settings", async () => {
+  test("saves DeepSeek while preserving the previously selected GPT gateway", async () => {
     const request = vi.fn(async (_url: string, init?: RequestInit) =>
       Response.json({
-        writingProvider: init?.method === "PATCH" ? "deepseek-chat" : "gpt-5.6-sol",
+        writingProvider: init?.method === "PATCH" ? "deepseek-v4-pro" : "gpt-5.6-sol",
         aiGateway: init?.method === "PATCH" ? "crazyrouter" : "quickrouter",
         quickRouterEndpoint: "direct",
         imageModel: "gpt-image-2",
@@ -167,8 +167,8 @@ describe("AppShell account menu", () => {
         }),
       ),
     );
+    fireEvent.click(within(screen.getByRole("group", { name: "文本生成与联网研究线路" })).getByRole("radio", { name: /Crazyrouter/ }));
     fireEvent.click(screen.getByRole("radio", { name: /DeepSeek/ }));
-    fireEvent.click(within(screen.getByRole("group", { name: "联网研究线路" })).getByRole("radio", { name: /Crazyrouter/ }));
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
 
     await waitFor(() =>
@@ -177,7 +177,7 @@ describe("AppShell account menu", () => {
         expect.objectContaining({
           method: "PATCH",
           body: JSON.stringify({
-            writingProvider: "deepseek-chat",
+            writingProvider: "deepseek-v4-pro",
             aiGateway: "crazyrouter",
             quickRouterEndpoint: "direct",
             imageModel: "gpt-image-2",
@@ -194,7 +194,7 @@ describe("AppShell account menu", () => {
       "fetch",
       vi.fn(async () =>
         Response.json({
-          writingProvider: "deepseek-chat",
+          writingProvider: "deepseek-v4-pro",
           aiGateway: "crazyrouter",
           quickRouterEndpoint: "main",
           imageModel: "gpt-image-2",
@@ -212,9 +212,9 @@ describe("AppShell account menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
     fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
 
-    const researchGroup = await screen.findByRole("group", { name: "联网研究线路" });
-    await waitFor(() => expect(within(researchGroup).getByRole("radio", { name: /Crazyrouter/ })).toBeChecked());
-    expect(screen.getByRole("radio", { name: /DeepSeek/ })).toBeChecked();
+    await waitFor(() => expect(screen.getByRole("radio", { name: /DeepSeek/ })).toBeChecked());
+    expect(screen.queryByRole("group", { name: "文本生成与联网研究线路" })).not.toBeInTheDocument();
+    expect(screen.getByText("文本生成与联网研究路线")).toBeInTheDocument();
     expect(screen.getByText("DeepSeek 官方：https://api.deepseek.com")).toBeInTheDocument();
     expect(within(screen.getByRole("group", { name: "图片生成与编辑" })).getByRole("radio", { name: /Easy88AI/ })).toBeChecked();
   });
@@ -245,7 +245,7 @@ describe("AppShell account menu", () => {
 
     resolveSettings(
       Response.json({
-        writingProvider: "deepseek-chat",
+        writingProvider: "deepseek-v4-pro",
         aiGateway: "crazyrouter",
         quickRouterEndpoint: "direct",
         imageModel: "gpt-image-2",
@@ -254,7 +254,7 @@ describe("AppShell account menu", () => {
       }),
     );
     await waitFor(() => expect(screen.getByRole("radio", { name: /DeepSeek/ })).toBeChecked());
-    expect(within(screen.getByRole("group", { name: "联网研究线路" })).getByRole("radio", { name: /Crazyrouter/ })).toBeChecked();
+    expect(screen.queryByRole("group", { name: "文本生成与联网研究线路" })).not.toBeInTheDocument();
   });
 
   test("keeps default choices hidden and offers recovery when advanced settings fail to load", async () => {

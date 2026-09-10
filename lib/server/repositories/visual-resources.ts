@@ -52,7 +52,7 @@ export class VisualResourcesInvalidStateError extends Error {
 }
 
 function writingModel(value: string): StoryWritingProvider {
-  if (value === "gpt-5.5" || value === "gpt-5.6-sol" || value === "deepseek-chat") return value;
+  if (value === "gpt-5.5" || value === "gpt-5.6-sol" || value === "deepseek-v4-pro") return value;
   throw new VisualResourcesInvalidStateError("课程文本模型配置无效");
 }
 
