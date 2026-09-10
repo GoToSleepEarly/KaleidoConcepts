@@ -192,4 +192,15 @@ describe("person visual provider", () => {
       output_format: "webp",
     });
   });
+
+  test("Easy88AI 人物形象编辑使用已验证的标准端点", async () => {
+    process.env.EASY88AI_API_KEY = "easy-key";
+    const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/easy-person.webp" }] }));
+    vi.stubGlobal("fetch", request);
+
+    await createPersonVisualProvider(undefined, { aiGateway: "easy88ai", quickRouterEndpoint: "main", imageModel: "gpt-image-2" }).edit({ prompt: "change coat", imageDataUrl: "data:image/png;base64,aGVsbG8=" });
+
+    expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.easy88ai.com/v1/images/edits");
+    expect(new Headers(((request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer easy-key");
+  });
 });

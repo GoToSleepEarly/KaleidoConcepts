@@ -270,7 +270,9 @@ There is no second account area in the sidebar.
 
 账户菜单提供“高级设置”，只负责当前账号的 AI 模型与预置调用线路选择，不允许老师输入任意 Base URL 或 API Key。界面按真实故障边界分为“文本生成”和“图片生成”两个区块；文本与图片可独立切换，避免单一中转站故障同时阻断全部能力。联网研究跟随文本配置，人物形象、课程图片生成和图片编辑跟随图片配置。
 
-文本模型预置为 `gpt-5.5`、`gpt-5.6-sol` 和 `deepseek-chat`。GPT 模型可选择 QuickRouter 主站、QuickRouter 直连、Crazyrouter 或 Easy88AI；DeepSeek 只使用官方直连。图片模型预置为 `gpt-image-2` 与 QuickRouter 专属 `gpt-image-2-c`。图片线路只展示同时支持生成和编辑的预置组合；Easy88AI 官方文档目前只明确声明 `/v1/images/generations`，在图片编辑能力得到真实验证前不得作为账户图片线路开放。
+文本模型预置为 `gpt-5.5`、`gpt-5.6-sol` 和 `deepseek-chat`。GPT 模型可选择 QuickRouter 主站、QuickRouter 直连、Crazyrouter 或 Easy88AI；DeepSeek 的文本生成路线固定为官方 `https://api.deepseek.com`。固定路线仍需在界面明确展示，但因为没有第二个兼容选项，不保存一个没有选择意义的重复字段。协议层继续由 DeepSeek `/chat/completions` Adapter 处理，不能假装成 GPT `/responses`；这是协议差异，不是产品层的特殊模型。选择 DeepSeek 时，联网研究仍独立使用所选 GPT 兼容线路，因为 DeepSeek 官方文本接口不提供当前流程依赖的 `web_search`。
+
+图片模型预置为 `gpt-image-2` 与 QuickRouter 专属 `gpt-image-2-c`。`gpt-image-2` 可选择 QuickRouter、Crazyrouter 或 Easy88AI；`gpt-image-2-c` 只允许 QuickRouter。2026-09-10 使用无效图片、无生成费用的请求验证 Easy88AI `POST /v1/images/edits`：单图 `image`、多图 `image[]`、项目现有的 portrait/landscape 尺寸与 low/medium 质量参数均被端点接收并进入上游图片校验，因此开放 Easy88AI 图片生成与编辑线路。
 
 模型与线路使用稳定 ID 独立保存。为兼容现有字段，账户文本配置保存为 `writingProvider`、`aiGateway`、`quickRouterEndpoint`，图片配置保存为 `imageModel`、`imageGateway`、`imageQuickRouterEndpoint`；不保存 Base URL，也不把模型和中转站拼成一个枚举。服务端预置目录负责把线路 ID 映射为白名单 Base URL、密钥环境变量和协议 Adapter，并可为个别线路配置上游模型别名；未配置别名时直接使用标准模型名。新增兼容模型、线路或备用域名只修改预置目录，不修改课程业务代码。
 
@@ -288,7 +290,7 @@ There is no second account area in the sidebar.
 
 实现状态：已实现账户菜单设置、登录同步、数据库字段、服务端路由选择和 GPT 文本/研究/图片 provider 分流；生产部署前执行 `pnpm prisma:deploy`。
 
-2026-09-10：高级设置拆分为当前账号的文本与图片配置；文本支持 `gpt-5.5`、`gpt-5.6-sol`、DeepSeek 直连及 QuickRouter/Crazyrouter/Easy88AI 预置线路，图片支持主动选择 `gpt-image-2` 或 QuickRouter 专属 `gpt-image-2-c`，不再在 429 后隐式换模型。Easy88AI 免费 `/v1/models` 检查鉴权成功并确认三个目标模型 ID；未调用付费生成接口，图片编辑能力未获证明前不开放 Easy88AI 图片线路。验证通过全量 91 个测试文件 / 767 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、本地 PostgreSQL `pnpm prisma:deploy`、乱码扫描和 `git diff --check`。实现提交：`feab432`。
+2026-09-10：高级设置拆分为当前账号的文本与图片配置；文本支持 `gpt-5.5`、`gpt-5.6-sol`、DeepSeek 官方直连及 QuickRouter/Crazyrouter/Easy88AI 预置线路，图片支持主动选择 `gpt-image-2` 或 QuickRouter 专属 `gpt-image-2-c`，不再在 429 后隐式换模型。Easy88AI 免费 `/v1/models` 检查鉴权成功并确认三个目标模型 ID；后续无效图片探测确认 `/v1/images/edits` 兼容项目所需参数，因此开放 Easy88AI `gpt-image-2` 图片线路。两次检查均未获得可用生成结果，不调用付费文本或图片生成。首轮实现提交：`feab432`；本轮补充提交待完成后记录。
 
 2026-09-09：修复本地完整环境每次启动执行 seed 时覆盖已有账号中转站偏好的问题；已有账号 seed 更新不再包含三项可变 AI 设置。高级设置弹窗新增数据库读取 Loading 和可恢复失败态，读取完成前不再展示组件默认选项。验证通过全量 89 个测试文件 / 730 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`。实现提交：`48369d7`。
 

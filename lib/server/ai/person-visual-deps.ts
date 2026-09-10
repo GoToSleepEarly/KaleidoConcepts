@@ -24,7 +24,7 @@ export function createPersonVisualGenerationDeps(input: AiProviderSettingsInput 
   let provider: ReturnType<typeof createPersonVisualProvider> | null = null;
   const client = () => (provider ??= createPersonVisualProvider(undefined, settings));
   return {
-    provider: aiGateway === "crazyrouter" ? "crazyrouter_gpt_image_2" as const : "quickrouter_gpt_image_2" as const,
+    provider: aiGateway === "crazyrouter" ? "crazyrouter_gpt_image_2" as const : aiGateway === "easy88ai" ? "easy88ai_gpt_image_2" as const : "quickrouter_gpt_image_2" as const,
     generate: (input: { prompt: string }) => client().generate(input),
     edit: (input: { prompt: string; imageDataUrl: string }) => client().edit(input),
     persist: persistPersonVisual,

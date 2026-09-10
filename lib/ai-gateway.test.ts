@@ -17,9 +17,9 @@ describe("AI gateway preset catalog", () => {
     ).toBe("provider-gpt-5.5");
   });
 
-  test("only exposes GPT Image 2-C on QuickRouter and keeps Easy88AI out until image edits are proven", () => {
+  test("exposes Easy88AI for GPT Image 2 but keeps GPT Image 2-C on QuickRouter", () => {
     expect(isImageSelectionSupported("gpt-image-2-c", "quickrouter")).toBe(true);
     expect(isImageSelectionSupported("gpt-image-2-c", "crazyrouter")).toBe(false);
-    expect(isImageSelectionSupported("gpt-image-2", "easy88ai")).toBe(false);
+    expect(isImageSelectionSupported("gpt-image-2", "easy88ai")).toBe(true);
   });
 });

@@ -288,4 +288,25 @@ describe("course image provider", () => {
     });
     expect((request.mock.calls[1]?.[1]?.body as FormData).get("quality")).toBe("high");
   });
+
+  test("Easy88AI 使用已验证的标准图片生成与编辑端点", async () => {
+    process.env.EASY88AI_API_KEY = "easy-key";
+    const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/easy.webp" }] }));
+    vi.stubGlobal("fetch", request);
+    const provider = createCourseImageProvider(undefined, { aiGateway: "easy88ai", quickRouterEndpoint: "main", imageModel: "gpt-image-2" });
+
+    await provider.generate({ prompt: "scene", quality: "low" });
+    await provider.edit({ prompt: "edit", imageDataUrls: ["data:image/png;base64,aGVsbG8="], quality: "medium" });
+
+    expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.easy88ai.com/v1/images/generations");
+    expect((request.mock.calls[1] as unknown[] | undefined)?.[0]).toBe("https://api.easy88ai.com/v1/images/edits");
+    expect(new Headers(((request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer easy-key");
+    const generationInit = (request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
+    const editInit = (request.mock.calls[1] as unknown[] | undefined)?.[1] as RequestInit | undefined;
+    const generationBody = JSON.parse(String(generationInit?.body));
+    expect(generationBody).toMatchObject({ model: "gpt-image-2" });
+    expect(generationBody.format).toBeUndefined();
+    expect(generationBody.output_format).toBeUndefined();
+    expect((editInit?.body as FormData).get("model")).toBe("gpt-image-2");
+  });
 });

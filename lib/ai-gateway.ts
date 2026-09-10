@@ -88,9 +88,6 @@ export function upstreamTextModel(model: TextGenerationModel, gateway: AiGateway
 }
 
 export function upstreamImageModel(model: ImageGenerationModel, gateway: AiGateway) {
-  if (gateway === "easy88ai") {
-    throw new Error("Easy88AI 图片编辑能力尚未验证，不能作为图片线路");
-  }
   if (model === "gpt-image-2-c" && gateway !== "quickrouter") {
     throw new Error("GPT Image 2-C 仅支持 QuickRouter");
   }
@@ -98,7 +95,6 @@ export function upstreamImageModel(model: ImageGenerationModel, gateway: AiGatew
 }
 
 export function isImageSelectionSupported(model: ImageGenerationModel, gateway: AiGateway) {
-  if (gateway === "easy88ai") return false;
   return model !== "gpt-image-2-c" || gateway === "quickrouter";
 }
 

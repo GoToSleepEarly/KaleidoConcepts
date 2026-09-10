@@ -171,7 +171,7 @@ export function createCourseImageProvider(config?: ProviderConfig, selectedSetti
             n: 1,
             size,
             quality,
-            ...(gateway === "crazyrouter" ? { output_format: "webp" } : { format: "webp" }),
+            ...(gateway === "crazyrouter" ? { output_format: "webp" } : gateway === "quickrouter" ? { format: "webp" } : {}),
           }),
         { "Content-Type": "application/json" },
         { prompt: input.prompt, size },

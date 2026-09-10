@@ -162,7 +162,7 @@ export function createPersonVisualProvider(config?: ProviderConfig, selectedSett
             n: 1,
             size: "1024x1536",
             quality,
-            ...(resolved.gateway === "crazyrouter" ? { output_format: "webp" } : { format: "webp" }),
+            ...(resolved.gateway === "crazyrouter" ? { output_format: "webp" } : resolved.gateway === "quickrouter" ? { format: "webp" } : {}),
           }),
         { "Content-Type": "application/json" },
         { prompt, size: "1024x1536", format: "webp" },

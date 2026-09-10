@@ -175,4 +175,20 @@ describe("account AI gateway route", () => {
     expect(response.status).toBe(400);
     expect(update).not.toHaveBeenCalled();
   });
+
+  test("PATCH accepts Easy88AI for the standard image model", async () => {
+    findUnique.mockResolvedValue({ id: "user-1", writingProvider: "gpt-5.6-sol", aiGateway: "easy88ai", quickRouterEndpoint: "main", imageModel: "gpt-image-2", imageGateway: "quickrouter", imageQuickRouterEndpoint: "main" });
+    update.mockResolvedValue({ id: "user-1", writingProvider: "gpt-5.6-sol", aiGateway: "easy88ai", quickRouterEndpoint: "main", imageModel: "gpt-image-2", imageGateway: "easy88ai", imageQuickRouterEndpoint: "main" });
+
+    const response = await PATCH(
+      new Request("http://localhost/api/account/ai-gateway", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", cookie: "kaleido.user-id=user-1" },
+        body: JSON.stringify({ aiGateway: "easy88ai", imageModel: "gpt-image-2", imageGateway: "easy88ai" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ imageModel: "gpt-image-2", imageGateway: "easy88ai" }) }));
+  });
 });

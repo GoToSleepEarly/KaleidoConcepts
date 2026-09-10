@@ -358,9 +358,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <span className="mt-2 block text-xs leading-5 text-muted-foreground">成本更低，使用 DeepSeek 直连服务。</span>
                   </label>
                 </div>
+                {writingProvider === "deepseek-chat" ? <p className="mt-3 rounded-xl border border-border bg-background px-4 py-3 text-xs text-muted-foreground"><span className="font-semibold text-foreground">文本生成路线</span><span className="ml-2">DeepSeek 官方：https://api.deepseek.com</span></p> : null}
               </fieldset>
               <fieldset className="rounded-2xl bg-muted/35 p-4 sm:p-5" disabled={isSavingGateway}>
-                <legend className="text-sm font-semibold text-foreground">GPT 与联网研究线路</legend>
+                <legend className="text-sm font-semibold text-foreground">{writingProvider === "deepseek-chat" ? "联网研究线路" : "文本生成与联网研究线路"}</legend>
+                {writingProvider === "deepseek-chat" ? <p className="mt-1 text-xs leading-5 text-muted-foreground">DeepSeek 官方线路负责文本生成；联网研究仍需使用支持 web_search 的 GPT 兼容线路。</p> : null}
                 <div className="mt-3 grid gap-3">
                   {AI_GATEWAYS.map((gateway) => (
                     <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", aiGateway === gateway ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={gateway}>
@@ -414,7 +416,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   ))}
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {AI_GATEWAYS.filter((gateway) => gateway !== "easy88ai" && (imageModel !== "gpt-image-2-c" || gateway === "quickrouter")).map((gateway) => (
+                  {AI_GATEWAYS.filter((gateway) => imageModel !== "gpt-image-2-c" || gateway === "quickrouter").map((gateway) => (
                     <label className={cn("cursor-pointer rounded-xl border bg-background p-4 transition-colors", imageGateway === gateway ? "border-primary ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={gateway}>
                       <span className="flex items-center gap-2">
                         <input checked={imageGateway === gateway} className="size-4" name="image-gateway" onChange={() => setImageGateway(gateway)} type="radio" value={gateway} />

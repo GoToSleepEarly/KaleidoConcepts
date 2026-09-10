@@ -168,7 +168,7 @@ describe("AppShell account menu", () => {
       ),
     );
     fireEvent.click(screen.getByRole("radio", { name: /DeepSeek/ }));
-    fireEvent.click(within(screen.getByRole("group", { name: "GPT 与联网研究线路" })).getByRole("radio", { name: /Crazyrouter/ }));
+    fireEvent.click(within(screen.getByRole("group", { name: "联网研究线路" })).getByRole("radio", { name: /Crazyrouter/ }));
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
 
     await waitFor(() =>
@@ -197,8 +197,8 @@ describe("AppShell account menu", () => {
           writingProvider: "deepseek-chat",
           aiGateway: "crazyrouter",
           quickRouterEndpoint: "main",
-          imageModel: "gpt-image-2-c",
-          imageGateway: "quickrouter",
+          imageModel: "gpt-image-2",
+          imageGateway: "easy88ai",
           imageQuickRouterEndpoint: "direct",
         }),
       ),
@@ -212,8 +212,11 @@ describe("AppShell account menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
     fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
 
-    await waitFor(() => expect(screen.getByRole("radio", { name: /Crazyrouter/ })).toBeChecked());
+    const researchGroup = await screen.findByRole("group", { name: "联网研究线路" });
+    await waitFor(() => expect(within(researchGroup).getByRole("radio", { name: /Crazyrouter/ })).toBeChecked());
     expect(screen.getByRole("radio", { name: /DeepSeek/ })).toBeChecked();
+    expect(screen.getByText("DeepSeek 官方：https://api.deepseek.com")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "图片生成与编辑" })).getByRole("radio", { name: /Easy88AI/ })).toBeChecked();
   });
 
   test("does not show default choices before saved advanced settings finish loading", async () => {
@@ -251,7 +254,7 @@ describe("AppShell account menu", () => {
       }),
     );
     await waitFor(() => expect(screen.getByRole("radio", { name: /DeepSeek/ })).toBeChecked());
-    expect(within(screen.getByRole("group", { name: "GPT 与联网研究线路" })).getByRole("radio", { name: /Crazyrouter/ })).toBeChecked();
+    expect(within(screen.getByRole("group", { name: "联网研究线路" })).getByRole("radio", { name: /Crazyrouter/ })).toBeChecked();
   });
 
   test("keeps default choices hidden and offers recovery when advanced settings fail to load", async () => {
