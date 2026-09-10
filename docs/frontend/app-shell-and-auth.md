@@ -268,15 +268,15 @@ There is no second account area in the sidebar.
 
 ## 账户高级设置
 
-账户菜单提供“高级设置”，只负责当前账号的 AI 模型与预置调用线路选择，不允许老师输入任意 Base URL 或 API Key。界面按真实故障边界分为“文本生成”和“图片生成”两个区块；文本与图片可独立切换，避免单一中转站故障同时阻断全部能力。联网研究跟随文本配置，人物形象、课程图片生成和图片编辑跟随图片配置。
+账户菜单提供“高级设置”，只负责当前账号的 AI 模型与预置提供方选择，不允许老师输入任意 Base URL 或 API Key。界面按真实故障边界分为“文本”和“图片”两个区块；文本与图片可独立切换，避免一个提供方故障同时阻断全部能力。联网是文本模型的默认能力，不在界面中拆成独立设置；人物形象、课程图片生成和图片编辑跟随图片配置。
 
-文本模型预置为 `gpt-5.5`、`gpt-5.6-sol` 和 `deepseek-v4-pro`。GPT 模型可选择 QuickRouter 主站、QuickRouter 直连、Crazyrouter 或 Easy88AI；DeepSeek 的文本生成和联网研究固定使用官方 `https://api.deepseek.com`。DeepSeek 官方已经原生兼容 OpenAI Responses API，并支持服务端执行 `web_search`，因此与 GPT 共用 `/responses` 请求和响应处理，只保留 Base URL、密钥和上游模型名的预置差异，不再保留单独的 Chat Completions Adapter。固定路线仍需在界面明确展示，但因为没有第二个兼容选项，不保存一个没有选择意义的重复字段。
+文本模型预置为 `gpt-5.5`、`gpt-5.6-sol` 和 `deepseek-v4-pro`。用户先选模型，再从该模型兼容的提供方中选择：GPT 模型可选择 QuickRouter 主站、QuickRouter 直连、Crazyrouter 或 Easy88AI；DeepSeek V4 Pro 只显示 DeepSeek。DeepSeek 使用 `https://api.deepseek.com`，原生兼容 OpenAI Responses API 并支持服务端执行 `web_search`，因此与 GPT 共用 `/responses` 请求和响应处理，只保留地址、密钥和上游模型名的预置差异，不再保留单独的 Chat Completions Adapter。
 
-图片模型预置为 `gpt-image-2` 与 QuickRouter 专属 `gpt-image-2-c`。`gpt-image-2` 可选择 QuickRouter、Crazyrouter 或 Easy88AI；`gpt-image-2-c` 只允许 QuickRouter。2026-09-10 使用无效图片、无生成费用的请求验证 Easy88AI `POST /v1/images/edits`：单图 `image`、多图 `image[]`、项目现有的 portrait/landscape 尺寸与 low/medium 质量参数均被端点接收并进入上游图片校验，因此开放 Easy88AI 图片生成与编辑线路。
+图片模型预置为 `gpt-image-2` 与 QuickRouter 专属 `gpt-image-2-c`。用户同样先选模型，再选择兼容提供方：`gpt-image-2` 可选择 QuickRouter 主站、QuickRouter 直连、Crazyrouter 或 Easy88AI；`gpt-image-2-c` 只显示 QuickRouter 主站和 QuickRouter 直连。2026-09-10 使用无效图片、无生成费用的请求验证 Easy88AI `POST /v1/images/edits`：单图 `image`、多图 `image[]`、项目现有的 portrait/landscape 尺寸与 low/medium 质量参数均被端点接收并进入上游图片校验，因此开放 Easy88AI 图片生成与编辑。
 
-模型与线路使用稳定 ID 独立保存。为兼容现有字段，账户文本配置保存为 `writingProvider`、`aiGateway`、`quickRouterEndpoint`，图片配置保存为 `imageModel`、`imageGateway`、`imageQuickRouterEndpoint`；不保存 Base URL，也不把模型和中转站拼成一个枚举。服务端预置目录负责把线路 ID 映射为白名单 Base URL、密钥环境变量和协议 Adapter，并可为个别线路配置上游模型别名；未配置别名时直接使用标准模型名。新增兼容模型、线路或备用域名只修改预置目录，不修改课程业务代码。
+UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter 主站和 QuickRouter 直连作为两个并列选项呈现，不再增加“地址”层级。内部继续复用同一 QuickRouter 密钥、模型映射和兼容处理。为兼容现有数据，账户文本配置仍保存为 `writingProvider`、`aiGateway`、`quickRouterEndpoint`，图片配置仍保存为 `imageModel`、`imageGateway`、`imageQuickRouterEndpoint`；不保存 Base URL。服务端预置目录负责把这些稳定 ID 映射为白名单地址、密钥环境变量和协议 Adapter，并可为个别提供方配置上游模型别名；未配置别名时直接使用标准模型名。新增模型、提供方或备用地址只修改预置目录和兼容矩阵，不修改课程业务代码。
 
-每次打开高级设置时，`GET /api/account/ai-gateway` 按 HTTP-only 身份 Cookie 从数据库读取上述六项设置，前端展示代码内固定的预置目录。`PATCH` 只接受目录中存在且兼容的组合；为兼容升级期间的旧页面，缺失的新字段沿用数据库原值。保存使用一次原子更新；任一显式字段无效或数据库写入失败时全部保持原值。加载完成前不得展示组件默认值，加载失败时保留未知状态并提供重新加载入口。
+每次打开高级设置时，`GET /api/account/ai-gateway` 按 HTTP-only 身份 Cookie 从数据库读取上述六项设置，前端展示代码内固定的预置目录。弹窗桌面端并列展示“文本”和“图片”，移动端顺序排列；每个区块严格使用“模型 → 提供方”的线性顺序，模型变化后立即收窄可选提供方。界面不展示“中转站”“联网线路”“Base URL”或真实 URL，不使用多层嵌套卡片。`PATCH` 只接受目录中存在且兼容的组合；为兼容升级期间的旧页面，缺失的新字段沿用数据库原值。保存使用一次原子更新；任一显式字段无效或数据库写入失败时全部保持原值。加载完成前不得展示组件默认值，加载失败时保留未知状态并提供重新加载入口。
 
 本地启动与生产发布执行的幂等 seed 只负责创建预置账号和同步固定身份信息，不覆盖已有账号 AI 设置。每个新 AI 操作在服务端开始时读取账户配置并形成请求快照；修改只影响下一次新请求，运行中任务继续使用启动时配置，已有成果不清空、不改写。
 
@@ -289,6 +289,8 @@ There is no second account area in the sidebar.
 生产环境统一从项目根目录 `.env` 读取数据库、持久化图片目录和 AI 服务配置。`scripts/deploy-prod.sh` 在构建前加载该文件，并在重启已有 PM2 进程时使用 `--update-env`，确保新 Node 进程不沿用 PM2 保存的旧变量。生产 `.env` 不提交 Git，也不使用 `.env.local` 叠加覆盖。
 
 实现状态：已实现账户菜单设置、登录同步、数据库字段、服务端路由选择和 GPT 文本/研究/图片 provider 分流；生产部署前执行 `pnpm prisma:deploy`。
+
+2026-09-10：高级设置 UI 按“模型 → 提供方”重构。桌面端并列展示文本与图片，移动端纵向排列；QuickRouter 主站与直连改为两个平级提供方选项，删除第三层地址选择、真实 URL、“中转站”和独立联网文案。选择模型后只展示兼容提供方，`gpt-image-2-c` 仍只能选择 QuickRouter 主站或直连。保留现有数据库字段和服务端路由实现，不新增 migration。验证通过全量 92 个测试文件 / 773 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm build`、桌面浏览器实测、乱码扫描和 `git diff --check`。
 
 2026-09-10：高级设置拆分为当前账号的文本与图片配置；文本支持 `gpt-5.5`、`gpt-5.6-sol`、DeepSeek 官方直连及 QuickRouter/Crazyrouter/Easy88AI 预置线路，图片支持主动选择 `gpt-image-2` 或 QuickRouter 专属 `gpt-image-2-c`，不再在 429 后隐式换模型。Easy88AI 免费 `/v1/models` 检查鉴权成功并确认三个目标模型 ID；后续无效图片探测确认 `/v1/images/edits` 兼容项目所需参数，因此开放 Easy88AI `gpt-image-2` 图片线路。两次检查均未获得可用生成结果，不调用付费文本或图片生成。验证通过全量 92 个测试文件 / 772 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、本地 PostgreSQL `pnpm prisma:deploy`、乱码扫描、敏感信息扫描和 `git diff --check`。首轮实现提交：`feab432`；Easy88AI 图片线路提交：`2935242`。
 

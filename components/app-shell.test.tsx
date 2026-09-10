@@ -138,7 +138,7 @@ describe("AppShell account menu", () => {
     expect(screen.queryByTestId("account-menu")).not.toBeInTheDocument();
   });
 
-  test("saves DeepSeek while preserving the previously selected GPT gateway", async () => {
+  test("shows models before compatible providers and saves the flattened provider choice", async () => {
     const request = vi.fn(async (_url: string, init?: RequestInit) =>
       Response.json({
         writingProvider: init?.method === "PATCH" ? "deepseek-v4-pro" : "gpt-5.6-sol",
@@ -167,8 +167,20 @@ describe("AppShell account menu", () => {
         }),
       ),
     );
-    fireEvent.click(within(screen.getByRole("group", { name: "文本生成与联网研究线路" })).getByRole("radio", { name: /Crazyrouter/ }));
-    fireEvent.click(screen.getByRole("radio", { name: /DeepSeek/ }));
+    const textSettings = screen.getByRole("region", { name: "文本设置" });
+    const textModelGroup = within(textSettings).getByRole("group", {
+      name: "文本模型",
+    });
+    const textProviderGroup = within(textSettings).getByRole("group", {
+      name: "文本提供方",
+    });
+    expect(textModelGroup.compareDocumentPosition(textProviderGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByTestId("advanced-settings-grid")).toHaveClass("grid", "md:grid-cols-2");
+    expect(within(textProviderGroup).getByRole("radio", { name: "QuickRouter 主站" }).closest("label")).toHaveClass("min-h-11");
+    fireEvent.click(within(textProviderGroup).getByRole("radio", { name: "Crazyrouter" }));
+    fireEvent.click(within(textModelGroup).getByRole("radio", { name: "DeepSeek V4 Pro" }));
+    expect(within(textProviderGroup).getAllByRole("radio")).toHaveLength(1);
+    expect(within(textProviderGroup).getByRole("radio", { name: "DeepSeek" })).toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
 
     await waitFor(() =>
@@ -212,11 +224,17 @@ describe("AppShell account menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
     fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
 
-    await waitFor(() => expect(screen.getByRole("radio", { name: /DeepSeek/ })).toBeChecked());
-    expect(screen.queryByRole("group", { name: "文本生成与联网研究线路" })).not.toBeInTheDocument();
-    expect(screen.getByText("文本生成与联网研究路线")).toBeInTheDocument();
-    expect(screen.getByText("DeepSeek 官方：https://api.deepseek.com")).toBeInTheDocument();
-    expect(within(screen.getByRole("group", { name: "图片生成与编辑" })).getByRole("radio", { name: /Easy88AI/ })).toBeChecked();
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "文本模型" })).getByRole("radio", { name: "DeepSeek V4 Pro" })).toBeChecked());
+    const textSettings = screen.getByRole("region", { name: "文本设置" });
+    const textProviderGroup = within(textSettings).getByRole("group", {
+      name: "文本提供方",
+    });
+    expect(within(textProviderGroup).getAllByRole("radio")).toHaveLength(1);
+    expect(within(textProviderGroup).getByRole("radio", { name: "DeepSeek" })).toBeChecked();
+    expect(screen.queryByText(/联网/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/中转站/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/api\.deepseek\.com/)).not.toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "图片提供方" })).getByRole("radio", { name: "Easy88AI" })).toBeChecked();
   });
 
   test("does not show default choices before saved advanced settings finish loading", async () => {
@@ -253,8 +271,8 @@ describe("AppShell account menu", () => {
         imageQuickRouterEndpoint: "main",
       }),
     );
-    await waitFor(() => expect(screen.getByRole("radio", { name: /DeepSeek/ })).toBeChecked());
-    expect(screen.queryByRole("group", { name: "文本生成与联网研究线路" })).not.toBeInTheDocument();
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "文本模型" })).getByRole("radio", { name: "DeepSeek V4 Pro" })).toBeChecked());
+    expect(within(screen.getByRole("group", { name: "文本提供方" })).getByRole("radio", { name: "DeepSeek" })).toBeChecked();
   });
 
   test("keeps default choices hidden and offers recovery when advanced settings fail to load", async () => {
@@ -276,7 +294,7 @@ describe("AppShell account menu", () => {
     expect(screen.getByRole("button", { name: "重新加载" })).toBeEnabled();
   });
 
-  test("loads and saves the QuickRouter base URL option", async () => {
+  test("presents QuickRouter main and direct as two peer providers", async () => {
     const request = vi.fn(async (_url: string, init?: RequestInit) =>
       Response.json({
         writingProvider: "gpt-5.6-sol",
@@ -296,11 +314,28 @@ describe("AppShell account menu", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
     fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
-    const textEndpointGroup = await screen.findByRole("group", {
-      name: "QuickRouter Base URL",
+    const textProviderGroup = await screen.findByRole("group", {
+      name: "文本提供方",
     });
-    await waitFor(() => expect(within(textEndpointGroup).getByRole("radio", { name: /主站/ })).toBeChecked());
-    fireEvent.click(within(textEndpointGroup).getByRole("radio", { name: /^直连/ }));
+    await waitFor(() =>
+      expect(
+        within(textProviderGroup).getByRole("radio", {
+          name: "QuickRouter 主站",
+        }),
+      ).toBeChecked(),
+    );
+    expect(
+      within(textProviderGroup).getByRole("radio", {
+        name: "QuickRouter 直连",
+      }),
+    ).toBeEnabled();
+    expect(screen.queryByText(/Base URL/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/https:\/\//)).not.toBeInTheDocument();
+    fireEvent.click(
+      within(textProviderGroup).getByRole("radio", {
+        name: "QuickRouter 直连",
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
 
     await waitFor(() =>
@@ -341,12 +376,26 @@ describe("AppShell account menu", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
     fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
-    const imageGroup = await screen.findByRole("group", {
-      name: "图片生成与编辑",
+    const imageModelGroup = await screen.findByRole("group", {
+      name: "图片模型",
     });
-    fireEvent.click(within(imageGroup).getByRole("radio", { name: /GPT Image 2-C/ }));
-    expect(within(imageGroup).queryByRole("radio", { name: /Crazyrouter/ })).not.toBeInTheDocument();
-    expect(within(imageGroup).queryByRole("radio", { name: /Easy88AI/ })).not.toBeInTheDocument();
+    fireEvent.click(within(imageModelGroup).getByRole("radio", { name: "GPT Image 2-C" }));
+    const imageProviderGroup = screen.getByRole("group", {
+      name: "图片提供方",
+    });
+    expect(within(imageProviderGroup).getAllByRole("radio")).toHaveLength(2);
+    expect(
+      within(imageProviderGroup).getByRole("radio", {
+        name: "QuickRouter 主站",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(imageProviderGroup).getByRole("radio", {
+        name: "QuickRouter 直连",
+      }),
+    ).toBeChecked();
+    expect(within(imageProviderGroup).queryByRole("radio", { name: "Crazyrouter" })).not.toBeInTheDocument();
+    expect(within(imageProviderGroup).queryByRole("radio", { name: "Easy88AI" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
 
     await waitFor(() =>

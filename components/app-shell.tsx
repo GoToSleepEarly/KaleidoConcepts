@@ -8,7 +8,7 @@ import { BookOpen, ChevronDown, ListChecks, LoaderCircle, LogOut, Menu, Settings
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { AI_GATEWAYS, IMAGE_GENERATION_MODELS, QUICKROUTER_ENDPOINTS, aiGatewayDescriptions, aiGatewayLabels, imageModelLabels, quickRouterEndpointLabels, quickRouterEndpointUrls, textModelLabels, type AccountAiSettings, type AiGateway, type ImageGenerationModel, type QuickRouterEndpoint, type TextGenerationModel } from "@/lib/ai-gateway";
+import { IMAGE_GENERATION_MODELS, TEXT_GENERATION_MODELS, imageModelLabels, textModelLabels, type AccountAiSettings, type AiGateway, type ImageGenerationModel, type QuickRouterEndpoint, type TextGenerationModel } from "@/lib/ai-gateway";
 import { clearAuthSession, getStoredSession } from "@/lib/auth-session";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +18,41 @@ const navItems = [
   { href: "/themes", label: "主题库", icon: Tags, key: "themes" },
   { href: "/grammar", label: "语法库", icon: ListChecks, key: "grammar" },
 ];
+
+type ProviderOption = {
+  id: "quickrouter-main" | "quickrouter-direct" | "crazyrouter" | "easy88ai" | "deepseek";
+  label: string;
+  gateway: AiGateway | "deepseek";
+  endpoint?: QuickRouterEndpoint;
+};
+
+const presetProviderOptions: readonly ProviderOption[] = [
+  {
+    id: "quickrouter-main",
+    label: "QuickRouter 主站",
+    gateway: "quickrouter",
+    endpoint: "main",
+  },
+  {
+    id: "quickrouter-direct",
+    label: "QuickRouter 直连",
+    gateway: "quickrouter",
+    endpoint: "direct",
+  },
+  { id: "crazyrouter", label: "Crazyrouter", gateway: "crazyrouter" },
+  { id: "easy88ai", label: "Easy88AI", gateway: "easy88ai" },
+];
+
+const deepSeekProviderOption: ProviderOption = {
+  id: "deepseek",
+  label: "DeepSeek",
+  gateway: "deepseek",
+};
+
+function selectedProviderId(gateway: AiGateway, endpoint: QuickRouterEndpoint): ProviderOption["id"] {
+  if (gateway === "quickrouter") return endpoint === "main" ? "quickrouter-main" : "quickrouter-direct";
+  return gateway;
+}
 
 const routeInfo: Record<string, { title: string; subtitle?: string; activeKey: string }> = {
   courses: {
@@ -157,7 +192,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         message?: string;
       };
       if (!response.ok || !result.writingProvider || !result.aiGateway || !result.quickRouterEndpoint || !result.imageModel || !result.imageGateway || !result.imageQuickRouterEndpoint) {
-        throw new Error(result.message || "中转站设置加载失败");
+        throw new Error(result.message || "高级设置加载失败");
       }
       setWritingProvider(result.writingProvider);
       setAiGateway(result.aiGateway);
@@ -167,7 +202,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setImageQuickRouterEndpoint(result.imageQuickRouterEndpoint);
       setHasLoadedGateway(true);
     } catch (error) {
-      setGatewayError(error instanceof Error ? error.message : "中转站设置加载失败");
+      setGatewayError(error instanceof Error ? error.message : "高级设置加载失败");
     } finally {
       setIsLoadingGateway(false);
     }
@@ -192,7 +227,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const result = (await response.json()) as Partial<AccountAiSettings> & {
         message?: string;
       };
-      if (!response.ok || !result.aiGateway) throw new Error(result.message || "中转站设置保存失败");
+      if (!response.ok || !result.aiGateway) throw new Error(result.message || "高级设置保存失败");
       setWritingProvider(result.writingProvider ?? writingProvider);
       setAiGateway(result.aiGateway);
       setQuickRouterEndpoint(result.quickRouterEndpoint ?? quickRouterEndpoint);
@@ -201,7 +236,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setImageQuickRouterEndpoint(result.imageQuickRouterEndpoint ?? imageQuickRouterEndpoint);
       setIsAdvancedOpen(false);
     } catch (error) {
-      setGatewayError(error instanceof Error ? error.message : "中转站设置保存失败");
+      setGatewayError(error instanceof Error ? error.message : "高级设置保存失败");
     } finally {
       setIsSavingGateway(false);
     }
@@ -308,8 +343,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         ) : null}
 
-        <Dialog description="为当前账号分别选择文本与图片的预置模型和调用线路。" icon={<Settings2 className="size-5" />} onClose={() => setIsAdvancedOpen(false)} open={isAdvancedOpen} size="medium-fit" title="高级设置">
-          <div className="space-y-5 p-5 sm:p-6">
+        <Dialog description="选择当前账号使用的模型和提供方。" icon={<Settings2 className="size-5" />} onClose={() => setIsAdvancedOpen(false)} open={isAdvancedOpen} size="medium-fit" title="高级设置">
+          <div className="p-5 sm:p-6">
             {isLoadingGateway ? (
               <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground" role="status">
                 <LoaderCircle aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
@@ -331,123 +366,115 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
             ) : null}
-            <div aria-hidden={!hasLoadedGateway || isLoadingGateway} className={cn("space-y-6", (!hasLoadedGateway || isLoadingGateway) && "hidden")}>
-              <fieldset className="rounded-2xl bg-muted/35 p-4 sm:p-5" disabled={isSavingGateway}>
-                <legend className="text-sm font-semibold text-foreground">文本生成模型</legend>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">统一用于故事大纲和文案与练习，修改后从下一次 AI 请求起生效。</p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <label className={cn("cursor-pointer rounded-xl border bg-background p-4 transition-colors", writingProvider === "gpt-5.5" ? "border-primary ring-1 ring-primary/20" : "border-border hover:bg-muted/50")}>
-                    <span className="flex items-center gap-2">
-                      <input checked={writingProvider === "gpt-5.5"} className="size-4" name="writing-provider" onChange={() => setWritingProvider("gpt-5.5")} type="radio" value="gpt-5.5" />
-                      <span className="text-sm font-semibold text-foreground">{textModelLabels["gpt-5.5"]}</span>
-                    </span>
-                    <span className="mt-2 block text-xs leading-5 text-muted-foreground">适合对比文本生成效果。</span>
-                  </label>
-                  <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", writingProvider === "gpt-5.6-sol" ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")}>
-                    <span className="flex items-center gap-2">
-                      <input checked={writingProvider === "gpt-5.6-sol"} className="size-4" name="writing-provider" onChange={() => setWritingProvider("gpt-5.6-sol")} type="radio" value="gpt-5.6-sol" />
-                      <span className="text-sm font-semibold text-foreground">{textModelLabels["gpt-5.6-sol"]}</span>
-                    </span>
-                    <span className="mt-2 block text-xs leading-5 text-muted-foreground">默认选择，适合稳定生成课程内容。</span>
-                  </label>
-                  <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", writingProvider === "deepseek-v4-pro" ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")}>
-                    <span className="flex items-center gap-2">
-                      <input checked={writingProvider === "deepseek-v4-pro"} className="size-4" name="writing-provider" onChange={() => setWritingProvider("deepseek-v4-pro")} type="radio" value="deepseek-v4-pro" />
-                      <span className="text-sm font-semibold text-foreground">{textModelLabels["deepseek-v4-pro"]}</span>
-                    </span>
-                    <span className="mt-2 block text-xs leading-5 text-muted-foreground">文本生成与联网研究均使用 DeepSeek 官方服务。</span>
-                  </label>
-                </div>
-                {writingProvider === "deepseek-v4-pro" ? <p className="mt-3 rounded-xl border border-border bg-background px-4 py-3 text-xs text-muted-foreground"><span className="font-semibold text-foreground">文本生成与联网研究路线</span><span className="ml-2">DeepSeek 官方：https://api.deepseek.com</span></p> : null}
-              </fieldset>
-              {writingProvider !== "deepseek-v4-pro" ? (
-                <>
-                  <fieldset className="rounded-2xl bg-muted/35 p-4 sm:p-5" disabled={isSavingGateway}>
-                    <legend className="text-sm font-semibold text-foreground">文本生成与联网研究线路</legend>
-                    <div className="mt-3 grid gap-3">
-                      {AI_GATEWAYS.map((gateway) => (
-                        <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", aiGateway === gateway ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={gateway}>
-                          <span className="flex items-center gap-2">
-                            <input checked={aiGateway === gateway} className="size-4" name="ai-gateway" onChange={() => setAiGateway(gateway)} type="radio" value={gateway} />
-                            <span className="text-sm font-semibold text-foreground">{aiGatewayLabels[gateway]}</span>
-                          </span>
-                          <span className="mt-2 block text-xs leading-5 text-muted-foreground">{aiGatewayDescriptions[gateway]}</span>
+            <div aria-hidden={!hasLoadedGateway || isLoadingGateway} className={cn((!hasLoadedGateway || isLoadingGateway) && "hidden")}>
+              <div className="grid gap-7 md:grid-cols-2 md:gap-0 md:divide-x md:divide-border" data-testid="advanced-settings-grid">
+                <section aria-labelledby="text-settings-title" className="min-w-0 md:pr-7" role="region">
+                  <h3 className="text-base font-semibold text-foreground" id="text-settings-title">
+                    文本设置
+                  </h3>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">用于所有课程文本任务，下次请求生效。</p>
+                  <fieldset className="mt-5" disabled={isSavingGateway}>
+                    <legend className="text-sm font-medium text-foreground">文本模型</legend>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {TEXT_GENERATION_MODELS.map((model) => (
+                        <label className={cn("flex min-h-11 cursor-pointer items-center justify-center rounded-lg border px-3 py-2 text-center text-sm font-medium transition-colors", writingProvider === model ? "border-primary bg-primary-50 text-primary ring-1 ring-primary/15" : "border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground")} key={model}>
+                          <input checked={writingProvider === model} className="sr-only" name="writing-provider" onChange={() => setWritingProvider(model)} type="radio" value={model} />
+                          {textModelLabels[model]}
                         </label>
                       ))}
                     </div>
                   </fieldset>
-                  {aiGateway === "quickrouter" ? (
-                    <fieldset disabled={isSavingGateway}>
-                      <legend className="text-sm font-semibold text-foreground">QuickRouter Base URL</legend>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                        {QUICKROUTER_ENDPOINTS.map((endpoint) => (
-                          <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", quickRouterEndpoint === endpoint ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={endpoint}>
-                            <span className="flex items-center gap-2">
-                              <input checked={quickRouterEndpoint === endpoint} className="size-4" name="quickrouter-endpoint" onChange={() => setQuickRouterEndpoint(endpoint)} type="radio" value={endpoint} />
-                              <span className="text-sm font-semibold text-foreground">{quickRouterEndpointLabels[endpoint]}</span>
-                            </span>
-                            <span className="mt-2 block break-all text-xs leading-5 text-muted-foreground">{quickRouterEndpointUrls[endpoint]}</span>
+                  <fieldset className="mt-5" disabled={isSavingGateway}>
+                    <legend className="text-sm font-medium text-foreground">文本提供方</legend>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {(writingProvider === "deepseek-v4-pro" ? [deepSeekProviderOption] : presetProviderOptions).map((provider) => {
+                        const isSelected = writingProvider === "deepseek-v4-pro" ? provider.id === "deepseek" : provider.id === selectedProviderId(aiGateway, quickRouterEndpoint);
+                        return (
+                          <label className={cn("flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors", isSelected ? "border-primary bg-primary-50 text-foreground ring-1 ring-primary/15" : "border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground")} key={provider.id}>
+                            <input
+                              checked={isSelected}
+                              className="size-4 shrink-0 accent-[hsl(var(--primary))]"
+                              name="text-provider"
+                              onChange={() => {
+                                if (provider.gateway !== "deepseek") {
+                                  setAiGateway(provider.gateway);
+                                  if (provider.endpoint) setQuickRouterEndpoint(provider.endpoint);
+                                }
+                              }}
+                              readOnly={provider.gateway === "deepseek"}
+                              type="radio"
+                              value={provider.id}
+                            />
+                            <span className="font-medium">{provider.label}</span>
                           </label>
-                        ))}
-                      </div>
-                    </fieldset>
-                  ) : null}
-                </>
-              ) : null}
-              <fieldset className="rounded-2xl bg-muted/35 p-4 sm:p-5" disabled={isSavingGateway}>
-                <legend className="text-sm font-semibold text-foreground">图片生成与编辑</legend>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">统一用于人物形象、课程插图以及后续图片修改。</p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  {IMAGE_GENERATION_MODELS.map((model) => (
-                    <label className={cn("cursor-pointer rounded-xl border bg-background p-4 transition-colors", imageModel === model ? "border-primary ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={model}>
-                      <span className="flex items-center gap-2">
-                        <input
-                          checked={imageModel === model}
-                          className="size-4"
-                          name="image-model"
-                          onChange={() => {
-                            setImageModel(model);
-                            if (model === "gpt-image-2-c") setImageGateway("quickrouter");
-                          }}
-                          type="radio"
-                          value={model}
-                        />
-                        <span className="text-sm font-semibold text-foreground">{imageModelLabels[model]}</span>
-                      </span>
-                      <span className="mt-2 block text-xs leading-5 text-muted-foreground">{model === "gpt-image-2-c" ? "QuickRouter 专属模型，固定使用高质量并按其规则计费。" : "标准图片模型，使用课程选择的画面质量。"}</span>
-                    </label>
-                  ))}
-                </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {AI_GATEWAYS.filter((gateway) => imageModel !== "gpt-image-2-c" || gateway === "quickrouter").map((gateway) => (
-                    <label className={cn("cursor-pointer rounded-xl border bg-background p-4 transition-colors", imageGateway === gateway ? "border-primary ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={gateway}>
-                      <span className="flex items-center gap-2">
-                        <input checked={imageGateway === gateway} className="size-4" name="image-gateway" onChange={() => setImageGateway(gateway)} type="radio" value={gateway} />
-                        <span className="text-sm font-semibold text-foreground">{aiGatewayLabels[gateway]}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                {imageGateway === "quickrouter" ? (
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    {QUICKROUTER_ENDPOINTS.map((endpoint) => (
-                      <label className={cn("cursor-pointer rounded-xl border bg-background p-4 transition-colors", imageQuickRouterEndpoint === endpoint ? "border-primary ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={endpoint}>
-                        <span className="flex items-center gap-2">
-                          <input checked={imageQuickRouterEndpoint === endpoint} className="size-4" name="image-quickrouter-endpoint" onChange={() => setImageQuickRouterEndpoint(endpoint)} type="radio" value={endpoint} />
-                          <span className="text-sm font-semibold text-foreground">QuickRouter {quickRouterEndpointLabels[endpoint]}</span>
-                        </span>
-                        <span className="mt-2 block break-all text-xs leading-5 text-muted-foreground">{quickRouterEndpointUrls[endpoint]}</span>
-                      </label>
-                    ))}
-                  </div>
-                ) : null}
-              </fieldset>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                </section>
+                <section aria-labelledby="image-settings-title" className="min-w-0 border-t border-border pt-7 md:border-t-0 md:pl-7 md:pt-0" role="region">
+                  <h3 className="text-base font-semibold text-foreground" id="image-settings-title">
+                    图片设置
+                  </h3>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">用于人物、课程插图和图片修改。</p>
+                  <fieldset className="mt-5" disabled={isSavingGateway}>
+                    <legend className="text-sm font-medium text-foreground">图片模型</legend>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {IMAGE_GENERATION_MODELS.map((model) => (
+                        <label className={cn("flex min-h-11 cursor-pointer items-center justify-center rounded-lg border px-3 py-2 text-center text-sm font-medium transition-colors", imageModel === model ? "border-primary bg-primary-50 text-primary ring-1 ring-primary/15" : "border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground")} key={model}>
+                          <input
+                            checked={imageModel === model}
+                            className="sr-only"
+                            name="image-model"
+                            onChange={() => {
+                              setImageModel(model);
+                              if (model === "gpt-image-2-c") setImageGateway("quickrouter");
+                            }}
+                            type="radio"
+                            value={model}
+                          />
+                          {imageModelLabels[model]}
+                        </label>
+                      ))}
+                    </div>
+                    {imageModel === "gpt-image-2-c" ? <p className="mt-2 text-xs leading-5 text-muted-foreground">固定使用高质量，按该模型规则计费。</p> : null}
+                  </fieldset>
+                  <fieldset className="mt-5" disabled={isSavingGateway}>
+                    <legend className="text-sm font-medium text-foreground">图片提供方</legend>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {presetProviderOptions
+                        .filter((provider) => imageModel !== "gpt-image-2-c" || provider.gateway === "quickrouter")
+                        .map((provider) => {
+                          const isSelected = provider.id === selectedProviderId(imageGateway, imageQuickRouterEndpoint);
+                          return (
+                            <label className={cn("flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors", isSelected ? "border-primary bg-primary-50 text-foreground ring-1 ring-primary/15" : "border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground")} key={provider.id}>
+                              <input
+                                checked={isSelected}
+                                className="size-4 shrink-0 accent-[hsl(var(--primary))]"
+                                name="image-provider"
+                                onChange={() => {
+                                  if (provider.gateway !== "deepseek") {
+                                    setImageGateway(provider.gateway);
+                                    if (provider.endpoint) setImageQuickRouterEndpoint(provider.endpoint);
+                                  }
+                                }}
+                                type="radio"
+                                value={provider.id}
+                              />
+                              <span className="font-medium">{provider.label}</span>
+                            </label>
+                          );
+                        })}
+                    </div>
+                  </fieldset>
+                </section>
+              </div>
               {gatewayError ? (
-                <p className="text-sm text-destructive" role="alert">
+                <p className="mt-5 text-sm text-destructive" role="alert">
                   {gatewayError}
                 </p>
               ) : null}
-              <div className="flex justify-end gap-3 border-t border-border pt-4">
+              <div className="mt-6 flex justify-end gap-3 border-t border-border pt-4">
                 <Button disabled={isSavingGateway} onClick={() => setIsAdvancedOpen(false)} type="button" variant="outline">
                   取消
                 </Button>
