@@ -64,9 +64,10 @@ describe("createStoryOutlineProvider", () => {
     expect((fetchMock.mock.calls[1] as unknown[] | undefined)?.[0]).toBe("https://api.quickrouter.us/v1/responses");
   });
 
-  test("uses the account-selected canonical GPT model instead of an environment override", async () => {
+  test("uses the account-selected canonical GPT model instead of legacy environment overrides", async () => {
     process.env.QUICKROUTER_TEXT_API_KEY = "key";
     process.env.QUICKROUTER_GPT_TEXT_MODEL = "gpt-model";
+    process.env.QUICKROUTER_RESEARCH_MODEL = "research-model";
     const fetchMock = mockTextResponse();
     vi.stubGlobal("fetch", fetchMock);
     const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
@@ -75,9 +76,13 @@ describe("createStoryOutlineProvider", () => {
       writingProvider: "gpt-5.6-sol",
       prompt: "生成大纲",
     });
+    await createStoryOutlineProvider().searchReference({
+      writingProvider: "gpt-5.5",
+      prompt: "整理资料",
+    });
 
-    const body = fetchBody(fetchMock);
-    expect(body.model).toBe("gpt-5.6-sol");
+    expect(fetchBody(fetchMock, 0).model).toBe("gpt-5.6-sol");
+    expect(fetchBody(fetchMock, 1).model).toBe("gpt-5.5");
     expect(timeoutSpy).toHaveBeenCalledWith(600_000);
   });
 
@@ -131,17 +136,25 @@ describe("createStoryOutlineProvider", () => {
 
   test("routes Easy88AI text requests through its preset endpoint", async () => {
     process.env.EASY88AI_API_KEY = "easy-key";
+    process.env.EASY88AI_GPT_TEXT_MODEL = "legacy-writing-model";
+    process.env.EASY88AI_RESEARCH_MODEL = "legacy-research-model";
     const fetchMock = mockTextResponse();
     vi.stubGlobal("fetch", fetchMock);
 
-    await createStoryOutlineProvider(undefined, "easy88ai").generateOutline({
+    const provider = createStoryOutlineProvider(undefined, "easy88ai");
+    await provider.generateOutline({
       writingProvider: "gpt-5.5",
       prompt: "生成大纲",
+    });
+    await provider.searchReference({
+      writingProvider: "gpt-5.5",
+      prompt: "整理资料",
     });
 
     expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.easy88ai.com/v1/responses");
     expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer easy-key");
-    expect(fetchBody(fetchMock).model).toBe("gpt-5.5");
+    expect(fetchBody(fetchMock, 0).model).toBe("gpt-5.5");
+    expect(fetchBody(fetchMock, 1).model).toBe("gpt-5.5");
   });
 
   test("does not retry when response headers time out after the provider may have accepted the request", async () => {
@@ -232,7 +245,7 @@ describe("createStoryOutlineProvider", () => {
 
   test("uses the DeepSeek-compatible Responses API for DeepSeek writing", async () => {
     process.env.DEEPSEEK_API_KEY = "deepseek-key";
-    process.env.DEEPSEEK_MODEL = "deepseek-model";
+    process.env.DEEPSEEK_MODEL = "legacy-environment-model";
     process.env.DEEPSEEK_BASE_URL = "https://deepseek.example/v1/";
     const fetchMock = vi.fn(async () =>
       Response.json({
@@ -251,7 +264,7 @@ describe("createStoryOutlineProvider", () => {
     const body = fetchBody(fetchMock);
     expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://deepseek.example/v1/responses");
     expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer deepseek-key");
-    expect(body.model).toBe("deepseek-model");
+    expect(body.model).toBe("deepseek-v4-pro");
     expect(body.input).toBe("生成大纲");
     expect(body.max_output_tokens).toBe(2_000);
     expect(result).toEqual({
@@ -266,18 +279,19 @@ describe("createStoryOutlineProvider", () => {
     });
   });
 
-  test("uses the configured research model for reference search", async () => {
+  test("uses the account-selected model for reference search", async () => {
     process.env.QUICKROUTER_TEXT_API_KEY = "key";
     process.env.QUICKROUTER_RESEARCH_MODEL = "research-model";
     const fetchMock = mockTextResponse();
     vi.stubGlobal("fetch", fetchMock);
 
     await createStoryOutlineProvider().searchReference({
+      writingProvider: "gpt-5.5",
       prompt: "整理特朗普资料",
     });
 
     const body = fetchBody(fetchMock);
-    expect(body.model).toBe("research-model");
+    expect(body.model).toBe("gpt-5.5");
     expect(body.tools).toEqual([{ type: "web_search" }]);
   });
 

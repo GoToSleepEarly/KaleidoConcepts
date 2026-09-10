@@ -36,6 +36,20 @@ describe("共享主机安全发布", () => {
     expect(script).not.toContain("rm -rf");
   });
 
+  test("发布前检查高级设置中所有预置提供方的密钥", async () => {
+    const script = await fs.readFile(scriptPath, "utf8");
+
+    for (const variable of [
+      "QUICKROUTER_TEXT_API_KEY",
+      "QUICKROUTER_IMAGE_API_KEY",
+      "DEEPSEEK_API_KEY",
+      "CRAZYROUTER_API_KEY",
+      "EASY88AI_API_KEY",
+    ]) {
+      expect(script).toContain(variable);
+    }
+  });
+
   test("systemd 对部署任务设置资源硬边界且不会开机自动发布", async () => {
     const service = await fs.readFile(servicePath, "utf8");
 

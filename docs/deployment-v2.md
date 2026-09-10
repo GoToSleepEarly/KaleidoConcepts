@@ -61,11 +61,18 @@ DATABASE_URL="postgresql://pbl_v2_app:数据库密码@127.0.0.1:5432/pbl_studio_
 DATABASE_URL_FOR_PG_DUMP="postgresql://pbl_v2_app:数据库密码@127.0.0.1:5432/pbl_studio_v2"
 STORAGE_DIR="/data/pbl-studio-v2/images"
 BACKUP_DIR="/data/backups/pbl-studio-v2"
+
+QUICKROUTER_TEXT_API_KEY="..."
+QUICKROUTER_IMAGE_API_KEY="..."
+DEEPSEEK_API_KEY="..."
+DEEPSEEK_BASE_URL="https://api.deepseek.com"
+CRAZYROUTER_API_KEY="..."
+EASY88AI_API_KEY="..."
 ```
 
 `AUTH_COOKIE_SECURE` 默认跟随 `NODE_ENV`：生产环境为安全 Cookie，只能通过 HTTPS 使用。若公网入口暂时只能使用 HTTP，可短期显式设置为 `false`，使 Safari 等浏览器能够保存身份 Cookie；启用 HTTPS 后必须恢复为 `true`。修改该变量后需要重新发布或重启应用进程，老师随后退出并重新登录。
 
-数据库密码包含 URL 保留字符时必须编码。DeepSeek 使用官方直连；QuickRouter 与 Crazyrouter 使用各自配置的 key。生产环境不得配置 `HTTP_PROXY` 或 `HTTPS_PROXY`。
+数据库密码包含 URL 保留字符时必须编码。模型和提供方由当前账号的高级设置决定，环境变量只保存各提供方的密钥、DeepSeek 官方地址和请求超时，不配置文本、联网或图片模型。生产环境不得配置 `HTTP_PROXY` 或 `HTTPS_PROXY`。
 
 旧的原地部署脚本默认拒绝执行，防止误用 `pnpm deploy:prod` 覆盖正在运行的 `.next`。只有专用独立主机显式配置 `DEPLOYMENT_TARGET="dedicated-host"` 才能使用旧脚本；共享主机不需要额外配置该变量。
 

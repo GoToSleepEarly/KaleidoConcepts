@@ -42,7 +42,7 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
-for required_var in SEED_ADMIN_PASSWORD QUICKROUTER_TEXT_API_KEY QUICKROUTER_IMAGE_API_KEY DEEPSEEK_API_KEY CRAZYROUTER_API_KEY; do
+for required_var in SEED_ADMIN_PASSWORD QUICKROUTER_TEXT_API_KEY QUICKROUTER_IMAGE_API_KEY DEEPSEEK_API_KEY CRAZYROUTER_API_KEY EASY88AI_API_KEY; do
   value="${!required_var:-}"
   if [[ -z "$value" || "$value" == replace-with-* ]]; then
     echo "$required_var must be configured in $ENV_FILE."

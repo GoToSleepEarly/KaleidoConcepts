@@ -13,7 +13,3 @@ export function usesFixedPriceMaxQuality(model: string) {
 export function imageQualityForModel(model: string, requested: CourseImageQuality): CourseImageQuality {
   return usesFixedPriceMaxQuality(model) ? "high" : requested;
 }
-
-export function configuredCourseImageQuality(requested: CourseImageQuality): CourseImageQuality {
-  return imageQualityForModel(process.env.QUICKROUTER_IMAGE_MODEL || "gpt-image-2", requested);
-}

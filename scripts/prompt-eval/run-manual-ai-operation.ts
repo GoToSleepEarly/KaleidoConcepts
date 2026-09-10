@@ -54,7 +54,6 @@ async function main() {
   const captured: CapturedRequest[] = [];
 
   process.env.QUICKROUTER_TEXT_API_KEY = "manual-eval-no-network";
-  process.env.QUICKROUTER_GPT_TEXT_MODEL = "gpt-5.6-sol";
 
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;

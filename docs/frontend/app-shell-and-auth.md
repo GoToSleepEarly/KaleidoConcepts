@@ -274,7 +274,7 @@ There is no second account area in the sidebar.
 
 图片模型预置为 `gpt-image-2` 与 QuickRouter 专属 `gpt-image-2-c`。用户同样先选模型，再选择兼容提供方：`gpt-image-2` 可选择 QuickRouter 主站、QuickRouter 直连、Crazyrouter 或 Easy88AI；`gpt-image-2-c` 只显示 QuickRouter 主站和 QuickRouter 直连。2026-09-10 使用无效图片、无生成费用的请求验证 Easy88AI `POST /v1/images/edits`：单图 `image`、多图 `image[]`、项目现有的 portrait/landscape 尺寸与 low/medium 质量参数均被端点接收并进入上游图片校验，因此开放 Easy88AI 图片生成与编辑。
 
-UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter 主站和 QuickRouter 直连作为两个并列选项呈现，不再增加“地址”层级。内部继续复用同一 QuickRouter 密钥、模型映射和兼容处理。为兼容现有数据，账户文本配置仍保存为 `writingProvider`、`aiGateway`、`quickRouterEndpoint`，图片配置仍保存为 `imageModel`、`imageGateway`、`imageQuickRouterEndpoint`；不保存 Base URL。服务端预置目录负责把这些稳定 ID 映射为白名单地址、密钥环境变量和协议 Adapter，并可为个别提供方配置上游模型别名；未配置别名时直接使用标准模型名。新增模型、提供方或备用地址只修改预置目录和兼容矩阵，不修改课程业务代码。
+UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter 主站和 QuickRouter 直连作为两个并列选项呈现，不再增加“地址”层级。内部继续复用同一 QuickRouter 密钥、模型映射和兼容处理。为兼容现有数据，账户文本配置仍保存为 `writingProvider`、`aiGateway`、`quickRouterEndpoint`，图片配置仍保存为 `imageModel`、`imageGateway`、`imageQuickRouterEndpoint`；不保存 Base URL。服务端预置目录负责把这些稳定 ID 映射为白名单地址、密钥和协议 Adapter，并可为个别提供方配置上游模型别名；未配置别名时直接使用标准模型名。环境变量只配置密钥、DeepSeek 地址和超时，不配置模型；文本生成、联网研究、图片生成和图片编辑都使用高级设置选中的模型。新增模型、提供方或备用地址只修改预置目录和兼容矩阵，不修改课程业务代码。
 
 每次打开高级设置时，`GET /api/account/ai-gateway` 按 HTTP-only 身份 Cookie 从数据库读取上述六项设置，前端展示代码内固定的预置目录。弹窗桌面端并列展示“文本”和“图片”，移动端顺序排列；每个区块严格使用“模型 → 提供方”的线性顺序，模型变化后立即收窄可选提供方。界面不展示“中转站”“联网线路”“Base URL”或真实 URL，不使用多层嵌套卡片。`PATCH` 只接受目录中存在且兼容的组合；为兼容升级期间的旧页面，缺失的新字段沿用数据库原值。保存使用一次原子更新；任一显式字段无效或数据库写入失败时全部保持原值。加载完成前不得展示组件默认值，加载失败时保留未知状态并提供重新加载入口。
 
@@ -289,6 +289,8 @@ UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter
 生产环境统一从项目根目录 `.env` 读取数据库、持久化图片目录和 AI 服务配置。`scripts/deploy-prod.sh` 在构建前加载该文件，并在重启已有 PM2 进程时使用 `--update-env`，确保新 Node 进程不沿用 PM2 保存的旧变量。生产 `.env` 不提交 Git，也不使用 `.env.local` 叠加覆盖。
 
 实现状态：已实现账户菜单设置、登录同步、数据库字段、服务端路由选择和 GPT 文本/研究/图片 provider 分流；生产部署前执行 `pnpm prisma:deploy`。
+
+2026-09-10：移除 QuickRouter、Crazyrouter、Easy88AI 和 DeepSeek 的模型环境变量，消除环境变量与高级设置两个模型来源。文本生成与联网研究现在统一使用账号选择的文本模型，图片生成、编辑和画质规则统一使用账号选择的图片模型；部署只要求各提供方密钥。共享主机与独立主机发布脚本都会在发布前检查 Easy88AI 等所有可选提供方的密钥。验证通过全量 92 个测试文件 / 774 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`；未调用外部 AI 接口。
 
 2026-09-10：高级设置 UI 按“模型 → 提供方”重构。桌面端并列展示文本与图片，移动端纵向排列；QuickRouter 主站与直连改为两个平级提供方选项，删除第三层地址选择、真实 URL、“中转站”和独立联网文案。选择模型后只展示兼容提供方，`gpt-image-2-c` 仍只能选择 QuickRouter 主站或直连。保留现有数据库字段和服务端路由实现，不新增 migration。验证通过全量 92 个测试文件 / 773 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm build`、桌面浏览器实测、乱码扫描和 `git diff --check`。
 

@@ -44,6 +44,10 @@ done
 [[ -n "${DATABASE_URL_FOR_PG_DUMP:-}" ]] || fail "DATABASE_URL_FOR_PG_DUMP is required"
 [[ -n "${SEED_ADMIN_PASSWORD:-}" ]] || fail "SEED_ADMIN_PASSWORD is required"
 
+for required_key in QUICKROUTER_TEXT_API_KEY QUICKROUTER_IMAGE_API_KEY DEEPSEEK_API_KEY CRAZYROUTER_API_KEY EASY88AI_API_KEY; do
+  [[ -n "${!required_key:-}" ]] || fail "$required_key is required"
+done
+
 mkdir -p "$RELEASES_DIR" "$DEPLOY_STATE_DIR" "$BACKUP_DIR"
 [[ -d "$STORAGE_DIR" ]] || fail "storage directory does not exist: $STORAGE_DIR"
 

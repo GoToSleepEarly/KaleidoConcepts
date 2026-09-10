@@ -85,8 +85,8 @@ function configFromEnvironment(input: AiProviderSettingsInput): ProviderConfig &
     apiKey,
     gateway,
     baseUrl: aiProviderBaseUrl(settings),
-    gptModel: isCrazyrouter ? process.env.CRAZYROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol" : isEasy88ai ? process.env.EASY88AI_GPT_TEXT_MODEL || "gpt-5.6-sol" : process.env.QUICKROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol",
-    researchModel: isCrazyrouter ? process.env.CRAZYROUTER_RESEARCH_MODEL || process.env.CRAZYROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol" : isEasy88ai ? process.env.EASY88AI_RESEARCH_MODEL || process.env.EASY88AI_GPT_TEXT_MODEL || "gpt-5.6-sol" : process.env.QUICKROUTER_RESEARCH_MODEL || process.env.QUICKROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol",
+    gptModel: "gpt-5.6-sol",
+    researchModel: "gpt-5.6-sol",
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };
 }
@@ -131,8 +131,8 @@ function deepSeekConfigFromEnvironment(): ProviderConfig {
     apiKey,
     baseUrl: (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, ""),
     gateway: "deepseek",
-    gptModel: process.env.DEEPSEEK_MODEL || "deepseek-v4-pro",
-    researchModel: process.env.DEEPSEEK_MODEL || "deepseek-v4-pro",
+    gptModel: "deepseek-v4-pro",
+    researchModel: "deepseek-v4-pro",
     responsesPath: "/responses",
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };
@@ -172,12 +172,13 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
         ...config,
       };
     const activeConfig = configFromEnvironment(selectedSettings);
-    return model
-      ? {
-          ...activeConfig,
-          gptModel: upstreamTextModel(model, activeConfig.gateway ?? "quickrouter"),
-        }
-      : activeConfig;
+    if (!model) return activeConfig;
+    const selectedModel = upstreamTextModel(model, activeConfig.gateway ?? "quickrouter");
+    return {
+      ...activeConfig,
+      gptModel: selectedModel,
+      researchModel: selectedModel,
+    };
   }
 
   async function request(operation: string, body: Record<string, unknown>, activeConfig: ProviderConfig, timeoutMs = activeConfig.timeoutMs) {
