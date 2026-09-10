@@ -288,7 +288,7 @@ There is no second account area in the sidebar.
 
 实现状态：已实现账户菜单设置、登录同步、数据库字段、服务端路由选择和 GPT 文本/研究/图片 provider 分流；生产部署前执行 `pnpm prisma:deploy`。
 
-2026-09-10：高级设置拆分为当前账号的文本与图片配置；文本支持 `gpt-5.5`、`gpt-5.6-sol`、DeepSeek 直连及 QuickRouter/Crazyrouter/Easy88AI 预置线路，图片支持主动选择 `gpt-image-2` 或 QuickRouter 专属 `gpt-image-2-c`，不再在 429 后隐式换模型。Easy88AI 免费 `/v1/models` 检查鉴权成功并确认三个目标模型 ID；未调用付费生成接口，图片编辑能力未获证明前不开放 Easy88AI 图片线路。验证通过全量 91 个测试文件 / 767 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、本地 PostgreSQL `pnpm prisma:deploy`、乱码扫描和 `git diff --check`。实现提交号待本次提交后补录。
+2026-09-10：高级设置拆分为当前账号的文本与图片配置；文本支持 `gpt-5.5`、`gpt-5.6-sol`、DeepSeek 直连及 QuickRouter/Crazyrouter/Easy88AI 预置线路，图片支持主动选择 `gpt-image-2` 或 QuickRouter 专属 `gpt-image-2-c`，不再在 429 后隐式换模型。Easy88AI 免费 `/v1/models` 检查鉴权成功并确认三个目标模型 ID；未调用付费生成接口，图片编辑能力未获证明前不开放 Easy88AI 图片线路。验证通过全量 91 个测试文件 / 767 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、本地 PostgreSQL `pnpm prisma:deploy`、乱码扫描和 `git diff --check`。实现提交：`feab432`。
 
 2026-09-09：修复本地完整环境每次启动执行 seed 时覆盖已有账号中转站偏好的问题；已有账号 seed 更新不再包含三项可变 AI 设置。高级设置弹窗新增数据库读取 Loading 和可恢复失败态，读取完成前不再展示组件默认选项。验证通过全量 89 个测试文件 / 730 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`。实现提交：`48369d7`。
 
