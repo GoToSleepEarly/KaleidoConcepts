@@ -282,7 +282,7 @@ UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter
 
 所有线路均为显式手动切换，不在网络错误、429 或超时后自动向另一线路或模型重放请求。`gpt-image-2-c` 从 QuickRouter 的 429 隐式兜底改为主动可选模型；选择后生成与编辑固定使用 `high` 质量，并在界面说明其质量与计费特征。上游返回模型不存在或接口不兼容时按配置错误失败，不静默替换模型。
 
-预置目录至少包含：QuickRouter 主站 `https://api.quickrouter.ai`、QuickRouter 直连 `https://api.quickrouter.us`、Crazyrouter `https://api.crazyrouter.com`、Easy88AI `https://api.easy88ai.com` 和 DeepSeek 官方地址。Easy88AI 使用独立 `EASY88AI_API_KEY`，密钥只存在服务器环境，不进入 API 响应、数据库或 Git。QuickRouter 主站当前允许保留为可选线路，但外部可用性不作为本轮验收阻断项。
+预置目录至少包含：QuickRouter 主站 `https://api.quickrouter.ai`、QuickRouter 直连 `https://api.quickrouter.us`、Crazyrouter `https://api.crazyrouter.com`、Easy88AI `https://api.easy88ai.com` 和 DeepSeek 官方地址。QuickRouter、Crazyrouter 与 Easy88AI 均使用独立的文本和图片密钥；DeepSeek 仅使用文本密钥。密钥只存在服务器环境，不进入 API 响应、数据库或 Git。QuickRouter 主站当前允许保留为可选线路，但外部可用性不作为本轮验收阻断项。
 
 发版前先使用不产生生成费用的模型列表接口核对当前 Key 与模型 ID；不得为了验证而调用付费文本或图片生成。单元测试和 Provider 契约测试必须逐项覆盖模型别名、兼容矩阵、真实请求路径、请求体模型名、图片生成/编辑格式及禁止自动兜底。若外部 Key 或供应商状态导致免费检查失败，必须如实记录，不能宣称真实串联成功。
 
@@ -290,7 +290,7 @@ UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter
 
 实现状态：已实现账户菜单设置、登录同步、数据库字段、服务端路由选择和 GPT 文本/研究/图片 provider 分流；生产部署前执行 `pnpm prisma:deploy`。
 
-2026-09-10：移除 QuickRouter、Crazyrouter、Easy88AI 和 DeepSeek 的模型环境变量，消除环境变量与高级设置两个模型来源。文本生成与联网研究现在统一使用账号选择的文本模型，图片生成、编辑和画质规则统一使用账号选择的图片模型；部署只要求各提供方密钥。共享主机与独立主机发布脚本都会在发布前检查 Easy88AI 等所有可选提供方的密钥。验证通过全量 92 个测试文件 / 774 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`；未调用外部 AI 接口。
+2026-09-10：移除 QuickRouter、Crazyrouter、Easy88AI 和 DeepSeek 的模型环境变量，消除环境变量与高级设置两个模型来源。文本生成与联网研究现在统一使用账号选择的文本模型，图片生成、编辑和画质规则统一使用账号选择的图片模型；部署只要求各提供方密钥。共享主机与独立主机发布脚本都会在发布前检查所有可选提供方的对应能力密钥。验证通过全量 92 个测试文件 / 774 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`；未调用外部 AI 接口。
 
 2026-09-10：高级设置 UI 按“模型 → 提供方”重构。桌面端并列展示文本与图片，移动端纵向排列；QuickRouter 主站与直连改为两个平级提供方选项，删除第三层地址选择、真实 URL、“中转站”和独立联网文案。选择模型后只展示兼容提供方，`gpt-image-2-c` 仍只能选择 QuickRouter 主站或直连。保留现有数据库字段和服务端路由实现，不新增 migration。验证通过全量 92 个测试文件 / 773 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm build`、桌面浏览器实测、乱码扫描和 `git diff --check`。
 
@@ -298,7 +298,9 @@ UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter
 
 2026-09-10：重新核对 DeepSeek 当前官方能力，确认 `https://api.deepseek.com/responses` 原生兼容 OpenAI Responses API，并支持服务端 `web_search`。账户选择 DeepSeek 后，文本准备、故事生成和联网研究统一走 DeepSeek 官方路线；界面不再展示不会生效的 GPT 中转站选项。免费 `/models` 实测当前 Key 包含 `deepseek-v4-pro`，无输入的 `/responses` 参数校验也成功到达官方端点；未执行付费生成。产品模型名、默认上游模型和环境变量示例统一改为 `deepseek-v4-pro`，迁移把历史 `deepseek-chat` 快照更新为新名称。验证通过全量 92 个测试文件 / 773 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、本地 PostgreSQL `pnpm prisma:deploy`、乱码扫描和 `git diff --check`。实现提交：`147be91`。
 
-2026-09-10：DeepSeek 官方地址改为代码内预置，不再读取 `DEEPSEEK_BASE_URL`。部署环境只提供 `DEEPSEEK_API_KEY`；即使服务器残留旧地址变量，请求也固定发往 `https://api.deepseek.com`。账户高级设置仍是模型与提供方的唯一选择来源。验证通过全量 92 个测试文件 / 774 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build` 和 `git diff --check`。
+2026-09-10：DeepSeek 官方地址改为代码内预置，不再读取 `DEEPSEEK_BASE_URL`。部署环境只提供 `DEEPSEEK_TEXT_API_KEY`；即使服务器残留旧地址变量，请求也固定发往 `https://api.deepseek.com`。账户高级设置仍是模型与提供方的唯一选择来源。验证通过全量 92 个测试文件 / 774 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build` 和 `git diff --check`。
+
+2026-09-10：所有提供方密钥统一按能力命名。Crazyrouter 与 Easy88AI 分别使用独立的文本、图片密钥，DeepSeek 使用 `DEEPSEEK_TEXT_API_KEY`；运行时和发布脚本均不读取三个旧的通用 Key，也不在文本与图片之间回退。验证通过全量 92 个测试文件 / 774 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build` 和 `git diff --check`；未调用外部 AI 接口。
 
 2026-09-10：重新核对 [DeepSeek Responses API](https://api-docs.deepseek.com/guides/responses_api/) 后修正旧判断。DeepSeek 官方 `/responses` 已兼容 Codex 所用的 OpenAI Responses 结构，并在服务端执行 `web_search`；项目删除单独的 `/chat/completions` 分支，文本生成和联网研究共用现有 Responses 处理。当前 Key 的免费 `/models` 返回并确认 `deepseek-v4-pro` 可用，本地环境也配置为该模型；无输入的 `/responses` 参数校验返回预期 400，没有触发生成或费用。高级设置选择 DeepSeek 后不再展示无效的 GPT 中转站控件，历史 `deepseek-chat` 数据通过 migration 更新为 `deepseek-v4-pro`，联网资料记录保存真实 research provider。实现提交待完成后记录。
 

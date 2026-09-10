@@ -42,12 +42,17 @@ describe("共享主机安全发布", () => {
     for (const variable of [
       "QUICKROUTER_TEXT_API_KEY",
       "QUICKROUTER_IMAGE_API_KEY",
-      "DEEPSEEK_API_KEY",
-      "CRAZYROUTER_API_KEY",
-      "EASY88AI_API_KEY",
+      "DEEPSEEK_TEXT_API_KEY",
+      "CRAZYROUTER_TEXT_API_KEY",
+      "CRAZYROUTER_IMAGE_API_KEY",
+      "EASY88AI_TEXT_API_KEY",
+      "EASY88AI_IMAGE_API_KEY",
     ]) {
       expect(script).toContain(variable);
     }
+    expect(script).not.toMatch(/\bCRAZYROUTER_API_KEY\b/);
+    expect(script).not.toMatch(/\bEASY88AI_API_KEY\b/);
+    expect(script).not.toMatch(/\bDEEPSEEK_API_KEY\b/);
   });
 
   test("systemd 对部署任务设置资源硬边界且不会开机自动发布", async () => {

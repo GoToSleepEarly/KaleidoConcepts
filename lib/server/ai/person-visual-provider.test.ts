@@ -167,7 +167,7 @@ describe("person visual provider", () => {
   });
 
   test("Crazyrouter 人物形象使用标准模型且不启用 -c 兜底", async () => {
-    process.env.CRAZYROUTER_API_KEY = "crazy-key";
+    process.env.CRAZYROUTER_IMAGE_API_KEY = "crazy-image-key";
     const request = vi.fn(
       async () =>
         new Response(JSON.stringify({ error: { message: "rate limited" } }), {
@@ -185,7 +185,7 @@ describe("person visual provider", () => {
     expect(request).toHaveBeenCalledTimes(1);
     const init = (request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
     expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.crazyrouter.com/v1/images/generations");
-    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer crazy-key");
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer crazy-image-key");
     expect(JSON.parse(String(init?.body))).toMatchObject({
       model: "gpt-image-2",
       quality: "low",
@@ -194,13 +194,13 @@ describe("person visual provider", () => {
   });
 
   test("Easy88AI 人物形象编辑使用已验证的标准端点", async () => {
-    process.env.EASY88AI_API_KEY = "easy-key";
+    process.env.EASY88AI_IMAGE_API_KEY = "easy-image-key";
     const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/easy-person.webp" }] }));
     vi.stubGlobal("fetch", request);
 
     await createPersonVisualProvider(undefined, { aiGateway: "easy88ai", quickRouterEndpoint: "main", imageModel: "gpt-image-2" }).edit({ prompt: "change coat", imageDataUrl: "data:image/png;base64,aGVsbG8=" });
 
     expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.easy88ai.com/v1/images/edits");
-    expect(new Headers(((request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer easy-key");
+    expect(new Headers(((request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer easy-image-key");
   });
 });

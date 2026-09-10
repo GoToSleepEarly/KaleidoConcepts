@@ -78,7 +78,7 @@ function configFromEnvironment(input: AiProviderSettingsInput): ProviderConfig &
   const gateway = settings.aiGateway;
   const isCrazyrouter = gateway === "crazyrouter";
   const isEasy88ai = gateway === "easy88ai";
-  const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_API_KEY : isEasy88ai ? process.env.EASY88AI_API_KEY : process.env.QUICKROUTER_TEXT_API_KEY;
+  const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_TEXT_API_KEY : isEasy88ai ? process.env.EASY88AI_TEXT_API_KEY : process.env.QUICKROUTER_TEXT_API_KEY;
   if (!apiKey) throw new StoryOutlineProviderConfigError();
   const timeout = Number(process.env.TEXT_GENERATION_TIMEOUT_MS);
   return {
@@ -124,7 +124,7 @@ function responseUsage(data: ResponsesData): StoryOutlineUsage | undefined {
 }
 
 function deepSeekConfigFromEnvironment(): ProviderConfig {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+  const apiKey = process.env.DEEPSEEK_TEXT_API_KEY;
   if (!apiKey) throw new StoryOutlineProviderConfigError("DeepSeek 服务尚未配置");
   const timeout = Number(process.env.TEXT_GENERATION_TIMEOUT_MS);
   return {

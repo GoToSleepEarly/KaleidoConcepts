@@ -135,7 +135,7 @@ describe("createStoryOutlineProvider", () => {
   });
 
   test("routes Easy88AI text requests through its preset endpoint", async () => {
-    process.env.EASY88AI_API_KEY = "easy-key";
+    process.env.EASY88AI_TEXT_API_KEY = "easy-text-key";
     process.env.EASY88AI_GPT_TEXT_MODEL = "legacy-writing-model";
     process.env.EASY88AI_RESEARCH_MODEL = "legacy-research-model";
     const fetchMock = mockTextResponse();
@@ -152,7 +152,7 @@ describe("createStoryOutlineProvider", () => {
     });
 
     expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.easy88ai.com/v1/responses");
-    expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer easy-key");
+    expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer easy-text-key");
     expect(fetchBody(fetchMock, 0).model).toBe("gpt-5.5");
     expect(fetchBody(fetchMock, 1).model).toBe("gpt-5.5");
   });
@@ -244,7 +244,7 @@ describe("createStoryOutlineProvider", () => {
   });
 
   test("uses the preset DeepSeek Responses endpoint instead of a legacy environment override", async () => {
-    process.env.DEEPSEEK_API_KEY = "deepseek-key";
+    process.env.DEEPSEEK_TEXT_API_KEY = "deepseek-text-key";
     process.env.DEEPSEEK_MODEL = "legacy-environment-model";
     process.env.DEEPSEEK_BASE_URL = "https://deepseek.example/v1/";
     const fetchMock = vi.fn(async () =>
@@ -263,7 +263,7 @@ describe("createStoryOutlineProvider", () => {
 
     const body = fetchBody(fetchMock);
     expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.deepseek.com/responses");
-    expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer deepseek-key");
+    expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer deepseek-text-key");
     expect(body.model).toBe("deepseek-v4-pro");
     expect(body.input).toBe("生成大纲");
     expect(body.max_output_tokens).toBe(2_000);
@@ -313,8 +313,8 @@ describe("createStoryOutlineProvider", () => {
   });
 
   test("routes DeepSeek writing and web search through the official Responses API", async () => {
-    process.env.CRAZYROUTER_API_KEY = "crazy-key";
-    process.env.DEEPSEEK_API_KEY = "deepseek-key";
+    process.env.CRAZYROUTER_TEXT_API_KEY = "crazy-text-key";
+    process.env.DEEPSEEK_TEXT_API_KEY = "deepseek-text-key";
     process.env.DEEPSEEK_BASE_URL = "https://api.deepseek.com";
     delete process.env.DEEPSEEK_MODEL;
     const fetchMock = vi.fn(async () => Response.json({ output_text: '{"ok":true}' }));
@@ -334,14 +334,14 @@ describe("createStoryOutlineProvider", () => {
 
     expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.crazyrouter.com/v1/responses");
     expect(fetchBody(fetchMock, 0).model).toBe("gpt-5.6-sol");
-    expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer crazy-key");
+    expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer crazy-text-key");
     expect((fetchMock.mock.calls[1] as unknown[] | undefined)?.[0]).toBe("https://api.crazyrouter.com/v1/responses");
     expect(fetchBody(fetchMock, 1)).toMatchObject({
       model: "gpt-5.6-sol",
       tools: [{ type: "web_search" }],
     });
     expect((fetchMock.mock.calls[2] as unknown[] | undefined)?.[0]).toBe("https://api.deepseek.com/responses");
-    expect(new Headers(((fetchMock.mock.calls[2] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer deepseek-key");
+    expect(new Headers(((fetchMock.mock.calls[2] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer deepseek-text-key");
     expect(fetchBody(fetchMock, 2)).toMatchObject({ model: "deepseek-v4-pro", input: "生成大纲" });
     expect((fetchMock.mock.calls[3] as unknown[] | undefined)?.[0]).toBe("https://api.deepseek.com/responses");
     expect(fetchBody(fetchMock, 3)).toMatchObject({

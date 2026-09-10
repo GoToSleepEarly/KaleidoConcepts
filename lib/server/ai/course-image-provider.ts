@@ -22,7 +22,7 @@ function configFromEnvironment(input: AiProviderSettingsInput | ImageProviderSet
   const settings = normalizeAiProviderSettings(input);
   const gateway = settings.aiGateway;
   const isCrazyrouter = gateway === "crazyrouter";
-  const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_API_KEY : gateway === "easy88ai" ? process.env.EASY88AI_API_KEY : process.env.QUICKROUTER_IMAGE_API_KEY;
+  const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_IMAGE_API_KEY : gateway === "easy88ai" ? process.env.EASY88AI_IMAGE_API_KEY : process.env.QUICKROUTER_IMAGE_API_KEY;
   if (!apiKey) throw new Error("图片生成服务尚未配置");
   const timeoutValue = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS);
   const selectedModel = typeof input === "object" && "imageModel" in input ? input.imageModel : "gpt-image-2";
