@@ -276,12 +276,12 @@ describe("course content prompt contexts", () => {
 
   test("uses explicit reasoning levels for every Step 4 AI operation", () => {
     expect(courseContentReasoningEfforts).toEqual({
-      readingGeneration: "medium",
-      readingRepair: "low",
+      readingGeneration: "high",
+      readingRepair: "medium",
       exerciseGeneration: "medium",
-      exerciseRepair: "low",
+      exerciseRepair: "medium",
       modification: "medium",
-      formatRepair: "low",
+      formatRepair: "medium",
     });
   });
 

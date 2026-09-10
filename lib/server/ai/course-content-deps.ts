@@ -450,12 +450,12 @@ export function contentReadingTimeoutMs(value = process.env.COURSE_CONTENT_GENER
 
 export const courseContentFormatRepairAttempts = 1;
 export const courseContentReasoningEfforts = {
-  readingGeneration: "medium",
-  readingRepair: "low",
+  readingGeneration: "high",
+  readingRepair: "medium",
   exerciseGeneration: "medium",
-  exerciseRepair: "low",
+  exerciseRepair: "medium",
   modification: "medium",
-  formatRepair: "low",
+  formatRepair: "medium",
 } as const;
 function assertExactChapterKeys(actual: string[], expected: string[], message: string) {
   if (!sameStringSet(actual, expected) || new Set(actual).size !== actual.length) {
