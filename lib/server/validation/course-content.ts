@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const contentProviderSchema = z.object({ writingProvider: z.enum(["quickrouter_gpt", "quickrouter_deepseek"]) }).strict();
+export const contentProviderSchema = z.object({ writingProvider: z.enum(["gpt-5.6-sol", "deepseek-chat"]) }).strict();
 export const contentGenerateSchema = z.object({}).strict();
 export const contentModifySchema = z.object({
   targetType: z.enum(["chapter", "paragraph", "chapter_practice", "main_idea", "homework"]),

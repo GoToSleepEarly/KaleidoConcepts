@@ -121,7 +121,7 @@ async function seedDemoCourses() {
 
   const content = (scenario: Scenario) => ({
     courseId: courseId(scenario),
-    writingProvider: "quickrouter_gpt" as const,
+    writingProvider: "gpt-5.6-sol" as const,
     sourceRevision: `step4-demo-${scenario}`,
     contentVersion: 2,
     chapters: generatedChapters(scenario, knowledgePointIds),

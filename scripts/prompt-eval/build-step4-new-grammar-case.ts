@@ -90,7 +90,7 @@ async function main() {
       excluded: ["魔法修复", "跳过安全步骤", "成年人直接替学生完成全部排查"],
     },
   };
-  const config = { scope: "content", method: "generateReading", args: [input, "quickrouter_gpt"] };
+  const config = { scope: "content", method: "generateReading", args: [input, "gpt-5.6-sol"] };
   const resolved = path.resolve(output);
   await mkdir(path.dirname(resolved), { recursive: true });
   await writeFile(resolved, `${JSON.stringify(config, null, 2)}\n`, "utf8");

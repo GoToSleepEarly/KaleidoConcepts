@@ -26,7 +26,7 @@ describe("auth session storage", () => {
 
   test("normalizes a removed gateway in an existing browser session", () => {
     sessionStorage.setItem("kaleido.mock.session", JSON.stringify({
-      user: { displayName: "教师账号", aiGateway: "easy88ai" },
+      user: { displayName: "教师账号", aiGateway: "removed-gateway" },
       createdAt: new Date(Date.now()).toISOString(),
     }));
 

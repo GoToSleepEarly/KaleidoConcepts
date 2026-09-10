@@ -71,7 +71,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       characters: [],
       chapters: [1, 2, 3].map((order) => ({ order, title: { zh: `第${order}章`, en: `Chapter ${order}` }, whatHappens: "行动产生结果。", characterKeys: [] })),
     }) });
-    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" })).resolves.toMatchObject({ summary: "长".repeat(108) });
+    await expect(deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "gpt-5.6-sol" })).resolves.toMatchObject({ summary: "长".repeat(108) });
 
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
       title: { zh: "故事", en: "Story" },
@@ -79,7 +79,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       characters: [],
       chapters: [1, 2, 3].map((order) => ({ order, title: { zh: `第${order}章`, en: `Chapter ${order}` }, whatHappens: order === 1 ? "长".repeat(52) : "行动产生结果。", characterKeys: [] })),
     }) });
-    const longChapterOutline = await deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "quickrouter_gpt" });
+    const longChapterOutline = await deps.generateOutline({ ...shared, task: "生成大纲", writingProvider: "gpt-5.6-sol" });
     expect(longChapterOutline.chapters[0]).toMatchObject({ whatHappens: "长".repeat(52) });
 
     generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({ status: "ready", chapter: { order: 1, title: { zh: "第一章", en: "Chapter One" }, whatHappens: "长".repeat(52), characterIds: [] } }) });
@@ -105,7 +105,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       task: "生成大纲。",
       references: [],
       chapterCount: 1,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [],
       conversationHistory: [],
       selectedDirection: null,
@@ -129,7 +129,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       task: "生成三章故事大纲。",
       references: [],
       chapterCount: 3,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [],
       conversationHistory: [],
       selectedDirection: null,
@@ -410,7 +410,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       task: "根据《瓦罗兰特》的 Jett 和 Sage，讲一个合作战斗故事。",
       references: [{ id: "database-reference-id", name: "Jett 与 Sage", type: "game_character", summary: "《VALORANT》中的两名特工。" }],
       chapterCount: 1,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [],
       conversationHistory: [],
       selectedDirection: null,
@@ -438,7 +438,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       task: "使用 Jett 创作故事。",
       references: [{ id: "database-reference-id", name: "Jett", type: "game_character", summary: "《VALORANT》角色。" }],
       chapterCount: 1,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [],
       conversationHistory: [],
       selectedDirection: null,
@@ -460,7 +460,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       task: "使用 Jett 创作故事。",
       references: [{ id: "database-reference-id", name: "Jett 与 Sage", type: "game_character", summary: "《VALORANT》中的 Jett 和 Sage。" }],
       chapterCount: 1,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [],
       conversationHistory: [],
       selectedDirection: null,
@@ -493,7 +493,7 @@ describe("createStoryOutlineGenerationDeps", () => {
         { id: "reference-2", name: "Jett 与 Sage", type: "game_character", summary: "两名角色的关系资料。" },
       ],
       chapterCount: 1,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [],
       conversationHistory: [],
       selectedDirection: null,
@@ -518,7 +518,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       task: "生成故事。",
       references: [],
       chapterCount: 1,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [],
       conversationHistory: [],
       selectedDirection: null,
@@ -838,7 +838,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       task: "忠实讲述《灰姑娘》。",
       references: [],
       chapterCount: 4,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       storyMode: "faithful",
       classroomPresence: "observer",
       coursePeople: [{ personId: "student-1", role: "student", chineseName: "夏天", englishName: "Summer", age: 10, gender: "female" }],
@@ -903,7 +903,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     await createStoryOutlineGenerationDeps().generateOutline({
       task: "生成已选方向的大纲",
       chapterCount: 1,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [],
       conversationHistory: [],
       references: [
@@ -986,7 +986,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       task: "根据当前要求生成故事大纲。",
       references: [],
       chapterCount: 4,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [{ personId: "student-1", role: "student", chineseName: "夏天", englishName: "Summer", age: 10, gender: "female" }],
       conversationHistory: [
         { role: "teacher", content: "我的故事想法：参考《瓦罗兰特》的 Jett 和 Sage，结合学生生成一个冒险故事。" },
@@ -1106,7 +1106,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       task: "生成超级英雄故事大纲。",
       references: [],
       chapterCount: 1,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [{ personId: "student-1", role: "student", chineseName: "李世翊", englishName: "Ethan", age: 10, gender: "male" }],
       conversationHistory: [],
       selectedDirection: null,
@@ -1223,7 +1223,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       task: "生成超级英雄故事大纲。",
       references: [],
       chapterCount: 1,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [],
       conversationHistory: [],
       selectedDirection: null,
@@ -1238,7 +1238,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     await createStoryOutlineGenerationDeps().generateOutline({
       task: "把第三章改得更紧张。",
       chapterCount: 4,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [{ personId: "student-9", role: "student", chineseName: "安安", englishName: "Ann", age: 9, gender: "female" }],
       conversationHistory: [{ role: "teacher", content: "必须让暮光闪闪和云宝共同出场" }],
       confirmedRequirement: "使用小马宝莉原作人物创作新剧情，不照搬原作主线。",
@@ -1267,7 +1267,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     await createStoryOutlineGenerationDeps().generateOutline({
       task: "根据已确认需求生成故事大纲。",
       chapterCount: 4,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [],
       conversationHistory: [{ role: "teacher", content: "已经被替代的旧要求：海底调查" }],
       confirmedRequirement: "兼容字段中的旧摘要，不应覆盖结构化需求。",
@@ -1486,7 +1486,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     await createStoryOutlineGenerationDeps().generateOutline({
       task: "根据已确认方向生成大纲。",
       chapterCount: 4,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: [],
       conversationHistory: [],
       references: [],

@@ -291,7 +291,7 @@ function safeReferenceForWrite(
   };
 }
 
-async function persistPreparedReferences(db: StoryOutlineDb, courseId: string, references: GeneratedReference[], replaceExisting: boolean, researchProvider: "none" | "quickrouter_gpt" = "none") {
+async function persistPreparedReferences(db: StoryOutlineDb, courseId: string, references: GeneratedReference[], replaceExisting: boolean, researchProvider: "none" | "gpt-5.6-sol" = "none") {
   const persist = async (target: StoryOutlineDb) => {
     if (replaceExisting) await target.courseSourceReference.deleteMany({ where: { courseId } });
     for (const generated of references) {
@@ -714,7 +714,7 @@ async function stateFromCourse(db: StoryOutlineDb, course: DbCourse): Promise<Co
     chatMessages: messages.filter((message) => message.role !== "system").map(toMessage),
     settings: {
       chapterCount: mappedOutline?.chapterCount ?? setting?.chapterCount ?? defaultChapterCount(course.durationMinutes),
-      writingProvider: mappedOutline?.writingProvider ?? setting?.writingProvider ?? "quickrouter_gpt",
+      writingProvider: mappedOutline?.writingProvider ?? setting?.writingProvider ?? "gpt-5.6-sol",
       storyComplexity: setting?.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel),
     },
     alignment: {
@@ -867,7 +867,7 @@ async function writeOutline(db: StoryOutlineDb, course: DbCourse, outline: Gener
 async function currentSetting(db: StoryOutlineDb, course: DbCourse, input?: Pick<CourseStoryMessageInput, "chapterCount" | "writingProvider" | "storyComplexity">) {
   if (input?.chapterCount || input?.writingProvider || input?.storyComplexity) {
     const chapterCount = input.chapterCount ?? defaultChapterCount(course.durationMinutes);
-    const writingProvider = input.writingProvider ?? "quickrouter_gpt";
+    const writingProvider = input.writingProvider ?? "gpt-5.6-sol";
     const storyComplexity = input.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel);
     await db.courseStorySetting.upsert({
       where: { courseId: course.id },
@@ -879,7 +879,7 @@ async function currentSetting(db: StoryOutlineDb, course: DbCourse, input?: Pick
   const setting = await db.courseStorySetting.findUnique({ where: { courseId: course.id } });
   if (!setting) {
     const chapterCount = defaultChapterCount(course.durationMinutes);
-    const writingProvider: StoryWritingProvider = "quickrouter_gpt";
+    const writingProvider: StoryWritingProvider = "gpt-5.6-sol";
     const storyComplexity = defaultStoryComplexity(course.englishLevel as EnglishLevel);
     await db.courseStorySetting.upsert({
       where: { courseId: course.id },
@@ -890,7 +890,7 @@ async function currentSetting(db: StoryOutlineDb, course: DbCourse, input?: Pick
   }
   return {
     chapterCount: setting?.chapterCount ?? defaultChapterCount(course.durationMinutes),
-    writingProvider: setting?.writingProvider ?? "quickrouter_gpt",
+    writingProvider: setting?.writingProvider ?? "gpt-5.6-sol",
     storyComplexity: setting?.storyComplexity ?? defaultStoryComplexity(course.englishLevel as EnglishLevel),
   };
 }
@@ -999,7 +999,7 @@ async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task
       operation: "generate_outline",
       status: "succeeded",
       writingProvider: resolved.writingProvider,
-      researchProvider: context.references.length ? "quickrouter_gpt" : "none",
+      researchProvider: context.references.length ? "gpt-5.6-sol" : "none",
       inputSnapshot: { task, conversationHistory: generationContext.conversationHistory, references: generationContext.references },
       outputSnapshot: outline,
       latencyMs: Date.now() - started,
@@ -1011,7 +1011,7 @@ async function generateAndSaveOutline(db: StoryOutlineDb, course: DbCourse, task
       stage: "story_outline",
       operation: "generate_outline",
       status: "failed",
-      writingProvider: setting?.writingProvider ?? "quickrouter_gpt",
+      writingProvider: setting?.writingProvider ?? "gpt-5.6-sol",
       researchProvider: "none",
       inputSnapshot: { task },
       errorMessage: error instanceof Error ? error.message : "故事大纲生成失败",
@@ -1666,7 +1666,7 @@ async function executeStoryOutlineMessage(
     });
     const stored = await db.courseStorySetting.findUnique({ where: { courseId } });
     const details = alignmentWorkflowDetails(stored?.alignmentDetails);
-    await persistPreparedReferences(db, courseId, referencesToPersist, details.needsBackgroundRefresh === true, "quickrouter_gpt");
+    await persistPreparedReferences(db, courseId, referencesToPersist, details.needsBackgroundRefresh === true, "gpt-5.6-sol");
     await addMessage(db, courseId, "assistant", "资料已整理，请确认后继续。", [
       { id: "confirm-reference-materials", label: "确认参考资料并继续", action: "confirm_reference_materials" },
     ], operation.resultAudit("联网整理参考资料"));
@@ -1875,7 +1875,7 @@ export async function resetStoryOutline(db: StoryOutlineDb, courseId: string) {
       create: {
         courseId,
         chapterCount: defaultChapterCount(course.durationMinutes),
-        writingProvider: "quickrouter_gpt",
+        writingProvider: "gpt-5.6-sol",
         stateRevision: 1,
       },
       update: {
@@ -1994,7 +1994,7 @@ export async function updateStoryOutlineSettings(
     const hasGeneratedArtifacts = Boolean(existingOutline) || existingDirections.length > 0;
     await tx.courseStorySetting.upsert({
       where: { courseId },
-      create: { courseId, chapterCount: input.chapterCount, writingProvider: storedSetting?.writingProvider ?? "quickrouter_gpt", storyComplexity: input.storyComplexity },
+      create: { courseId, chapterCount: input.chapterCount, writingProvider: storedSetting?.writingProvider ?? "gpt-5.6-sol", storyComplexity: input.storyComplexity },
       update: { chapterCount: input.chapterCount, storyComplexity: input.storyComplexity },
     });
     if (complexityChanged && hasGeneratedArtifacts) {
@@ -2017,7 +2017,7 @@ export async function updateReferenceMaterial(
     where: { id: referenceId },
     data: {
       ...input,
-      researchProvider: "quickrouter_gpt",
+      researchProvider: "gpt-5.6-sol",
       confirmedAt: new Date(),
     },
   });

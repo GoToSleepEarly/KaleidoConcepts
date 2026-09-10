@@ -8,7 +8,7 @@ import { BookOpen, ChevronDown, ListChecks, LoaderCircle, LogOut, Menu, Settings
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { AI_GATEWAYS, QUICKROUTER_ENDPOINTS, aiGatewayDescriptions, aiGatewayLabels, quickRouterEndpointLabels, quickRouterEndpointUrls, type AiGateway, type QuickRouterEndpoint, type TextGenerationModel } from "@/lib/ai-gateway";
+import { AI_GATEWAYS, IMAGE_GENERATION_MODELS, QUICKROUTER_ENDPOINTS, aiGatewayDescriptions, aiGatewayLabels, imageModelLabels, quickRouterEndpointLabels, quickRouterEndpointUrls, textModelLabels, type AccountAiSettings, type AiGateway, type ImageGenerationModel, type QuickRouterEndpoint, type TextGenerationModel } from "@/lib/ai-gateway";
 import { clearAuthSession, getStoredSession } from "@/lib/auth-session";
 import { cn } from "@/lib/utils";
 
@@ -87,9 +87,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
-  const [writingProvider, setWritingProvider] = useState<TextGenerationModel>("quickrouter_gpt");
+  const [writingProvider, setWritingProvider] = useState<TextGenerationModel>("gpt-5.6-sol");
   const [aiGateway, setAiGateway] = useState<AiGateway>("quickrouter");
   const [quickRouterEndpoint, setQuickRouterEndpoint] = useState<QuickRouterEndpoint>("main");
+  const [imageModel, setImageModel] = useState<ImageGenerationModel>("gpt-image-2");
+  const [imageGateway, setImageGateway] = useState<AiGateway>("quickrouter");
+  const [imageQuickRouterEndpoint, setImageQuickRouterEndpoint] = useState<QuickRouterEndpoint>("main");
   const [isLoadingGateway, setIsLoadingGateway] = useState(false);
   const [hasLoadedGateway, setHasLoadedGateway] = useState(false);
   const [isSavingGateway, setIsSavingGateway] = useState(false);
@@ -146,12 +149,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setIsLoadingGateway(true);
     setHasLoadedGateway(false);
     try {
-      const response = await fetch("/api/account/ai-gateway", { method: "GET", cache: "no-store" });
-      const result = await response.json() as { writingProvider?: TextGenerationModel; aiGateway?: AiGateway; quickRouterEndpoint?: QuickRouterEndpoint; message?: string };
-      if (!response.ok || !result.aiGateway) throw new Error(result.message || "中转站设置加载失败");
-      setWritingProvider(result.writingProvider ?? "quickrouter_gpt");
+      const response = await fetch("/api/account/ai-gateway", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const result = (await response.json()) as Partial<AccountAiSettings> & {
+        message?: string;
+      };
+      if (!response.ok || !result.writingProvider || !result.aiGateway || !result.quickRouterEndpoint || !result.imageModel || !result.imageGateway || !result.imageQuickRouterEndpoint) {
+        throw new Error(result.message || "中转站设置加载失败");
+      }
+      setWritingProvider(result.writingProvider);
       setAiGateway(result.aiGateway);
-      setQuickRouterEndpoint(result.quickRouterEndpoint ?? "main");
+      setQuickRouterEndpoint(result.quickRouterEndpoint);
+      setImageModel(result.imageModel);
+      setImageGateway(result.imageGateway);
+      setImageQuickRouterEndpoint(result.imageQuickRouterEndpoint);
       setHasLoadedGateway(true);
     } catch (error) {
       setGatewayError(error instanceof Error ? error.message : "中转站设置加载失败");
@@ -167,13 +180,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const response = await fetch("/api/account/ai-gateway", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ writingProvider, aiGateway, quickRouterEndpoint }),
+        body: JSON.stringify({
+          writingProvider,
+          aiGateway,
+          quickRouterEndpoint,
+          imageModel,
+          imageGateway,
+          imageQuickRouterEndpoint,
+        }),
       });
-      const result = await response.json() as { writingProvider?: TextGenerationModel; aiGateway?: AiGateway; quickRouterEndpoint?: QuickRouterEndpoint; message?: string };
+      const result = (await response.json()) as Partial<AccountAiSettings> & {
+        message?: string;
+      };
       if (!response.ok || !result.aiGateway) throw new Error(result.message || "中转站设置保存失败");
       setWritingProvider(result.writingProvider ?? writingProvider);
       setAiGateway(result.aiGateway);
       setQuickRouterEndpoint(result.quickRouterEndpoint ?? quickRouterEndpoint);
+      setImageModel(result.imageModel ?? imageModel);
+      setImageGateway(result.imageGateway ?? imageGateway);
+      setImageQuickRouterEndpoint(result.imageQuickRouterEndpoint ?? imageQuickRouterEndpoint);
       setIsAdvancedOpen(false);
     } catch (error) {
       setGatewayError(error instanceof Error ? error.message : "中转站设置保存失败");
@@ -202,16 +227,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               const isActive = item.key === routeMeta.activeKey;
 
               return (
-                <Link
-                  className={cn(
-                    "group flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-semibold transition-colors duration-200",
-                    isActive
-                      ? "bg-[#EEF0FF] text-[#3447D4]"
-                      : "text-[#526B84] hover:bg-[#F3F8FC] hover:text-[#19324D]",
-                  )}
-                  href={item.href}
-                  key={item.href}
-                >
+                <Link className={cn("group flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-semibold transition-colors duration-200", isActive ? "bg-[#EEF0FF] text-[#3447D4]" : "text-[#526B84] hover:bg-[#F3F8FC] hover:text-[#19324D]")} href={item.href} key={item.href}>
                   <Icon className={cn("size-[18px]", isActive ? "text-[#5365EC]" : "text-[#7890A7] group-hover:text-[#536B83]")} />
                   <span className="flex-1">{item.label}</span>
                   {isActive ? <span className="size-1.5 rounded-full bg-[#6FD8C2]" /> : null}
@@ -220,18 +236,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </div>
         </nav>
-
       </aside>
 
       <div className={cn("flex min-h-dvh min-w-0 flex-1 flex-col lg:pl-60", isFixedCourseWorkspaceRoute && "h-dvh min-h-0 overflow-hidden")}>
         <header className="print-hidden sticky top-0 z-sticky flex min-h-[64px] flex-wrap items-center gap-3 border-b border-[#DCEAF6] bg-white px-4 py-3 sm:flex-nowrap sm:gap-4 sm:px-6 lg:h-[72px] lg:px-8 lg:py-0">
-          <button
-            aria-expanded={isMobileNavOpen}
-            aria-label="打开主导航"
-            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-[#D7E5F1] bg-white text-[#38536E] transition-colors active:bg-[#EEF0FF] lg:hidden"
-            onClick={() => setIsMobileNavOpen(true)}
-            type="button"
-          >
+          <button aria-expanded={isMobileNavOpen} aria-label="打开主导航" className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-[#D7E5F1] bg-white text-[#38536E] transition-colors active:bg-[#EEF0FF] lg:hidden" onClick={() => setIsMobileNavOpen(true)} type="button">
             <Menu className="size-5" />
           </button>
           <div className="min-w-0 flex-1 sm:shrink-0 sm:flex-none" data-testid="app-shell-route-heading">
@@ -242,13 +251,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {isCourseCreateRoute ? <div className="order-last min-w-0 w-full sm:order-none sm:flex-1" id="course-create-progress-slot" /> : <div className="hidden flex-1 sm:block" />}
 
           <div className="relative w-11 shrink-0 sm:w-40" data-testid="account-menu-anchor" ref={accountMenuRef}>
-            <button
-              aria-expanded={isMenuOpen}
-              aria-label="用户菜单"
-              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-[#D7E5F1] bg-white px-1.5 text-sm font-medium text-[#38536E] transition-colors hover:border-[#BBCFE0] hover:bg-[#F7FBFE] sm:justify-start sm:gap-3 sm:px-2.5 sm:pr-3"
-              onClick={() => setIsMenuOpen((value) => !value)}
-              type="button"
-            >
+            <button aria-expanded={isMenuOpen} aria-label="用户菜单" className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-[#D7E5F1] bg-white px-1.5 text-sm font-medium text-[#38536E] transition-colors hover:border-[#BBCFE0] hover:bg-[#F7FBFE] sm:justify-start sm:gap-3 sm:px-2.5 sm:pr-3" onClick={() => setIsMenuOpen((value) => !value)} type="button">
               <PersonAvatar name={displayName} seed={displayName} size={30} />
               <span className="hidden sm:block">{displayName}</span>
               <ChevronDown className={cn("ml-auto hidden size-4 text-[#7890A7] transition-transform duration-200 sm:block", isMenuOpen && "rotate-180")} />
@@ -256,19 +259,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             {isMenuOpen ? (
               <div className="absolute right-0 top-full z-dropdown mt-2 w-full overflow-hidden rounded-xl bg-white shadow-[0_6px_14px_rgba(46,78,108,0.14)] animate-fade-in" data-testid="account-menu">
-                <button
-                  className="flex h-10 w-full items-center gap-2 px-3 text-left text-sm text-[#38536E] transition-colors duration-200 hover:bg-[#F3F8FC]"
-                  onClick={() => void openAdvancedSettings()}
-                  type="button"
-                >
+                <button className="flex h-10 w-full items-center gap-2 px-3 text-left text-sm text-[#38536E] transition-colors duration-200 hover:bg-[#F3F8FC]" onClick={() => void openAdvancedSettings()} type="button">
                   <Settings2 className="size-4" />
                   高级设置
                 </button>
-                <button
-                  className="flex h-10 w-full items-center gap-2 border-t border-[#E7EFF6] px-3 text-left text-sm text-red-600 transition-colors duration-200 hover:bg-red-50"
-                  onClick={() => void handleLogout()}
-                  type="button"
-                >
+                <button className="flex h-10 w-full items-center gap-2 border-t border-[#E7EFF6] px-3 text-left text-sm text-red-600 transition-colors duration-200 hover:bg-red-50" onClick={() => void handleLogout()} type="button">
                   <LogOut className="size-4" />
                   退出登录
                 </button>
@@ -279,17 +274,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {isMobileNavOpen ? (
           <div className="fixed inset-0 z-modal lg:hidden">
-            <button
-              aria-hidden="true"
-              className="fixed inset-0 bg-slate-950/35"
-              onClick={() => setIsMobileNavOpen(false)}
-              tabIndex={-1}
-              type="button"
-            />
-            <nav
-              aria-label="移动端主导航"
-              className="fixed inset-y-0 left-0 flex w-[min(82vw,320px)] flex-col border-r border-[#DCEAF6] bg-white pb-[max(1rem,env(safe-area-inset-bottom))] pt-[env(safe-area-inset-top)] text-[#19324D] shadow-lg lg:hidden"
-            >
+            <button aria-hidden="true" className="fixed inset-0 bg-slate-950/35" onClick={() => setIsMobileNavOpen(false)} tabIndex={-1} type="button" />
+            <nav aria-label="移动端主导航" className="fixed inset-y-0 left-0 flex w-[min(82vw,320px)] flex-col border-r border-[#DCEAF6] bg-white pb-[max(1rem,env(safe-area-inset-bottom))] pt-[env(safe-area-inset-top)] text-[#19324D] shadow-lg lg:hidden">
               <div className="flex min-h-16 items-center justify-between gap-3 border-b border-[#E7EFF6] px-4">
                 <Link className="flex min-w-0 items-center gap-3" href="/courses" onClick={() => setIsMobileNavOpen(false)}>
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF] text-[#4D5FE8]">
@@ -300,12 +286,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <span className="block text-xs font-medium text-[#69829B]">万象之境</span>
                   </span>
                 </Link>
-                <button
-                  aria-label="关闭主导航"
-                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[#526B84] transition-colors active:bg-[#EEF0FF]"
-                  onClick={() => setIsMobileNavOpen(false)}
-                  type="button"
-                >
+                <button aria-label="关闭主导航" className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[#526B84] transition-colors active:bg-[#EEF0FF]" onClick={() => setIsMobileNavOpen(false)} type="button">
                   <X className="size-5" />
                 </button>
               </div>
@@ -315,15 +296,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   const isActive = item.key === routeMeta.activeKey;
 
                   return (
-                    <Link
-                      className={cn(
-                        "flex min-h-12 items-center gap-3 rounded-lg px-3 text-[15px] font-semibold transition-colors",
-                        isActive ? "bg-[#EEF0FF] text-[#3447D4]" : "text-[#526B84] active:bg-[#F3F8FC]",
-                      )}
-                      href={item.href}
-                      key={item.href}
-                      onClick={() => setIsMobileNavOpen(false)}
-                    >
+                    <Link className={cn("flex min-h-12 items-center gap-3 rounded-lg px-3 text-[15px] font-semibold transition-colors", isActive ? "bg-[#EEF0FF] text-[#3447D4]" : "text-[#526B84] active:bg-[#F3F8FC]")} href={item.href} key={item.href} onClick={() => setIsMobileNavOpen(false)}>
                       <Icon className={cn("size-[18px]", isActive ? "text-[#5365EC]" : "text-[#7890A7]")} />
                       <span className="flex-1">{item.label}</span>
                       {isActive ? <span className="size-1.5 rounded-full bg-[#6FD8C2]" /> : null}
@@ -335,14 +308,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         ) : null}
 
-        <Dialog
-          description="统一设置课程文本生成模型，以及 GPT 文本、联网研究和图片功能使用的中转站。"
-          icon={<Settings2 className="size-5" />}
-          onClose={() => setIsAdvancedOpen(false)}
-          open={isAdvancedOpen}
-          size="compact"
-          title="高级设置"
-        >
+        <Dialog description="为当前账号分别选择文本与图片的预置模型和调用线路。" icon={<Settings2 className="size-5" />} onClose={() => setIsAdvancedOpen(false)} open={isAdvancedOpen} size="medium-fit" title="高级设置">
           <div className="space-y-5 p-5 sm:p-6">
             {isLoadingGateway ? (
               <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground" role="status">
@@ -352,70 +318,137 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
             {!isLoadingGateway && !hasLoadedGateway ? (
               <div className="space-y-4 py-4 text-center">
-                <p className="text-sm text-destructive" role="alert">{gatewayError || "高级设置加载失败"}</p>
+                <p className="text-sm text-destructive" role="alert">
+                  {gatewayError || "高级设置加载失败"}
+                </p>
                 <div className="flex justify-center gap-3">
-                  <Button onClick={() => setIsAdvancedOpen(false)} type="button" variant="outline">关闭</Button>
-                  <Button onClick={() => void openAdvancedSettings()} type="button">重新加载</Button>
+                  <Button onClick={() => setIsAdvancedOpen(false)} type="button" variant="outline">
+                    关闭
+                  </Button>
+                  <Button onClick={() => void openAdvancedSettings()} type="button">
+                    重新加载
+                  </Button>
                 </div>
               </div>
             ) : null}
-            <div aria-hidden={!hasLoadedGateway || isLoadingGateway} className={cn("space-y-5", (!hasLoadedGateway || isLoadingGateway) && "hidden")}>
-              <fieldset disabled={isSavingGateway}>
-              <legend className="text-sm font-semibold text-foreground">文本生成模型</legend>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">统一用于故事大纲和文案与练习，修改后从下一次 AI 请求起生效。</p>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", writingProvider === "quickrouter_gpt" ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")}>
-                  <span className="flex items-center gap-2">
-                    <input checked={writingProvider === "quickrouter_gpt"} className="size-4" name="writing-provider" onChange={() => setWritingProvider("quickrouter_gpt")} type="radio" value="quickrouter_gpt" />
-                    <span className="text-sm font-semibold text-foreground">GPT</span>
-                  </span>
-                  <span className="mt-2 block text-xs leading-5 text-muted-foreground">默认选择，适合稳定生成课程内容。</span>
-                </label>
-                <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", writingProvider === "quickrouter_deepseek" ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")}>
-                  <span className="flex items-center gap-2">
-                    <input checked={writingProvider === "quickrouter_deepseek"} className="size-4" name="writing-provider" onChange={() => setWritingProvider("quickrouter_deepseek")} type="radio" value="quickrouter_deepseek" />
-                    <span className="text-sm font-semibold text-foreground">DeepSeek</span>
-                  </span>
-                  <span className="mt-2 block text-xs leading-5 text-muted-foreground">成本更低，使用 DeepSeek 直连服务。</span>
-                </label>
-              </div>
-              </fieldset>
-              <fieldset disabled={isSavingGateway}>
-              <legend className="text-sm font-semibold text-foreground">GPT 中转站</legend>
-              <div className="mt-3 grid gap-3">
-                {AI_GATEWAYS.map((gateway) => (
-                  <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", aiGateway === gateway ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={gateway}>
+            <div aria-hidden={!hasLoadedGateway || isLoadingGateway} className={cn("space-y-6", (!hasLoadedGateway || isLoadingGateway) && "hidden")}>
+              <fieldset className="rounded-2xl bg-muted/35 p-4 sm:p-5" disabled={isSavingGateway}>
+                <legend className="text-sm font-semibold text-foreground">文本生成模型</legend>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">统一用于故事大纲和文案与练习，修改后从下一次 AI 请求起生效。</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <label className={cn("cursor-pointer rounded-xl border bg-background p-4 transition-colors", writingProvider === "gpt-5.5" ? "border-primary ring-1 ring-primary/20" : "border-border hover:bg-muted/50")}>
                     <span className="flex items-center gap-2">
-                      <input checked={aiGateway === gateway} className="size-4" name="ai-gateway" onChange={() => setAiGateway(gateway)} type="radio" value={gateway} />
-                      <span className="text-sm font-semibold text-foreground">{aiGatewayLabels[gateway]}</span>
+                      <input checked={writingProvider === "gpt-5.5"} className="size-4" name="writing-provider" onChange={() => setWritingProvider("gpt-5.5")} type="radio" value="gpt-5.5" />
+                      <span className="text-sm font-semibold text-foreground">{textModelLabels["gpt-5.5"]}</span>
                     </span>
-                    <span className="mt-2 block text-xs leading-5 text-muted-foreground">
-                      {aiGatewayDescriptions[gateway]}
-                    </span>
+                    <span className="mt-2 block text-xs leading-5 text-muted-foreground">适合对比文本生成效果。</span>
                   </label>
-                ))}
-              </div>
+                  <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", writingProvider === "gpt-5.6-sol" ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")}>
+                    <span className="flex items-center gap-2">
+                      <input checked={writingProvider === "gpt-5.6-sol"} className="size-4" name="writing-provider" onChange={() => setWritingProvider("gpt-5.6-sol")} type="radio" value="gpt-5.6-sol" />
+                      <span className="text-sm font-semibold text-foreground">{textModelLabels["gpt-5.6-sol"]}</span>
+                    </span>
+                    <span className="mt-2 block text-xs leading-5 text-muted-foreground">默认选择，适合稳定生成课程内容。</span>
+                  </label>
+                  <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", writingProvider === "deepseek-chat" ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")}>
+                    <span className="flex items-center gap-2">
+                      <input checked={writingProvider === "deepseek-chat"} className="size-4" name="writing-provider" onChange={() => setWritingProvider("deepseek-chat")} type="radio" value="deepseek-chat" />
+                      <span className="text-sm font-semibold text-foreground">DeepSeek</span>
+                    </span>
+                    <span className="mt-2 block text-xs leading-5 text-muted-foreground">成本更低，使用 DeepSeek 直连服务。</span>
+                  </label>
+                </div>
               </fieldset>
-              {aiGateway === "quickrouter" ? (
-                <fieldset disabled={isSavingGateway}>
-                <legend className="text-sm font-semibold text-foreground">QuickRouter Base URL</legend>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  {QUICKROUTER_ENDPOINTS.map((endpoint) => (
-                    <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", quickRouterEndpoint === endpoint ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={endpoint}>
+              <fieldset className="rounded-2xl bg-muted/35 p-4 sm:p-5" disabled={isSavingGateway}>
+                <legend className="text-sm font-semibold text-foreground">GPT 与联网研究线路</legend>
+                <div className="mt-3 grid gap-3">
+                  {AI_GATEWAYS.map((gateway) => (
+                    <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", aiGateway === gateway ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={gateway}>
                       <span className="flex items-center gap-2">
-                        <input checked={quickRouterEndpoint === endpoint} className="size-4" name="quickrouter-endpoint" onChange={() => setQuickRouterEndpoint(endpoint)} type="radio" value={endpoint} />
-                        <span className="text-sm font-semibold text-foreground">{quickRouterEndpointLabels[endpoint]}</span>
+                        <input checked={aiGateway === gateway} className="size-4" name="ai-gateway" onChange={() => setAiGateway(gateway)} type="radio" value={gateway} />
+                        <span className="text-sm font-semibold text-foreground">{aiGatewayLabels[gateway]}</span>
                       </span>
-                      <span className="mt-2 block break-all text-xs leading-5 text-muted-foreground">{quickRouterEndpointUrls[endpoint]}</span>
+                      <span className="mt-2 block text-xs leading-5 text-muted-foreground">{aiGatewayDescriptions[gateway]}</span>
                     </label>
                   ))}
                 </div>
+              </fieldset>
+              {aiGateway === "quickrouter" ? (
+                <fieldset disabled={isSavingGateway}>
+                  <legend className="text-sm font-semibold text-foreground">QuickRouter Base URL</legend>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {QUICKROUTER_ENDPOINTS.map((endpoint) => (
+                      <label className={cn("cursor-pointer rounded-xl border p-4 transition-colors", quickRouterEndpoint === endpoint ? "border-primary bg-primary-50/60 ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={endpoint}>
+                        <span className="flex items-center gap-2">
+                          <input checked={quickRouterEndpoint === endpoint} className="size-4" name="quickrouter-endpoint" onChange={() => setQuickRouterEndpoint(endpoint)} type="radio" value={endpoint} />
+                          <span className="text-sm font-semibold text-foreground">{quickRouterEndpointLabels[endpoint]}</span>
+                        </span>
+                        <span className="mt-2 block break-all text-xs leading-5 text-muted-foreground">{quickRouterEndpointUrls[endpoint]}</span>
+                      </label>
+                    ))}
+                  </div>
                 </fieldset>
               ) : null}
-              {gatewayError ? <p className="text-sm text-destructive" role="alert">{gatewayError}</p> : null}
+              <fieldset className="rounded-2xl bg-muted/35 p-4 sm:p-5" disabled={isSavingGateway}>
+                <legend className="text-sm font-semibold text-foreground">图片生成与编辑</legend>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">统一用于人物形象、课程插图以及后续图片修改。</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {IMAGE_GENERATION_MODELS.map((model) => (
+                    <label className={cn("cursor-pointer rounded-xl border bg-background p-4 transition-colors", imageModel === model ? "border-primary ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={model}>
+                      <span className="flex items-center gap-2">
+                        <input
+                          checked={imageModel === model}
+                          className="size-4"
+                          name="image-model"
+                          onChange={() => {
+                            setImageModel(model);
+                            if (model === "gpt-image-2-c") setImageGateway("quickrouter");
+                          }}
+                          type="radio"
+                          value={model}
+                        />
+                        <span className="text-sm font-semibold text-foreground">{imageModelLabels[model]}</span>
+                      </span>
+                      <span className="mt-2 block text-xs leading-5 text-muted-foreground">{model === "gpt-image-2-c" ? "QuickRouter 专属模型，固定使用高质量并按其规则计费。" : "标准图片模型，使用课程选择的画面质量。"}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {AI_GATEWAYS.filter((gateway) => gateway !== "easy88ai" && (imageModel !== "gpt-image-2-c" || gateway === "quickrouter")).map((gateway) => (
+                    <label className={cn("cursor-pointer rounded-xl border bg-background p-4 transition-colors", imageGateway === gateway ? "border-primary ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={gateway}>
+                      <span className="flex items-center gap-2">
+                        <input checked={imageGateway === gateway} className="size-4" name="image-gateway" onChange={() => setImageGateway(gateway)} type="radio" value={gateway} />
+                        <span className="text-sm font-semibold text-foreground">{aiGatewayLabels[gateway]}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {imageGateway === "quickrouter" ? (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {QUICKROUTER_ENDPOINTS.map((endpoint) => (
+                      <label className={cn("cursor-pointer rounded-xl border bg-background p-4 transition-colors", imageQuickRouterEndpoint === endpoint ? "border-primary ring-1 ring-primary/20" : "border-border hover:bg-muted/50")} key={endpoint}>
+                        <span className="flex items-center gap-2">
+                          <input checked={imageQuickRouterEndpoint === endpoint} className="size-4" name="image-quickrouter-endpoint" onChange={() => setImageQuickRouterEndpoint(endpoint)} type="radio" value={endpoint} />
+                          <span className="text-sm font-semibold text-foreground">QuickRouter {quickRouterEndpointLabels[endpoint]}</span>
+                        </span>
+                        <span className="mt-2 block break-all text-xs leading-5 text-muted-foreground">{quickRouterEndpointUrls[endpoint]}</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
+              </fieldset>
+              {gatewayError ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {gatewayError}
+                </p>
+              ) : null}
               <div className="flex justify-end gap-3 border-t border-border pt-4">
-                <Button disabled={isSavingGateway} onClick={() => setIsAdvancedOpen(false)} type="button" variant="outline">取消</Button>
-                <Button disabled={isSavingGateway} loading={isSavingGateway} onClick={() => void saveAiGateway()} type="button">保存设置</Button>
+                <Button disabled={isSavingGateway} onClick={() => setIsAdvancedOpen(false)} type="button" variant="outline">
+                  取消
+                </Button>
+                <Button disabled={isSavingGateway} loading={isSavingGateway} onClick={() => void saveAiGateway()} type="button">
+                  保存设置
+                </Button>
               </div>
             </div>
           </div>

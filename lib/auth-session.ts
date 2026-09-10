@@ -1,11 +1,11 @@
-import { parseAiGateway } from "@/lib/ai-gateway";
+import { parseAiGateway, type AiGateway } from "@/lib/ai-gateway";
 import { REMEMBERED_AUTH_MAX_AGE_MS } from "@/lib/auth-cookie";
 
 export type MockSession = {
   user: {
     id?: string;
     displayName: string;
-    aiGateway?: "quickrouter" | "crazyrouter";
+    aiGateway?: AiGateway;
   };
   createdAt: string;
 };

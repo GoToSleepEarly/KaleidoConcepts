@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 export const storyWritingProviderSchema = z.union([
-  z.literal("quickrouter_gpt"),
-  z.literal("quickrouter_deepseek"),
+  z.literal("gpt-5.6-sol"),
+  z.literal("deepseek-chat"),
 ]);
 
 export const storyComplexitySchema = z.enum(["clear_linear", "conflict_driven", "layered"]);
@@ -98,7 +98,7 @@ const sourceReferenceSchema = z.object({
   usableFacts: z.array(z.string()),
   avoidTopics: z.array(z.string()),
   adaptationBoundary: z.string().min(1),
-  researchProvider: z.union([z.literal("quickrouter_gpt"), z.literal("none")]).optional(),
+  researchProvider: z.union([z.literal("gpt-5.6-sol"), z.literal("none")]).optional(),
   confirmedAt: z.string().nullable().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),

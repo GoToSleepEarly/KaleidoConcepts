@@ -12,8 +12,12 @@ const { clearAuthSession, pathnameMock, replace } = vi.hoisted(() => ({
 }));
 
 beforeAll(() => {
-  HTMLDialogElement.prototype.showModal = function showModal() { this.setAttribute("open", ""); };
-  HTMLDialogElement.prototype.close = function close() { this.removeAttribute("open"); };
+  HTMLDialogElement.prototype.showModal = function showModal() {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close = function close() {
+    this.removeAttribute("open");
+  };
 });
 
 vi.mock("next/navigation", () => ({
@@ -23,7 +27,9 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/auth-session", () => ({
   clearAuthSession,
-  getStoredSession: () => ({ user: { id: "user-1", displayName: "教师账号", aiGateway: "quickrouter" } }),
+  getStoredSession: () => ({
+    user: { id: "user-1", displayName: "教师账号", aiGateway: "quickrouter" },
+  }),
 }));
 
 describe("AppShell account menu", () => {
@@ -35,7 +41,11 @@ describe("AppShell account menu", () => {
   });
 
   test("provides a touch-safe navigation drawer below desktop width", () => {
-    render(<AppShell><div>课程内容</div></AppShell>);
+    render(
+      <AppShell>
+        <div>课程内容</div>
+      </AppShell>,
+    );
 
     const menuButton = screen.getByRole("button", { name: "打开主导航" });
     expect(menuButton).toHaveClass("lg:hidden", "min-h-11", "min-w-11");
@@ -44,7 +54,9 @@ describe("AppShell account menu", () => {
 
     fireEvent.click(menuButton);
 
-    const mobileNavigation = screen.getByRole("navigation", { name: "移动端主导航" });
+    const mobileNavigation = screen.getByRole("navigation", {
+      name: "移动端主导航",
+    });
     expect(mobileNavigation).toHaveClass("lg:hidden");
     expect(within(mobileNavigation).getByRole("link", { name: /课程列表/ })).toHaveAttribute("href", "/courses");
     expect(within(mobileNavigation).getByRole("button", { name: "关闭主导航" })).toHaveClass("min-h-11", "min-w-11");
@@ -52,33 +64,53 @@ describe("AppShell account menu", () => {
 
   test("gives Step 2 through Step 4 bounded viewports while keeping ordinary pages naturally scrollable", () => {
     pathnameMock.mockReturnValue("/courses/course-1/create/story-outline");
-    const view = render(<AppShell><div>故事大纲内容</div></AppShell>);
+    const view = render(
+      <AppShell>
+        <div>故事大纲内容</div>
+      </AppShell>,
+    );
 
     expect(screen.getByTestId("app-shell-root")).toHaveClass("h-dvh", "overflow-hidden");
     expect(screen.getByRole("main")).toHaveClass("min-h-0", "overflow-hidden");
 
     view.unmount();
     pathnameMock.mockReturnValue("/courses/course-1/create/teaching-plan");
-    const teachingPlanView = render(<AppShell><div>教学规划内容</div></AppShell>);
+    const teachingPlanView = render(
+      <AppShell>
+        <div>教学规划内容</div>
+      </AppShell>,
+    );
     expect(screen.getByTestId("app-shell-root")).toHaveClass("h-dvh", "overflow-hidden");
     expect(screen.getByRole("main")).toHaveClass("min-h-0", "overflow-hidden");
 
     teachingPlanView.unmount();
     pathnameMock.mockReturnValue("/courses/course-1/create/content");
-    const contentView = render(<AppShell><div>文案与练习内容</div></AppShell>);
+    const contentView = render(
+      <AppShell>
+        <div>文案与练习内容</div>
+      </AppShell>,
+    );
     expect(screen.getByTestId("app-shell-root")).toHaveClass("h-dvh", "overflow-hidden");
     expect(screen.getByRole("main")).toHaveClass("min-h-0", "overflow-hidden");
 
     contentView.unmount();
     pathnameMock.mockReturnValue("/courses");
-    render(<AppShell><div>课程内容</div></AppShell>);
+    render(
+      <AppShell>
+        <div>课程内容</div>
+      </AppShell>,
+    );
     expect(screen.getByTestId("app-shell-root")).not.toHaveClass("h-dvh", "overflow-hidden");
   });
 
   test("keeps the course step portal visible on phones without pushing the account menu off screen", () => {
     pathnameMock.mockReturnValue("/courses/course-1/create/content");
 
-    render(<AppShell><div>课程内容</div></AppShell>);
+    render(
+      <AppShell>
+        <div>课程内容</div>
+      </AppShell>,
+    );
 
     const progressSlot = document.getElementById("course-create-progress-slot");
     expect(progressSlot).toHaveClass("order-last", "w-full", "sm:order-none", "sm:flex-1");
@@ -88,7 +120,11 @@ describe("AppShell account menu", () => {
   });
 
   test("aligns the menu to its trigger and closes on Escape or outside click", () => {
-    render(<AppShell><div>课程内容</div></AppShell>);
+    render(
+      <AppShell>
+        <div>课程内容</div>
+      </AppShell>,
+    );
 
     const trigger = screen.getByRole("button", { name: "用户菜单" });
     fireEvent.click(trigger);
@@ -103,33 +139,75 @@ describe("AppShell account menu", () => {
   });
 
   test("saves the account GPT gateway from advanced settings", async () => {
-    const request = vi.fn(async (_url: string, init?: RequestInit) => Response.json({
-      writingProvider: init?.method === "PATCH" ? "quickrouter_deepseek" : "quickrouter_gpt",
-      aiGateway: init?.method === "PATCH" ? "crazyrouter" : "quickrouter",
-      quickRouterEndpoint: "direct",
-    }));
+    const request = vi.fn(async (_url: string, init?: RequestInit) =>
+      Response.json({
+        writingProvider: init?.method === "PATCH" ? "deepseek-chat" : "gpt-5.6-sol",
+        aiGateway: init?.method === "PATCH" ? "crazyrouter" : "quickrouter",
+        quickRouterEndpoint: "direct",
+        imageModel: "gpt-image-2",
+        imageGateway: "quickrouter",
+        imageQuickRouterEndpoint: "main",
+      }),
+    );
     vi.stubGlobal("fetch", request);
-    render(<AppShell><div>课程内容</div></AppShell>);
+    render(
+      <AppShell>
+        <div>课程内容</div>
+      </AppShell>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
     fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
-    await waitFor(() => expect(request).toHaveBeenCalledWith("/api/account/ai-gateway", expect.objectContaining({
-      method: "GET",
-      cache: "no-store",
-    })));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "/api/account/ai-gateway",
+        expect.objectContaining({
+          method: "GET",
+          cache: "no-store",
+        }),
+      ),
+    );
     fireEvent.click(screen.getByRole("radio", { name: /DeepSeek/ }));
-    fireEvent.click(screen.getByRole("radio", { name: /Crazyrouter/ }));
+    fireEvent.click(within(screen.getByRole("group", { name: "GPT 与联网研究线路" })).getByRole("radio", { name: /Crazyrouter/ }));
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
 
-    await waitFor(() => expect(request).toHaveBeenCalledWith("/api/account/ai-gateway", expect.objectContaining({
-      method: "PATCH",
-      body: JSON.stringify({ writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "direct" }),
-    })));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "/api/account/ai-gateway",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({
+            writingProvider: "deepseek-chat",
+            aiGateway: "crazyrouter",
+            quickRouterEndpoint: "direct",
+            imageModel: "gpt-image-2",
+            imageGateway: "quickrouter",
+            imageQuickRouterEndpoint: "main",
+          }),
+        }),
+      ),
+    );
   });
 
   test("loads the current gateway from the database whenever advanced settings opens", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "main" })));
-    render(<AppShell><div>课程内容</div></AppShell>);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          writingProvider: "deepseek-chat",
+          aiGateway: "crazyrouter",
+          quickRouterEndpoint: "main",
+          imageModel: "gpt-image-2-c",
+          imageGateway: "quickrouter",
+          imageQuickRouterEndpoint: "direct",
+        }),
+      ),
+    );
+    render(
+      <AppShell>
+        <div>课程内容</div>
+      </AppShell>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
     fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
@@ -140,8 +218,20 @@ describe("AppShell account menu", () => {
 
   test("does not show default choices before saved advanced settings finish loading", async () => {
     let resolveSettings!: (response: Response) => void;
-    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { resolveSettings = resolve; })));
-    render(<AppShell><div>课程内容</div></AppShell>);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveSettings = resolve;
+          }),
+      ),
+    );
+    render(
+      <AppShell>
+        <div>课程内容</div>
+      </AppShell>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
     fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
@@ -150,14 +240,30 @@ describe("AppShell account menu", () => {
     expect(screen.queryByRole("radio", { name: /GPT/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("radio", { name: /QuickRouter/ })).not.toBeInTheDocument();
 
-    resolveSettings(Response.json({ writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "direct" }));
+    resolveSettings(
+      Response.json({
+        writingProvider: "deepseek-chat",
+        aiGateway: "crazyrouter",
+        quickRouterEndpoint: "direct",
+        imageModel: "gpt-image-2",
+        imageGateway: "crazyrouter",
+        imageQuickRouterEndpoint: "main",
+      }),
+    );
     await waitFor(() => expect(screen.getByRole("radio", { name: /DeepSeek/ })).toBeChecked());
-    expect(screen.getByRole("radio", { name: /Crazyrouter/ })).toBeChecked();
+    expect(within(screen.getByRole("group", { name: "GPT 与联网研究线路" })).getByRole("radio", { name: /Crazyrouter/ })).toBeChecked();
   });
 
   test("keeps default choices hidden and offers recovery when advanced settings fail to load", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ message: "数据库暂时不可用" }, { status: 500 })));
-    render(<AppShell><div>课程内容</div></AppShell>);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ message: "数据库暂时不可用" }, { status: 500 })),
+    );
+    render(
+      <AppShell>
+        <div>课程内容</div>
+      </AppShell>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
     fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
@@ -168,35 +274,113 @@ describe("AppShell account menu", () => {
   });
 
   test("loads and saves the QuickRouter base URL option", async () => {
-    const request = vi.fn(async (_url: string, init?: RequestInit) => Response.json({
-      writingProvider: "quickrouter_gpt",
-      aiGateway: "quickrouter",
-      quickRouterEndpoint: init?.method === "PATCH" ? "direct" : "main",
-    }));
+    const request = vi.fn(async (_url: string, init?: RequestInit) =>
+      Response.json({
+        writingProvider: "gpt-5.6-sol",
+        aiGateway: "quickrouter",
+        quickRouterEndpoint: init?.method === "PATCH" ? "direct" : "main",
+        imageModel: "gpt-image-2",
+        imageGateway: "crazyrouter",
+        imageQuickRouterEndpoint: "main",
+      }),
+    );
     vi.stubGlobal("fetch", request);
-    render(<AppShell><div>课程内容</div></AppShell>);
+    render(
+      <AppShell>
+        <div>课程内容</div>
+      </AppShell>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
     fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
-    await waitFor(() => expect(screen.getByRole("radio", { name: /主站/ })).toBeChecked());
-    fireEvent.click(screen.getByRole("radio", { name: /^直连/ }));
+    const textEndpointGroup = await screen.findByRole("group", {
+      name: "QuickRouter Base URL",
+    });
+    await waitFor(() => expect(within(textEndpointGroup).getByRole("radio", { name: /主站/ })).toBeChecked());
+    fireEvent.click(within(textEndpointGroup).getByRole("radio", { name: /^直连/ }));
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
 
-    await waitFor(() => expect(request).toHaveBeenCalledWith("/api/account/ai-gateway", expect.objectContaining({
-      method: "PATCH",
-      body: JSON.stringify({ writingProvider: "quickrouter_gpt", aiGateway: "quickrouter", quickRouterEndpoint: "direct" }),
-    })));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "/api/account/ai-gateway",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({
+            writingProvider: "gpt-5.6-sol",
+            aiGateway: "quickrouter",
+            quickRouterEndpoint: "direct",
+            imageModel: "gpt-image-2",
+            imageGateway: "crazyrouter",
+            imageQuickRouterEndpoint: "main",
+          }),
+        }),
+      ),
+    );
+  });
+
+  test("treats GPT Image 2-C as an explicit QuickRouter-only choice", async () => {
+    const request = vi.fn(async (_url: string, init?: RequestInit) =>
+      Response.json({
+        writingProvider: "gpt-5.5",
+        aiGateway: "easy88ai",
+        quickRouterEndpoint: "main",
+        imageModel: init?.method === "PATCH" ? "gpt-image-2-c" : "gpt-image-2",
+        imageGateway: "quickrouter",
+        imageQuickRouterEndpoint: "direct",
+      }),
+    );
+    vi.stubGlobal("fetch", request);
+    render(
+      <AppShell>
+        <div>课程内容</div>
+      </AppShell>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
+    const imageGroup = await screen.findByRole("group", {
+      name: "图片生成与编辑",
+    });
+    fireEvent.click(within(imageGroup).getByRole("radio", { name: /GPT Image 2-C/ }));
+    expect(within(imageGroup).queryByRole("radio", { name: /Crazyrouter/ })).not.toBeInTheDocument();
+    expect(within(imageGroup).queryByRole("radio", { name: /Easy88AI/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        "/api/account/ai-gateway",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({
+            writingProvider: "gpt-5.5",
+            aiGateway: "easy88ai",
+            quickRouterEndpoint: "main",
+            imageModel: "gpt-image-2-c",
+            imageGateway: "quickrouter",
+            imageQuickRouterEndpoint: "direct",
+          }),
+        }),
+      ),
+    );
   });
 
   test("clears both the server cookie and browser session on logout", async () => {
     const request = vi.fn(async () => Response.json({ success: true }));
     vi.stubGlobal("fetch", request);
-    render(<AppShell><div>课程内容</div></AppShell>);
+    render(
+      <AppShell>
+        <div>课程内容</div>
+      </AppShell>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "用户菜单" }));
     fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
 
-    await waitFor(() => expect(request).toHaveBeenCalledWith("/api/auth/logout", { method: "POST" }));
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith("/api/auth/logout", {
+        method: "POST",
+      }),
+    );
     expect(clearAuthSession).toHaveBeenCalled();
     expect(replace).toHaveBeenCalledWith("/login");
   });

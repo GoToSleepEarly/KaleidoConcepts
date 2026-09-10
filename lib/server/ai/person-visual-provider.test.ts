@@ -14,7 +14,9 @@ describe("person visual provider", () => {
     process.env.QUICKROUTER_IMAGE_API_KEY = "image-key";
     const request = vi.fn(async (...args: Parameters<typeof fetch>) => {
       void args;
-      return Response.json({ data: [{ url: "https://example.com/person.webp" }] });
+      return Response.json({
+        data: [{ url: "https://example.com/person.webp" }],
+      });
     });
     vi.stubGlobal("fetch", request);
 
@@ -29,7 +31,10 @@ describe("person visual provider", () => {
     const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/person.webp" }] }));
     vi.stubGlobal("fetch", request);
 
-    await createPersonVisualProvider(undefined, { aiGateway: "quickrouter", quickRouterEndpoint: "direct" }).generate({ prompt: "full body" });
+    await createPersonVisualProvider(undefined, {
+      aiGateway: "quickrouter",
+      quickRouterEndpoint: "direct",
+    }).generate({ prompt: "full body" });
 
     expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.quickrouter.us/v1/images/generations");
   });
@@ -50,13 +55,22 @@ describe("person visual provider", () => {
   test("gpt-image-2-c 生成人物形象时强制最高质量", async () => {
     const request = vi.fn(async (...args: Parameters<typeof fetch>) => {
       void args;
-      return Response.json({ data: [{ url: "https://example.com/person.webp" }] });
+      return Response.json({
+        data: [{ url: "https://example.com/person.webp" }],
+      });
     });
     vi.stubGlobal("fetch", request);
 
-    await createPersonVisualProvider({ apiKey: "test", model: "gpt-image-2-c", timeoutMs: 1_000 }).generate({ prompt: "person" });
+    await createPersonVisualProvider({
+      apiKey: "test",
+      model: "gpt-image-2-c",
+      timeoutMs: 1_000,
+    }).generate({ prompt: "person" });
 
-    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({ model: "gpt-image-2-c", quality: "high" });
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({
+      model: "gpt-image-2-c",
+      quality: "high",
+    });
   });
 
   test("requires the dedicated image token", () => {
@@ -128,31 +142,54 @@ describe("person visual provider", () => {
     expect(new Headers(options?.headers).has("Content-Type")).toBe(false);
   });
 
-  test("人物形象接口返回 429 时也仅用 gpt-image-2-c 兜底一次", async () => {
-    const request = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "rate limited" } }), { status: 429 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ url: "https://example.com/fallback.webp" }] }), { status: 200 }));
+  test("人物形象接口返回 429 时不擅自切换模型", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: "rate limited" } }), {
+        status: 429,
+      }),
+    );
     vi.stubGlobal("fetch", request);
-    const provider = createPersonVisualProvider({ apiKey: "test", model: "gpt-image-2", timeoutMs: 1_000 });
+    const provider = createPersonVisualProvider({
+      apiKey: "test",
+      model: "gpt-image-2",
+      timeoutMs: 1_000,
+    });
 
-    await expect(provider.edit({ prompt: "change the coat", imageDataUrl: "data:image/png;base64,aGVsbG8=" })).resolves.toEqual({ imageUrl: "https://example.com/fallback.webp", model: "gpt-image-2-c", quality: "high" });
+    await expect(
+      provider.edit({
+        prompt: "change the coat",
+        imageDataUrl: "data:image/png;base64,aGVsbG8=",
+      }),
+    ).rejects.toThrow("rate limited");
 
-    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(1);
     expect((request.mock.calls[0]?.[1]?.body as FormData).get("model")).toBe("gpt-image-2");
-    expect((request.mock.calls[1]?.[1]?.body as FormData).get("model")).toBe("gpt-image-2-c");
   });
 
   test("Crazyrouter 人物形象使用标准模型且不启用 -c 兜底", async () => {
     process.env.CRAZYROUTER_API_KEY = "crazy-key";
-    const request = vi.fn(async () => new Response(JSON.stringify({ error: { message: "rate limited" } }), { status: 429 }));
+    const request = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: { message: "rate limited" } }), {
+          status: 429,
+        }),
+    );
     vi.stubGlobal("fetch", request);
 
-    await expect(createPersonVisualProvider(undefined, "crazyrouter").generate({ prompt: "person" })).rejects.toThrow("rate limited");
+    await expect(
+      createPersonVisualProvider(undefined, "crazyrouter").generate({
+        prompt: "person",
+      }),
+    ).rejects.toThrow("rate limited");
 
     expect(request).toHaveBeenCalledTimes(1);
     const init = (request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
     expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.crazyrouter.com/v1/images/generations");
     expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer crazy-key");
-    expect(JSON.parse(String(init?.body))).toMatchObject({ model: "gpt-image-2", quality: "low", output_format: "webp" });
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      model: "gpt-image-2",
+      quality: "low",
+      output_format: "webp",
+    });
   });
 });

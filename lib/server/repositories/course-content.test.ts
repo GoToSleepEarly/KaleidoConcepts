@@ -40,7 +40,7 @@ describe("course content repository", () => {
       { aiGenerationLog: { create } } as unknown as CourseContentDb,
       "course-1",
       { id: "generation-1", requestId: "request-1" },
-      "quickrouter_gpt",
+      "gpt-5.6-sol",
       error!,
       5,
     );
@@ -73,7 +73,7 @@ describe("course content repository", () => {
       { aiGenerationLog: { create } } as unknown as CourseContentDb,
       "course-1",
       { id: "generation-1", requestId: "request-1" },
-      "quickrouter_gpt",
+      "gpt-5.6-sol",
       error!,
       6,
     );
@@ -159,7 +159,7 @@ describe("course content repository", () => {
     const now = new Date("2026-08-15T06:00:00.000Z");
     let content = {
       id: "content-1", courseId: "course-1", status: "generating_reading", phase: "generating_chapters",
-      writingProvider: "quickrouter_gpt", sourceRevision: "r1", contentVersion: 0, chapters: [], mainIdea: null,
+      writingProvider: "gpt-5.6-sol", sourceRevision: "r1", contentVersion: 0, chapters: [], mainIdea: null,
       homework: null, exercisesStale: false, errorMessage: null, activeGenerationId: "generation-1", updatedAt: now,
     };
     let generation = {
@@ -197,7 +197,7 @@ describe("course content repository", () => {
     const course = { id: "course-1", title: "Hidden Door", durationMinutes: 30, currentStage: "content", englishLevel: "A2", knowledgePointIds: ["kp-1"] };
     const outline = { id: "outline-1", title: "Hidden Door", summary: "A hidden door", chapters: [{ id: "chapter-1", order: 1, title: "The Map", storyGoal: "Find it", keyEvents: ["Find it"], recommendedKnowledgePointIds: ["kp-1"] }] };
     const plan = { id: "plan-1", courseId: "course-1", status: "confirmed", englishLevel: "A2", mainIdeaTargetWordCount: 120, chapters: [{ outlineChapterId: "chapter-1", targetWordCount: 50, paragraphCount: 1, knowledgePointIds: ["kp-1"], readingExerciseMode: "complete", readingExercises: { enabled: true, grammar: { optionCloze: 0, wordForm: 0 }, vocabulary: { chineseHint: 0 } }, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: {} }], afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: {} }, updatedAt: now, confirmedAt: now };
-    const content = { id: "content-1", courseId: "course-1", status: "ready", phase: null, writingProvider: "quickrouter_gpt", sourceRevision: "r1", contentVersion: 1, chapters: [{ id: "chapter-chapter-1", outlineChapterId: "chapter-1", order: 1, title: "The Map", targetWordCount: 50, readingExerciseMode: "complete", paragraphs: [{ id: "p1", parts: [{ type: "text", text: "A complete paragraph." }] }], chapterPractice: [], validationIssues: [] }], mainIdea: { id: "main-idea", title: "Main Idea", text: "A summary." }, homework: null, exercisesStale: false, errorMessage: null, activeGenerationId: "generation-1", updatedAt: now };
+    const content = { id: "content-1", courseId: "course-1", status: "ready", phase: null, writingProvider: "gpt-5.6-sol", sourceRevision: "r1", contentVersion: 1, chapters: [{ id: "chapter-chapter-1", outlineChapterId: "chapter-1", order: 1, title: "The Map", targetWordCount: 50, readingExerciseMode: "complete", paragraphs: [{ id: "p1", parts: [{ type: "text", text: "A complete paragraph." }] }], chapterPractice: [], validationIssues: [] }], mainIdea: { id: "main-idea", title: "Main Idea", text: "A summary." }, homework: null, exercisesStale: false, errorMessage: null, activeGenerationId: "generation-1", updatedAt: now };
     const activeGeneration = { id: "generation-1", courseId: "course-1", operation: "modify", status: "running", baseContentVersion: 1, previousStatus: "ready", leaseExpiresAt: new Date(Date.now() + 60_000), startedAt: now, updatedAt: now };
     const db = {
       course: { findUnique: vi.fn(async () => course), update: vi.fn(async () => course) },
@@ -220,7 +220,7 @@ describe("course content repository", () => {
     const course = { id: "course-1", title: "Hidden Door", durationMinutes: 30, currentStage: "content", englishLevel: "A2", knowledgePointIds: ["kp-1"] };
     const outline = { id: "outline-1", title: "Hidden Door", summary: "A hidden door", chapters: [{ id: "chapter-1", order: 1, title: "The Map", storyGoal: "Find it", keyEvents: ["Find it"], recommendedKnowledgePointIds: ["kp-1"] }] };
     const plan = { id: "plan-1", courseId: "course-1", status: "confirmed", englishLevel: "A2", mainIdeaTargetWordCount: 120, chapters: [{ outlineChapterId: "chapter-1", targetWordCount: 50, paragraphCount: 1, knowledgePointIds: ["kp-1"], readingExerciseMode: "complete", readingExercises: { enabled: true, grammar: { optionCloze: 0, wordForm: 0 }, vocabulary: { chineseHint: 0 } }, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: {} }], afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: {} }, updatedAt: now, confirmedAt: now };
-    let content: Record<string, unknown> = { id: "content-1", courseId: "course-1", status: "ready", phase: null, writingProvider: "quickrouter_gpt", sourceRevision: "r1", contentVersion: 1, chapters: [{ id: "chapter-chapter-1", outlineChapterId: "chapter-1", order: 1, title: "The Map", targetWordCount: 50, readingExerciseMode: "complete", paragraphs: [{ id: "p1", parts: [{ type: "text", text: "A complete paragraph." }] }], chapterPractice: [], validationIssues: [] }], mainIdea: { id: "main-idea", title: "Main Idea", text: "A summary." }, homework: null, exercisesStale: false, errorMessage: null, activeGenerationId: null, updatedAt: now };
+    let content: Record<string, unknown> = { id: "content-1", courseId: "course-1", status: "ready", phase: null, writingProvider: "gpt-5.6-sol", sourceRevision: "r1", contentVersion: 1, chapters: [{ id: "chapter-chapter-1", outlineChapterId: "chapter-1", order: 1, title: "The Map", targetWordCount: 50, readingExerciseMode: "complete", paragraphs: [{ id: "p1", parts: [{ type: "text", text: "A complete paragraph." }] }], chapterPractice: [], validationIssues: [] }], mainIdea: { id: "main-idea", title: "Main Idea", text: "A summary." }, homework: null, exercisesStale: false, errorMessage: null, activeGenerationId: null, updatedAt: now };
     let generation: Record<string, unknown> | null = null;
     const applyData = (current: Record<string, unknown>, data: Record<string, unknown>) => Object.fromEntries(Object.entries({ ...current, ...data }).map(([key, value]) => [key, typeof value === "object" && value && "increment" in value ? Number(current[key] ?? 0) + Number(Reflect.get(value, "increment")) : value]));
     const db = {
@@ -263,7 +263,7 @@ describe("course content repository", () => {
     const now = new Date("2026-08-10T00:00:00.000Z");
     let course = { id: "course-1", title: "Hidden Door", durationMinutes: 45, currentStage: "content", staleFromStage: "content" as string | null, lifecycleStatus: "published", englishLevel: "B1", knowledgePointIds: ["kp-1"] };
     const emptyContent = {
-      id: "content-2", courseId: "course-1", status: "empty", phase: null, writingProvider: "quickrouter_gpt",
+      id: "content-2", courseId: "course-1", status: "empty", phase: null, writingProvider: "gpt-5.6-sol",
       sourceRevision: "r2", contentVersion: 0, chapters: [], mainIdea: null, homework: null, exercisesStale: false,
       errorMessage: null, updatedAt: now,
     };
@@ -323,7 +323,7 @@ describe("course content repository", () => {
     const course = { id: "course-1", title: "Hidden Door", durationMinutes: 30, currentStage: "content", englishLevel: "A2", knowledgePointIds: ["kp-1"], storySetting: { storyComplexity: "clear_linear", alignmentDetails: { schemaVersion: 2, requirement: { kind: "resolved", storyMode: "new_story", classroomPresence: "participant", brief: { kind: "concept", objective: "理解重力", learningTargets: [{ concept: "重力", expectedUnderstanding: "物体之间会相互吸引" }], assumedPriorKnowledge: [], sourceRequirements: [], requiredNamedCharacters: [], fixedPlot: null, additionalConstraints: { required: [], preferred: [], excluded: [] } } } } } };
     const outline = { id: "outline-1", title: "隐藏的门 / The Hidden Door", chapters: [{ id: "chapter-1", order: 1, title: "发光地图 / The Glowing Map", storyGoal: "Find it", keyEvents: ["Find it"], recommendedKnowledgePointIds: ["kp-1"] }] };
     const plan = { id: "plan-1", courseId: "course-1", status: "confirmed", englishLevel: "A2", chapters: [{ outlineChapterId: "chapter-1", targetWordCount: 50, paragraphCount: 1, knowledgePointIds: ["kp-1"], readingExerciseMode: "complete", readingExercises: { enabled: true, grammar: { optionCloze: 0, wordForm: 1 }, vocabulary: { chineseHint: 0 } }, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { targetWordCount: false, paragraphCount: false, knowledgePointIds: false, readingExerciseMode: false, readingExercises: false, chapterPractice: false } }], afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: { knowledgePointIds: false, practice: false } }, updatedAt: now, confirmedAt: now };
-    let content = { id: "content-1", courseId: "course-1", status: "empty", phase: null, writingProvider: "quickrouter_gpt", sourceRevision: "", contentVersion: 0, chapters: [] as unknown[], mainIdea: null as unknown, homework: null, exercisesStale: false, errorMessage: null as string | null, updatedAt: now };
+    let content = { id: "content-1", courseId: "course-1", status: "empty", phase: null, writingProvider: "gpt-5.6-sol", sourceRevision: "", contentVersion: 0, chapters: [] as unknown[], mainIdea: null as unknown, homework: null, exercisesStale: false, errorMessage: null as string | null, updatedAt: now };
     let generation: Record<string, unknown> | null = null;
     const applyData = (current: Record<string, unknown>, data: Record<string, unknown>) => Object.fromEntries(Object.entries({ ...current, ...data }).map(([key, value]) => [key, typeof value === "object" && value && "increment" in value ? Number(current[key] ?? 0) + Number(Reflect.get(value, "increment")) : value]));
     const messages: Array<{ id: string; role: "teacher" | "assistant" | "system"; content: string; kind?: string; status?: string; operation?: string; requestId?: string; title?: string; details?: Record<string, unknown>; eventKey?: string; createdAt: Date }> = [];
@@ -363,15 +363,15 @@ describe("course content repository", () => {
     const generateExercises = vi.fn();
     const deps = { generateReading, repairReading, generateExercises } as unknown as CourseContentGenerationDeps;
 
-    const result = await generateCourseReading(db, "course-1", "request-1", deps, { writingProvider: "quickrouter_deepseek" });
+    const result = await generateCourseReading(db, "course-1", "request-1", deps, { writingProvider: "deepseek-chat" });
     const exerciseResult = await generateCourseExercises(db, "course-1", "request-2", deps);
 
     expect(result.status).toBe("ready");
     expect(result.chapters[0]?.title).toBe("发光地图 / The Glowing Map");
     expect(exerciseResult.status).toBe("ready");
     expect(generateReading).toHaveBeenCalledTimes(1);
-    expect((generateReading.mock.calls as unknown[][])[0]?.[1]).toBe("quickrouter_deepseek");
-    expect(result.writingProvider).toBe("quickrouter_deepseek");
+    expect((generateReading.mock.calls as unknown[][])[0]?.[1]).toBe("deepseek-chat");
+    expect(result.writingProvider).toBe("deepseek-chat");
     expect((generateReading.mock.calls as unknown[][])[0]?.[0]).toMatchObject({ contentIntent: { kind: "concept", objective: "理解重力", learningTargets: [{ expectedUnderstanding: "物体之间会相互吸引" }] } });
     expect(generateExercises).not.toHaveBeenCalled();
     expect(repairReading).toHaveBeenCalledTimes(1);
@@ -395,7 +395,7 @@ describe("course content repository", () => {
     const outline = { id: "outline-1", title: "Hidden Door", summary: "A team finds the door.", chapters: outlineChapters };
     const planChapters = outlineChapters.map((chapter) => ({ outlineChapterId: chapter.id, targetWordCount: 50, paragraphCount: 1, knowledgePointIds: ["kp-1"], readingExerciseMode: "complete", readingExercises: { enabled: true, grammar: { optionCloze: 0, wordForm: 1 }, vocabulary: { chineseHint: 0 } }, chapterPractice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: {} }));
     const plan = { id: "plan-1", courseId: "course-1", status: "confirmed", englishLevel: "A2", mainIdeaTargetWordCount: 120, chapters: planChapters, afterClassPractice: { enabled: false, vocabularyReviewEnabled: false, knowledgePointIds: [], practice: { enabled: false, grammar: { optionCloze: 0, wordForm: 0 } }, touched: {} }, updatedAt: now, confirmedAt: now };
-    let content = { id: "content-1", courseId: "course-1", status: "empty", phase: null, writingProvider: "quickrouter_gpt", sourceRevision: "", contentVersion: 0, chapters: [] as unknown[], mainIdea: null as unknown, homework: null, exercisesStale: false, errorMessage: null as string | null, updatedAt: now };
+    let content = { id: "content-1", courseId: "course-1", status: "empty", phase: null, writingProvider: "gpt-5.6-sol", sourceRevision: "", contentVersion: 0, chapters: [] as unknown[], mainIdea: null as unknown, homework: null, exercisesStale: false, errorMessage: null as string | null, updatedAt: now };
     let generation: Record<string, unknown> | null = null;
     const applyData = (current: Record<string, unknown>, data: Record<string, unknown>) => Object.fromEntries(Object.entries({ ...current, ...data }).map(([key, value]) => [key, typeof value === "object" && value && "increment" in value ? Number(current[key] ?? 0) + Number(Reflect.get(value, "increment")) : value]));
     const db = {

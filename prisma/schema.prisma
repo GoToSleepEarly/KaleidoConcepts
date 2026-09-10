@@ -7,15 +7,18 @@ datasource db {
 }
 
 model User {
-  id                  String               @id @default(cuid())
-  username            String               @unique
-  password            String
-  displayName         String
-  writingProvider     StoryWritingProvider @default(quickrouter_gpt)
-  aiGateway           AiGateway            @default(quickrouter)
-  quickRouterEndpoint QuickRouterEndpoint  @default(main)
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  id                       String   @id @default(cuid())
+  username                 String   @unique
+  password                 String
+  displayName              String
+  writingProvider          String   @default("gpt-5.6-sol")
+  aiGateway                String   @default("quickrouter")
+  quickRouterEndpoint      String   @default("main")
+  imageModel               String   @default("gpt-image-2")
+  imageGateway             String   @default("quickrouter")
+  imageQuickRouterEndpoint String   @default("main")
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 }
 
 model Person {
@@ -198,7 +201,7 @@ model CourseStoryOutline {
   chapterCount    Int
   title           String
   summary         String
-  writingProvider StoryWritingProvider        @default(quickrouter_gpt)
+  writingProvider String                      @default("gpt-5.6-sol")
   createdAt       DateTime                    @default(now())
   updatedAt       DateTime                    @updatedAt
   course          Course                      @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -209,7 +212,7 @@ model CourseStorySetting {
   id                     String                @id @default(cuid())
   courseId               String                @unique
   chapterCount           Int
-  writingProvider        StoryWritingProvider  @default(quickrouter_gpt)
+  writingProvider        String                @default("gpt-5.6-sol")
   storyComplexity        StoryComplexity?
   alignmentStatus        StoryAlignmentStatus  @default(idle)
   planningMode           StoryPlanningMode     @default(explore_options)
@@ -278,7 +281,7 @@ model CourseSourceReference {
   usableFacts        Json
   avoidTopics        Json
   adaptationBoundary String
-  researchProvider   StoryResearchProvider     @default(none)
+  researchProvider   String                    @default("none")
   confirmedAt        DateTime?
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
@@ -444,23 +447,23 @@ model CourseImage {
 }
 
 model CourseLessonContent {
-  id                 String               @id @default(cuid())
-  courseId           String               @unique
-  status             CourseContentStatus  @default(empty)
+  id                 String              @id @default(cuid())
+  courseId           String              @unique
+  status             CourseContentStatus @default(empty)
   phase              CourseContentPhase?
-  writingProvider    StoryWritingProvider @default(quickrouter_gpt)
-  sourceRevision     String               @default("")
-  contentVersion     Int                  @default(0)
-  chapters           Json                 @default("[]")
+  writingProvider    String              @default("gpt-5.6-sol")
+  sourceRevision     String              @default("")
+  contentVersion     Int                 @default(0)
+  chapters           Json                @default("[]")
   mainIdea           Json?
   homework           Json?
-  exercisesStale     Boolean              @default(false)
+  exercisesStale     Boolean             @default(false)
   errorMessage       String?
   activeGenerationId String?
   confirmedAt        DateTime?
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  course             Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  course             Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
 
 model CoursePresentation {
@@ -526,8 +529,8 @@ model AiGenerationLog {
   stage            String
   operation        String
   status           AiGenerationStatus
-  writingProvider  StoryWritingProvider?
-  researchProvider StoryResearchProvider?
+  writingProvider  String?
+  researchProvider String?
   inputSnapshot    Json
   outputSnapshot   Json?
   errorMessage     String?
@@ -537,16 +540,6 @@ model AiGenerationLog {
 
   @@index([courseId, createdAt])
   @@index([stage, operation, createdAt])
-}
-
-enum AiGateway {
-  quickrouter
-  crazyrouter
-}
-
-enum QuickRouterEndpoint {
-  main
-  direct
 }
 
 enum PersonRole {
@@ -604,11 +597,6 @@ enum KnowledgePointSource {
   grammar_in_use
 }
 
-enum StoryWritingProvider {
-  quickrouter_gpt
-  quickrouter_deepseek
-}
-
 enum StoryAlignmentStatus {
   idle
   needs_clarification
@@ -625,11 +613,6 @@ enum StoryComplexity {
   clear_linear
   conflict_driven
   layered
-}
-
-enum StoryResearchProvider {
-  quickrouter_gpt
-  none
 }
 
 enum CourseStoryChatRole {

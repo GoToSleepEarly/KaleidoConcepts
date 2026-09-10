@@ -1,5 +1,5 @@
 import type { CourseImageQuality } from "@/lib/contracts/api";
-import { aiProviderBaseUrl, normalizeAiProviderSettings, type AiGateway, type AiProviderSettingsInput } from "@/lib/ai-gateway";
+import { aiProviderBaseUrl, normalizeAiProviderSettings, upstreamImageModel, type AiGateway, type AiProviderSettingsInput, type ImageProviderSettings } from "@/lib/ai-gateway";
 import { devAiLog } from "./dev-ai-log";
 import { imageQualityForModel } from "./image-model-capabilities";
 
@@ -12,8 +12,6 @@ type ProviderConfig = {
 };
 
 const PERSON_VISUAL_QUALITY = "low" as const;
-const FALLBACK_MODEL = "gpt-image-2-c";
-
 type ProviderResponse = {
   data?: Array<{ url?: string; b64_json?: string }>;
   error?: { message?: string };
@@ -27,18 +25,18 @@ export class PersonVisualProviderConfigError extends Error {
   }
 }
 
-function configFromEnvironment(input: AiProviderSettingsInput): ProviderConfig {
+function configFromEnvironment(input: AiProviderSettingsInput | ImageProviderSettings): ProviderConfig {
   const settings = normalizeAiProviderSettings(input);
   const gateway = settings.aiGateway;
   const isCrazyrouter = gateway === "crazyrouter";
-  const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_API_KEY : process.env.QUICKROUTER_IMAGE_API_KEY;
+  const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_API_KEY : gateway === "easy88ai" ? process.env.EASY88AI_API_KEY : process.env.QUICKROUTER_IMAGE_API_KEY;
   if (!apiKey) throw new PersonVisualProviderConfigError();
   const timeout = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS);
   return {
     apiKey,
     gateway,
     baseUrl: aiProviderBaseUrl(settings),
-    model: isCrazyrouter ? process.env.CRAZYROUTER_IMAGE_MODEL || "gpt-image-2" : process.env.QUICKROUTER_IMAGE_MODEL || "gpt-image-2",
+    model: upstreamImageModel(typeof input === "object" && "imageModel" in input ? input.imageModel : "gpt-image-2", gateway),
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };
 }
@@ -56,8 +54,12 @@ function imageBlob(dataUrl: string) {
   return new Blob([Buffer.from(match[2], "base64")], { type: match[1] });
 }
 
-export function createPersonVisualProvider(config?: ProviderConfig, selectedSettings: AiProviderSettingsInput = "quickrouter") {
-  const resolved = { gateway: "quickrouter" as AiGateway, baseUrl: "https://api.quickrouter.ai", ...(config ?? configFromEnvironment(selectedSettings)) };
+export function createPersonVisualProvider(config?: ProviderConfig, selectedSettings: AiProviderSettingsInput | ImageProviderSettings = "quickrouter") {
+  const resolved = {
+    gateway: "quickrouter" as AiGateway,
+    baseUrl: "https://api.quickrouter.ai",
+    ...(config ?? configFromEnvironment(selectedSettings)),
+  };
   async function readResponse(response: Response, operation: string, startedAt: number) {
     let data: ProviderResponse;
     try {
@@ -72,59 +74,80 @@ export function createPersonVisualProvider(config?: ProviderConfig, selectedSett
         payload: data,
       });
     } catch (error) {
-      devAiLog({ operation, phase: "error", context: { gateway: resolved.gateway }, status: response.status, latencyMs: Date.now() - startedAt, error });
+      devAiLog({
+        operation,
+        phase: "error",
+        context: { gateway: resolved.gateway },
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        error,
+      });
       throw new Error("人物形象服务返回异常", { cause: error });
     }
     return data;
   }
 
   async function request(operation: string, path: string, buildBody: (requestModel: string, quality: CourseImageQuality) => BodyInit, headers: HeadersInit, logPayload: Record<string, unknown>) {
-    const maxAttempts = resolved.gateway === "quickrouter" ? 2 : 1;
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const requestModel = attempt === 0 ? resolved.model : FALLBACK_MODEL;
-      const quality = imageQualityForModel(requestModel, PERSON_VISUAL_QUALITY);
-      devAiLog({ operation, phase: "request", payload: { ...logPayload, model: requestModel, quality, ...(attempt ? { fallbackForStatus: 429 } : {}) } });
-      const startedAt = Date.now();
-      let response: Response;
-      try {
-        response = await fetch(`${resolved.baseUrl}${path}`, {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            Authorization: `Bearer ${resolved.apiKey}`,
-            ...headers,
-          },
-          body: buildBody(requestModel, quality),
-          signal: AbortSignal.timeout(resolved.timeoutMs),
-        });
-      } catch (error) {
-        devAiLog({ operation, phase: "error", context: { gateway: resolved.gateway }, latencyMs: Date.now() - startedAt, error });
-        if (
-          error instanceof Error &&
-          (error.name === "TimeoutError" || error.name === "AbortError")
-        ) {
-          throw new Error("人物形象生成超时，请确认后再重试", { cause: error });
-        }
-        throw new Error("人物形象服务连接失败，请稍后重试", { cause: error });
+    const requestModel = resolved.model;
+    const quality = imageQualityForModel(requestModel, PERSON_VISUAL_QUALITY);
+    devAiLog({
+      operation,
+      phase: "request",
+      payload: { ...logPayload, model: requestModel, quality },
+    });
+    const startedAt = Date.now();
+    let response: Response;
+    try {
+      response = await fetch(`${resolved.baseUrl}${path}`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${resolved.apiKey}`,
+          ...headers,
+        },
+        body: buildBody(requestModel, quality),
+        signal: AbortSignal.timeout(resolved.timeoutMs),
+      });
+    } catch (error) {
+      devAiLog({
+        operation,
+        phase: "error",
+        context: { gateway: resolved.gateway },
+        latencyMs: Date.now() - startedAt,
+        error,
+      });
+      if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+        throw new Error("人物形象生成超时，请确认后再重试", { cause: error });
       }
-      const data = await readResponse(response, operation, startedAt);
-      if (resolved.gateway === "quickrouter" && response.status === 429 && attempt === 0 && resolved.model !== FALLBACK_MODEL) {
-        continue;
-      }
-      if (!response.ok) {
-        const error = new Error(data.error?.message || data.message || "人物形象生成失败");
-        devAiLog({ operation, phase: "error", context: { gateway: resolved.gateway }, status: response.status, latencyMs: Date.now() - startedAt, error });
-        throw error;
-      }
-      const imageUrl = resultImage(data);
-      if (!imageUrl) {
-        const error = new Error("人物形象服务未返回图片");
-        devAiLog({ operation, phase: "error", context: { gateway: resolved.gateway }, status: response.status, latencyMs: Date.now() - startedAt, error });
-        throw error;
-      }
-      return { imageUrl, model: requestModel, quality };
+      throw new Error("人物形象服务连接失败，请稍后重试", { cause: error });
     }
-    throw new Error("人物形象生成失败");
+    const data = await readResponse(response, operation, startedAt);
+    if (!response.ok) {
+      const error = new Error(data.error?.message || data.message || "人物形象生成失败");
+      devAiLog({
+        operation,
+        phase: "error",
+        context: { gateway: resolved.gateway },
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        error,
+      });
+      throw error;
+    }
+    const imageUrl = resultImage(data);
+    if (!imageUrl) {
+      const error = new Error("人物形象服务未返回图片");
+      devAiLog({
+        operation,
+        phase: "error",
+        context: { gateway: resolved.gateway },
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        error,
+      });
+      throw error;
+    }
+    return { imageUrl, model: requestModel, quality };
   }
 
   return {
@@ -132,24 +155,19 @@ export function createPersonVisualProvider(config?: ProviderConfig, selectedSett
       request(
         "person_visual_generate",
         "/v1/images/generations",
-        (requestModel, quality) => JSON.stringify({
-          model: requestModel,
-          prompt,
-          n: 1,
-          size: "1024x1536",
-          quality,
-          ...(resolved.gateway === "crazyrouter" ? { output_format: "webp" } : { format: "webp" }),
-        }),
+        (requestModel, quality) =>
+          JSON.stringify({
+            model: requestModel,
+            prompt,
+            n: 1,
+            size: "1024x1536",
+            quality,
+            ...(resolved.gateway === "crazyrouter" ? { output_format: "webp" } : { format: "webp" }),
+          }),
         { "Content-Type": "application/json" },
         { prompt, size: "1024x1536", format: "webp" },
       ),
-    edit: ({
-      prompt,
-      imageDataUrl,
-    }: {
-      prompt: string;
-      imageDataUrl: string;
-    }) => {
+    edit: ({ prompt, imageDataUrl }: { prompt: string; imageDataUrl: string }) => {
       return request(
         "person_visual_edit",
         "/v1/images/edits",

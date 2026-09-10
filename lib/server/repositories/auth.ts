@@ -1,3 +1,5 @@
+import type { AccountAiSettings } from "@/lib/ai-gateway";
+
 type LoginInput = {
   username: string;
   password: string;
@@ -8,15 +10,18 @@ type DbUser = {
   username: string;
   password: string;
   displayName: string;
-  writingProvider: "quickrouter_gpt" | "quickrouter_deepseek";
-  aiGateway: "quickrouter" | "crazyrouter";
-  quickRouterEndpoint: "main" | "direct";
+  writingProvider: AccountAiSettings["writingProvider"];
+  aiGateway: AccountAiSettings["aiGateway"];
+  quickRouterEndpoint: AccountAiSettings["quickRouterEndpoint"];
+  imageModel?: AccountAiSettings["imageModel"];
+  imageGateway?: AccountAiSettings["imageGateway"];
+  imageQuickRouterEndpoint?: AccountAiSettings["imageQuickRouterEndpoint"];
 };
 
 export type AuthDb = {
   user: {
     findUnique: (query: { where: { username: string } | { id: string } }) => Promise<DbUser | null>;
-    update: (query: { where: { id: string }; data: { writingProvider?: "quickrouter_gpt" | "quickrouter_deepseek"; aiGateway: "quickrouter" | "crazyrouter"; quickRouterEndpoint: "main" | "direct" } }) => Promise<DbUser>;
+    update: (query: { where: { id: string }; data: Partial<AccountAiSettings> }) => Promise<DbUser>;
   };
 };
 

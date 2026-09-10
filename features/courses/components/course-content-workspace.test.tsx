@@ -23,7 +23,7 @@ const initialState: CourseContentState = {
   knowledgePoints: [{ id: "kp1", label: "一般过去时" }],
   chapterKnowledgePointIds: { o1: ["kp1"] },
   homeworkKnowledgePointIds: ["kp1"],
-  status: "ready", phase: null, writingProvider: "quickrouter_gpt", sourceRevision: "r1", contentVersion: 2,
+  status: "ready", phase: null, writingProvider: "gpt-5.6-sol", sourceRevision: "r1", contentVersion: 2,
   chapters: [{ id: "c1", outlineChapterId: "o1", order: 1, title: "The Map", targetWordCount: 90, readingExerciseMode: "interactive", validationIssues: [],
     paragraphs: [{ id: "p1", parts: [{ type: "text", text: "Mia " }, { type: "grammar", id: "g1", exerciseType: "wordForm", knowledgePointId: "kp1", answer: "found", baseForm: "find" }, { type: "text", text: " a " }, { type: "vocabulary", id: "v1", answer: "hidden door", canonicalForm: "hidden door", meaningZh: "隐藏的门" }, { type: "text", text: "." }] }],
     chapterPractice: [],

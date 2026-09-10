@@ -36,7 +36,7 @@ describe("story outline provider transport", () => {
       researchModel: "test-model",
       timeoutMs: 1_000,
     }).generateOutline({
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       prompt: "测试请求",
     });
 

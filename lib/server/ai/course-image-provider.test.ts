@@ -16,7 +16,10 @@ describe("course image provider", () => {
     const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/image.webp" }] }));
     vi.stubGlobal("fetch", request);
 
-    await createCourseImageProvider().generate({ prompt: "scene", quality: "low" });
+    await createCourseImageProvider().generate({
+      prompt: "scene",
+      quality: "low",
+    });
 
     const init = (request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
     expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer image-key");
@@ -27,7 +30,10 @@ describe("course image provider", () => {
     const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/image.webp" }] }));
     vi.stubGlobal("fetch", request);
 
-    await createCourseImageProvider(undefined, { aiGateway: "quickrouter", quickRouterEndpoint: "direct" }).generate({ prompt: "scene", quality: "low" });
+    await createCourseImageProvider(undefined, {
+      aiGateway: "quickrouter",
+      quickRouterEndpoint: "direct",
+    }).generate({ prompt: "scene", quality: "low" });
 
     expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.quickrouter.us/v1/images/generations");
   });
@@ -44,7 +50,11 @@ describe("course image provider", () => {
       return new Response(JSON.stringify({ data: [{ url: "https://example.com/image.webp" }] }), { status: 200 });
     });
     vi.stubGlobal("fetch", request);
-    const provider = createCourseImageProvider({ apiKey: "test", model: "gpt-image-2", timeoutMs: 1_000 });
+    const provider = createCourseImageProvider({
+      apiKey: "test",
+      model: "gpt-image-2",
+      timeoutMs: 1_000,
+    });
 
     await provider.edit({
       prompt: "scene",
@@ -66,25 +76,45 @@ describe("course image provider", () => {
     expect(new Headers(options?.headers).has("Content-Type")).toBe(false);
   });
 
-  test("QuickRouter 返回 429 时仅用 gpt-image-2-c 兜底一次", async () => {
-    const request = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "Current group upstream load is saturated, please try again later (request id: first)" } }), { status: 429 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ url: "https://example.com/recovered.webp" }] }), { status: 200 }));
+  test("QuickRouter 返回 429 时不擅自切换模型", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: "Current group upstream load is saturated, please try again later (request id: first)",
+          },
+        }),
+        { status: 429 },
+      ),
+    );
     vi.stubGlobal("fetch", request);
-    const provider = createCourseImageProvider({ apiKey: "test", model: "gpt-image-2", timeoutMs: 1_000, retryDelaysMs: [0, 0] });
+    const provider = createCourseImageProvider({
+      apiKey: "test",
+      model: "gpt-image-2",
+      timeoutMs: 1_000,
+      retryDelaysMs: [0, 0],
+    });
 
-    await expect(provider.edit({ prompt: "scene", imageDataUrls: ["data:image/webp;base64,aGVsbG8="], quality: "medium" })).resolves.toEqual({ imageUrl: "https://example.com/recovered.webp", model: "gpt-image-2-c", quality: "high" });
+    await expect(
+      provider.edit({
+        prompt: "scene",
+        imageDataUrls: ["data:image/webp;base64,aGVsbG8="],
+        quality: "medium",
+      }),
+    ).rejects.toThrow("图片生成服务繁忙");
 
-    expect(request).toHaveBeenCalledTimes(2);
-    expect(((request.mock.calls[0]?.[1]?.body as FormData).get("model"))).toBe("gpt-image-2");
-    expect(((request.mock.calls[1]?.[1]?.body as FormData).get("model"))).toBe("gpt-image-2-c");
-    expect(((request.mock.calls[1]?.[1]?.body as FormData).get("quality"))).toBe("high");
+    expect(request).toHaveBeenCalledTimes(1);
+    expect((request.mock.calls[0]?.[1]?.body as FormData).get("model")).toBe("gpt-image-2");
   });
 
   test("Crazyrouter 使用标准图片协议且不会回退到 QuickRouter 专属模型", async () => {
     process.env.CRAZYROUTER_API_KEY = "crazy-key";
-    const request = vi.fn(async () => new Response(JSON.stringify({ error: { message: "rate limited" } }), { status: 429 }));
+    const request = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: { message: "rate limited" } }), {
+          status: 429,
+        }),
+    );
     vi.stubGlobal("fetch", request);
     const provider = createCourseImageProvider(undefined, "crazyrouter");
 
@@ -94,7 +124,11 @@ describe("course image provider", () => {
     const init = (request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
     expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.crazyrouter.com/v1/images/generations");
     expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer crazy-key");
-    expect(JSON.parse(String(init?.body))).toMatchObject({ model: "gpt-image-2", quality: "medium", output_format: "webp" });
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      model: "gpt-image-2",
+      quality: "medium",
+      output_format: "webp",
+    });
   });
 
   test("Crazyrouter 图片编辑发送标准 multipart 参数", async () => {
@@ -119,63 +153,139 @@ describe("course image provider", () => {
   });
 
   test("参数错误不重试", async () => {
-    const request = vi.fn(async () => new Response(JSON.stringify({ error: { message: "Unknown parameter: 'format'." } }), { status: 400 }));
+    const request = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: { message: "Unknown parameter: 'format'." },
+          }),
+          { status: 400 },
+        ),
+    );
     vi.stubGlobal("fetch", request);
-    const provider = createCourseImageProvider({ apiKey: "test", model: "gpt-image-2", timeoutMs: 1_000, retryDelaysMs: [0, 0] });
+    const provider = createCourseImageProvider({
+      apiKey: "test",
+      model: "gpt-image-2",
+      timeoutMs: 1_000,
+      retryDelaysMs: [0, 0],
+    });
 
-    await expect(provider.edit({ prompt: "scene", imageDataUrls: ["data:image/webp;base64,aGVsbG8="], quality: "medium" })).rejects.toThrow("Unknown parameter: 'format'.");
+    await expect(
+      provider.edit({
+        prompt: "scene",
+        imageDataUrls: ["data:image/webp;base64,aGVsbG8="],
+        quality: "medium",
+      }),
+    ).rejects.toThrow("Unknown parameter: 'format'.");
     expect(request).toHaveBeenCalledTimes(1);
   });
 
   test("上游持续饱和时返回可操作的中文错误并保留请求编号", async () => {
-    const request = vi.fn(async () => new Response(JSON.stringify({ error: { message: "Current group upstream load is saturated, please try again later (request id: final-id)" } }), { status: 429 }));
+    const request = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "Current group upstream load is saturated, please try again later (request id: final-id)",
+            },
+          }),
+          { status: 429 },
+        ),
+    );
     vi.stubGlobal("fetch", request);
-    const provider = createCourseImageProvider({ apiKey: "test", model: "gpt-image-2", timeoutMs: 1_000, retryDelaysMs: [0, 0] });
+    const provider = createCourseImageProvider({
+      apiKey: "test",
+      model: "gpt-image-2",
+      timeoutMs: 1_000,
+      retryDelaysMs: [0, 0],
+    });
 
-    await expect(provider.edit({ prompt: "scene", imageDataUrls: ["data:image/webp;base64,aGVsbG8="], quality: "medium" })).rejects.toThrow("图片生成服务繁忙，请稍后重试（request id: final-id）");
-    expect(request).toHaveBeenCalledTimes(2);
+    await expect(
+      provider.edit({
+        prompt: "scene",
+        imageDataUrls: ["data:image/webp;base64,aGVsbG8="],
+        quality: "medium",
+      }),
+    ).rejects.toThrow("图片生成服务繁忙，请稍后重试（request id: final-id）");
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
-  test("备用模型再次返回 429 后不继续重试", async () => {
+  test("主动选择 gpt-image-2-c 后失败也不切换模型", async () => {
     const request = vi.fn(async (...args: Parameters<typeof fetch>) => {
       void args;
       return new Response(JSON.stringify({ error: { message: "rate limited" } }), { status: 429 });
     });
     vi.stubGlobal("fetch", request);
-    const provider = createCourseImageProvider({ apiKey: "test", model: "gpt-image-2", timeoutMs: 1_000, retryDelaysMs: [0, 0] });
+    const provider = createCourseImageProvider({
+      apiKey: "test",
+      model: "gpt-image-2-c",
+      timeoutMs: 1_000,
+      retryDelaysMs: [0, 0],
+    });
 
     await expect(provider.generate({ prompt: "scene", quality: "medium" })).rejects.toThrow("rate limited");
 
-    expect(request).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({ model: "gpt-image-2" });
-    expect(JSON.parse(String(request.mock.calls[1]?.[1]?.body))).toMatchObject({ model: "gpt-image-2-c" });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({
+      model: "gpt-image-2-c",
+    });
   });
 
   test("原创角色首次生成使用竖版并保留实际质量", async () => {
     const request = vi.fn(async (...args: Parameters<typeof fetch>) => {
       void args;
-      return new Response(JSON.stringify({ data: [{ url: "https://example.com/character.webp" }] }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          data: [{ url: "https://example.com/character.webp" }],
+        }),
+        { status: 200 },
+      );
     });
     vi.stubGlobal("fetch", request);
-    const provider = createCourseImageProvider({ apiKey: "test", model: "gpt-image-2", timeoutMs: 1_000 });
+    const provider = createCourseImageProvider({
+      apiKey: "test",
+      model: "gpt-image-2",
+      timeoutMs: 1_000,
+    });
 
-    await provider.generate({ prompt: "character", quality: "high", portrait: true });
+    await provider.generate({
+      prompt: "character",
+      quality: "high",
+      portrait: true,
+    });
 
-    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({ quality: "high", size: "1024x1536", n: 1 });
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({
+      quality: "high",
+      size: "1024x1536",
+      n: 1,
+    });
   });
 
   test("主模型为 gpt-image-2-c 时生成与编辑都强制最高质量", async () => {
     const request = vi.fn(async (...args: Parameters<typeof fetch>) => {
       void args;
-      return Response.json({ data: [{ url: "https://example.com/image.webp" }] });
+      return Response.json({
+        data: [{ url: "https://example.com/image.webp" }],
+      });
     });
     vi.stubGlobal("fetch", request);
-    const provider = createCourseImageProvider({ apiKey: "test", model: "gpt-image-2-c", timeoutMs: 1_000 });
+    const provider = createCourseImageProvider({
+      apiKey: "test",
+      model: "gpt-image-2-c",
+      timeoutMs: 1_000,
+    });
 
     await provider.generate({ prompt: "scene", quality: "low" });
-    await provider.edit({ prompt: "edit", imageDataUrls: ["data:image/webp;base64,aGVsbG8="], quality: "medium" });
+    await provider.edit({
+      prompt: "edit",
+      imageDataUrls: ["data:image/webp;base64,aGVsbG8="],
+      quality: "medium",
+    });
 
-    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({ model: "gpt-image-2-c", quality: "high" });
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({
+      model: "gpt-image-2-c",
+      quality: "high",
+    });
     expect((request.mock.calls[1]?.[1]?.body as FormData).get("quality")).toBe("high");
   });
 });

@@ -10,7 +10,7 @@ describe("story outline chapter bounds", () => {
     expect(storyOutlineSettingsSchema.safeParse({ ...settings, chapterCount: 5 }).success).toBe(true);
     expect(storyOutlineSettingsSchema.safeParse({ ...settings, chapterCount: 2 }).success).toBe(false);
     expect(storyOutlineSettingsSchema.safeParse({ ...settings, chapterCount: 6 }).success).toBe(false);
-    expect(storyOutlineSettingsSchema.safeParse({ ...settings, writingProvider: "quickrouter_deepseek" }).success).toBe(false);
+    expect(storyOutlineSettingsSchema.safeParse({ ...settings, writingProvider: "deepseek-chat" }).success).toBe(false);
     expect(storyOutlineMessageSchema.safeParse({ message: "test", mode: "idea", chapterCount: 2 }).success).toBe(false);
   });
 
@@ -20,7 +20,7 @@ describe("story outline chapter bounds", () => {
       chapterCount: 3,
       title: "故事",
       summary: "概要",
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       sourceReferences: [],
       characters: [],
       chapters: [chapter, { ...chapter, order: 2 }, { ...chapter, order: 3 }],

@@ -16,40 +16,163 @@ describe("account AI gateway route", () => {
   });
 
   test("GET reads the current gateway from the authenticated user's database row", async () => {
-    findUnique.mockResolvedValue({ id: "user-1", writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "direct" });
-    const response = await GET(new Request("http://localhost/api/account/ai-gateway", {
-      headers: { cookie: "kaleido.user-id=user-1" },
-    }));
+    findUnique.mockResolvedValue({
+      id: "user-1",
+      writingProvider: "deepseek-chat",
+      aiGateway: "crazyrouter",
+      quickRouterEndpoint: "direct",
+      imageModel: "gpt-image-2-c",
+      imageGateway: "quickrouter",
+      imageQuickRouterEndpoint: "main",
+    });
+    const response = await GET(
+      new Request("http://localhost/api/account/ai-gateway", {
+        headers: { cookie: "kaleido.user-id=user-1" },
+      }),
+    );
 
-    await expect(response.json()).resolves.toEqual({ writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "direct" });
+    await expect(response.json()).resolves.toEqual({
+      writingProvider: "deepseek-chat",
+      aiGateway: "crazyrouter",
+      quickRouterEndpoint: "direct",
+      imageModel: "gpt-image-2-c",
+      imageGateway: "quickrouter",
+      imageQuickRouterEndpoint: "main",
+    });
     expect(findUnique).toHaveBeenCalledWith({ where: { id: "user-1" } });
   });
 
   test("PATCH updates the database without storing the gateway in a cookie", async () => {
-    findUnique.mockResolvedValue({ id: "user-1", writingProvider: "quickrouter_gpt", aiGateway: "quickrouter", quickRouterEndpoint: "main" });
-    update.mockResolvedValue({ id: "user-1", writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "direct" });
-    const response = await PATCH(new Request("http://localhost/api/account/ai-gateway", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", cookie: "kaleido.user-id=user-1" },
-      body: JSON.stringify({ writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "direct" }),
-    }));
+    findUnique.mockResolvedValue({
+      id: "user-1",
+      writingProvider: "gpt-5.6-sol",
+      aiGateway: "quickrouter",
+      quickRouterEndpoint: "main",
+      imageModel: "gpt-image-2",
+      imageGateway: "quickrouter",
+      imageQuickRouterEndpoint: "main",
+    });
+    update.mockResolvedValue({
+      id: "user-1",
+      writingProvider: "deepseek-chat",
+      aiGateway: "crazyrouter",
+      quickRouterEndpoint: "direct",
+      imageModel: "gpt-image-2-c",
+      imageGateway: "quickrouter",
+      imageQuickRouterEndpoint: "direct",
+    });
+    const response = await PATCH(
+      new Request("http://localhost/api/account/ai-gateway", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          cookie: "kaleido.user-id=user-1",
+        },
+        body: JSON.stringify({
+          writingProvider: "deepseek-chat",
+          aiGateway: "crazyrouter",
+          quickRouterEndpoint: "direct",
+          imageModel: "gpt-image-2-c",
+          imageGateway: "quickrouter",
+          imageQuickRouterEndpoint: "direct",
+        }),
+      }),
+    );
 
-    await expect(response.json()).resolves.toEqual({ writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "direct" });
-    expect(update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: { writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "direct" } });
+    await expect(response.json()).resolves.toEqual({
+      writingProvider: "deepseek-chat",
+      aiGateway: "crazyrouter",
+      quickRouterEndpoint: "direct",
+      imageModel: "gpt-image-2-c",
+      imageGateway: "quickrouter",
+      imageQuickRouterEndpoint: "direct",
+    });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: {
+        writingProvider: "deepseek-chat",
+        aiGateway: "crazyrouter",
+        quickRouterEndpoint: "direct",
+        imageModel: "gpt-image-2-c",
+        imageGateway: "quickrouter",
+        imageQuickRouterEndpoint: "direct",
+      },
+    });
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 
   test("PATCH preserves the endpoint for a cached client that only sends the gateway", async () => {
-    findUnique.mockResolvedValue({ id: "user-1", writingProvider: "quickrouter_deepseek", aiGateway: "quickrouter", quickRouterEndpoint: "direct" });
-    update.mockResolvedValue({ id: "user-1", writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "direct" });
+    findUnique.mockResolvedValue({
+      id: "user-1",
+      writingProvider: "deepseek-chat",
+      aiGateway: "quickrouter",
+      quickRouterEndpoint: "direct",
+      imageModel: "gpt-image-2",
+      imageGateway: "crazyrouter",
+      imageQuickRouterEndpoint: "main",
+    });
+    update.mockResolvedValue({
+      id: "user-1",
+      writingProvider: "deepseek-chat",
+      aiGateway: "crazyrouter",
+      quickRouterEndpoint: "direct",
+      imageModel: "gpt-image-2",
+      imageGateway: "crazyrouter",
+      imageQuickRouterEndpoint: "main",
+    });
 
-    const response = await PATCH(new Request("http://localhost/api/account/ai-gateway", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", cookie: "kaleido.user-id=user-1" },
-      body: JSON.stringify({ aiGateway: "crazyrouter" }),
-    }));
+    const response = await PATCH(
+      new Request("http://localhost/api/account/ai-gateway", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          cookie: "kaleido.user-id=user-1",
+        },
+        body: JSON.stringify({ aiGateway: "crazyrouter" }),
+      }),
+    );
 
     expect(response.status).toBe(200);
-    expect(update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: { writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "direct" } });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: {
+        writingProvider: "deepseek-chat",
+        aiGateway: "crazyrouter",
+        quickRouterEndpoint: "direct",
+        imageModel: "gpt-image-2",
+        imageGateway: "crazyrouter",
+        imageQuickRouterEndpoint: "main",
+      },
+    });
+  });
+
+  test("PATCH rejects an image model and gateway combination that is not preset", async () => {
+    findUnique.mockResolvedValue({
+      id: "user-1",
+      writingProvider: "gpt-5.6-sol",
+      aiGateway: "quickrouter",
+      quickRouterEndpoint: "main",
+      imageModel: "gpt-image-2",
+      imageGateway: "quickrouter",
+      imageQuickRouterEndpoint: "main",
+    });
+
+    const response = await PATCH(
+      new Request("http://localhost/api/account/ai-gateway", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          cookie: "kaleido.user-id=user-1",
+        },
+        body: JSON.stringify({
+          aiGateway: "quickrouter",
+          imageModel: "gpt-image-2-c",
+          imageGateway: "crazyrouter",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(update).not.toHaveBeenCalled();
   });
 });

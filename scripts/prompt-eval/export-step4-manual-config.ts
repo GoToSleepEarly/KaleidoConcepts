@@ -48,7 +48,7 @@ async function main() {
         shortDescription: character.shortDescription,
       })),
     };
-    const config = { scope: "content", method: "generateReading", args: [input, "quickrouter_gpt"] };
+    const config = { scope: "content", method: "generateReading", args: [input, "gpt-5.6-sol"] };
     const outputPath = path.resolve(output);
     await mkdir(path.dirname(outputPath), { recursive: true });
     await writeFile(outputPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");

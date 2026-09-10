@@ -1,7 +1,7 @@
 import { Agent, fetch as undiciFetch, type Dispatcher, type RequestInit as UndiciRequestInit } from "undici";
 
 import type { StoryWritingProvider } from "@/lib/contracts/api";
-import { aiProviderBaseUrl, normalizeAiProviderSettings, type AiGateway, type AiProviderSettingsInput } from "@/lib/ai-gateway";
+import { aiProviderBaseUrl, normalizeAiProviderSettings, upstreamTextModel, type AiGateway, type AiProviderSettingsInput, type TextGenerationModel } from "@/lib/ai-gateway";
 
 import { devAiLog } from "./dev-ai-log";
 
@@ -86,7 +86,10 @@ function textDispatcher(requestTimeoutMs: number) {
   const transportTimeout = textTransportTimeoutMs(requestTimeoutMs);
   const existing = textDispatchers.get(transportTimeout);
   if (existing) return existing;
-  const dispatcher = new Agent({ headersTimeout: transportTimeout, bodyTimeout: transportTimeout });
+  const dispatcher = new Agent({
+    headersTimeout: transportTimeout,
+    bodyTimeout: transportTimeout,
+  });
   textDispatchers.set(transportTimeout, dispatcher);
   return dispatcher;
 }
@@ -95,19 +98,16 @@ function configFromEnvironment(input: AiProviderSettingsInput): ProviderConfig {
   const settings = normalizeAiProviderSettings(input);
   const gateway = settings.aiGateway;
   const isCrazyrouter = gateway === "crazyrouter";
-  const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_API_KEY : process.env.QUICKROUTER_TEXT_API_KEY;
+  const isEasy88ai = gateway === "easy88ai";
+  const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_API_KEY : isEasy88ai ? process.env.EASY88AI_API_KEY : process.env.QUICKROUTER_TEXT_API_KEY;
   if (!apiKey) throw new StoryOutlineProviderConfigError();
   const timeout = Number(process.env.TEXT_GENERATION_TIMEOUT_MS);
   return {
     apiKey,
     gateway,
     baseUrl: aiProviderBaseUrl(settings),
-    gptModel: isCrazyrouter
-      ? process.env.CRAZYROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol"
-      : process.env.QUICKROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol",
-    researchModel: isCrazyrouter
-      ? process.env.CRAZYROUTER_RESEARCH_MODEL || process.env.CRAZYROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol"
-      : process.env.QUICKROUTER_RESEARCH_MODEL || process.env.QUICKROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol",
+    gptModel: isCrazyrouter ? process.env.CRAZYROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol" : isEasy88ai ? process.env.EASY88AI_GPT_TEXT_MODEL || "gpt-5.6-sol" : process.env.QUICKROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol",
+    researchModel: isCrazyrouter ? process.env.CRAZYROUTER_RESEARCH_MODEL || process.env.CRAZYROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol" : isEasy88ai ? process.env.EASY88AI_RESEARCH_MODEL || process.env.EASY88AI_GPT_TEXT_MODEL || "gpt-5.6-sol" : process.env.QUICKROUTER_RESEARCH_MODEL || process.env.QUICKROUTER_GPT_TEXT_MODEL || "gpt-5.6-sol",
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };
 }
@@ -122,7 +122,10 @@ function outputText(data: ResponsesData) {
 }
 
 export class StoryOutlineIncompleteResponseError extends Error {
-  constructor(readonly reason?: string, readonly usage?: StoryOutlineUsage) {
+  constructor(
+    readonly reason?: string,
+    readonly usage?: StoryOutlineUsage,
+  ) {
     super(reason === "max_output_tokens" ? "模型输出达到上限，返回内容未完成" : "模型返回内容未完成");
     this.name = "StoryOutlineIncompleteResponseError";
   }
@@ -166,18 +169,9 @@ function deepSeekConfigFromEnvironment(): DeepSeekConfig {
   };
 }
 
-const RETRYABLE_CONNECT_CODES = new Set([
-  "UND_ERR_CONNECT_TIMEOUT",
-  "ENOTFOUND",
-  "EAI_AGAIN",
-  "ECONNREFUSED",
-]);
+const RETRYABLE_CONNECT_CODES = new Set(["UND_ERR_CONNECT_TIMEOUT", "ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED"]);
 
-const INTERRUPTED_RESPONSE_CODES = new Set([
-  "UND_ERR_SOCKET",
-  "ECONNRESET",
-  "EPIPE",
-]);
+const INTERRUPTED_RESPONSE_CODES = new Set(["UND_ERR_SOCKET", "ECONNRESET", "EPIPE"]);
 
 function transportErrorCode(error: unknown) {
   let current: unknown = error;
@@ -196,15 +190,24 @@ function canRetryBeforeConnection(error: unknown) {
 
 function isAmbiguousTimeout(error: unknown) {
   const code = transportErrorCode(error);
-  return code === "UND_ERR_HEADERS_TIMEOUT"
-    || code === "UND_ERR_BODY_TIMEOUT"
-    || error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+  return code === "UND_ERR_HEADERS_TIMEOUT" || code === "UND_ERR_BODY_TIMEOUT" || (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"));
 }
 
 export function createStoryOutlineProvider(config?: ProviderConfig, selectedSettings: AiProviderSettingsInput = "quickrouter") {
-  function resolvedConfig() {
-    if (config) return { baseUrl: "https://api.quickrouter.ai", gateway: "quickrouter" as const, ...config };
-    return configFromEnvironment(selectedSettings);
+  function resolvedConfig(model?: TextGenerationModel) {
+    if (config)
+      return {
+        baseUrl: "https://api.quickrouter.ai",
+        gateway: "quickrouter" as const,
+        ...config,
+      };
+    const activeConfig = configFromEnvironment(selectedSettings);
+    return model
+      ? {
+          ...activeConfig,
+          gptModel: upstreamTextModel(model, activeConfig.gateway ?? "quickrouter"),
+        }
+      : activeConfig;
   }
 
   async function request(operation: string, body: Record<string, unknown>, activeConfig: ProviderConfig, timeoutMs = activeConfig.timeoutMs) {
@@ -213,7 +216,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     let response: Response | null = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        response = await undiciFetch(`${activeConfig.baseUrl ?? "https://api.quickrouter.ai"}/v1/responses`, {
+        response = (await undiciFetch(`${activeConfig.baseUrl ?? "https://api.quickrouter.ai"}/v1/responses`, {
           method: "POST",
           headers: {
             Accept: "application/json",
@@ -223,7 +226,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(timeoutMs),
           dispatcher: textDispatcher(timeoutMs),
-        } as UndiciRequestInit) as unknown as Response;
+        } as UndiciRequestInit)) as unknown as Response;
         break;
       } catch (error) {
         const retrying = attempt === 1 && canRetryBeforeConnection(error);
@@ -258,9 +261,16 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
       });
       data = JSON.parse(rawResponse) as ResponsesData;
     } catch (error) {
-      devAiLog({ operation, phase: "error", context: { gateway: activeConfig.gateway }, status: response.status, latencyMs: Date.now() - startedAt, error });
+      devAiLog({
+        operation,
+        phase: "error",
+        context: { gateway: activeConfig.gateway },
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        error,
+      });
       const code = transportErrorCode(error);
-      if (isAmbiguousTimeout(error) || code && INTERRUPTED_RESPONSE_CODES.has(code)) {
+      if (isAmbiguousTimeout(error) || (code && INTERRUPTED_RESPONSE_CODES.has(code))) {
         const reason = isAmbiguousTimeout(error) ? "响应超时" : "响应中断";
         throw new AiProviderResultUnknownError(`故事大纲服务${reason}，生成结果未能确认，请手动重试本步`, { cause: error });
       }
@@ -268,7 +278,14 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     }
     if (!response.ok) {
       const error = new Error(data.error?.message || data.message || "故事大纲生成失败");
-      devAiLog({ operation, phase: "error", context: { gateway: activeConfig.gateway }, status: response.status, latencyMs: Date.now() - startedAt, error });
+      devAiLog({
+        operation,
+        phase: "error",
+        context: { gateway: activeConfig.gateway },
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        error,
+      });
       throw error;
     }
     if (data.status === "incomplete") {
@@ -287,7 +304,14 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     const text = outputText(data);
     if (!text) {
       const error = new Error("故事大纲服务未返回内容");
-      devAiLog({ operation, phase: "error", context: { gateway: activeConfig.gateway }, status: response.status, latencyMs: Date.now() - startedAt, error });
+      devAiLog({
+        operation,
+        phase: "error",
+        context: { gateway: activeConfig.gateway },
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        error,
+      });
       throw error;
     }
     return {
@@ -309,7 +333,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         const timeoutMs = timeoutOverride ?? activeConfig.timeoutMs;
-        response = await undiciFetch(`${activeConfig.baseUrl}/chat/completions`, {
+        response = (await undiciFetch(`${activeConfig.baseUrl}/chat/completions`, {
           method: "POST",
           headers: {
             Accept: "application/json",
@@ -319,11 +343,18 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(timeoutMs),
           dispatcher: textDispatcher(timeoutMs),
-        } as UndiciRequestInit) as unknown as Response;
+        } as UndiciRequestInit)) as unknown as Response;
         break;
       } catch (error) {
         const retrying = attempt === 1 && canRetryBeforeConnection(error);
-        devAiLog({ operation, phase: "error", context: { gateway: "deepseek" }, latencyMs: Date.now() - startedAt, payload: { attempt, retrying }, error });
+        devAiLog({
+          operation,
+          phase: "error",
+          context: { gateway: "deepseek" },
+          latencyMs: Date.now() - startedAt,
+          payload: { attempt, retrying },
+          error,
+        });
         if (retrying) continue;
         if (isAmbiguousTimeout(error)) {
           throw new AiProviderResultUnknownError("故事大纲服务响应超时，生成结果未能确认，请手动重试本步", { cause: error });
@@ -336,12 +367,25 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     let data: ChatCompletionsData;
     try {
       const rawResponse = await response.text();
-      devAiLog({ operation, phase: "response", status: response.status, latencyMs: Date.now() - startedAt, payload: rawResponse });
+      devAiLog({
+        operation,
+        phase: "response",
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        payload: rawResponse,
+      });
       data = JSON.parse(rawResponse) as ChatCompletionsData;
     } catch (error) {
-      devAiLog({ operation, phase: "error", context: { gateway: "deepseek" }, status: response.status, latencyMs: Date.now() - startedAt, error });
+      devAiLog({
+        operation,
+        phase: "error",
+        context: { gateway: "deepseek" },
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        error,
+      });
       const code = transportErrorCode(error);
-      if (isAmbiguousTimeout(error) || code && INTERRUPTED_RESPONSE_CODES.has(code)) {
+      if (isAmbiguousTimeout(error) || (code && INTERRUPTED_RESPONSE_CODES.has(code))) {
         const reason = isAmbiguousTimeout(error) ? "响应超时" : "响应中断";
         throw new AiProviderResultUnknownError(`故事大纲服务${reason}，生成结果未能确认，请手动重试本步`, { cause: error });
       }
@@ -349,59 +393,75 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     }
     if (!response.ok) {
       const error = new Error(data.error?.message || data.message || "故事大纲生成失败");
-      devAiLog({ operation, phase: "error", context: { gateway: "deepseek" }, status: response.status, latencyMs: Date.now() - startedAt, error });
+      devAiLog({
+        operation,
+        phase: "error",
+        context: { gateway: "deepseek" },
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        error,
+      });
       throw error;
     }
     const usage = chatCompletionUsage(data);
     if (data.choices?.[0]?.finish_reason === "length") {
       const error = new StoryOutlineIncompleteResponseError("max_output_tokens", usage);
-      devAiLog({ operation, phase: "error", context: { gateway: "deepseek" }, status: response.status, latencyMs: Date.now() - startedAt, error });
+      devAiLog({
+        operation,
+        phase: "error",
+        context: { gateway: "deepseek" },
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        error,
+      });
       throw error;
     }
     const text = data.choices?.[0]?.message?.content?.trim();
     if (!text) {
       const error = new Error("故事大纲服务未返回内容");
-      devAiLog({ operation, phase: "error", context: { gateway: "deepseek" }, status: response.status, latencyMs: Date.now() - startedAt, error });
+      devAiLog({
+        operation,
+        phase: "error",
+        context: { gateway: "deepseek" },
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        error,
+      });
       throw error;
     }
     return { text, usage };
   }
 
   return {
-    generateOutline: ({
-      writingProvider,
-      prompt,
-      operation,
-      timeoutMs,
-      reasoningEffort,
-      maxOutputTokens,
-    }: {
-      writingProvider: StoryWritingProvider;
-      prompt: string;
-      operation?: string;
-      timeoutMs?: number;
-      reasoningEffort?: "low" | "medium" | "high";
-      maxOutputTokens?: number;
-    }) => {
-      // `quickrouter_deepseek` 是历史持久化标识；DeepSeek 实际始终使用官方直连配置。
-      if (writingProvider === "quickrouter_deepseek") {
+    generateOutline: ({ writingProvider, prompt, operation, timeoutMs, reasoningEffort, maxOutputTokens }: { writingProvider: StoryWritingProvider; prompt: string; operation?: string; timeoutMs?: number; reasoningEffort?: "low" | "medium" | "high"; maxOutputTokens?: number }) => {
+      // DeepSeek 仍使用官方直连；GPT 与联网研究使用账户选择的预置线路。
+      if (writingProvider === "deepseek-chat") {
         return requestDeepSeek(operation || "story_outline", prompt, maxOutputTokens, timeoutMs);
       }
-      const activeConfig = resolvedConfig();
-      return request(operation || "story_outline", {
-        model: activeConfig.gptModel,
-        input: prompt,
-        ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
-        ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
-      }, activeConfig, timeoutMs);
+      const activeConfig = resolvedConfig(writingProvider);
+      return request(
+        operation || "story_outline",
+        {
+          model: activeConfig.gptModel,
+          input: prompt,
+          ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
+          ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
+        },
+        activeConfig,
+        timeoutMs,
+      );
     },
     searchReference: ({ prompt, operation = "search_reference" }: { prompt: string; operation?: string }) => {
       const activeConfig = resolvedConfig();
-      return request(operation, {
-        model: activeConfig.researchModel,
-        input: prompt,
-        tools: [{ type: "web_search" }],
-      }, activeConfig);
+      return request(
+        operation,
+        {
+          model: activeConfig.researchModel,
+          input: prompt,
+          tools: [{ type: "web_search" }],
+        },
+        activeConfig,
+      );
     },
   };
 }

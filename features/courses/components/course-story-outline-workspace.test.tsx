@@ -36,7 +36,7 @@ const emptyState: CourseStoryOutlineState = {
   chatMessages: [],
   settings: {
     chapterCount: 4,
-    writingProvider: "quickrouter_gpt",
+    writingProvider: "gpt-5.6-sol",
     storyComplexity: "clear_linear",
   },
   directions: [],
@@ -53,7 +53,7 @@ const outlineState: CourseStoryOutlineState = {
     chapterCount: 4,
     title: "海底图书馆 / The Ocean Library",
     summary: "学生合作寻找线索。 / Students solve clues together.",
-    writingProvider: "quickrouter_gpt",
+    writingProvider: "gpt-5.6-sol",
     sourceReferences: [],
     characters: [
       {
@@ -500,7 +500,7 @@ describe("CourseStoryOutlineWorkspace", () => {
           usableFacts: ["公众表达"],
           avoidTopics: ["现实政治争议"],
           adaptationBoundary: "只保留成长主题。",
-          researchProvider: "quickrouter_gpt",
+          researchProvider: "gpt-5.6-sol",
           confirmedAt: "2026-08-06T08:00:00.000Z",
           createdAt: "2026-08-06T08:00:00.000Z",
           updatedAt: "2026-08-06T08:00:00.000Z",
@@ -1064,7 +1064,7 @@ describe("CourseStoryOutlineWorkspace", () => {
       usableFacts: ["海洋生态"],
       avoidTopics: [],
       adaptationBoundary: "适合课堂改编。",
-      researchProvider: "quickrouter_gpt" as const,
+      researchProvider: "gpt-5.6-sol" as const,
       confirmedAt: "2026-08-14T08:00:00.000Z",
       createdAt: "2026-08-14T08:00:00.000Z",
       updatedAt: "2026-08-14T08:00:00.000Z",
@@ -1089,7 +1089,7 @@ describe("CourseStoryOutlineWorkspace", () => {
     const reference = {
       id: "ref-1", courseId: "course-1", name: "海洋背景资料", type: "other" as const, sourceStatus: "confirmed" as const,
       summary: "故事发生在一座海底图书馆。", usableFacts: ["图书馆由海洋生物共同维护"], avoidTopics: [], adaptationBoundary: "适合课堂创作。",
-      researchProvider: "quickrouter_gpt" as const, confirmedAt: "2026-08-14T08:00:00.000Z", createdAt: "2026-08-14T08:00:00.000Z", updatedAt: "2026-08-14T08:00:00.000Z",
+      researchProvider: "gpt-5.6-sol" as const, confirmedAt: "2026-08-14T08:00:00.000Z", createdAt: "2026-08-14T08:00:00.000Z", updatedAt: "2026-08-14T08:00:00.000Z",
     };
     render(<CourseStoryOutlineWorkspace initialState={{
       ...emptyState,
@@ -1542,7 +1542,7 @@ describe("CourseStoryOutlineWorkspace", () => {
           usableFacts: ["公众表达"],
           avoidTopics: ["现实政治争议"],
           adaptationBoundary: "只保留成长主题。",
-          researchProvider: "quickrouter_gpt",
+          researchProvider: "gpt-5.6-sol",
           confirmedAt: "2026-08-06T08:00:00.000Z",
           createdAt: "2026-08-06T08:00:00.000Z",
           updatedAt: "2026-08-06T08:00:00.000Z",

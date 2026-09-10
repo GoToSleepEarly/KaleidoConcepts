@@ -323,7 +323,7 @@ describe("story outline repository", () => {
     const db = createDb();
     const state = await getStoryOutlineState(db, "course-1");
 
-    expect(state.settings).toEqual({ chapterCount: 4, storyComplexity: "clear_linear", writingProvider: "quickrouter_gpt" });
+    expect(state.settings).toEqual({ chapterCount: 4, storyComplexity: "clear_linear", writingProvider: "gpt-5.6-sol" });
     expect(state.outline).toBeNull();
     expect(state.coursePeople.map((person) => person.chineseName)).toEqual(["林老师", "夏天"]);
     expect(db.state.setting).toBeNull();
@@ -343,7 +343,7 @@ describe("story outline repository", () => {
     db.state.setting = record({
       courseId: "course-1",
       chapterCount: 4,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       alignmentStatus: "confirmed",
       planningMode: "follow_defined_plot",
       alignmentSummary: "旧版确认摘要",
@@ -456,7 +456,7 @@ describe("story outline repository", () => {
     db.state.setting = record({
       courseId: "course-1",
       chapterCount: 4,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       alignmentStatus: "ready_for_confirmation",
       planningMode: "follow_defined_plot",
       alignmentSummary: "旧版固定主线",
@@ -506,7 +506,7 @@ describe("story outline repository", () => {
     db.state.setting = record({
       courseId: "course-1",
       chapterCount: 4,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       operationRequestId: "request-1",
       operationAction: "confirm_direction",
       operationPhase: "generating_outline",
@@ -654,7 +654,7 @@ describe("story outline repository", () => {
       targetId: "特朗普",
     }, deps);
 
-    expect(state.referenceMaterials[0]).toMatchObject({ name: "特朗普", researchProvider: "quickrouter_gpt" });
+    expect(state.referenceMaterials[0]).toMatchObject({ name: "特朗普", researchProvider: "gpt-5.6-sol" });
     expect(state.outline).toBeNull();
     expect(state.directions).toEqual([]);
     expect(state.chatMessages.at(-1)?.content).toBe("资料已整理，请确认后继续。");
@@ -764,7 +764,7 @@ describe("story outline repository", () => {
     expect(generateOutline).toHaveBeenCalledWith(expect.objectContaining({
       task: "请补充学生要和海龟合作",
       chapterCount: 5,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       coursePeople: expect.arrayContaining([expect.objectContaining({ chineseName: "夏天", age: 10 })]),
     }));
     expect(db.state.outline).toMatchObject({ chapterCount: 5 });
@@ -1141,7 +1141,7 @@ describe("story outline repository", () => {
     db.state.setting = record({
       courseId: "course-1",
       chapterCount: 4,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       alignmentStatus: "needs_clarification",
       planningMode: "explore_options",
       alignmentSummary: null,
@@ -1342,7 +1342,7 @@ describe("story outline repository", () => {
       title: "New",
       summary: "Summary",
       chapterCount: 4,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       chapters: [],
       characters: [],
       sourceReferences: [],
@@ -1379,7 +1379,7 @@ describe("story outline repository", () => {
       title: "Silent City",
       summary: "Students restore sound.",
       chapterCount: 1,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       characters: [],
       sourceReferences: [],
       chapters: [{
@@ -1408,7 +1408,7 @@ describe("story outline repository", () => {
       title: "Jett Story",
       summary: "Jett joins the class.",
       chapterCount: 1,
-      writingProvider: "quickrouter_gpt",
+      writingProvider: "gpt-5.6-sol",
       chapters: [],
       characters: [{
         displayName: "捷特",

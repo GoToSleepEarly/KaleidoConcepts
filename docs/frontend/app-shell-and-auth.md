@@ -5,6 +5,7 @@
 This module covers the MVP Web login flow and authenticated app shell.
 
 Included:
+
 - `/login`
 - auth session storage
 - protected route wrapper
@@ -12,6 +13,7 @@ Included:
 - top header and account menu
 
 Not included:
+
 - registration
 - password reset
 - mobile app shell
@@ -266,25 +268,27 @@ There is no second account area in the sidebar.
 
 ## 账户高级设置
 
-账户菜单提供“高级设置”，统一配置文本生成模型与国外 GPT 系列调用使用的中转站。文本生成模型提供稳定产品名 `GPT` 与 `DeepSeek`，不向老师展示底层版本、provider 或能力后缀。该选择统一作用于故事大纲和文案与练习，不在课程流程中重复提供模型选择。默认使用 GPT；DeepSeek 作为低成本选项。
+账户菜单提供“高级设置”，只负责当前账号的 AI 模型与预置调用线路选择，不允许老师输入任意 Base URL 或 API Key。界面按真实故障边界分为“文本生成”和“图片生成”两个区块；文本与图片可独立切换，避免单一中转站故障同时阻断全部能力。联网研究跟随文本配置，人物形象、课程图片生成和图片编辑跟随图片配置。
 
-GPT 中转站提供 `QuickRouter` 或 `Crazyrouter`。选择 QuickRouter 时可进一步选择固定 Base URL：主站 `https://api.quickrouter.ai` 或直连 `https://api.quickrouter.us`。中转站选择同时作用于 GPT 文本生成、联网研究、人物形象、课程图片生成和图片编辑；DeepSeek 继续使用原有 `DEEPSEEK_BASE_URL` 官方直连路径，不经过任何中转站，也不受该设置影响。
+文本模型预置为 `gpt-5.5`、`gpt-5.6-sol` 和 `deepseek-chat`。GPT 模型可选择 QuickRouter 主站、QuickRouter 直连、Crazyrouter 或 Easy88AI；DeepSeek 只使用官方直连。图片模型预置为 `gpt-image-2` 与 QuickRouter 专属 `gpt-image-2-c`。图片线路只展示同时支持生成和编辑的预置组合；Easy88AI 官方文档目前只明确声明 `/v1/images/generations`，在图片编辑能力得到真实验证前不得作为账户图片线路开放。
 
-设置保存在 `User.writingProvider`、`User.aiGateway` 与 `User.quickRouterEndpoint`，是文本模型与 AI 路由的唯一账户级真实来源。Base URL 不允许自由输入，数据库只保存 `main / direct` 枚举，服务端集中映射到白名单 URL，避免错误地址和 SSRF 风险。每次打开高级设置时，`GET /api/account/ai-gateway` 都按 HTTP-only 身份 Cookie 读取三项设置；`PATCH` 接收 `{ writingProvider, aiGateway, quickRouterEndpoint }`。为兼容缓存中的旧前端，缺少任一新增可选字段时保留数据库原值。
+模型与线路使用稳定 ID 独立保存。为兼容现有字段，账户文本配置保存为 `writingProvider`、`aiGateway`、`quickRouterEndpoint`，图片配置保存为 `imageModel`、`imageGateway`、`imageQuickRouterEndpoint`；不保存 Base URL，也不把模型和中转站拼成一个枚举。服务端预置目录负责把线路 ID 映射为白名单 Base URL、密钥环境变量和协议 Adapter，并可为个别线路配置上游模型别名；未配置别名时直接使用标准模型名。新增兼容模型、线路或备用域名只修改预置目录，不修改课程业务代码。
 
-本地启动与生产发布执行的幂等 seed 只负责创建预置账号和同步固定身份信息，不得覆盖已有账号的 `writingProvider`、`aiGateway` 或 `quickRouterEndpoint`。高级设置在数据库响应成功前不得展示组件默认值；加载失败时保留未知状态并提供重新加载入口。
+每次打开高级设置时，`GET /api/account/ai-gateway` 按 HTTP-only 身份 Cookie 从数据库读取上述六项设置，前端展示代码内固定的预置目录。`PATCH` 只接受目录中存在且兼容的组合；为兼容升级期间的旧页面，缺失的新字段沿用数据库原值。保存使用一次原子更新；任一显式字段无效或数据库写入失败时全部保持原值。加载完成前不得展示组件默认值，加载失败时保留未知状态并提供重新加载入口。
 
-故事大纲和文案与练习的每个新 AI 操作在服务端开始时读取账户文本模型。修改设置只影响下一次新请求：已经运行的任务继续使用启动时的模型，不自动重放；已有成果不清空、不改写，也不标记为旧版本。课程设置和生成记录继续保存实际使用的模型快照，用于幂等、失败恢复和审计，但不再作为老师可编辑的模型偏好。高级设置保存三项配置时使用一次原子更新；任一字段校验或数据库写入失败时全部保持原值。
+本地启动与生产发布执行的幂等 seed 只负责创建预置账号和同步固定身份信息，不覆盖已有账号 AI 设置。每个新 AI 操作在服务端开始时读取账户配置并形成请求快照；修改只影响下一次新请求，运行中任务继续使用启动时配置，已有成果不清空、不改写。
 
-主站与直连是显式手动切换，不在网络错误后自动向另一个地址重放生成请求。原因是上游可能已经接收第一次请求，自动重放会带来重复生成和重复费用。Crazyrouter 被选中时 QuickRouter Base URL 选项隐藏但保留，切回 QuickRouter 后恢复上次选择。
+所有线路均为显式手动切换，不在网络错误、429 或超时后自动向另一线路或模型重放请求。`gpt-image-2-c` 从 QuickRouter 的 429 隐式兜底改为主动可选模型；选择后生成与编辑固定使用 `high` 质量，并在界面说明其质量与计费特征。上游返回模型不存在或接口不兼容时按配置错误失败，不静默替换模型。
 
-QuickRouter 图片继续支持其专属 `gpt-image-2-c` 备用模型。Crazyrouter 使用 `https://api.crazyrouter.com/v1/responses`、`/v1/images/generations` 和 `/v1/images/edits`，文本、联网研究与图片共用 `CRAZYROUTER_API_KEY`；默认模型为 `gpt-5.6-sol` 和 `gpt-image-2`，图片使用标准 `output_format` 参数，不继承 QuickRouter 的 `-c` 回退。修改中转站只影响后续新请求，不重写已生成成果。
+预置目录至少包含：QuickRouter 主站 `https://api.quickrouter.ai`、QuickRouter 直连 `https://api.quickrouter.us`、Crazyrouter `https://api.crazyrouter.com`、Easy88AI `https://api.easy88ai.com` 和 DeepSeek 官方地址。Easy88AI 使用独立 `EASY88AI_API_KEY`，密钥只存在服务器环境，不进入 API 响应、数据库或 Git。QuickRouter 主站当前允许保留为可选线路，但外部可用性不作为本轮验收阻断项。
 
-数据库中旧中转站产生的失败图片任务只保留历史来源标记，不再提供对应账户选项、环境变量或调用分支；新任务只会记录 QuickRouter 或 Crazyrouter。
+发版前先使用不产生生成费用的模型列表接口核对当前 Key 与模型 ID；不得为了验证而调用付费文本或图片生成。单元测试和 Provider 契约测试必须逐项覆盖模型别名、兼容矩阵、真实请求路径、请求体模型名、图片生成/编辑格式及禁止自动兜底。若外部 Key 或供应商状态导致免费检查失败，必须如实记录，不能宣称真实串联成功。
 
 生产环境统一从项目根目录 `.env` 读取数据库、持久化图片目录和 AI 服务配置。`scripts/deploy-prod.sh` 在构建前加载该文件，并在重启已有 PM2 进程时使用 `--update-env`，确保新 Node 进程不沿用 PM2 保存的旧变量。生产 `.env` 不提交 Git，也不使用 `.env.local` 叠加覆盖。
 
 实现状态：已实现账户菜单设置、登录同步、数据库字段、服务端路由选择和 GPT 文本/研究/图片 provider 分流；生产部署前执行 `pnpm prisma:deploy`。
+
+2026-09-10：高级设置拆分为当前账号的文本与图片配置；文本支持 `gpt-5.5`、`gpt-5.6-sol`、DeepSeek 直连及 QuickRouter/Crazyrouter/Easy88AI 预置线路，图片支持主动选择 `gpt-image-2` 或 QuickRouter 专属 `gpt-image-2-c`，不再在 429 后隐式换模型。Easy88AI 免费 `/v1/models` 检查鉴权成功并确认三个目标模型 ID；未调用付费生成接口，图片编辑能力未获证明前不开放 Easy88AI 图片线路。验证通过全量 91 个测试文件 / 767 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、本地 PostgreSQL `pnpm prisma:deploy`、乱码扫描和 `git diff --check`。实现提交号待本次提交后补录。
 
 2026-09-09：修复本地完整环境每次启动执行 seed 时覆盖已有账号中转站偏好的问题；已有账号 seed 更新不再包含三项可变 AI 设置。高级设置弹窗新增数据库读取 Loading 和可恢复失败态，读取完成前不再展示组件默认选项。验证通过全量 89 个测试文件 / 730 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`。实现提交：`48369d7`。
 

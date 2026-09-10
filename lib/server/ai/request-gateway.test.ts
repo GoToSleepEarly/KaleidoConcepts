@@ -9,15 +9,25 @@ describe("aiGatewayFromRequest", () => {
       username: "teacher",
       password: "secret",
       displayName: "Teacher",
-      writingProvider: "quickrouter_deepseek",
+      writingProvider: "deepseek-chat",
       aiGateway: "crazyrouter",
       quickRouterEndpoint: "direct",
+      imageModel: "gpt-image-2-c",
+      imageGateway: "quickrouter",
+      imageQuickRouterEndpoint: "direct",
     });
     const request = new Request("http://localhost/api/test", {
       headers: { cookie: "kaleido.user-id=teacher-1; theme=dark" },
     });
 
-    await expect(aiGatewayFromRequest(request, { user: { findUnique } })).resolves.toEqual({ writingProvider: "quickrouter_deepseek", aiGateway: "crazyrouter", quickRouterEndpoint: "direct" });
+    await expect(aiGatewayFromRequest(request, { user: { findUnique } })).resolves.toEqual({
+      writingProvider: "deepseek-chat",
+      aiGateway: "crazyrouter",
+      quickRouterEndpoint: "direct",
+      imageModel: "gpt-image-2-c",
+      imageGateway: "quickrouter",
+      imageQuickRouterEndpoint: "direct",
+    });
     expect(findUnique).toHaveBeenCalledWith({ where: { id: "teacher-1" } });
   });
 
@@ -28,21 +38,42 @@ describe("aiGatewayFromRequest", () => {
       username: "teacher",
       password: "secret",
       displayName: "Teacher",
-      writingProvider: "quickrouter_gpt" as const,
+      writingProvider: "gpt-5.6-sol" as const,
       aiGateway,
       quickRouterEndpoint: "main",
+      imageModel: "gpt-image-2" as const,
+      imageGateway: "crazyrouter" as const,
+      imageQuickRouterEndpoint: "main" as const,
     }));
     const db = { user: { findUnique } };
-    const request = new Request("http://localhost/api/test", { headers: { cookie: "kaleido.user-id=teacher-1" } });
+    const request = new Request("http://localhost/api/test", {
+      headers: { cookie: "kaleido.user-id=teacher-1" },
+    });
 
-    await expect(aiGatewayFromRequest(request, db)).resolves.toEqual({ writingProvider: "quickrouter_gpt", aiGateway: "quickrouter", quickRouterEndpoint: "main" });
+    await expect(aiGatewayFromRequest(request, db)).resolves.toEqual({
+      writingProvider: "gpt-5.6-sol",
+      aiGateway: "quickrouter",
+      quickRouterEndpoint: "main",
+      imageModel: "gpt-image-2",
+      imageGateway: "crazyrouter",
+      imageQuickRouterEndpoint: "main",
+    });
     aiGateway = "crazyrouter";
-    await expect(aiGatewayFromRequest(request, db)).resolves.toEqual({ writingProvider: "quickrouter_gpt", aiGateway: "crazyrouter", quickRouterEndpoint: "main" });
+    await expect(aiGatewayFromRequest(request, db)).resolves.toEqual({
+      writingProvider: "gpt-5.6-sol",
+      aiGateway: "crazyrouter",
+      quickRouterEndpoint: "main",
+      imageModel: "gpt-image-2",
+      imageGateway: "crazyrouter",
+      imageQuickRouterEndpoint: "main",
+    });
     expect(findUnique).toHaveBeenCalledTimes(2);
   });
 
   test("rejects a request without an authenticated account instead of falling back to a gateway cookie", async () => {
-    const request = new Request("http://localhost/api/test", { headers: { cookie: "kaleido.ai-gateway=crazyrouter" } });
+    const request = new Request("http://localhost/api/test", {
+      headers: { cookie: "kaleido.ai-gateway=crazyrouter" },
+    });
     const findUnique = vi.fn();
 
     await expect(aiGatewayFromRequest(request, { user: { findUnique } })).rejects.toBeInstanceOf(AiGatewayAuthenticationError);
@@ -51,8 +82,26 @@ describe("aiGatewayFromRequest", () => {
 
   test("rejects a removed account instead of using a default gateway", async () => {
     const db = { user: { findUnique: vi.fn().mockResolvedValue(null) } };
-    const request = new Request("http://localhost/api/test", { headers: { cookie: "kaleido.user-id=removed-user" } });
+    const request = new Request("http://localhost/api/test", {
+      headers: { cookie: "kaleido.user-id=removed-user" },
+    });
 
     await expect(aiGatewayFromRequest(request, db)).rejects.toBeInstanceOf(AiGatewayAuthenticationError);
+  });
+
+  test("rejects a persisted image combination outside the preset compatibility matrix", async () => {
+    const findUnique = vi.fn().mockResolvedValue({
+      writingProvider: "gpt-5.6-sol",
+      aiGateway: "easy88ai",
+      quickRouterEndpoint: "main",
+      imageModel: "gpt-image-2-c",
+      imageGateway: "crazyrouter",
+      imageQuickRouterEndpoint: "main",
+    });
+    const request = new Request("http://localhost/api/test", {
+      headers: { cookie: "kaleido.user-id=teacher-1" },
+    });
+
+    await expect(aiGatewayFromRequest(request, { user: { findUnique } })).rejects.toThrow("账户 AI 设置无效");
   });
 });

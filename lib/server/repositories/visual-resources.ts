@@ -9,6 +9,7 @@ import type {
   CourseImageQuality,
   CourseVisualAsset,
   CourseVisualResourcesState,
+  StoryWritingProvider,
 } from "@/lib/contracts/api";
 import { buildCleanParagraphText } from "@/lib/domain/course-content";
 import { furthestCourseStage } from "@/lib/domain/course-stage";
@@ -48,6 +49,11 @@ export class VisualResourcesNotFoundError extends Error {
 
 export class VisualResourcesInvalidStateError extends Error {
   constructor(message: string) { super(message); this.name = "VisualResourcesInvalidStateError"; }
+}
+
+function writingModel(value: string): StoryWritingProvider {
+  if (value === "gpt-5.5" || value === "gpt-5.6-sol" || value === "deepseek-chat") return value;
+  throw new VisualResourcesInvalidStateError("课程文本模型配置无效");
 }
 
 export function hasUnsyncedCharacterAppearance(
@@ -544,7 +550,7 @@ export async function generateCourseVisualPlan(
     let generatedPlan = replayPlan;
     let tokenUsage: Awaited<ReturnType<CourseVisualPlanDeps["generate"]>>["usage"];
     if (!generatedPlan) {
-      const generated = await deps.generate(promptInput, content.writingProvider, async (response) => {
+      const generated = await deps.generate(promptInput, writingModel(content.writingProvider), async (response) => {
         capturedOutput = { rawResponse: response.text, ...(response.usage ? { tokenUsage: response.usage } : {}) } as Prisma.InputJsonObject;
         await db.aiGenerationLog.update({ where: { id: operation.id }, data: { outputSnapshot: capturedOutput } });
       });

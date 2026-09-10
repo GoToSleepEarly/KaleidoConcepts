@@ -1,7 +1,7 @@
 import "dotenv/config";
 
 import { PrismaPg } from "@prisma/adapter-pg";
-import { AiGateway, KnowledgePointSource, PresetOptionKind, Prisma, PrismaClient } from "@prisma/client";
+import { KnowledgePointSource, PresetOptionKind, Prisma, PrismaClient } from "@prisma/client";
 
 import { grammarCatalogBooks } from "./grammar-catalog-data";
 import presetData from "./preset-data.json";
@@ -22,7 +22,7 @@ async function main() {
         username: user.username,
         password: seedPassword,
         displayName: user.displayName,
-        aiGateway: user.aiGateway as AiGateway,
+        aiGateway: user.aiGateway,
         createdAt: new Date(user.createdAt),
         updatedAt: new Date(user.updatedAt),
       },

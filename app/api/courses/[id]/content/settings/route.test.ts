@@ -7,7 +7,7 @@ describe("legacy course content settings route", () => {
     const response = await PUT(
       new Request("http://localhost/api/courses/course-1/content/settings", {
         method: "PUT",
-        body: JSON.stringify({ writingProvider: "quickrouter_deepseek" }),
+        body: JSON.stringify({ writingProvider: "deepseek-chat" }),
       }),
       { params: Promise.resolve({ id: "course-1" }) },
     );
