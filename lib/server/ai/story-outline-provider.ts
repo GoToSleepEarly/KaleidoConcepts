@@ -12,6 +12,7 @@ type ProviderConfig = {
   gptModel: string;
   researchModel: string;
   responsesPath?: string;
+  stream?: boolean;
   timeoutMs: number;
 };
 
@@ -30,6 +31,15 @@ type ResponsesData = {
     total_tokens?: number;
     output_tokens_details?: { reasoning_tokens?: number };
   };
+};
+
+type ResponsesStreamEvent = {
+  type?: string;
+  delta?: string;
+  text?: string;
+  message?: string;
+  error?: { message?: string };
+  response?: ResponsesData;
 };
 
 export type StoryOutlineUsage = {
@@ -87,6 +97,7 @@ function configFromEnvironment(input: AiProviderSettingsInput): ProviderConfig &
     baseUrl: aiProviderBaseUrl(settings),
     gptModel: "gpt-5.6-sol",
     researchModel: "gpt-5.6-sol",
+    stream: process.env[`${gateway.toUpperCase()}_TEXT_STREAM`] === "true",
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };
 }
@@ -123,6 +134,45 @@ function responseUsage(data: ResponsesData): StoryOutlineUsage | undefined {
   };
 }
 
+function parseResponsesStream(rawResponse: string) {
+  let deltaText = "";
+  let doneText = "";
+  let completed = false;
+  let finalResponse: ResponsesData | undefined;
+  let eventCount = 0;
+
+  for (const line of rawResponse.split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trimStart();
+    if (!payload || payload === "[DONE]") continue;
+    const event = JSON.parse(payload) as ResponsesStreamEvent;
+    eventCount += 1;
+    if (event.type === "response.output_text.delta" && typeof event.delta === "string") deltaText += event.delta;
+    if (event.type === "response.output_text.done" && typeof event.text === "string") doneText = event.text;
+    if (event.type === "response.completed") {
+      completed = true;
+      finalResponse = event.response ?? { status: "completed" };
+    }
+    if (event.type === "response.incomplete") {
+      finalResponse = event.response ?? { status: "incomplete" };
+    }
+    if (event.type === "response.failed" || event.type === "error") {
+      throw new Error(event.response?.error?.message || event.error?.message || event.message || "故事大纲生成失败");
+    }
+  }
+
+  if (!completed) {
+    const incomplete = finalResponse?.status === "incomplete";
+    if (incomplete) return finalResponse as ResponsesData;
+    throw new AiProviderResultUnknownError(eventCount > 0
+      ? "故事大纲服务流式响应中断，生成结果未能确认，请手动重试本步"
+      : "故事大纲服务未返回有效的流式事件，生成结果未能确认，请手动重试本步");
+  }
+
+  const data = finalResponse ?? { status: "completed" };
+  return outputText(data) ? data : { ...data, output_text: doneText || deltaText };
+}
+
 function deepSeekConfigFromEnvironment(): ProviderConfig {
   const apiKey = process.env.DEEPSEEK_TEXT_API_KEY;
   if (!apiKey) throw new StoryOutlineProviderConfigError("DeepSeek 服务尚未配置");
@@ -134,6 +184,7 @@ function deepSeekConfigFromEnvironment(): ProviderConfig {
     gptModel: "deepseek-v4-pro",
     researchModel: "deepseek-v4-pro",
     responsesPath: "/responses",
+    stream: process.env.DEEPSEEK_TEXT_STREAM === "true",
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };
 }
@@ -183,18 +234,19 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
 
   async function request(operation: string, body: Record<string, unknown>, activeConfig: ProviderConfig, timeoutMs = activeConfig.timeoutMs) {
     const startedAt = Date.now();
-    devAiLog({ operation, phase: "request", payload: body });
+    const requestBody = activeConfig.stream ? { ...body, stream: true } : body;
+    devAiLog({ operation, phase: "request", payload: requestBody });
     let response: Response | null = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         response = (await undiciFetch(`${activeConfig.baseUrl ?? "https://api.quickrouter.ai"}${activeConfig.responsesPath ?? "/v1/responses"}`, {
           method: "POST",
           headers: {
-            Accept: "application/json",
+            Accept: activeConfig.stream ? "text/event-stream" : "application/json",
             Authorization: `Bearer ${activeConfig.apiKey}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify(requestBody),
           signal: AbortSignal.timeout(timeoutMs),
           dispatcher: textDispatcher(timeoutMs),
         } as UndiciRequestInit)) as unknown as Response;
@@ -230,7 +282,9 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
         latencyMs: Date.now() - startedAt,
         payload: rawResponse,
       });
-      data = JSON.parse(rawResponse) as ResponsesData;
+      data = activeConfig.stream && response.ok
+        ? parseResponsesStream(rawResponse)
+        : JSON.parse(rawResponse) as ResponsesData;
     } catch (error) {
       devAiLog({
         operation,
@@ -241,6 +295,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
         error,
       });
       const code = transportErrorCode(error);
+      if (error instanceof AiProviderResultUnknownError) throw error;
       if (isAmbiguousTimeout(error) || (code && INTERRUPTED_RESPONSE_CODES.has(code))) {
         const reason = isAmbiguousTimeout(error) ? "响应超时" : "响应中断";
         throw new AiProviderResultUnknownError(`故事大纲服务${reason}，生成结果未能确认，请手动重试本步`, { cause: error });

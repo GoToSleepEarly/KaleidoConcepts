@@ -69,11 +69,18 @@ CRAZYROUTER_TEXT_API_KEY="..."
 CRAZYROUTER_IMAGE_API_KEY="..."
 EASY88AI_TEXT_API_KEY="..."
 EASY88AI_IMAGE_API_KEY="..."
+
+QUICKROUTER_TEXT_STREAM="false"
+CRAZYROUTER_TEXT_STREAM="false"
+EASY88AI_TEXT_STREAM="true"
+DEEPSEEK_TEXT_STREAM="false"
 ```
 
 `AUTH_COOKIE_SECURE` 默认跟随 `NODE_ENV`：生产环境为安全 Cookie，只能通过 HTTPS 使用。若公网入口暂时只能使用 HTTP，可短期显式设置为 `false`，使 Safari 等浏览器能够保存身份 Cookie；启用 HTTPS 后必须恢复为 `true`。修改该变量后需要重新发布或重启应用进程，老师随后退出并重新登录。
 
 数据库密码包含 URL 保留字符时必须编码。模型和提供方由当前账号的高级设置决定，环境变量只保存各提供方按能力拆分的密钥和请求超时，不配置模型或提供方地址。QuickRouter、Crazyrouter 和 Easy88AI 的文本、图片密钥互不回退；DeepSeek 仅配置文本密钥。DeepSeek 官方地址固定预置为 `https://api.deepseek.com`。生产环境不得配置 `HTTP_PROXY` 或 `HTTPS_PROXY`。
+
+文本流式开关按提供方独立生效，只有值严格等于 `true` 才启用。启用后仍由服务端聚合完整 Responses SSE、执行结构校验并返回原有 JSON，前端协议不变。关闭或删除开关会立即回到保留的非流式请求与解析分支。建议本轮只为 `EASY88AI_TEXT_STREAM="true"`；流式响应中断时不得保存半截结果，也不得自动重试可能已经计费的请求。
 
 旧的原地部署脚本默认拒绝执行，防止误用 `pnpm deploy:prod` 覆盖正在运行的 `.next`。只有专用独立主机显式配置 `DEPLOYMENT_TARGET="dedicated-host"` 才能使用旧脚本；共享主机不需要额外配置该变量。
 

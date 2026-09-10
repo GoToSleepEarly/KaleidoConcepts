@@ -302,6 +302,8 @@ UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter
 
 2026-09-10：所有提供方密钥统一按能力命名。Crazyrouter 与 Easy88AI 分别使用独立的文本、图片密钥，DeepSeek 使用 `DEEPSEEK_TEXT_API_KEY`；运行时和发布脚本均不读取三个旧的通用 Key，也不在文本与图片之间回退。验证通过全量 92 个测试文件 / 774 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build` 和 `git diff --check`；未调用外部 AI 接口。
 
+2026-09-11：文本提供方增加独立的服务端流式开关：`QUICKROUTER_TEXT_STREAM`、`CRAZYROUTER_TEXT_STREAM`、`EASY88AI_TEXT_STREAM`、`DEEPSEEK_TEXT_STREAM`。仅严格的 `true` 启用 Responses SSE；其他值或未配置继续执行原非流式分支。服务端聚合完整输出与 usage 后复用原有解析、校验和持久化流程，前端/API 响应契约不变；缺少完成事件时按结果未知失败处理，不保存部分正文且不自动重试。验证通过全量 92 个测试文件 / 777 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build` 和 `git diff --check`；未调用外部 AI 接口。
+
 2026-09-10：重新核对 [DeepSeek Responses API](https://api-docs.deepseek.com/guides/responses_api/) 后修正旧判断。DeepSeek 官方 `/responses` 已兼容 Codex 所用的 OpenAI Responses 结构，并在服务端执行 `web_search`；项目删除单独的 `/chat/completions` 分支，文本生成和联网研究共用现有 Responses 处理。当前 Key 的免费 `/models` 返回并确认 `deepseek-v4-pro` 可用，本地环境也配置为该模型；无输入的 `/responses` 参数校验返回预期 400，没有触发生成或费用。高级设置选择 DeepSeek 后不再展示无效的 GPT 中转站控件，历史 `deepseek-chat` 数据通过 migration 更新为 `deepseek-v4-pro`，联网资料记录保存真实 research provider。实现提交待完成后记录。
 
 2026-09-09：修复本地完整环境每次启动执行 seed 时覆盖已有账号中转站偏好的问题；已有账号 seed 更新不再包含三项可变 AI 设置。高级设置弹窗新增数据库读取 Loading 和可恢复失败态，读取完成前不再展示组件默认选项。验证通过全量 89 个测试文件 / 730 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`。实现提交：`48369d7`。

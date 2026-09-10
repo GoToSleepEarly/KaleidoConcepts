@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("undici", async (importOriginal) => {
   const actual = await importOriginal<typeof import("undici")>();
@@ -12,6 +12,13 @@ import { AiProviderResultUnknownError, StoryOutlineIncompleteResponseError, Stor
 
 const originalEnv = { ...process.env };
 
+beforeEach(() => {
+  delete process.env.QUICKROUTER_TEXT_STREAM;
+  delete process.env.CRAZYROUTER_TEXT_STREAM;
+  delete process.env.EASY88AI_TEXT_STREAM;
+  delete process.env.DEEPSEEK_TEXT_STREAM;
+});
+
 afterEach(() => {
   process.env = { ...originalEnv };
   vi.restoreAllMocks();
@@ -23,6 +30,12 @@ function mockTextResponse(text = '{"ok":true}') {
       output_text: text,
     }),
   );
+}
+
+function streamResponse(events: unknown[]) {
+  return new Response(events.map((event) => `event: ${Reflect.get(event as object, "type") ?? "message"}\ndata: ${JSON.stringify(event)}\n\n`).join("") + "data: [DONE]\n\n", {
+    headers: { "Content-Type": "text/event-stream" },
+  });
 }
 
 function fetchBody(fetchMock: ReturnType<typeof vi.fn>, index = 0) {
@@ -136,6 +149,7 @@ describe("createStoryOutlineProvider", () => {
 
   test("routes Easy88AI text requests through its preset endpoint", async () => {
     process.env.EASY88AI_TEXT_API_KEY = "easy-text-key";
+    process.env.EASY88AI_TEXT_STREAM = "false";
     process.env.EASY88AI_GPT_TEXT_MODEL = "legacy-writing-model";
     process.env.EASY88AI_RESEARCH_MODEL = "legacy-research-model";
     const fetchMock = mockTextResponse();
@@ -155,6 +169,84 @@ describe("createStoryOutlineProvider", () => {
     expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer easy-text-key");
     expect(fetchBody(fetchMock, 0).model).toBe("gpt-5.5");
     expect(fetchBody(fetchMock, 1).model).toBe("gpt-5.5");
+    expect(fetchBody(fetchMock, 0).stream).toBeUndefined();
+    expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Accept")).toBe("application/json");
+  });
+
+  test("aggregates an Easy88AI Responses stream without changing the provider result", async () => {
+    process.env.EASY88AI_TEXT_API_KEY = "easy-text-key";
+    process.env.EASY88AI_TEXT_STREAM = "true";
+    const completedResponse = {
+      status: "completed",
+      output: [{ content: [{ type: "output_text", text: '{"ok":true}' }] }],
+      usage: {
+        input_tokens: 12,
+        output_tokens: 8,
+        total_tokens: 20,
+        output_tokens_details: { reasoning_tokens: 3 },
+      },
+    };
+    const fetchMock = vi.fn(async () => streamResponse([
+      { type: "response.output_text.delta", delta: '{"ok":' },
+      { type: "response.output_text.delta", delta: "true}" },
+      { type: "response.completed", response: completedResponse },
+    ]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createStoryOutlineProvider(undefined, "easy88ai").generateOutline({
+      writingProvider: "gpt-5.5",
+      prompt: "生成正文",
+    });
+
+    expect(fetchBody(fetchMock)).toMatchObject({ model: "gpt-5.5", stream: true });
+    expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Accept")).toBe("text/event-stream");
+    expect(result).toEqual({
+      text: '{"ok":true}',
+      usage: {
+        inputTokens: 12,
+        outputTokens: 8,
+        visibleOutputTokens: 5,
+        reasoningTokens: 3,
+        totalTokens: 20,
+      },
+    });
+  });
+
+  test("uses an independent text stream switch for every provider", async () => {
+    process.env.QUICKROUTER_TEXT_API_KEY = "quick-key";
+    process.env.CRAZYROUTER_TEXT_API_KEY = "crazy-key";
+    process.env.EASY88AI_TEXT_API_KEY = "easy-key";
+    process.env.DEEPSEEK_TEXT_API_KEY = "deepseek-key";
+    process.env.QUICKROUTER_TEXT_STREAM = "true";
+    process.env.CRAZYROUTER_TEXT_STREAM = "true";
+    process.env.EASY88AI_TEXT_STREAM = "true";
+    process.env.DEEPSEEK_TEXT_STREAM = "true";
+    const fetchMock = vi.fn(async () => streamResponse([
+      { type: "response.output_text.delta", delta: '{"ok":true}' },
+      { type: "response.completed", response: { status: "completed" } },
+    ]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createStoryOutlineProvider().generateOutline({ writingProvider: "gpt-5.6-sol", prompt: "quick" });
+    await createStoryOutlineProvider(undefined, "crazyrouter").generateOutline({ writingProvider: "gpt-5.6-sol", prompt: "crazy" });
+    await createStoryOutlineProvider(undefined, "easy88ai").generateOutline({ writingProvider: "gpt-5.6-sol", prompt: "easy" });
+    await createStoryOutlineProvider().generateOutline({ writingProvider: "deepseek-v4-pro", prompt: "deepseek" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    for (let index = 0; index < 4; index += 1) expect(fetchBody(fetchMock, index).stream).toBe(true);
+  });
+
+  test("does not accept a partial stream without a completion event", async () => {
+    process.env.EASY88AI_TEXT_API_KEY = "easy-text-key";
+    process.env.EASY88AI_TEXT_STREAM = "true";
+    vi.stubGlobal("fetch", vi.fn(async () => streamResponse([
+      { type: "response.output_text.delta", delta: '{"partial":true}' },
+    ])));
+
+    await expect(createStoryOutlineProvider(undefined, "easy88ai").generateOutline({
+      writingProvider: "gpt-5.5",
+      prompt: "生成正文",
+    })).rejects.toBeInstanceOf(AiProviderResultUnknownError);
   });
 
   test("does not retry when response headers time out after the provider may have accepted the request", async () => {
