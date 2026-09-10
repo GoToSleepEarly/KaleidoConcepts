@@ -298,6 +298,8 @@ UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter
 
 2026-09-10：重新核对 DeepSeek 当前官方能力，确认 `https://api.deepseek.com/responses` 原生兼容 OpenAI Responses API，并支持服务端 `web_search`。账户选择 DeepSeek 后，文本准备、故事生成和联网研究统一走 DeepSeek 官方路线；界面不再展示不会生效的 GPT 中转站选项。免费 `/models` 实测当前 Key 包含 `deepseek-v4-pro`，无输入的 `/responses` 参数校验也成功到达官方端点；未执行付费生成。产品模型名、默认上游模型和环境变量示例统一改为 `deepseek-v4-pro`，迁移把历史 `deepseek-chat` 快照更新为新名称。验证通过全量 92 个测试文件 / 773 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、本地 PostgreSQL `pnpm prisma:deploy`、乱码扫描和 `git diff --check`。实现提交：`147be91`。
 
+2026-09-10：DeepSeek 官方地址改为代码内预置，不再读取 `DEEPSEEK_BASE_URL`。部署环境只提供 `DEEPSEEK_API_KEY`；即使服务器残留旧地址变量，请求也固定发往 `https://api.deepseek.com`。账户高级设置仍是模型与提供方的唯一选择来源。验证通过全量 92 个测试文件 / 774 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build` 和 `git diff --check`。
+
 2026-09-10：重新核对 [DeepSeek Responses API](https://api-docs.deepseek.com/guides/responses_api/) 后修正旧判断。DeepSeek 官方 `/responses` 已兼容 Codex 所用的 OpenAI Responses 结构，并在服务端执行 `web_search`；项目删除单独的 `/chat/completions` 分支，文本生成和联网研究共用现有 Responses 处理。当前 Key 的免费 `/models` 返回并确认 `deepseek-v4-pro` 可用，本地环境也配置为该模型；无输入的 `/responses` 参数校验返回预期 400，没有触发生成或费用。高级设置选择 DeepSeek 后不再展示无效的 GPT 中转站控件，历史 `deepseek-chat` 数据通过 migration 更新为 `deepseek-v4-pro`，联网资料记录保存真实 research provider。实现提交待完成后记录。
 
 2026-09-09：修复本地完整环境每次启动执行 seed 时覆盖已有账号中转站偏好的问题；已有账号 seed 更新不再包含三项可变 AI 设置。高级设置弹窗新增数据库读取 Loading 和可恢复失败态，读取完成前不再展示组件默认选项。验证通过全量 89 个测试文件 / 730 项测试、`pnpm lint`、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`。实现提交：`48369d7`。

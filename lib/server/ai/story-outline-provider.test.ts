@@ -243,7 +243,7 @@ describe("createStoryOutlineProvider", () => {
     });
   });
 
-  test("uses the DeepSeek-compatible Responses API for DeepSeek writing", async () => {
+  test("uses the preset DeepSeek Responses endpoint instead of a legacy environment override", async () => {
     process.env.DEEPSEEK_API_KEY = "deepseek-key";
     process.env.DEEPSEEK_MODEL = "legacy-environment-model";
     process.env.DEEPSEEK_BASE_URL = "https://deepseek.example/v1/";
@@ -262,7 +262,7 @@ describe("createStoryOutlineProvider", () => {
     });
 
     const body = fetchBody(fetchMock);
-    expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://deepseek.example/v1/responses");
+    expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.deepseek.com/responses");
     expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer deepseek-key");
     expect(body.model).toBe("deepseek-v4-pro");
     expect(body.input).toBe("生成大纲");

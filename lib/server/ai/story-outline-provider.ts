@@ -129,7 +129,7 @@ function deepSeekConfigFromEnvironment(): ProviderConfig {
   const timeout = Number(process.env.TEXT_GENERATION_TIMEOUT_MS);
   return {
     apiKey,
-    baseUrl: (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, ""),
+    baseUrl: "https://api.deepseek.com",
     gateway: "deepseek",
     gptModel: "deepseek-v4-pro",
     researchModel: "deepseek-v4-pro",
