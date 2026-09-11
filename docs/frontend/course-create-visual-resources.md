@@ -25,7 +25,7 @@
 - 最终图片 Prompt 使用明确分区，依次表达视觉方向、参考图与角色映射、身份规则、场景、视觉重点、构图、连续性和输出限制。每张参考图只承担一个角色的身份来源，本课造型单独列出，避免把身份与服装混为一条描述。
 - 多张参考图之间只使用一次全局防融合规则，不为相似人物生成成对差异描述。保留现有 16:9、儿童绘本、全课造型连续性、身份可辨认、无文字与水印等约束。
 
-实现验证通过全量 92 个测试文件 / 800 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm exec prisma validate`、本地 `pnpm prisma:deploy`、`pnpm build`、中文乱码特征扫描和 `git diff --check`；未调用付费 AI。实现提交：待提交后补记。
+实现验证通过全量 92 个测试文件 / 800 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm exec prisma validate`、本地 `pnpm prisma:deploy`、`pnpm build`、中文乱码特征扫描和 `git diff --check`；未调用付费 AI。实现提交：`05a4dd1`。
 
 ## 设计原则
 

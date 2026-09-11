@@ -357,7 +357,7 @@ UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter
 
 实现状态：已实现账户菜单设置、登录同步、数据库字段、服务端路由选择和 GPT 文本/研究/图片 provider 分流；生产部署前执行 `pnpm prisma:deploy`。
 
-2026-09-12：图片高级设置只展示 `gpt-image-2` 与 `gpt-image-2.5-sunburst` 两个标准模型，新增按量/按次计费方式，并由服务端能力矩阵映射 QuickRouter、Crazyrouter 和 Easy88AI 的真实上游 model。数据库迁移把旧 `gpt-image-2-c` 规范化为 `gpt-image-2 + per_image`，不改变旧账号原有计费语义。验证通过全量 92 个测试文件 / 800 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm exec prisma validate`、本地 `pnpm prisma:deploy`、`pnpm build`、中文乱码特征扫描和 `git diff --check`；未调用付费 AI。实现提交：待提交后补记。
+2026-09-12：图片高级设置只展示 `gpt-image-2` 与 `gpt-image-2.5-sunburst` 两个标准模型，新增按量/按次计费方式，并由服务端能力矩阵映射 QuickRouter、Crazyrouter 和 Easy88AI 的真实上游 model。数据库迁移把旧 `gpt-image-2-c` 规范化为 `gpt-image-2 + per_image`，不改变旧账号原有计费语义。验证通过全量 92 个测试文件 / 800 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm exec prisma validate`、本地 `pnpm prisma:deploy`、`pnpm build`、中文乱码特征扫描和 `git diff --check`；未调用付费 AI。实现提交：`05a4dd1`。
 
 2026-09-11：高级设置改为可扩展的分类导航与单列配置，iPad 维持主从布局，窄屏改为顶部分类选择。新增账户级文本思考强度、流式返回和图片质量；流式默认开启，默认文本提供方为 Easy88AI，默认图片模型为 `gpt-image-2-c`、图片线路为 QuickRouter。移除四个文本流式环境变量和课程级 `Course.visualQuality`；人物档案与 Step 5 统一读取账户图片质量，2-C 固定极高。已有图片保留实际质量记录，旧账号的标准图片模型初始化为高质量。验证通过全量 92 个测试文件 / 779 项测试、Prisma 校验与本地 migration deploy；浏览器设备验收待本地验收完成后补记。
 
