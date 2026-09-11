@@ -538,23 +538,37 @@ export async function generateCourseVisualPlan(
     throw new VisualResourcesInvalidStateError(`故事大纲中的引用角色缺少参考资料关联：${unlinkedReferencedCharacters.map((character) => character.displayName).join("、")}。请返回故事大纲重新生成`);
   }
   const chapters = (Array.isArray(content.chapters) ? content.chapters : []) as ContentChapter[];
+  const coursePeople = characters.some((character) => character.sourceType === "person")
+    ? await db.coursePerson.findMany({ where: { courseId } })
+    : [];
+  const peopleIdentities = coursePeople.map((person) => ({ personId: person.personId, chineseName: person.chineseNameSnapshot, englishName: person.englishNameSnapshot }));
   const promptInput = {
     mode,
     baselinePlan: mode === "originalized" ? baselinePlan : null,
     storyTitle: outline.title,
-    characters: characters.map((character) => ({
-      id: character.id,
-      displayName: character.displayName,
-      englishName: character.englishName,
-      sourceType: character.sourceType,
-      reference: character.sourceReference ? {
-        name: character.sourceReference.name,
-        type: character.sourceReference.type,
-        summary: character.sourceReference.summary,
-      } : null,
-      roleInStory: character.roleInStory,
-      identityDescription: character.sourceType === "original" ? character.visualDescription ?? null : null,
-    })),
+    characters: characters.map((character) => {
+      const matchedPerson = character.sourceType === "person" ? matchCoursePersonForCharacter(character, peopleIdentities) : null;
+      const person = matchedPerson ? coursePeople.find((candidate) => candidate.personId === matchedPerson.personId) : null;
+      return {
+        id: character.id,
+        displayName: character.displayName,
+        englishName: character.englishName,
+        sourceType: character.sourceType,
+        reference: character.sourceReference ? {
+          name: character.sourceReference.name,
+          type: character.sourceReference.type,
+          summary: character.sourceReference.summary,
+        } : null,
+        roleInStory: character.roleInStory,
+        identityDescription: character.sourceType === "original" ? character.visualDescription ?? null : null,
+        ...(person ? {
+          personRole: person.role,
+          age: person.ageSnapshot,
+          gender: person.genderSnapshot,
+          lifeStage: person.ageSnapshot >= 18 ? "adult" as const : "child" as const,
+        } : {}),
+      };
+    }),
     chapters: chapters.map((chapter, index) => ({
       id: chapter.id,
       order: chapter.order ?? index + 1,
@@ -904,10 +918,12 @@ async function slotReferenceAssets(db: VisualResourcesDb, courseId: string, char
     const character = await db.courseCharacter.findFirst({ where: { id: characterId, courseId } });
     if (!character) continue;
     let referenceIndex: number | undefined;
+    let personSnapshot: { role: "student" | "teacher"; ageSnapshot: number; genderSnapshot: "male" | "female" } | null = null;
     if (character.sourceType === "person") {
       const coursePeople = await db.coursePerson.findMany({ where: { courseId }, include: { visualAssetSnapshot: true } });
       const matched = matchCoursePersonForCharacter(character, coursePeople.map((person) => ({ personId: person.personId, chineseName: person.chineseNameSnapshot, englishName: person.englishNameSnapshot })));
       const snapshot = matched ? coursePeople.find((person) => person.personId === matched.personId) : null;
+      personSnapshot = snapshot ?? null;
       if (snapshot?.visualAssetSnapshot?.storagePath) {
         paths.push(snapshot.visualAssetSnapshot.storagePath);
         ids.push(snapshot.visualAssetSnapshot.id);
@@ -932,6 +948,12 @@ async function slotReferenceAssets(db: VisualResourcesDb, courseId: string, char
       chineseName: character.displayName,
       englishName: character.englishName,
       identityDescription: character.sourceType === "original" ? character.visualDescription ?? null : null,
+      ...(personSnapshot ? {
+        personRole: personSnapshot.role,
+        age: personSnapshot.ageSnapshot,
+        gender: personSnapshot.genderSnapshot,
+        lifeStage: personSnapshot.ageSnapshot >= 18 ? "adult" as const : "child" as const,
+      } : {}),
       referenceIndex,
       useVisualLabel: character.sourceType === "referenced" && designByCharacterId.get(characterId)?.visualAnchor.mode === "description",
     });

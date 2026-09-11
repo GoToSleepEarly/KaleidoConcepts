@@ -16,6 +16,7 @@ type DbUser = {
   imageModel?: AccountAiSettings["imageModel"];
   imageGateway?: AccountAiSettings["imageGateway"];
   imageQuickRouterEndpoint?: AccountAiSettings["imageQuickRouterEndpoint"];
+  imageBillingMode?: AccountAiSettings["imageBillingMode"];
   textReasoningEffort?: AccountAiSettings["textReasoningEffort"];
   textStreamingEnabled?: AccountAiSettings["textStreamingEnabled"];
   textStreamFirstEventTimeoutSeconds?: AccountAiSettings["textStreamFirstEventTimeoutSeconds"];

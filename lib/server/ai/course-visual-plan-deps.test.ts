@@ -6,7 +6,7 @@ const input: CourseVisualPlanPromptInput = {
   mode: "faithful" as const,
   storyTitle: "Valorant Classroom Mission",
   characters: [
-    { id: "teacher", displayName: "林老师", englishName: "Ms. Lin", sourceType: "person", reference: null, roleInStory: "teacher guide" },
+    { id: "teacher", displayName: "林老师", englishName: "Ms. Lin", sourceType: "person", reference: null, roleInStory: "teacher guide", personRole: "teacher", age: 32, gender: "female", lifeStage: "adult" },
     { id: "jett", displayName: "捷特", englishName: "Jett", sourceType: "referenced", reference: { name: "Jett and Sage", type: "game_character", summary: "Two agents from VALORANT." }, roleInStory: "agile hero" },
     { id: "sage", displayName: "贤者", englishName: "Sage", sourceType: "referenced", reference: { name: "Jett and Sage", type: "game_character", summary: "Two agents from VALORANT." }, roleInStory: "protector" },
     { id: "sprite", displayName: "风精灵", englishName: "Wind Sprite", sourceType: "original", reference: null, roleInStory: "helper", identityDescription: "一只四足双翼的晶体生物，鹿角，身体由半透明矿石构成，不拟人化。" },
@@ -55,6 +55,11 @@ describe("Step 5 视觉资源方案", () => {
     expect(prompt).toContain("Jett");
     expect(prompt).toContain("cleanReading");
     expect(prompt).toContain('"identityDescription":"一只四足双翼的晶体生物');
+    expect(prompt).toContain('"personRole":"teacher"');
+    expect(prompt).toContain('"age":32');
+    expect(prompt).toContain('"gender":"female"');
+    expect(prompt).toContain('"lifeStage":"adult"');
+    expect(prompt).toContain('"coverRequiredCharacterKeys":["C01"]');
     expect(prompt).toContain("must not change its species, entity form, anthropomorphism, material, body plan, or defining anatomy");
     expect(prompt).toContain("For a naturally unclothed animal, creature, robot, or anthropomorphic object");
     expect(prompt).not.toContain('"id":"teacher"');
@@ -74,6 +79,12 @@ describe("Step 5 视觉资源方案", () => {
     expect(plan.characterDesigns[3]?.visualAnchor).toEqual({ mode: "description", label: "Wind Sprite", context: null });
     expect(plan.cover.characterIds).toEqual(["teacher", "jett", "sage"]);
     expect(plan.shots[0]).toEqual(expect.objectContaining({ paragraphId: "paragraph-1", characterIds: ["teacher", "jett", "sage"] }));
+  });
+
+  test("封面必须包含程序指定的全部老师和学生", () => {
+    const missingTeacher = { ...aiResponse, cover: { ...aiResponse.cover, characterKeys: ["C02", "C03"] } };
+
+    expect(() => parseCourseVisualPlanResponse(JSON.stringify(missingTeacher), input)).toThrow("AI 返回的视觉方案内容不完整，请重试");
   });
 
   test("忠实模式的引用角色缺少资料关联时明确失败，不降级成 description", () => {
@@ -116,15 +127,21 @@ describe("Step 5 视觉资源方案", () => {
   test("知名角色只注入名称与作品，参考人物只注入图片身份规则", () => {
     const plan = parseCourseVisualPlan(rawPlan, input);
     const prompt = compileCourseImagePrompt(plan, plan.cover, "cover", [
-      { characterId: "teacher", characterKey: "C01", chineseName: "林老师", englishName: "Ms. Lin", referenceIndex: 1 },
+      { characterId: "teacher", characterKey: "C01", chineseName: "林老师", englishName: "Ms. Lin", personRole: "teacher", age: 32, gender: "female", lifeStage: "adult", referenceIndex: 1 },
       { characterId: "jett", characterKey: "C02", chineseName: "捷特", englishName: "Jett" },
       { characterId: "sage", characterKey: "C03", chineseName: "贤者", englishName: "Sage" },
     ]);
 
     expect(prompt).toContain("C01 — 林老师 / Ms. Lin");
-    expect(prompt).toContain("use reference image 1 for identity only");
+    expect(prompt).toContain("is its identity-only source");
     expect(prompt).toContain("body build, face shape, facial features, hairstyle, hair color, glasses");
     expect(prompt).toContain("belongs exclusively to C01");
+    expect(prompt).toContain("[REFERENCE AND CHARACTER MAP]");
+    expect(prompt).toContain("Program facts: role=teacher; age=32; gender=female; life stage=adult");
+    expect(prompt).toContain("Reference image 1 belongs exclusively to C01");
+    expect(prompt).toContain("Course appearance / 本课造型：");
+    expect(prompt).toContain("[SCENE]");
+    expect(prompt).toContain("[COMPOSITION]");
     expect(prompt).toContain("C02 — 捷特 / Jett");
     expect(prompt).toContain("C03 — 贤者 / Sage");
     expect(prompt).toContain("角色形象：白色短发");
@@ -143,7 +160,7 @@ describe("Step 5 视觉资源方案", () => {
     }]);
 
     expect(prompt).toContain("角色本体：一只四足双翼的晶体生物");
-    expect(prompt).toContain("use reference image 1 for identity only");
+    expect(prompt).toContain("is its identity-only source");
     expect(prompt).toContain("角色形象：薄荷绿色的小风精灵");
     expect(prompt).toContain("角色本体的物种、形态、拟人化程度、材质和身体结构优先级最高");
   });
@@ -151,12 +168,12 @@ describe("Step 5 视觉资源方案", () => {
   test("多名参考人物增加身份隔离约束", () => {
     const plan = parseCourseVisualPlan(rawPlan, input);
     const prompt = compileCourseImagePrompt(plan, plan.cover, "cover", [
-      { characterId: "teacher", characterKey: "C01", chineseName: "林老师", englishName: "Ms. Lin", referenceIndex: 1 },
+      { characterId: "teacher", characterKey: "C01", chineseName: "林老师", englishName: "Ms. Lin", personRole: "teacher", age: 32, gender: "female", lifeStage: "adult", referenceIndex: 1 },
       { characterId: "jett", characterKey: "C02", chineseName: "捷特", englishName: "Jett", referenceIndex: 2 },
     ]);
 
-    expect(prompt).toContain("reference image 1 belongs exclusively to C01 — Ms. Lin");
-    expect(prompt).toContain("reference image 2 belongs exclusively to C02 — Jett");
+    expect(prompt).toContain("Reference image 1 belongs exclusively to C01 — Ms. Lin");
+    expect(prompt).toContain("Reference image 2 belongs exclusively to C02 — Jett");
     expect(prompt).toContain("Never merge, duplicate, or exchange identity traits between referenced characters");
   });
 
@@ -217,7 +234,7 @@ describe("Step 5 视觉资源方案", () => {
       ],
       cover: { focus: "The new heroes enter the garden.", characterIds: ["jett"], sceneDescription: "Sky Runner and Jade Warden enter the garden." },
       shots: [{ paragraphId: "paragraph-1", focus: "Opening the path.", characterIds: ["jett"], sceneDescription: "Sky Runner opens an air path while Jade Warden protects the teacher." }],
-    }, input);
+    }, { ...input, mode: "originalized", baselinePlan: rawPlan });
 
     const merged = mergeOriginalizedVisualPlan(rawPlan, generated, input.characters);
 

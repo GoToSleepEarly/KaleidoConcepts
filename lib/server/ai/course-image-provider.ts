@@ -26,11 +26,14 @@ function configFromEnvironment(input: AiProviderSettingsInput | ImageProviderSet
   if (!apiKey) throw new Error("图片生成服务尚未配置");
   const timeoutValue = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS);
   const selectedModel = typeof input === "object" && "imageModel" in input ? input.imageModel : "gpt-image-2";
+  const selectedBillingMode = typeof input === "object" && "imageBillingMode" in input
+    ? input.imageBillingMode
+    : gateway === "quickrouter" ? "metered" : "per_image";
   return {
     apiKey,
     gateway,
     baseUrl: aiProviderBaseUrl(settings),
-    model: upstreamImageModel(selectedModel, gateway),
+    model: upstreamImageModel(selectedModel, gateway, selectedBillingMode),
     timeoutMs: Number.isFinite(timeoutValue) && timeoutValue > 0 ? timeoutValue : 600_000,
   };
 }

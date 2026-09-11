@@ -8,7 +8,7 @@ import { BookOpen, ChevronDown, FileText, ImageIcon, ListChecks, LoaderCircle, L
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { IMAGE_GENERATION_MODELS, IMAGE_QUALITIES, TEXT_GENERATION_MODELS, TEXT_TIMEOUT_DEFAULTS, imageModelLabels, imageQualityForSelection, imageQualityLabels, isTextTimeoutSettingsValid, reasoningEffortsForModel, textModelLabels, textReasoningEffortLabels, type AccountAiSettings, type AiGateway, type ImageGenerationModel, type ImageQuality, type QuickRouterEndpoint, type TextGenerationModel, type TextReasoningEffort } from "@/lib/ai-gateway";
+import { IMAGE_GENERATION_MODELS, IMAGE_QUALITIES, TEXT_GENERATION_MODELS, TEXT_TIMEOUT_DEFAULTS, billingModesForImageSelection, imageBillingModeLabels, imageModelLabels, imageQualityForSelection, imageQualityLabels, isTextTimeoutSettingsValid, reasoningEffortsForModel, textModelLabels, textReasoningEffortLabels, type AccountAiSettings, type AiGateway, type ImageBillingMode, type ImageGenerationModel, type ImageQuality, type QuickRouterEndpoint, type TextGenerationModel, type TextReasoningEffort } from "@/lib/ai-gateway";
 import { clearAuthSession, getStoredSession } from "@/lib/auth-session";
 import { cn } from "@/lib/utils";
 
@@ -128,6 +128,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [imageModel, setImageModel] = useState<ImageGenerationModel>("gpt-image-2");
   const [imageGateway, setImageGateway] = useState<AiGateway>("quickrouter");
   const [imageQuickRouterEndpoint, setImageQuickRouterEndpoint] = useState<QuickRouterEndpoint>("main");
+  const [imageBillingMode, setImageBillingMode] = useState<ImageBillingMode>("per_image");
   const [textReasoningEffort, setTextReasoningEffort] = useState<TextReasoningEffort>("medium");
   const [textStreamingEnabled, setTextStreamingEnabled] = useState(true);
   const [textStreamFirstEventTimeoutSeconds, setTextStreamFirstEventTimeoutSeconds] = useState<number>(TEXT_TIMEOUT_DEFAULTS.streamFirstEventSeconds);
@@ -145,6 +146,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isCourseCreateRoute = pathname === "/courses/new" || (pathname.includes("/create/") && pathname.startsWith("/courses/"));
   const isFixedCourseWorkspaceRoute = /^\/courses\/[^/]+\/create\/(story-outline|teaching-plan|content)$/u.test(pathname);
   const displayName = session?.user.displayName ?? "教师账号";
+  const availableImageBillingModes = billingModesForImageSelection(imageModel, imageGateway);
+  const effectiveImageQuality = imageQualityForSelection(imageModel, imageGateway, imageBillingMode, imageQuality);
+  const isImageQualityFixed = imageModel === "gpt-image-2" && imageGateway === "quickrouter" && imageBillingMode === "per_image";
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -199,7 +203,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const result = (await response.json()) as Partial<AccountAiSettings> & {
         message?: string;
       };
-      if (!response.ok || !result.writingProvider || !result.aiGateway || !result.quickRouterEndpoint || !result.imageModel || !result.imageGateway || !result.imageQuickRouterEndpoint) {
+      if (!response.ok || !result.writingProvider || !result.aiGateway || !result.quickRouterEndpoint || !result.imageModel || !result.imageGateway || !result.imageQuickRouterEndpoint || !result.imageBillingMode) {
         throw new Error(result.message || "高级设置加载失败");
       }
       setWritingProvider(result.writingProvider);
@@ -208,13 +212,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setImageModel(result.imageModel);
       setImageGateway(result.imageGateway);
       setImageQuickRouterEndpoint(result.imageQuickRouterEndpoint);
+      setImageBillingMode(result.imageBillingMode);
       setTextReasoningEffort(result.textReasoningEffort ?? "medium");
       setTextStreamingEnabled(result.textStreamingEnabled ?? true);
       setTextStreamFirstEventTimeoutSeconds(result.textStreamFirstEventTimeoutSeconds ?? TEXT_TIMEOUT_DEFAULTS.streamFirstEventSeconds);
       setTextStreamIdleTimeoutSeconds(result.textStreamIdleTimeoutSeconds ?? TEXT_TIMEOUT_DEFAULTS.streamIdleSeconds);
       setTextStreamMaxDurationSeconds(result.textStreamMaxDurationSeconds ?? TEXT_TIMEOUT_DEFAULTS.streamMaxDurationSeconds);
       setTextNonStreamTimeoutSeconds(result.textNonStreamTimeoutSeconds ?? TEXT_TIMEOUT_DEFAULTS.nonStreamSeconds);
-      setImageQuality(imageQualityForSelection(result.imageModel, result.imageQuality ?? "medium"));
+      setImageQuality(imageQualityForSelection(result.imageModel, result.imageGateway, result.imageBillingMode, result.imageQuality ?? "medium"));
       setHasLoadedGateway(true);
     } catch (error) {
       setGatewayError(error instanceof Error ? error.message : "高级设置加载失败");
@@ -242,10 +247,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           imageModel,
           imageGateway,
           imageQuickRouterEndpoint,
+          imageBillingMode,
           textReasoningEffort,
           textStreamingEnabled,
           ...timeoutSettings,
-          imageQuality: imageQualityForSelection(imageModel, imageQuality),
+          imageQuality: effectiveImageQuality,
         }),
       });
       const result = (await response.json()) as Partial<AccountAiSettings> & {
@@ -258,6 +264,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setImageModel(result.imageModel ?? imageModel);
       setImageGateway(result.imageGateway ?? imageGateway);
       setImageQuickRouterEndpoint(result.imageQuickRouterEndpoint ?? imageQuickRouterEndpoint);
+      setImageBillingMode(result.imageBillingMode ?? imageBillingMode);
       setTextReasoningEffort(result.textReasoningEffort ?? textReasoningEffort);
       setTextStreamingEnabled(result.textStreamingEnabled ?? textStreamingEnabled);
       setTextStreamFirstEventTimeoutSeconds(result.textStreamFirstEventTimeoutSeconds ?? textStreamFirstEventTimeoutSeconds);
@@ -402,7 +409,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <nav aria-label="高级设置分类" className="grid grid-cols-2 gap-2 border-b border-border pb-4 md:block md:space-y-2 md:rounded-l-lg md:border-b-0 md:border-r md:bg-[#F7F5FB] md:py-2 md:pl-2 md:pr-0">
                   {([
                     { id: "text" as const, label: "文本生成", description: "模型与响应", icon: FileText },
-                    { id: "image" as const, label: "图片生成", description: "模型与画质", icon: ImageIcon },
+                    { id: "image" as const, label: "图片生成", description: "模型、计费与画质", icon: ImageIcon },
                   ]).map((item) => {
                     const Icon = item.icon;
                     const active = advancedSection === item.id;
@@ -538,9 +545,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         图片模型
                         <select className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="image-model" onChange={(event) => {
                           const model = event.target.value as ImageGenerationModel;
+                          const nextBillingMode = billingModesForImageSelection(model, imageGateway).includes(imageBillingMode)
+                            ? imageBillingMode
+                            : billingModesForImageSelection(model, imageGateway)[0];
                           setImageModel(model);
-                          setImageQuality(imageQualityForSelection(model, imageQuality));
-                          if (model === "gpt-image-2-c") setImageGateway("quickrouter");
+                          if (nextBillingMode) {
+                            setImageBillingMode(nextBillingMode);
+                            setImageQuality(imageQualityForSelection(model, imageGateway, nextBillingMode, imageQuality));
+                          }
                         }} value={imageModel}>
                           {IMAGE_GENERATION_MODELS.map((model) => <option key={model} value={model}>{imageModelLabels[model]}</option>)}
                         </select>
@@ -550,25 +562,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         <select className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="image-provider" onChange={(event) => {
                           const provider = presetProviderOptions.find((item) => item.id === event.target.value);
                           if (!provider || provider.gateway === "deepseek") return;
-                          setImageGateway(provider.gateway);
-                          if (provider.endpoint) setImageQuickRouterEndpoint(provider.endpoint);
-                        }} value={selectedProviderId(imageGateway, imageQuickRouterEndpoint)}>
-                          {presetProviderOptions.filter((provider) => imageModel !== "gpt-image-2-c" || provider.gateway === "quickrouter").map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
+                           const nextBillingMode = billingModesForImageSelection(imageModel, provider.gateway).includes(imageBillingMode)
+                             ? imageBillingMode
+                             : billingModesForImageSelection(imageModel, provider.gateway)[0];
+                           setImageGateway(provider.gateway);
+                           if (provider.endpoint) setImageQuickRouterEndpoint(provider.endpoint);
+                           if (nextBillingMode) {
+                             setImageBillingMode(nextBillingMode);
+                             setImageQuality(imageQualityForSelection(imageModel, provider.gateway, nextBillingMode, imageQuality));
+                           }
+                         }} value={selectedProviderId(imageGateway, imageQuickRouterEndpoint)}>
+                          {presetProviderOptions.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
                         </select>
+                      </label>
+                      <label className="block text-[13px] font-medium text-foreground" htmlFor="image-billing-mode">
+                        计费方式
+                        <select aria-label="计费方式" className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway || availableImageBillingModes.length === 1} id="image-billing-mode" onChange={(event) => {
+                          const mode = event.target.value as ImageBillingMode;
+                          setImageBillingMode(mode);
+                          setImageQuality(imageQualityForSelection(imageModel, imageGateway, mode, imageQuality));
+                        }} value={imageBillingMode}>
+                          {availableImageBillingModes.map((mode) => <option key={mode} value={mode}>{imageBillingModeLabels[mode]}</option>)}
+                        </select>
+                        <span className="mt-2 block text-xs leading-5 text-muted-foreground">选项由当前模型和提供方决定，服务端会映射到对应计费线路。</span>
                       </label>
                         </div>
                       </div>
                       <div className="border-t border-border pt-6">
                         <h4 className="text-sm font-semibold text-foreground">输出质量</h4>
                         <div className="mt-4">
-                      <fieldset disabled={isSavingGateway || imageModel === "gpt-image-2-c"}>
+                      <fieldset disabled={isSavingGateway || isImageQualityFixed}>
                         <legend className="text-[13px] font-medium text-foreground">图片质量</legend>
                         <div aria-label="图片质量" className="mt-2 grid h-11 grid-cols-3 gap-1 rounded-lg border border-[#DED8E8] bg-[#F1EFF6] p-1" data-testid="image-quality-options" role="radiogroup">
-                          {(imageModel === "gpt-image-2-c" ? ["high" as const] : IMAGE_QUALITIES).map((quality) => (
-                            <button aria-checked={imageQualityForSelection(imageModel, imageQuality) === quality} className={cn("h-full rounded-md border px-3 text-sm font-medium transition-colors", imageQualityForSelection(imageModel, imageQuality) === quality ? "border-primary-200 bg-white text-primary shadow-sm" : "border-transparent bg-transparent text-muted-foreground hover:bg-white/60 hover:text-foreground", imageModel === "gpt-image-2-c" && "col-span-3 cursor-default")} key={quality} onClick={() => setImageQuality(quality)} role="radio" type="button">{imageQualityLabels[quality]}{imageModel === "gpt-image-2-c" ? "（模型固定）" : ""}</button>
+                          {(isImageQualityFixed ? ["high" as const] : IMAGE_QUALITIES).map((quality) => (
+                            <button aria-checked={effectiveImageQuality === quality} className={cn("h-full rounded-md border px-3 text-sm font-medium transition-colors", effectiveImageQuality === quality ? "border-primary-200 bg-white text-primary shadow-sm" : "border-transparent bg-transparent text-muted-foreground hover:bg-white/60 hover:text-foreground", isImageQualityFixed && "col-span-3 cursor-default")} key={quality} onClick={() => setImageQuality(quality)} role="radio" type="button">{imageQualityLabels[quality]}{isImageQualityFixed ? "（线路固定）" : ""}</button>
                           ))}
                         </div>
-                        <p className="mt-2 text-xs leading-5 text-muted-foreground">{imageModel === "gpt-image-2-c" ? "GPT Image 2-C 只支持极高质量，并按该模型规则计费。" : "新的质量设置会同时应用于人物档案和 Step 5 后续生成。"}</p>
+                        <p className="mt-2 text-xs leading-5 text-muted-foreground">{isImageQualityFixed ? "GPT Image 2 的 QuickRouter 按次线路固定使用极高质量。" : "新的质量设置会同时应用于人物档案和 Step 5 后续生成。"}</p>
                       </fieldset>
                         </div>
                       </div>

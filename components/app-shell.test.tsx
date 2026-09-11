@@ -143,9 +143,10 @@ describe("AppShell account menu", () => {
       writingProvider: "gpt-5.6-sol" as const,
       aiGateway: "easy88ai" as const,
       quickRouterEndpoint: "main" as const,
-      imageModel: "gpt-image-2-c" as const,
+      imageModel: "gpt-image-2" as const,
       imageGateway: "quickrouter" as const,
       imageQuickRouterEndpoint: "main" as const,
+      imageBillingMode: "per_image" as const,
       textReasoningEffort: "medium" as const,
       textStreamingEnabled: true,
       textStreamFirstEventTimeoutSeconds: 120,
@@ -219,9 +220,10 @@ describe("AppShell account menu", () => {
             writingProvider: "deepseek-v4-pro",
             aiGateway: "easy88ai",
             quickRouterEndpoint: "main",
-            imageModel: "gpt-image-2-c",
+            imageModel: "gpt-image-2",
             imageGateway: "quickrouter",
             imageQuickRouterEndpoint: "main",
+            imageBillingMode: "per_image",
             textReasoningEffort: "high",
             textStreamingEnabled: false,
             textStreamFirstEventTimeoutSeconds: 150,
@@ -246,6 +248,7 @@ describe("AppShell account menu", () => {
           imageModel: "gpt-image-2",
           imageGateway: "easy88ai",
           imageQuickRouterEndpoint: "direct",
+          imageBillingMode: "per_image",
           textReasoningEffort: "low",
           textStreamingEnabled: false,
           textStreamFirstEventTimeoutSeconds: 90,
@@ -307,6 +310,7 @@ describe("AppShell account menu", () => {
         imageModel: "gpt-image-2",
         imageGateway: "crazyrouter",
         imageQuickRouterEndpoint: "main",
+        imageBillingMode: "per_image",
       }),
     );
     await waitFor(() => expect(screen.getByRole("combobox", { name: "文本模型" })).toHaveValue("deepseek-v4-pro"));
@@ -341,6 +345,7 @@ describe("AppShell account menu", () => {
         imageModel: "gpt-image-2",
         imageGateway: "crazyrouter",
         imageQuickRouterEndpoint: "main",
+        imageBillingMode: "per_image",
       }),
     );
     vi.stubGlobal("fetch", request);
@@ -372,6 +377,7 @@ describe("AppShell account menu", () => {
             imageModel: "gpt-image-2",
             imageGateway: "crazyrouter",
             imageQuickRouterEndpoint: "main",
+            imageBillingMode: "per_image",
             textReasoningEffort: "medium",
             textStreamingEnabled: true,
             textStreamFirstEventTimeoutSeconds: 120,
@@ -385,15 +391,16 @@ describe("AppShell account menu", () => {
     );
   });
 
-  test("treats GPT Image 2-C as an explicit QuickRouter-only choice", async () => {
+  test("keeps the standard model name and maps QuickRouter billing mode separately", async () => {
     const request = vi.fn(async (_url: string, init?: RequestInit) =>
       Response.json({
         writingProvider: "gpt-5.5",
         aiGateway: "easy88ai",
         quickRouterEndpoint: "main",
-        imageModel: init?.method === "PATCH" ? "gpt-image-2-c" : "gpt-image-2",
+        imageModel: "gpt-image-2",
         imageGateway: "quickrouter",
         imageQuickRouterEndpoint: "direct",
+        imageBillingMode: init?.method === "PATCH" ? "per_image" : "metered",
       }),
     );
     vi.stubGlobal("fetch", request);
@@ -412,13 +419,16 @@ describe("AppShell account menu", () => {
     expect(within(imageSettings).getByRole("heading", { name: "模型配置", level: 4 })).toHaveClass("text-sm", "font-semibold");
     expect(within(imageSettings).getByRole("heading", { name: "输出质量", level: 4 })).toHaveClass("text-sm", "font-semibold");
     expect(screen.getByTestId("image-quality-options")).toHaveClass("h-11", "border", "bg-[#F1EFF6]");
-    fireEvent.change(screen.getByRole("combobox", { name: "图片模型" }), { target: { value: "gpt-image-2-c" } });
     const imageProvider = screen.getByRole("combobox", { name: "图片提供方" });
-    expect(within(imageProvider).getAllByRole("option")).toHaveLength(2);
+    expect(within(imageProvider).getAllByRole("option")).toHaveLength(4);
     expect(imageProvider).toHaveValue("quickrouter-direct");
-    expect(within(imageProvider).queryByRole("option", { name: "Crazyrouter" })).not.toBeInTheDocument();
-    expect(within(imageProvider).queryByRole("option", { name: "Easy88AI" })).not.toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "极高（模型固定）" })).toHaveAttribute("aria-checked", "true");
+    expect(within(imageProvider).getByRole("option", { name: "Crazyrouter" })).toBeEnabled();
+    expect(within(imageProvider).getByRole("option", { name: "Easy88AI" })).toBeEnabled();
+    const billingMode = screen.getByRole("combobox", { name: "计费方式" });
+    expect(within(billingMode).getByRole("option", { name: "按量计费" })).toBeEnabled();
+    expect(within(billingMode).getByRole("option", { name: "按次计费" })).toBeEnabled();
+    fireEvent.change(billingMode, { target: { value: "per_image" } });
+    expect(screen.getByRole("radio", { name: "极高（线路固定）" })).toHaveAttribute("aria-checked", "true");
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
 
     await waitFor(() =>
@@ -430,9 +440,10 @@ describe("AppShell account menu", () => {
             writingProvider: "gpt-5.5",
             aiGateway: "easy88ai",
             quickRouterEndpoint: "main",
-            imageModel: "gpt-image-2-c",
+            imageModel: "gpt-image-2",
             imageGateway: "quickrouter",
             imageQuickRouterEndpoint: "direct",
+            imageBillingMode: "per_image",
             textReasoningEffort: "medium",
             textStreamingEnabled: true,
             textStreamFirstEventTimeoutSeconds: 120,

@@ -10,6 +10,7 @@ const settings = {
   imageModel: "gpt-image-2",
   imageGateway: "easy88ai",
   imageQuickRouterEndpoint: "main",
+  imageBillingMode: "per_image",
 } as const;
 
 describe("image gateway dependency snapshots", () => {

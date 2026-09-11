@@ -27,9 +27,10 @@ describe("account AI gateway route", () => {
       writingProvider: "deepseek-v4-pro",
       aiGateway: "crazyrouter",
       quickRouterEndpoint: "direct",
-      imageModel: "gpt-image-2-c",
+      imageModel: "gpt-image-2",
       imageGateway: "quickrouter",
       imageQuickRouterEndpoint: "main",
+      imageBillingMode: "per_image",
       textReasoningEffort: "high",
       textStreamingEnabled: true,
       ...timeoutSettings,
@@ -45,9 +46,10 @@ describe("account AI gateway route", () => {
       writingProvider: "deepseek-v4-pro",
       aiGateway: "crazyrouter",
       quickRouterEndpoint: "direct",
-      imageModel: "gpt-image-2-c",
+      imageModel: "gpt-image-2",
       imageGateway: "quickrouter",
       imageQuickRouterEndpoint: "main",
+      imageBillingMode: "per_image",
       textReasoningEffort: "high",
       textStreamingEnabled: true,
       ...timeoutSettings,
@@ -65,6 +67,7 @@ describe("account AI gateway route", () => {
       imageModel: "gpt-image-2",
       imageGateway: "quickrouter",
       imageQuickRouterEndpoint: "main",
+      imageBillingMode: "metered",
       textReasoningEffort: "medium",
       textStreamingEnabled: true,
       ...timeoutSettings,
@@ -75,9 +78,10 @@ describe("account AI gateway route", () => {
       writingProvider: "deepseek-v4-pro",
       aiGateway: "crazyrouter",
       quickRouterEndpoint: "direct",
-      imageModel: "gpt-image-2-c",
+      imageModel: "gpt-image-2",
       imageGateway: "quickrouter",
       imageQuickRouterEndpoint: "direct",
+      imageBillingMode: "per_image",
       textReasoningEffort: "high",
       textStreamingEnabled: false,
       ...timeoutSettings,
@@ -94,9 +98,10 @@ describe("account AI gateway route", () => {
           writingProvider: "deepseek-v4-pro",
           aiGateway: "crazyrouter",
           quickRouterEndpoint: "direct",
-          imageModel: "gpt-image-2-c",
+          imageModel: "gpt-image-2",
           imageGateway: "quickrouter",
           imageQuickRouterEndpoint: "direct",
+          imageBillingMode: "per_image",
           textReasoningEffort: "high",
           textStreamingEnabled: false,
           ...timeoutSettings,
@@ -109,9 +114,10 @@ describe("account AI gateway route", () => {
       writingProvider: "deepseek-v4-pro",
       aiGateway: "crazyrouter",
       quickRouterEndpoint: "direct",
-      imageModel: "gpt-image-2-c",
+      imageModel: "gpt-image-2",
       imageGateway: "quickrouter",
       imageQuickRouterEndpoint: "direct",
+      imageBillingMode: "per_image",
       textReasoningEffort: "high",
       textStreamingEnabled: false,
       ...timeoutSettings,
@@ -123,9 +129,10 @@ describe("account AI gateway route", () => {
         writingProvider: "deepseek-v4-pro",
         aiGateway: "crazyrouter",
         quickRouterEndpoint: "direct",
-        imageModel: "gpt-image-2-c",
+        imageModel: "gpt-image-2",
         imageGateway: "quickrouter",
         imageQuickRouterEndpoint: "direct",
+        imageBillingMode: "per_image",
         textReasoningEffort: "high",
         textStreamingEnabled: false,
         ...timeoutSettings,
@@ -144,6 +151,7 @@ describe("account AI gateway route", () => {
       imageModel: "gpt-image-2",
       imageGateway: "crazyrouter",
       imageQuickRouterEndpoint: "main",
+      imageBillingMode: "per_image",
       ...timeoutSettings,
     });
     update.mockResolvedValue({
@@ -154,6 +162,7 @@ describe("account AI gateway route", () => {
       imageModel: "gpt-image-2",
       imageGateway: "crazyrouter",
       imageQuickRouterEndpoint: "main",
+      imageBillingMode: "per_image",
       ...timeoutSettings,
     });
 
@@ -178,6 +187,7 @@ describe("account AI gateway route", () => {
         imageModel: "gpt-image-2",
         imageGateway: "crazyrouter",
         imageQuickRouterEndpoint: "main",
+        imageBillingMode: "per_image",
         ...timeoutSettings,
       },
     });
@@ -192,6 +202,7 @@ describe("account AI gateway route", () => {
       imageModel: "gpt-image-2",
       imageGateway: "quickrouter",
       imageQuickRouterEndpoint: "main",
+      imageBillingMode: "metered",
       ...timeoutSettings,
     });
 
@@ -204,8 +215,9 @@ describe("account AI gateway route", () => {
         },
         body: JSON.stringify({
           aiGateway: "quickrouter",
-          imageModel: "gpt-image-2-c",
+          imageModel: "gpt-image-2.5-sunburst",
           imageGateway: "crazyrouter",
+          imageBillingMode: "metered",
         }),
       }),
     );
@@ -215,14 +227,14 @@ describe("account AI gateway route", () => {
   });
 
   test("PATCH accepts Easy88AI for the standard image model", async () => {
-    findUnique.mockResolvedValue({ id: "user-1", writingProvider: "gpt-5.6-sol", aiGateway: "easy88ai", quickRouterEndpoint: "main", imageModel: "gpt-image-2", imageGateway: "quickrouter", imageQuickRouterEndpoint: "main", ...timeoutSettings });
-    update.mockResolvedValue({ id: "user-1", writingProvider: "gpt-5.6-sol", aiGateway: "easy88ai", quickRouterEndpoint: "main", imageModel: "gpt-image-2", imageGateway: "easy88ai", imageQuickRouterEndpoint: "main", ...timeoutSettings });
+    findUnique.mockResolvedValue({ id: "user-1", writingProvider: "gpt-5.6-sol", aiGateway: "easy88ai", quickRouterEndpoint: "main", imageModel: "gpt-image-2", imageGateway: "quickrouter", imageQuickRouterEndpoint: "main", imageBillingMode: "metered", ...timeoutSettings });
+    update.mockResolvedValue({ id: "user-1", writingProvider: "gpt-5.6-sol", aiGateway: "easy88ai", quickRouterEndpoint: "main", imageModel: "gpt-image-2", imageGateway: "easy88ai", imageQuickRouterEndpoint: "main", imageBillingMode: "per_image", ...timeoutSettings });
 
     const response = await PATCH(
       new Request("http://localhost/api/account/ai-gateway", {
         method: "PATCH",
         headers: { "Content-Type": "application/json", cookie: "kaleido.user-id=user-1" },
-        body: JSON.stringify({ aiGateway: "easy88ai", imageModel: "gpt-image-2", imageGateway: "easy88ai" }),
+        body: JSON.stringify({ aiGateway: "easy88ai", imageModel: "gpt-image-2", imageGateway: "easy88ai", imageBillingMode: "per_image" }),
       }),
     );
 
@@ -231,7 +243,7 @@ describe("account AI gateway route", () => {
   });
 
   test("PATCH rejects a stream hard limit that is not greater than its activity timeouts", async () => {
-    findUnique.mockResolvedValue({ id: "user-1", writingProvider: "gpt-5.6-sol", aiGateway: "easy88ai", quickRouterEndpoint: "main", imageModel: "gpt-image-2", imageGateway: "quickrouter", imageQuickRouterEndpoint: "main", ...timeoutSettings });
+    findUnique.mockResolvedValue({ id: "user-1", writingProvider: "gpt-5.6-sol", aiGateway: "easy88ai", quickRouterEndpoint: "main", imageModel: "gpt-image-2", imageGateway: "quickrouter", imageQuickRouterEndpoint: "main", imageBillingMode: "metered", ...timeoutSettings });
 
     const response = await PATCH(new Request("http://localhost/api/account/ai-gateway", {
       method: "PATCH",

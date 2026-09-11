@@ -309,4 +309,22 @@ describe("course image provider", () => {
     expect(generationBody.output_format).toBeUndefined();
     expect((editInit?.body as FormData).get("model")).toBe("gpt-image-2");
   });
+
+  test("QuickRouter 按次计费把 Sunburst 标准模型映射到 -c 上游线路", async () => {
+    process.env.QUICKROUTER_IMAGE_API_KEY = "image-key";
+    const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/sunburst.webp" }] }));
+    vi.stubGlobal("fetch", request);
+
+    await createCourseImageProvider(undefined, {
+      aiGateway: "quickrouter",
+      quickRouterEndpoint: "main",
+      imageModel: "gpt-image-2.5-sunburst",
+      imageBillingMode: "per_image",
+      imageQuality: "medium",
+    }).generate({ prompt: "scene", quality: "medium" });
+
+    const init = (request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({ model: "gpt-image-2.5-sunburst-c", quality: "medium" });
+  });
 });

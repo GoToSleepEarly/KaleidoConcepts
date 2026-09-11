@@ -15,6 +15,18 @@
 - 2026-08-21：课程生图的多张人物参考改为按稳定角色顺序独立提交，删除无标签拼图；增加参考图与角色的一对一身份锁。5 名及以上角色改用分层群像和焦点优先规则，不再强制全身远景。
 - 2026-08-22 本轮验证通过：完整测试 72 个文件 / 553 项、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm exec prisma validate`、`pnpm build`、中文乱码特征扫描和 `git diff --check`。另以两张独立参考图完成真实串联：Crazyrouter `gpt-image-2` 接受多个 `image[]` 并返回可解码的 `1536×1024` PNG；QuickRouter 主模型遇到 429 后，`gpt-image-2-c` 备用链路接受相同多图请求并返回可解码的 `1536×1024` PNG。测试未写入课程数据或保留临时图片。
 
+### 多人物身份一次生成优化（2026-09-12，已实现）
+
+本轮只优化视觉方案 Prompt 和首次图片生成 Prompt，提高一名老师、四名学生等多人群像的一次生成身份稳定性；不增加成对区分规则、空间槽位、图片质量检查、自动修复或额外 AI 调用。
+
+- 程序提供并负责角色短 key、姓名、老师/学生身份、年龄、性别、成人/儿童阶段、参考图编号和封面必需人物集合；这些确定性事实不得交给文本 AI 猜测。
+- 文本 AI 只生成全课画风、故事世界、本课造型、场景和视觉重点。人物档案角色的脸、体型和其他身份外貌仍只来自参考图。
+- 封面必须包含本课程全部老师和学生且每人恰好出现一次；图片模型自行决定位置、动作、景别和自然遮挡，不写死空间槽位。
+- 最终图片 Prompt 使用明确分区，依次表达视觉方向、参考图与角色映射、身份规则、场景、视觉重点、构图、连续性和输出限制。每张参考图只承担一个角色的身份来源，本课造型单独列出，避免把身份与服装混为一条描述。
+- 多张参考图之间只使用一次全局防融合规则，不为相似人物生成成对差异描述。保留现有 16:9、儿童绘本、全课造型连续性、身份可辨认、无文字与水印等约束。
+
+实现验证通过全量 92 个测试文件 / 800 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm exec prisma validate`、本地 `pnpm prisma:deploy`、`pnpm build`、中文乱码特征扫描和 `git diff --check`；未调用付费 AI。实现提交：待提交后补记。
+
 ## 设计原则
 
 - 默认流程只解释老师当前要完成的任务，不暴露 provider、JSON 或 Prompt 技术细节。
@@ -41,6 +53,10 @@ type VisualPlanInput = {
     englishName: string;
     sourceType: "person" | "referenced" | "original";
     roleInStory: string;
+    personRole?: "teacher" | "student";
+    age?: number;
+    gender?: "male" | "female";
+    lifeStage?: "adult" | "child";
     reference: {
       name: string;
       type: CourseSourceReferenceType;
@@ -157,6 +173,10 @@ type ImageGenerationInput = {
     characterKey: string;
     chineseName: string;
     englishName: string;
+    personRole?: "teacher" | "student";
+    age?: number;
+    gender?: "male" | "female";
+    lifeStage?: "adult" | "child";
     visualAnchor: {
       mode: "reference" | "semantic" | "description";
       label: string;
@@ -178,6 +198,8 @@ type ImageGenerationInput = {
 - `description` 角色没有参考图时，同时注入中文 `appearanceDescription`；原创角色还必须独立注入 Step 2 的 `visualDescription` 本体设定。图片 Prompt 以本体设定为更高优先级，即使稳定外貌省略了物种名称，也不能重新猜测物种、形态、材质或身体结构。
 - 同一画面允许混合图片参考角色、文字参考角色和原创角色。
 - 多张参考图按稳定角色顺序作为独立 `image[]` 提交，不得预先压缩或合成无标签拼图。Prompt 必须明确每张输入图只属于一个角色，严禁在参考角色之间复制、融合或交换脸型、五官、发型、体型等身份特征。
+- 人物档案角色由程序额外注入老师/学生身份、年龄、性别和成人/儿童阶段。最终 Prompt 必须明确标注这些字段来自程序事实；图片模型不得从姓名、服装或其他参考图重新判断。
+- 封面出场集合必须包含全部 `sourceType=person` 角色。文本 AI 返回遗漏时按结构错误失败，不由程序静默追加与场景描述不一致的人物。
 - 不向单张图片传入其他段落或不出场角色。
 - `CourseImage.prompt` 记录该版本真正提交的不可变 Prompt；页面查看的是按当前方案和参考资产即时编译的只读预览。预览和实际提交必须共用同一套角色视觉名称、参考图映射及编译参数；原创化角色不得在页面预览中重新显示原作名称。
 
@@ -190,6 +212,7 @@ type ImageGenerationInput = {
 - 1–4 个具名角色按场景动作与情绪自然选择景别，不强制全部使用全身远景。
 - 不得在画布边缘裁掉具名角色的头部或脸部；动作需要时保持完整身体入画。
 - 5 个及以上具名角色自动使用前景与中景分层的群像构图，不使用列队式排列，也不强制全身远景。
+- 前景、中景等只作为图片模型可选的自然构图原则，不给具体角色分配固定方位或空间槽位。
 - 每名具名角色必须恰好出现一次。`Focus` 中的角色获得最强的视觉权重和足够的脸部尺寸，其他角色自然分布并保持身份可辨认。
 - 允许场景物体或其他角色自然遮挡肢体，但不得遮挡脸部、发型、眼镜等身份特征，也不得在角色之间复制、融合或交换形象、服装和个人道具。
 - 不使用头像拼贴、证件照、角色立绘排列或纯人物列队构图。

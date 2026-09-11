@@ -25,6 +25,10 @@ export type CourseVisualPlanPromptInput = {
     } | null;
     roleInStory: string;
     identityDescription?: string | null;
+    personRole?: "teacher" | "student";
+    age?: number;
+    gender?: "male" | "female";
+    lifeStage?: "adult" | "child";
   }>;
   chapters: Array<{
     id: string;
@@ -168,6 +172,10 @@ export type CourseImagePromptCharacter = {
   chineseName: string;
   englishName: string;
   identityDescription?: string | null;
+  personRole?: "teacher" | "student";
+  age?: number;
+  gender?: "male" | "female";
+  lifeStage?: "adult" | "child";
   referenceIndex?: number;
   useVisualLabel?: boolean;
 };
@@ -213,6 +221,10 @@ export function parseCourseVisualPlan(value: unknown, input: CourseVisualPlanPro
   if (!sameMembers(shotParagraphIds, paragraphIds)) throw new Error("视觉资源方案没有逐段覆盖已确认正文");
   const scenes: CourseVisualPlanScene[] = [parsed.cover, ...parsed.shots];
   if (scenes.some((scene) => scene.characterIds.some((id) => !knownCharacterIds.has(id)))) throw new Error("视觉资源方案包含未知角色");
+  const requiredCoverPersonIds = input.characters.filter((character) => character.sourceType === "person").map((character) => character.id);
+  if (input.mode === "faithful" && requiredCoverPersonIds.some((id) => !parsed.cover.characterIds.includes(id))) {
+    throw new Error("视觉资源封面必须包含全部老师和学生");
+  }
   for (const design of parsed.characterDesigns) {
     const source = input.characters.find((character) => character.id === design.characterId);
     if (!source) continue;
@@ -272,6 +284,12 @@ function aliasContext(input: CourseVisualPlanPromptInput) {
       sourceType: character.sourceType,
       reference: character.reference,
       roleInStory: character.roleInStory,
+      ...(character.sourceType === "person" ? {
+        personRole: character.personRole,
+        age: character.age,
+        gender: character.gender,
+        lifeStage: character.lifeStage,
+      } : {}),
       ...(character.sourceType === "original" && character.identityDescription ? { identityDescription: character.identityDescription } : {}),
     })),
     chapters: input.chapters.map((chapter) => ({
@@ -282,6 +300,9 @@ function aliasContext(input: CourseVisualPlanPromptInput) {
         cleanReading: paragraph.cleanReading,
       })),
     })),
+    coverRequiredCharacterKeys: input.characters
+      .map((character, index) => character.sourceType === "person" ? shortKey("C", index) : null)
+      .filter((key): key is string => Boolean(key)),
     ...(baselineVisualPlan ? { baselineVisualPlan } : {}),
   };
 }
@@ -407,9 +428,10 @@ export function buildCourseVisualPlanPrompt(input: CourseVisualPlanPromptInput) 
     "courseAppearance is required for every character and must be concise Simplified Chinese. Write one fixed course-wide continuity specification for clothing, outer layers, footwear, equipment, portable props, and accessories. For a clothing-wearing character, explicitly name each visible item and its exact main and secondary colors, plus material or pattern when visually important. For a naturally unclothed animal, creature, robot, or anthropomorphic object, explicitly say it wears no clothing and describe only genuinely needed collars, harnesses, shell components, equipment, or ornaments; never invent human garments or anatomy merely to fill a template. Use one concrete choice for every included item, never alternatives.",
     "Do not use vague placeholders such as 'classic outfit', 'signature outfit', 'appropriate clothing', 'period clothing', 'sportswear', 'similar colors', 'retain the original outfit', or 'as in the reference'. Even for a faithful referenced character, concretely restate every applicable visible clothing, equipment, and accessory component with its exact color palette; if the identity naturally wears none, explicitly state that instead of inventing clothing.",
     "For sourceType=person, derive course clothing and props from the supplied story title and cleanReading together with the storyWorld you create. Do not default teachers to modern teacher clothing or students to generic sportswear. If the story uses a historical, fantasy, literary, or franchise world, adapt their clothing to that world while preserving identity from the reference image. Keep the result age-appropriate, practical for the character's actions, and visually coherent across the course.",
+    "For sourceType=person, personRole, age, gender, and lifeStage are program-supplied identity facts. Use them only to make courseAppearance age-appropriate and role-appropriate; do not rewrite, infer, or contradict them. When the story world permits, give co-visible people clearly different dominant clothing colors, garment silhouettes, or accessories without inventing pairwise comparison rules.",
     "Never put identity, age, face, body, personality, expression, action, pose, gaze, ability, environment, or scene directions in courseAppearance.",
     "The same courseAppearance is immutable across the cover and every shot. Do not invent, omit, recolor, or restyle any listed item in focus or sceneDescription. Only when cleanReading explicitly describes a costume change may that scene state the changed item; all unspecified items remain fixed.",
-    "Create one wide cover and exactly one shot per cleanReading paragraph. Use characterKeys only for the structured visible-character list.",
+    "Create one wide cover and exactly one shot per cleanReading paragraph. Use characterKeys only for the structured visible-character list. cover.characterKeys must include every key in coverRequiredCharacterKeys exactly once; the cover may also include other supplied characters required by the story.",
     input.mode === "faithful"
       ? "Keep focus and sceneDescription as complete, natural English. Refer to people and roles by their supplied englishName, never by C01/C02 internal keys. Keep sceneDescription about action, environment, mood, and composition. Carry explicit age, period clothing, costume changes, or transformations from cleanReading into that scene, but do not repeat full stable character descriptions."
       : "Keep focus and sceneDescription as complete, natural English and never expose C01/C02 internal keys. Use supplied englishName for unchanged people and original characters, but use only the new visualLabel for originalized referenced characters. Keep the baseline scene meaning and composition unchanged.",
@@ -423,21 +445,32 @@ export function buildCourseVisualPlanPrompt(input: CourseVisualPlanPromptInput) 
   ].join("\n");
 }
 
-function promptCharacterLine(design: CourseVisualPlan["characterDesigns"][number], context: CourseImagePromptCharacter) {
+function promptCharacterBlock(design: CourseVisualPlan["characterDesigns"][number], context: CourseImagePromptCharacter) {
   const heading = context.useVisualLabel
     ? `${context.characterKey} — ${design.visualAnchor.label}`
     : `${context.characterKey} — ${context.chineseName} / ${context.englishName}`;
-  const appearance = design.appearanceDescription ? ` 角色形象：${design.appearanceDescription}` : "";
-  const identity = context.identityDescription ? ` 角色本体：${context.identityDescription}` : "";
-  const courseAppearance = ` 本课造型：${design.courseAppearance}`;
+  const programFacts = context.personRole && context.age !== undefined && context.gender && context.lifeStage
+    ? `Program facts: role=${context.personRole}; age=${context.age}; gender=${context.gender}; life stage=${context.lifeStage}.`
+    : null;
+  const identity = context.identityDescription ? `角色本体：${context.identityDescription}` : null;
+  const appearance = design.appearanceDescription ? `角色形象：${design.appearanceDescription}` : null;
+  const courseAppearance = `Course appearance / 本课造型：${design.courseAppearance}`;
   if (context.referenceIndex) {
-    return `- ${heading}: reference image ${context.referenceIndex} belongs exclusively to ${context.characterKey} — ${context.englishName}; use reference image ${context.referenceIndex} for identity only—body build, face shape, facial features, hairstyle, hair color, glasses, distinctive traits, and age impression. Ignore reference clothing, pose, background, and framing.${identity}${appearance}${courseAppearance}`;
+    return [
+      `### ${heading}`,
+      programFacts,
+      `Reference image ${context.referenceIndex} belongs exclusively to ${context.characterKey} — ${context.englishName} and is its identity-only source: preserve body build, face shape, facial features, hairstyle, hair color, glasses, skin tone, distinctive traits, and age impression.`,
+      "Ignore reference clothing, pose, expression, background, lighting, and framing.",
+      identity,
+      appearance,
+      courseAppearance,
+    ].filter(Boolean).join("\n");
   }
   if (design.visualAnchor.mode === "semantic") {
-    return `- ${heading}: known identity ${design.visualAnchor.label} (${design.visualAnchor.context}); preserve the recognizable named identity and do not merge it with another person or character.${appearance}${courseAppearance}`;
+    return [`### ${heading}`, `Known identity: ${design.visualAnchor.label} (${design.visualAnchor.context}); preserve the recognizable named identity and do not merge it with another person or character.`, appearance, courseAppearance].filter(Boolean).join("\n");
   }
-  if (design.visualAnchor.mode === "description") return `- ${heading}:${identity}${appearance}${courseAppearance}`;
-  return `- ${heading}: requires the identity reference image selected for this character; do not invent or replace the person's identity.${courseAppearance}`;
+  if (design.visualAnchor.mode === "description") return [`### ${heading}`, identity, appearance, courseAppearance].filter(Boolean).join("\n");
+  return [`### ${heading}`, programFacts, "This character requires the identity reference image selected for this character; do not invent or replace the person's identity.", courseAppearance].filter(Boolean).join("\n");
 }
 
 export function mergeOriginalizedVisualPlan(
@@ -469,33 +502,40 @@ export function compileCourseImagePrompt(
   characters: CourseImagePromptCharacter[],
 ) {
   const designs = new Map(plan.characterDesigns.map((design) => [design.characterId, design]));
-  const characterLines = characters.map((context) => {
+  const characterBlocks = characters.map((context) => {
     const design = designs.get(context.characterId);
     if (!design) throw new Error(`视觉方案缺少角色 ${context.characterId}`);
-    return promptCharacterLine(design, context);
+    return promptCharacterBlock(design, context);
   });
   const referencedCharacterCount = characters.filter((character) => character.referenceIndex).length;
   return [
     kind === "cover"
       ? "Wide 16:9 children's picture-book cover illustration for a PPT lesson. Use the full canvas for one strong key visual; do not reserve blank title space."
       : "Wide 16:9 children's picture-book scene for a PPT slide. Narrative illustration for one lesson paragraph; prioritize the described action and emotional beat.",
+    "[VISUAL DIRECTION]",
     `Style: ${plan.visualStyle}`,
     `World: ${plan.storyWorld}`,
-    characterLines.length ? `Characters:\n${characterLines.join("\n")}` : "Characters: no named recurring character is visible.",
-    characterLines.length
+    "[REFERENCE AND CHARACTER MAP]",
+    characterBlocks.length ? characterBlocks.join("\n\n") : "No named recurring character is visible.",
+    referencedCharacterCount
+      ? "[IDENTITY RULES]\nEach numbered input image is the identity source only for its mapped character. Preserve that character's face, facial structure, hairstyle, skin tone, age impression, body build, and proportions while translating the identity into the stated picture-book style. Never merge, duplicate, or exchange identity traits between referenced characters. Do not average, blend, transfer, or swap identity traits between characters."
+      : null,
+    "[SCENE]",
+    `Scene: ${scene.sceneDescription}`,
+    "[FOCUS]",
+    `Focus: ${scene.focus}`,
+    "[COMPOSITION]",
+    characters.length >= 5
+      ? "Framing: Let the image model choose a natural layered ensemble composition for the action rather than fixed character slots or a lineup. Show every named character exactly once. Give the character or characters identified in Focus the strongest visual emphasis and enough facial scale to remain recognizable. Arrange the others naturally with clear visual separation. Choose a medium-wide or wide shot according to the action; do not force full bodies when that would make faces too small. Natural body overlap is allowed, but keep every named character's face and identity-defining features visible. Do not duplicate, merge, or exchange characters, faces, hairstyles, costumes, or personal props."
+      : "Framing: Let the image model compose naturally for the action and emotion without fixed character slots. Keep every named character fully inside the canvas and never crop a head or face at the image edge. Use full bodies when the action or composition calls for them; avoid character sheets, lineups, and head collages.",
+    "[CONTINUITY]",
+    characterBlocks.length
       ? "Character continuity lock: Treat every 本课造型 above as an exact, immutable course-wide specification. Keep garment types, exact colors, materials, patterns, footwear, and portable props identical across the cover and every lesson illustration. Scene text must not override this specification unless it explicitly describes a costume change; then change only the stated item."
       : null,
     characters.some((character) => character.identityDescription)
       ? "Original-character identity lock: 角色本体的物种、形态、拟人化程度、材质和身体结构优先级最高。Never reinterpret or replace those facts from the name, scene, 角色形象, or 本课造型."
       : null,
-    referencedCharacterCount >= 2
-      ? "Identity separation lock: Each input reference image belongs only to its mapped character. Never merge, duplicate, or exchange identity traits between referenced characters."
-      : null,
-    `Scene: ${scene.sceneDescription}`,
-    `Focus: ${scene.focus}`,
-    characters.length >= 5
-      ? "Framing: Use a layered ensemble composition rather than a lineup. Show every named character exactly once. Give the character or characters identified in Focus the strongest visual emphasis and enough facial scale to remain recognizable. Arrange the others naturally across the foreground and middle ground with clear visual separation. Choose a medium-wide or wide shot according to the action; do not force full bodies when that would make faces too small. Natural body overlap is allowed, but keep every named character's face and identity-defining features visible. Do not duplicate, merge, or exchange characters, faces, hairstyles, costumes, or personal props."
-      : "Framing: Compose naturally for the action and emotion. Keep every named character fully inside the canvas and never crop a head or face at the image edge. Use full bodies when the action or composition calls for them; avoid character sheets, lineups, and head collages.",
+    "[OUTPUT]",
     "Pure image: no readable text, logos, letters, numbers, speech bubbles, borders, or watermarks.",
   ].filter((line): line is string => Boolean(line)).join("\n");
 }

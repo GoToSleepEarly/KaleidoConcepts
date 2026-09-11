@@ -35,7 +35,13 @@ function configFromEnvironment(input: AiProviderSettingsInput | ImageProviderSet
     apiKey,
     gateway,
     baseUrl: aiProviderBaseUrl(settings),
-    model: upstreamImageModel(typeof input === "object" && "imageModel" in input ? input.imageModel : "gpt-image-2", gateway),
+    model: upstreamImageModel(
+      typeof input === "object" && "imageModel" in input ? input.imageModel : "gpt-image-2",
+      gateway,
+      typeof input === "object" && "imageBillingMode" in input
+        ? input.imageBillingMode
+        : gateway === "quickrouter" ? "metered" : "per_image",
+    ),
     quality: typeof input === "object" && "imageQuality" in input ? input.imageQuality : "medium",
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };

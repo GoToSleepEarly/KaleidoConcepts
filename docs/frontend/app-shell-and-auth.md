@@ -272,11 +272,27 @@ There is no second account area in the sidebar.
 
 文本模型预置为 `gpt-5.5`、`gpt-5.6-sol` 和 `deepseek-v4-pro`。用户先选模型，再从该模型兼容的提供方中选择：GPT 模型可选择 QuickRouter 主站、QuickRouter 直连、Crazyrouter 或 Easy88AI；DeepSeek V4 Pro 只显示 DeepSeek。DeepSeek 使用 `https://api.deepseek.com`，原生兼容 OpenAI Responses API 并支持服务端执行 `web_search`，因此与 GPT 共用 `/responses` 请求和响应处理，只保留地址、密钥和上游模型名的预置差异，不再保留单独的 Chat Completions Adapter。
 
-图片模型预置为 `gpt-image-2` 与 QuickRouter 专属 `gpt-image-2-c`。用户同样先选模型，再选择兼容提供方：`gpt-image-2` 可选择 QuickRouter 主站、QuickRouter 直连、Crazyrouter 或 Easy88AI；`gpt-image-2-c` 只显示 QuickRouter 主站和 QuickRouter 直连。2026-09-10 使用无效图片、无生成费用的请求验证 Easy88AI `POST /v1/images/edits`：单图 `image`、多图 `image[]`、项目现有的 portrait/landscape 尺寸与 low/medium 质量参数均被端点接收并进入上游图片校验，因此开放 Easy88AI 图片生成与编辑。
+图片模型只展示 OpenAI 标准产品名 `gpt-image-2` 与 `gpt-image-2.5-sunburst`，不把中转站的 `-c`、`-t` 计费线路别名展示成独立模型。图片配置顺序为“图片模型 → 图片提供方 → 计费方式 → 图片质量”；模型或提供方变化后，计费方式只显示该组合真实支持的选项。2026-09-10 使用无效图片、无生成费用的请求验证 Easy88AI `POST /v1/images/edits`：单图 `image`、多图 `image[]`、项目现有的 portrait/landscape 尺寸与 low/medium 质量参数均被端点接收并进入上游图片校验，因此开放 Easy88AI 图片生成与编辑。
 
-UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter 主站和 QuickRouter 直连作为两个并列选项呈现，不再增加“地址”层级。账户文本配置保存为 `writingProvider`、`aiGateway`、`quickRouterEndpoint`、`textReasoningEffort`、`textStreamingEnabled`、`textStreamFirstEventTimeoutSeconds`、`textStreamIdleTimeoutSeconds`、`textStreamMaxDurationSeconds`、`textNonStreamTimeoutSeconds`，图片配置保存为 `imageModel`、`imageGateway`、`imageQuickRouterEndpoint`、`imageQuality`；不保存 Base URL。服务端能力目录把稳定 ID 映射为白名单地址、密钥、协议 Adapter 和模型能力。环境变量只配置各提供方密钥和图片请求超时；文本模型、提供方、思考强度、流式返回、四个文本超时和图片质量全部由账户设置决定。
+计费能力与上游模型映射由服务端白名单确定，前端不得拼接模型后缀：
 
-每次打开高级设置时，`GET /api/account/ai-gateway` 按 HTTP-only 身份 Cookie 从数据库读取全部账户 AI 设置。文本分类依次设置模型、提供方、思考强度、流式返回和超时保护；流式开启时展示首个响应事件、事件空闲和最长运行三个值，关闭时只展示非流式请求总时限，并提供一次恢复四项默认值的入口。图片分类依次设置模型、提供方和图片质量。模型变化后立即收窄兼容选项。`PATCH` 只接受目录中存在且兼容的组合，保存使用一次原子更新；任一显式字段无效、流式最长运行时间不大于首事件或空闲时间，或数据库写入失败时全部保持原值。加载完成前不得展示组件默认值，加载失败时保留未知状态并提供重新加载入口。
+| 展示模型 | 提供方 | 计费方式 | 实际上游 model |
+| --- | --- | --- | --- |
+| `gpt-image-2` | QuickRouter | 按量计费 | `gpt-image-2` |
+| `gpt-image-2` | QuickRouter | 按次计费 | `gpt-image-2-c` |
+| `gpt-image-2.5-sunburst` | QuickRouter | 按量计费 | `gpt-image-2.5-sunburst` |
+| `gpt-image-2.5-sunburst` | QuickRouter | 按次计费 | `gpt-image-2.5-sunburst-c` |
+| `gpt-image-2` | Crazyrouter | 按量计费 | `gpt-image-2-t` |
+| `gpt-image-2` | Crazyrouter | 按次计费 | `gpt-image-2` |
+| `gpt-image-2.5-sunburst` | Crazyrouter | 按次计费 | `gpt-image-2.5-sunburst` |
+| `gpt-image-2` | Easy88AI | 按次计费 | `gpt-image-2` |
+| `gpt-image-2.5-sunburst` | Easy88AI | 按次计费 | `gpt-image-2.5-sunburst` |
+
+账户新增 `imageBillingMode = "metered" | "per_image"`，`imageModel` 只保存标准模型名。旧 `gpt-image-2-c` 迁移为标准 `gpt-image-2 + per_image`；旧标准 `gpt-image-2` 在 QuickRouter 保持按量，在 Crazyrouter 和 Easy88AI 保持各自原有按次行为。图片请求按服务端映射提交真实上游 model；现有图片版本继续记录提供方与实际质量。
+
+UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter 主站和 QuickRouter 直连作为两个并列选项呈现，不再增加“地址”层级。账户文本配置保存为 `writingProvider`、`aiGateway`、`quickRouterEndpoint`、`textReasoningEffort`、`textStreamingEnabled`、`textStreamFirstEventTimeoutSeconds`、`textStreamIdleTimeoutSeconds`、`textStreamMaxDurationSeconds`、`textNonStreamTimeoutSeconds`，图片配置保存为 `imageModel`、`imageGateway`、`imageQuickRouterEndpoint`、`imageBillingMode`、`imageQuality`；不保存 Base URL。服务端能力目录把稳定 ID 映射为白名单地址、密钥、协议 Adapter、计费线路和模型能力。环境变量只配置各提供方密钥和图片请求超时；文本模型、提供方、思考强度、流式返回、四个文本超时、图片计费方式和图片质量全部由账户设置决定。
+
+每次打开高级设置时，`GET /api/account/ai-gateway` 按 HTTP-only 身份 Cookie 从数据库读取全部账户 AI 设置。文本分类依次设置模型、提供方、思考强度、流式返回和超时保护；流式开启时展示首个响应事件、事件空闲和最长运行三个值，关闭时只展示非流式请求总时限，并提供一次恢复四项默认值的入口。图片分类依次设置模型、提供方、计费方式和图片质量。模型或提供方变化后立即收窄兼容的计费选项。`PATCH` 只接受目录中存在且兼容的组合，保存使用一次原子更新；任一显式字段无效、流式最长运行时间不大于首事件或空闲时间，或数据库写入失败时全部保持原值。加载完成前不得展示组件默认值，加载失败时保留未知状态并提供重新加载入口。
 
 文本超时默认值为：首个有效 SSE 事件 120 秒、连续无有效 SSE 事件 180 秒、流式最长运行 1200 秒（20 分钟）、非流式总时限 600 秒（10 分钟）。可配置范围分别为 10–600 秒、10–600 秒、5–60 分钟和 1–30 分钟。首个事件从请求发出开始计时；收到任一可解析的 SSE 数据事件或显式 SSE 心跳后进入空闲计时，并在每次活动时重置；任意活动都不重置 20 分钟硬上限。只有 `response.completed` 才能成功。上述超时均按 `result_unknown` 保存，不自动重试可能已经计费的请求。
 
@@ -331,7 +347,7 @@ UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter
 
 2026-09-11：文本超时改为账户级唯一配置源。删除 `TEXT_GENERATION_TIMEOUT_MS` 与 `COURSE_CONTENT_GENERATION_TIMEOUT_MS` 的读取，Step 2–5 所有文本调用统一使用请求开始时的账户快照。流式响应由固定总时限改为首事件、事件空闲和 20 分钟硬上限三段保护；非流式保留 10 分钟总时限。高级设置按流式开关展示对应字段，并在前后端同时校验范围与跨字段关系。验证通过全量 92 个测试文件 / 788 项测试、ESLint、TypeScript、Prisma 校验、本地 migration deploy、生产构建、乱码扫描和 `git diff --check`。滚动修复后浏览器实测 1280 × 800：内容区可独立滚动，滚到底后保存按钮可见、可用并能正常完成保存；窄屏由同一视口高度约束和结构回归测试覆盖，本轮浏览器复测因本地登录态失效未完成。实现提交：`bb65789`。
 
-所有线路均为显式手动切换，不在网络错误、429 或超时后自动向另一线路或模型重放请求。`gpt-image-2-c` 从 QuickRouter 的 429 隐式兜底改为主动可选模型；选择后生成与编辑固定使用 `high` 质量，并在界面说明其质量与计费特征。上游返回模型不存在或接口不兼容时按配置错误失败，不静默替换模型。
+所有线路均为显式手动切换，不在网络错误、429 或超时后自动向另一线路或模型重放请求。QuickRouter 的 `-c` 与 Crazyrouter 的 `-t` 仅作为服务端计费线路别名：界面始终选择标准模型和计费方式，再由白名单映射上游 model。QuickRouter `gpt-image-2` 按次线路固定使用 `high` 质量。上游返回模型不存在或接口不兼容时按配置错误失败，不静默替换模型。
 
 预置目录至少包含：QuickRouter 主站 `https://api.quickrouter.ai`、QuickRouter 直连 `https://api.quickrouter.us`、Crazyrouter `https://api.crazyrouter.com`、Easy88AI `https://api.easy88ai.com` 和 DeepSeek 官方地址。QuickRouter、Crazyrouter 与 Easy88AI 均使用独立的文本和图片密钥；DeepSeek 仅使用文本密钥。密钥只存在服务器环境，不进入 API 响应、数据库或 Git。QuickRouter 主站当前允许保留为可选线路，但外部可用性不作为本轮验收阻断项。
 
@@ -340,6 +356,8 @@ UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter
 生产环境统一从项目根目录 `.env` 读取数据库、持久化图片目录和 AI 服务配置。`scripts/deploy-prod.sh` 在构建前加载该文件，并在重启已有 PM2 进程时使用 `--update-env`，确保新 Node 进程不沿用 PM2 保存的旧变量。生产 `.env` 不提交 Git，也不使用 `.env.local` 叠加覆盖。
 
 实现状态：已实现账户菜单设置、登录同步、数据库字段、服务端路由选择和 GPT 文本/研究/图片 provider 分流；生产部署前执行 `pnpm prisma:deploy`。
+
+2026-09-12：图片高级设置只展示 `gpt-image-2` 与 `gpt-image-2.5-sunburst` 两个标准模型，新增按量/按次计费方式，并由服务端能力矩阵映射 QuickRouter、Crazyrouter 和 Easy88AI 的真实上游 model。数据库迁移把旧 `gpt-image-2-c` 规范化为 `gpt-image-2 + per_image`，不改变旧账号原有计费语义。验证通过全量 92 个测试文件 / 800 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm exec prisma validate`、本地 `pnpm prisma:deploy`、`pnpm build`、中文乱码特征扫描和 `git diff --check`；未调用付费 AI。实现提交：待提交后补记。
 
 2026-09-11：高级设置改为可扩展的分类导航与单列配置，iPad 维持主从布局，窄屏改为顶部分类选择。新增账户级文本思考强度、流式返回和图片质量；流式默认开启，默认文本提供方为 Easy88AI，默认图片模型为 `gpt-image-2-c`、图片线路为 QuickRouter。移除四个文本流式环境变量和课程级 `Course.visualQuality`；人物档案与 Step 5 统一读取账户图片质量，2-C 固定极高。已有图片保留实际质量记录，旧账号的标准图片模型初始化为高质量。验证通过全量 92 个测试文件 / 779 项测试、Prisma 校验与本地 migration deploy；浏览器设备验收待本地验收完成后补记。
 

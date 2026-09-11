@@ -34,8 +34,11 @@ export type TextTimeoutSettings = {
 export const IMAGE_QUALITIES = ["low", "medium", "high"] as const;
 export type ImageQuality = (typeof IMAGE_QUALITIES)[number];
 
-export const IMAGE_GENERATION_MODELS = ["gpt-image-2", "gpt-image-2-c"] as const;
+export const IMAGE_GENERATION_MODELS = ["gpt-image-2", "gpt-image-2.5-sunburst"] as const;
 export type ImageGenerationModel = (typeof IMAGE_GENERATION_MODELS)[number];
+
+export const IMAGE_BILLING_MODES = ["metered", "per_image"] as const;
+export type ImageBillingMode = (typeof IMAGE_BILLING_MODES)[number];
 
 export type AiProviderSettings = {
   aiGateway: AiGateway;
@@ -44,6 +47,7 @@ export type AiProviderSettings = {
 
 export type ImageProviderSettings = AiProviderSettings & {
   imageModel: ImageGenerationModel;
+  imageBillingMode: ImageBillingMode;
   imageQuality: ImageQuality;
 };
 
@@ -59,6 +63,7 @@ export type AccountAiSettings = {
   imageModel: ImageGenerationModel;
   imageGateway: AiGateway;
   imageQuickRouterEndpoint: QuickRouterEndpoint;
+  imageBillingMode: ImageBillingMode;
   textReasoningEffort: TextReasoningEffort;
   textStreamingEnabled: boolean;
   textStreamFirstEventTimeoutSeconds: number;
@@ -94,7 +99,12 @@ export const textModelLabels: Record<TextGenerationModel, string> = {
 
 export const imageModelLabels: Record<ImageGenerationModel, string> = {
   "gpt-image-2": "GPT Image 2",
-  "gpt-image-2-c": "GPT Image 2-C",
+  "gpt-image-2.5-sunburst": "GPT Image 2.5 Sunburst",
+};
+
+export const imageBillingModeLabels: Record<ImageBillingMode, string> = {
+  metered: "按量计费",
+  per_image: "按次计费",
 };
 
 export const textReasoningEffortLabels: Record<TextReasoningEffort, string> = {
@@ -117,10 +127,6 @@ const textModelCapabilities: Record<TextGenerationModel, { reasoningEfforts: rea
 
 export function reasoningEffortsForModel(model: TextGenerationModel) {
   return [...textModelCapabilities[model].reasoningEfforts];
-}
-
-export function imageQualityForSelection(model: ImageGenerationModel, requested: ImageQuality): ImageQuality {
-  return model === "gpt-image-2-c" ? "high" : requested;
 }
 
 export const aiGatewayDescriptions: Record<AiGateway, string> = {
@@ -153,15 +159,36 @@ export function upstreamTextModel(model: TextGenerationModel, gateway: AiGateway
   return aliases[gateway]?.[model] ?? model;
 }
 
-export function upstreamImageModel(model: ImageGenerationModel, gateway: AiGateway) {
-  if (model === "gpt-image-2-c" && gateway !== "quickrouter") {
-    throw new Error("GPT Image 2-C 仅支持 QuickRouter");
-  }
-  return model;
+const imageUpstreamModels: Record<ImageGenerationModel, Record<AiGateway, Partial<Record<ImageBillingMode, string>>>> = {
+  "gpt-image-2": {
+    quickrouter: { metered: "gpt-image-2", per_image: "gpt-image-2-c" },
+    crazyrouter: { metered: "gpt-image-2-t", per_image: "gpt-image-2" },
+    easy88ai: { per_image: "gpt-image-2" },
+  },
+  "gpt-image-2.5-sunburst": {
+    quickrouter: { metered: "gpt-image-2.5-sunburst", per_image: "gpt-image-2.5-sunburst-c" },
+    crazyrouter: { per_image: "gpt-image-2.5-sunburst" },
+    easy88ai: { per_image: "gpt-image-2.5-sunburst" },
+  },
+};
+
+export function billingModesForImageSelection(model: ImageGenerationModel, gateway: AiGateway) {
+  const routes = imageUpstreamModels[model][gateway];
+  return IMAGE_BILLING_MODES.filter((mode) => Boolean(routes[mode]));
 }
 
-export function isImageSelectionSupported(model: ImageGenerationModel, gateway: AiGateway) {
-  return model !== "gpt-image-2-c" || gateway === "quickrouter";
+export function upstreamImageModel(model: ImageGenerationModel, gateway: AiGateway, billingMode: ImageBillingMode) {
+  const upstream = imageUpstreamModels[model][gateway][billingMode];
+  if (!upstream) throw new Error("图片模型、提供方与计费方式不兼容");
+  return upstream;
+}
+
+export function isImageSelectionSupported(model: ImageGenerationModel, gateway: AiGateway, billingMode: ImageBillingMode) {
+  return Boolean(imageUpstreamModels[model][gateway][billingMode]);
+}
+
+export function imageQualityForSelection(model: ImageGenerationModel, gateway: AiGateway, billingMode: ImageBillingMode, requested: ImageQuality): ImageQuality {
+  return upstreamImageModel(model, gateway, billingMode) === "gpt-image-2-c" ? "high" : requested;
 }
 
 export function parseAiGateway(value: unknown): AiGateway {
@@ -205,6 +232,7 @@ export function imageProviderSettings(settings: AccountAiSettings): ImageProvide
     aiGateway: settings.imageGateway,
     quickRouterEndpoint: settings.imageQuickRouterEndpoint,
     imageModel: settings.imageModel,
-    imageQuality: imageQualityForSelection(settings.imageModel, settings.imageQuality),
+    imageBillingMode: settings.imageBillingMode,
+    imageQuality: imageQualityForSelection(settings.imageModel, settings.imageGateway, settings.imageBillingMode, settings.imageQuality),
   };
 }

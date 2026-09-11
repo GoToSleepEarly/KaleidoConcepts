@@ -208,4 +208,21 @@ describe("person visual provider", () => {
     expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.easy88ai.com/v1/images/edits");
     expect(new Headers(((request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer easy-image-key");
   });
+
+  test("Crazyrouter 按量计费把标准模型映射到 -t 上游线路", async () => {
+    process.env.CRAZYROUTER_IMAGE_API_KEY = "crazy-image-key";
+    const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/person.webp" }] }));
+    vi.stubGlobal("fetch", request);
+
+    await createPersonVisualProvider(undefined, {
+      aiGateway: "crazyrouter",
+      quickRouterEndpoint: "main",
+      imageModel: "gpt-image-2",
+      imageBillingMode: "metered",
+      imageQuality: "medium",
+    }).generate({ prompt: "person" });
+
+    const init = (request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
+    expect(JSON.parse(String(init?.body))).toMatchObject({ model: "gpt-image-2-t" });
+  });
 });
