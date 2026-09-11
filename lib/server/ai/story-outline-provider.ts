@@ -1,7 +1,7 @@
 import { Agent, fetch as undiciFetch, type Dispatcher, type RequestInit as UndiciRequestInit } from "undici";
 
 import type { StoryWritingProvider } from "@/lib/contracts/api";
-import { aiProviderBaseUrl, normalizeAiProviderSettings, upstreamTextModel, type AiGateway, type AiProviderSettingsInput, type TextGenerationModel } from "@/lib/ai-gateway";
+import { aiProviderBaseUrl, defaultTextTimeoutSettings, normalizeAiProviderSettings, textProviderSettings, upstreamTextModel, type AccountAiSettings, type AiGateway, type AiProviderSettings, type AiProviderSettingsInput, type TextGenerationModel, type TextProviderSettings, type TextReasoningEffort } from "@/lib/ai-gateway";
 
 import { devAiLog } from "./dev-ai-log";
 
@@ -13,7 +13,12 @@ type ProviderConfig = {
   researchModel: string;
   responsesPath?: string;
   stream?: boolean;
-  timeoutMs: number;
+  reasoningEffort?: TextReasoningEffort;
+  timeoutMs?: number;
+  streamFirstEventTimeoutMs?: number;
+  streamIdleTimeoutMs?: number;
+  streamMaxDurationMs?: number;
+  nonStreamTimeoutMs?: number;
 };
 
 type ResponsesData = {
@@ -64,41 +69,55 @@ export class AiProviderResultUnknownError extends Error {
   }
 }
 
-const textDispatchers = new Map<number, Dispatcher>();
+const textDispatchers = new Map<string, Dispatcher>();
 const transportTimeoutMarginMs = 30_000;
 
 export function textTransportTimeoutMs(requestTimeoutMs: number) {
   return requestTimeoutMs + transportTimeoutMarginMs;
 }
 
-function textDispatcher(requestTimeoutMs: number) {
-  const transportTimeout = textTransportTimeoutMs(requestTimeoutMs);
-  const existing = textDispatchers.get(transportTimeout);
+function textDispatcher(headersTimeoutMs: number, bodyTimeoutMs = headersTimeoutMs) {
+  const headersTimeout = textTransportTimeoutMs(headersTimeoutMs);
+  const bodyTimeout = textTransportTimeoutMs(bodyTimeoutMs);
+  const key = `${headersTimeout}:${bodyTimeout}`;
+  const existing = textDispatchers.get(key);
   if (existing) return existing;
   const dispatcher = new Agent({
-    headersTimeout: transportTimeout,
-    bodyTimeout: transportTimeout,
+    headersTimeout,
+    bodyTimeout,
   });
-  textDispatchers.set(transportTimeout, dispatcher);
+  textDispatchers.set(key, dispatcher);
   return dispatcher;
 }
 
-function configFromEnvironment(input: AiProviderSettingsInput): ProviderConfig & { gateway: AiGateway } {
-  const settings = normalizeAiProviderSettings(input);
+type SelectedTextSettings = AiProviderSettingsInput | AccountAiSettings | (AiProviderSettings & Partial<Omit<TextProviderSettings, keyof AiProviderSettings>>);
+
+function normalizedTextSettings(input: SelectedTextSettings) {
+  const defaults = defaultTextTimeoutSettings();
+  if (typeof input === "object" && "writingProvider" in input) return textProviderSettings(input);
+  if (typeof input === "object" && "textStreamingEnabled" in input) return { ...defaults, ...input };
+  return { ...defaults, ...normalizeAiProviderSettings(input), textReasoningEffort: undefined, textStreamingEnabled: false };
+}
+
+function configFromEnvironment(input: SelectedTextSettings): ProviderConfig & { gateway: AiGateway } {
+  const settings = normalizedTextSettings(input);
   const gateway = settings.aiGateway;
   const isCrazyrouter = gateway === "crazyrouter";
   const isEasy88ai = gateway === "easy88ai";
   const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_TEXT_API_KEY : isEasy88ai ? process.env.EASY88AI_TEXT_API_KEY : process.env.QUICKROUTER_TEXT_API_KEY;
   if (!apiKey) throw new StoryOutlineProviderConfigError();
-  const timeout = Number(process.env.TEXT_GENERATION_TIMEOUT_MS);
   return {
     apiKey,
     gateway,
     baseUrl: aiProviderBaseUrl(settings),
     gptModel: "gpt-5.6-sol",
     researchModel: "gpt-5.6-sol",
-    stream: process.env[`${gateway.toUpperCase()}_TEXT_STREAM`] === "true",
-    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
+    stream: settings.textStreamingEnabled,
+    reasoningEffort: settings.textReasoningEffort,
+    streamFirstEventTimeoutMs: settings.textStreamFirstEventTimeoutSeconds * 1_000,
+    streamIdleTimeoutMs: settings.textStreamIdleTimeoutSeconds * 1_000,
+    streamMaxDurationMs: settings.textStreamMaxDurationSeconds * 1_000,
+    nonStreamTimeoutMs: settings.textNonStreamTimeoutSeconds * 1_000,
   };
 }
 
@@ -173,10 +192,100 @@ function parseResponsesStream(rawResponse: string) {
   return outputText(data) ? data : { ...data, output_text: doneText || deltaText };
 }
 
-function deepSeekConfigFromEnvironment(): ProviderConfig {
+type StreamTimeoutKind = "first_event" | "idle" | "max_duration";
+
+const streamTimeoutMessages: Record<StreamTimeoutKind, string> = {
+  first_event: "故事大纲服务等待首个流式事件超时，生成结果未能确认，请手动重试本步",
+  idle: "故事大纲服务流式响应长时间没有新事件，生成结果未能确认，请手动重试本步",
+  max_duration: "故事大纲服务超过最长运行时间，生成结果未能确认，请手动重试本步",
+};
+
+function createStreamTimeoutGuard(firstEventTimeoutMs: number, idleTimeoutMs: number, maxDurationMs: number) {
+  const controller = new AbortController();
+  let timeoutKind: StreamTimeoutKind | null = null;
+  let activityTimer: ReturnType<typeof setTimeout>;
+  const abortFor = (kind: StreamTimeoutKind) => {
+    if (timeoutKind) return;
+    timeoutKind = kind;
+    controller.abort(new DOMException(streamTimeoutMessages[kind], "TimeoutError"));
+  };
+  const armActivity = (kind: "first_event" | "idle", timeoutMs: number) => {
+    clearTimeout(activityTimer);
+    activityTimer = setTimeout(() => abortFor(kind), timeoutMs);
+    activityTimer.unref?.();
+  };
+  armActivity("first_event", firstEventTimeoutMs);
+  const hardTimer = setTimeout(() => abortFor("max_duration"), maxDurationMs);
+  hardTimer.unref?.();
+  return {
+    signal: controller.signal,
+    markActivity(timeoutMs = idleTimeoutMs) { armActivity("idle", timeoutMs); },
+    timeoutError() { return timeoutKind ? new AiProviderResultUnknownError(streamTimeoutMessages[timeoutKind]) : null; },
+    dispose() { clearTimeout(activityTimer); clearTimeout(hardTimer); },
+  };
+}
+
+function isValidSseActivity(frame: string) {
+  if (frame.split(/\r?\n/).some((line) => line.startsWith(":"))) return true;
+  const payload = frame.split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart())
+    .join("\n");
+  if (!payload) return false;
+  if (payload === "[DONE]") return true;
+  try { return typeof JSON.parse(payload) === "object"; }
+  catch { return false; }
+}
+
+async function readWithSignal(reader: ReadableStreamDefaultReader<Uint8Array>, signal: AbortSignal) {
+  if (signal.aborted) throw signal.reason;
+  return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    reader.read().then(
+      (result) => { signal.removeEventListener("abort", abort); resolve(result); },
+      (error) => { signal.removeEventListener("abort", abort); reject(error); },
+    );
+  });
+}
+
+async function readResponsesStream(response: Response, guard: ReturnType<typeof createStreamTimeoutGuard>) {
+  if (!response.body) throw new AiProviderResultUnknownError("故事大纲服务未返回流式响应正文，生成结果未能确认，请手动重试本步");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let rawResponse = "";
+  let pendingFrames = "";
+  try {
+    while (true) {
+      const { done, value } = await readWithSignal(reader, guard.signal);
+      if (done) break;
+      const text = decoder.decode(value, { stream: true });
+      rawResponse += text;
+      pendingFrames += text;
+      while (true) {
+        const match = /\r?\n\r?\n/.exec(pendingFrames);
+        if (!match || match.index === undefined) break;
+        const frame = pendingFrames.slice(0, match.index);
+        pendingFrames = pendingFrames.slice(match.index + match[0].length);
+        if (isValidSseActivity(frame)) guard.markActivity();
+      }
+    }
+    const tail = decoder.decode();
+    rawResponse += tail;
+    pendingFrames += tail;
+    if (pendingFrames && isValidSseActivity(pendingFrames)) guard.markActivity();
+    return rawResponse;
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw guard.timeoutError() ?? error;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function deepSeekConfigFromEnvironment(settings: ReturnType<typeof normalizedTextSettings>): ProviderConfig {
   const apiKey = process.env.DEEPSEEK_TEXT_API_KEY;
   if (!apiKey) throw new StoryOutlineProviderConfigError("DeepSeek 服务尚未配置");
-  const timeout = Number(process.env.TEXT_GENERATION_TIMEOUT_MS);
   return {
     apiKey,
     baseUrl: "https://api.deepseek.com",
@@ -184,8 +293,12 @@ function deepSeekConfigFromEnvironment(): ProviderConfig {
     gptModel: "deepseek-v4-pro",
     researchModel: "deepseek-v4-pro",
     responsesPath: "/responses",
-    stream: process.env.DEEPSEEK_TEXT_STREAM === "true",
-    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
+    stream: settings.textStreamingEnabled,
+    reasoningEffort: settings.textReasoningEffort,
+    streamFirstEventTimeoutMs: settings.textStreamFirstEventTimeoutSeconds * 1_000,
+    streamIdleTimeoutMs: settings.textStreamIdleTimeoutSeconds * 1_000,
+    streamMaxDurationMs: settings.textStreamMaxDurationSeconds * 1_000,
+    nonStreamTimeoutMs: settings.textNonStreamTimeoutSeconds * 1_000,
   };
 }
 
@@ -213,9 +326,10 @@ function isAmbiguousTimeout(error: unknown) {
   return code === "UND_ERR_HEADERS_TIMEOUT" || code === "UND_ERR_BODY_TIMEOUT" || (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"));
 }
 
-export function createStoryOutlineProvider(config?: ProviderConfig, selectedSettings: AiProviderSettingsInput = "quickrouter") {
+export function createStoryOutlineProvider(config?: ProviderConfig, selectedSettings: SelectedTextSettings = "quickrouter") {
+  const textSettings = normalizedTextSettings(selectedSettings);
   function resolvedConfig(model?: TextGenerationModel) {
-    if (model === "deepseek-v4-pro") return deepSeekConfigFromEnvironment();
+    if (model === "deepseek-v4-pro") return deepSeekConfigFromEnvironment(textSettings);
     if (config)
       return {
         baseUrl: "https://api.quickrouter.ai",
@@ -232,12 +346,21 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     };
   }
 
-  async function request(operation: string, body: Record<string, unknown>, activeConfig: ProviderConfig, timeoutMs = activeConfig.timeoutMs) {
+  async function request(operation: string, body: Record<string, unknown>, activeConfig: ProviderConfig) {
     const startedAt = Date.now();
     const requestBody = activeConfig.stream ? { ...body, stream: true } : body;
+    const injectedTimeoutMs = activeConfig.timeoutMs;
+    const nonStreamTimeoutMs = activeConfig.nonStreamTimeoutMs ?? injectedTimeoutMs ?? 600_000;
+    const streamFirstEventTimeoutMs = activeConfig.streamFirstEventTimeoutMs ?? injectedTimeoutMs ?? 120_000;
+    const streamIdleTimeoutMs = activeConfig.streamIdleTimeoutMs ?? injectedTimeoutMs ?? 180_000;
+    const streamMaxDurationMs = activeConfig.streamMaxDurationMs ?? injectedTimeoutMs ?? 1_200_000;
     devAiLog({ operation, phase: "request", payload: requestBody });
     let response: Response | null = null;
+    let streamGuard: ReturnType<typeof createStreamTimeoutGuard> | null = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const attemptGuard = activeConfig.stream
+        ? createStreamTimeoutGuard(streamFirstEventTimeoutMs, streamIdleTimeoutMs, streamMaxDurationMs)
+        : null;
       try {
         response = (await undiciFetch(`${activeConfig.baseUrl ?? "https://api.quickrouter.ai"}${activeConfig.responsesPath ?? "/v1/responses"}`, {
           method: "POST",
@@ -247,11 +370,16 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
             "Content-Type": "application/json",
           },
           body: JSON.stringify(requestBody),
-          signal: AbortSignal.timeout(timeoutMs),
-          dispatcher: textDispatcher(timeoutMs),
+          signal: attemptGuard?.signal ?? AbortSignal.timeout(nonStreamTimeoutMs),
+          dispatcher: activeConfig.stream
+            ? textDispatcher(streamFirstEventTimeoutMs, streamIdleTimeoutMs)
+            : textDispatcher(nonStreamTimeoutMs),
         } as UndiciRequestInit)) as unknown as Response;
+        streamGuard = attemptGuard;
         break;
       } catch (error) {
+        const configuredTimeoutError = attemptGuard?.timeoutError();
+        attemptGuard?.dispose();
         const retrying = attempt === 1 && canRetryBeforeConnection(error);
         devAiLog({
           operation,
@@ -262,6 +390,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
           error,
         });
         if (retrying) continue;
+        if (configuredTimeoutError) throw configuredTimeoutError;
         if (isAmbiguousTimeout(error)) {
           throw new AiProviderResultUnknownError("故事大纲服务响应超时，生成结果未能确认，请手动重试本步", { cause: error });
         }
@@ -274,7 +403,12 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     let data: ResponsesData;
     let rawResponse: string;
     try {
-      rawResponse = await response.text();
+      const isResponsesStream = activeConfig.stream && response.ok && response.headers.get("content-type")?.includes("text/event-stream");
+      if (isResponsesStream && streamGuard) rawResponse = await readResponsesStream(response, streamGuard);
+      else {
+        streamGuard?.markActivity(nonStreamTimeoutMs);
+        rawResponse = await response.text();
+      }
       devAiLog({
         operation,
         phase: "response",
@@ -282,7 +416,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
         latencyMs: Date.now() - startedAt,
         payload: rawResponse,
       });
-      data = activeConfig.stream && response.ok
+      data = isResponsesStream
         ? parseResponsesStream(rawResponse)
         : JSON.parse(rawResponse) as ResponsesData;
     } catch (error) {
@@ -301,6 +435,8 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
         throw new AiProviderResultUnknownError(`故事大纲服务${reason}，生成结果未能确认，请手动重试本步`, { cause: error });
       }
       throw new Error("故事大纲服务返回异常", { cause: error });
+    } finally {
+      streamGuard?.dispose();
     }
     if (!response.ok) {
       const error = new Error(data.error?.message || data.message || "故事大纲生成失败");
@@ -347,18 +483,17 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
   }
 
   return {
-    generateOutline: ({ writingProvider, prompt, operation, timeoutMs, reasoningEffort, maxOutputTokens }: { writingProvider: StoryWritingProvider; prompt: string; operation?: string; timeoutMs?: number; reasoningEffort?: "low" | "medium" | "high"; maxOutputTokens?: number }) => {
+    generateOutline: ({ writingProvider, prompt, operation, reasoningEffort, maxOutputTokens }: { writingProvider: StoryWritingProvider; prompt: string; operation?: string; reasoningEffort?: "low" | "medium" | "high"; maxOutputTokens?: number }) => {
       const activeConfig = resolvedConfig(writingProvider);
       return request(
         operation || "story_outline",
         {
           model: activeConfig.gptModel,
           input: prompt,
-          ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
+          ...((activeConfig.reasoningEffort ?? reasoningEffort) ? { reasoning: { effort: activeConfig.reasoningEffort ?? reasoningEffort } } : {}),
           ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
         },
         activeConfig,
-        timeoutMs,
       );
     },
     searchReference: ({ writingProvider = "gpt-5.6-sol", prompt, operation = "search_reference" }: { writingProvider?: StoryWritingProvider; prompt: string; operation?: string }) => {

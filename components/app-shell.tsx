@@ -3,12 +3,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, ChevronDown, ListChecks, LoaderCircle, LogOut, Menu, Settings2, Sparkles, Tags, UsersRound, X } from "lucide-react";
+import { BookOpen, ChevronDown, FileText, ImageIcon, ListChecks, LoaderCircle, LogOut, Menu, Settings2, Sparkles, Tags, UsersRound, X } from "lucide-react";
 
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { IMAGE_GENERATION_MODELS, TEXT_GENERATION_MODELS, imageModelLabels, textModelLabels, type AccountAiSettings, type AiGateway, type ImageGenerationModel, type QuickRouterEndpoint, type TextGenerationModel } from "@/lib/ai-gateway";
+import { IMAGE_GENERATION_MODELS, IMAGE_QUALITIES, TEXT_GENERATION_MODELS, TEXT_TIMEOUT_DEFAULTS, imageModelLabels, imageQualityForSelection, imageQualityLabels, isTextTimeoutSettingsValid, reasoningEffortsForModel, textModelLabels, textReasoningEffortLabels, type AccountAiSettings, type AiGateway, type ImageGenerationModel, type ImageQuality, type QuickRouterEndpoint, type TextGenerationModel, type TextReasoningEffort } from "@/lib/ai-gateway";
 import { clearAuthSession, getStoredSession } from "@/lib/auth-session";
 import { cn } from "@/lib/utils";
 
@@ -128,6 +128,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [imageModel, setImageModel] = useState<ImageGenerationModel>("gpt-image-2");
   const [imageGateway, setImageGateway] = useState<AiGateway>("quickrouter");
   const [imageQuickRouterEndpoint, setImageQuickRouterEndpoint] = useState<QuickRouterEndpoint>("main");
+  const [textReasoningEffort, setTextReasoningEffort] = useState<TextReasoningEffort>("medium");
+  const [textStreamingEnabled, setTextStreamingEnabled] = useState(true);
+  const [textStreamFirstEventTimeoutSeconds, setTextStreamFirstEventTimeoutSeconds] = useState<number>(TEXT_TIMEOUT_DEFAULTS.streamFirstEventSeconds);
+  const [textStreamIdleTimeoutSeconds, setTextStreamIdleTimeoutSeconds] = useState<number>(TEXT_TIMEOUT_DEFAULTS.streamIdleSeconds);
+  const [textStreamMaxDurationSeconds, setTextStreamMaxDurationSeconds] = useState<number>(TEXT_TIMEOUT_DEFAULTS.streamMaxDurationSeconds);
+  const [textNonStreamTimeoutSeconds, setTextNonStreamTimeoutSeconds] = useState<number>(TEXT_TIMEOUT_DEFAULTS.nonStreamSeconds);
+  const [imageQuality, setImageQuality] = useState<ImageQuality>("high");
+  const [advancedSection, setAdvancedSection] = useState<"text" | "image">("text");
   const [isLoadingGateway, setIsLoadingGateway] = useState(false);
   const [hasLoadedGateway, setHasLoadedGateway] = useState(false);
   const [isSavingGateway, setIsSavingGateway] = useState(false);
@@ -200,6 +208,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setImageModel(result.imageModel);
       setImageGateway(result.imageGateway);
       setImageQuickRouterEndpoint(result.imageQuickRouterEndpoint);
+      setTextReasoningEffort(result.textReasoningEffort ?? "medium");
+      setTextStreamingEnabled(result.textStreamingEnabled ?? true);
+      setTextStreamFirstEventTimeoutSeconds(result.textStreamFirstEventTimeoutSeconds ?? TEXT_TIMEOUT_DEFAULTS.streamFirstEventSeconds);
+      setTextStreamIdleTimeoutSeconds(result.textStreamIdleTimeoutSeconds ?? TEXT_TIMEOUT_DEFAULTS.streamIdleSeconds);
+      setTextStreamMaxDurationSeconds(result.textStreamMaxDurationSeconds ?? TEXT_TIMEOUT_DEFAULTS.streamMaxDurationSeconds);
+      setTextNonStreamTimeoutSeconds(result.textNonStreamTimeoutSeconds ?? TEXT_TIMEOUT_DEFAULTS.nonStreamSeconds);
+      setImageQuality(imageQualityForSelection(result.imageModel, result.imageQuality ?? "medium"));
       setHasLoadedGateway(true);
     } catch (error) {
       setGatewayError(error instanceof Error ? error.message : "高级设置加载失败");
@@ -210,6 +225,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   async function saveAiGateway() {
     setGatewayError("");
+    const timeoutSettings = { textStreamFirstEventTimeoutSeconds, textStreamIdleTimeoutSeconds, textStreamMaxDurationSeconds, textNonStreamTimeoutSeconds };
+    if (!isTextTimeoutSettingsValid(timeoutSettings)) {
+      setGatewayError("请检查文本超时设置：最长运行时间必须大于首个响应和事件空闲时间，且所有数值需在提示范围内。");
+      return;
+    }
     setIsSavingGateway(true);
     try {
       const response = await fetch("/api/account/ai-gateway", {
@@ -222,6 +242,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           imageModel,
           imageGateway,
           imageQuickRouterEndpoint,
+          textReasoningEffort,
+          textStreamingEnabled,
+          ...timeoutSettings,
+          imageQuality: imageQualityForSelection(imageModel, imageQuality),
         }),
       });
       const result = (await response.json()) as Partial<AccountAiSettings> & {
@@ -234,6 +258,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setImageModel(result.imageModel ?? imageModel);
       setImageGateway(result.imageGateway ?? imageGateway);
       setImageQuickRouterEndpoint(result.imageQuickRouterEndpoint ?? imageQuickRouterEndpoint);
+      setTextReasoningEffort(result.textReasoningEffort ?? textReasoningEffort);
+      setTextStreamingEnabled(result.textStreamingEnabled ?? textStreamingEnabled);
+      setTextStreamFirstEventTimeoutSeconds(result.textStreamFirstEventTimeoutSeconds ?? textStreamFirstEventTimeoutSeconds);
+      setTextStreamIdleTimeoutSeconds(result.textStreamIdleTimeoutSeconds ?? textStreamIdleTimeoutSeconds);
+      setTextStreamMaxDurationSeconds(result.textStreamMaxDurationSeconds ?? textStreamMaxDurationSeconds);
+      setTextNonStreamTimeoutSeconds(result.textNonStreamTimeoutSeconds ?? textNonStreamTimeoutSeconds);
+      setImageQuality(result.imageQuality ?? imageQuality);
       setIsAdvancedOpen(false);
     } catch (error) {
       setGatewayError(error instanceof Error ? error.message : "高级设置保存失败");
@@ -343,7 +374,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         ) : null}
 
-        <Dialog description="选择当前账号使用的模型和提供方。" icon={<Settings2 className="size-5" />} onClose={() => setIsAdvancedOpen(false)} open={isAdvancedOpen} size="medium-fit" title="高级设置">
+        <Dialog description="统一管理当前账号的 AI 生成偏好。" icon={<Settings2 className="size-5" />} onClose={() => setIsAdvancedOpen(false)} open={isAdvancedOpen} size="medium" title="高级设置">
           <div className="p-5 sm:p-6">
             {isLoadingGateway ? (
               <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground" role="status">
@@ -367,107 +398,183 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             ) : null}
             <div aria-hidden={!hasLoadedGateway || isLoadingGateway} className={cn((!hasLoadedGateway || isLoadingGateway) && "hidden")}>
-              <div className="grid gap-7 md:grid-cols-2 md:gap-0 md:divide-x md:divide-border" data-testid="advanced-settings-grid">
-                <section aria-labelledby="text-settings-title" className="min-w-0 md:pr-7" role="region">
-                  <h3 className="text-base font-semibold text-foreground" id="text-settings-title">
-                    文本设置
-                  </h3>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">用于所有课程文本任务，下次请求生效。</p>
-                  <fieldset className="mt-5" disabled={isSavingGateway}>
-                    <legend className="text-sm font-medium text-foreground">文本模型</legend>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      {TEXT_GENERATION_MODELS.map((model) => (
-                        <label className={cn("flex min-h-11 cursor-pointer items-center justify-center rounded-lg border px-3 py-2 text-center text-sm font-medium transition-colors", writingProvider === model ? "border-primary bg-primary-50 text-primary ring-1 ring-primary/15" : "border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground")} key={model}>
-                          <input checked={writingProvider === model} className="sr-only" name="writing-provider" onChange={() => setWritingProvider(model)} type="radio" value={model} />
-                          {textModelLabels[model]}
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-                  <fieldset className="mt-5" disabled={isSavingGateway}>
-                    <legend className="text-sm font-medium text-foreground">文本提供方</legend>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      {(writingProvider === "deepseek-v4-pro" ? [deepSeekProviderOption] : presetProviderOptions).map((provider) => {
-                        const isSelected = writingProvider === "deepseek-v4-pro" ? provider.id === "deepseek" : provider.id === selectedProviderId(aiGateway, quickRouterEndpoint);
-                        return (
-                          <label className={cn("flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors", isSelected ? "border-primary bg-primary-50 text-foreground ring-1 ring-primary/15" : "border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground")} key={provider.id}>
-                            <input
-                              checked={isSelected}
-                              className="size-4 shrink-0 accent-[hsl(var(--primary))]"
-                              name="text-provider"
-                              onChange={() => {
-                                if (provider.gateway !== "deepseek") {
-                                  setAiGateway(provider.gateway);
-                                  if (provider.endpoint) setQuickRouterEndpoint(provider.endpoint);
-                                }
-                              }}
-                              readOnly={provider.gateway === "deepseek"}
-                              type="radio"
-                              value={provider.id}
-                            />
-                            <span className="font-medium">{provider.label}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </fieldset>
-                </section>
-                <section aria-labelledby="image-settings-title" className="min-w-0 border-t border-border pt-7 md:border-t-0 md:pl-7 md:pt-0" role="region">
-                  <h3 className="text-base font-semibold text-foreground" id="image-settings-title">
-                    图片设置
-                  </h3>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">用于人物、课程插图和图片修改。</p>
-                  <fieldset className="mt-5" disabled={isSavingGateway}>
-                    <legend className="text-sm font-medium text-foreground">图片模型</legend>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      {IMAGE_GENERATION_MODELS.map((model) => (
-                        <label className={cn("flex min-h-11 cursor-pointer items-center justify-center rounded-lg border px-3 py-2 text-center text-sm font-medium transition-colors", imageModel === model ? "border-primary bg-primary-50 text-primary ring-1 ring-primary/15" : "border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground")} key={model}>
-                          <input
-                            checked={imageModel === model}
-                            className="sr-only"
-                            name="image-model"
-                            onChange={() => {
-                              setImageModel(model);
-                              if (model === "gpt-image-2-c") setImageGateway("quickrouter");
-                            }}
-                            type="radio"
-                            value={model}
-                          />
-                          {imageModelLabels[model]}
-                        </label>
-                      ))}
-                    </div>
-                    {imageModel === "gpt-image-2-c" ? <p className="mt-2 text-xs leading-5 text-muted-foreground">固定使用高质量，按该模型规则计费。</p> : null}
-                  </fieldset>
-                  <fieldset className="mt-5" disabled={isSavingGateway}>
-                    <legend className="text-sm font-medium text-foreground">图片提供方</legend>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      {presetProviderOptions
-                        .filter((provider) => imageModel !== "gpt-image-2-c" || provider.gateway === "quickrouter")
-                        .map((provider) => {
-                          const isSelected = provider.id === selectedProviderId(imageGateway, imageQuickRouterEndpoint);
-                          return (
-                            <label className={cn("flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors", isSelected ? "border-primary bg-primary-50 text-foreground ring-1 ring-primary/15" : "border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground")} key={provider.id}>
-                              <input
-                                checked={isSelected}
-                                className="size-4 shrink-0 accent-[hsl(var(--primary))]"
-                                name="image-provider"
-                                onChange={() => {
-                                  if (provider.gateway !== "deepseek") {
-                                    setImageGateway(provider.gateway);
-                                    if (provider.endpoint) setImageQuickRouterEndpoint(provider.endpoint);
-                                  }
-                                }}
-                                type="radio"
-                                value={provider.id}
-                              />
-                              <span className="font-medium">{provider.label}</span>
+              <div className="grid gap-5 md:grid-cols-[192px_minmax(0,1fr)] md:gap-0" data-testid="advanced-settings-layout">
+                <nav aria-label="高级设置分类" className="grid grid-cols-2 gap-2 border-b border-border pb-4 md:block md:space-y-2 md:rounded-l-lg md:border-b-0 md:border-r md:bg-[#F7F5FB] md:py-2 md:pl-2 md:pr-0">
+                  {([
+                    { id: "text" as const, label: "文本生成", description: "模型与响应", icon: FileText },
+                    { id: "image" as const, label: "图片生成", description: "模型与画质", icon: ImageIcon },
+                  ]).map((item) => {
+                    const Icon = item.icon;
+                    const active = advancedSection === item.id;
+                    return (
+                      <button aria-current={active ? "page" : undefined} className={cn("relative flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-start transition-colors before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-transparent md:min-h-14 md:rounded-l-lg md:rounded-r-none md:border-y md:border-l md:border-r-0 md:before:hidden", active ? "bg-primary-50/70 text-primary before:bg-primary md:border-primary-100 md:bg-white md:shadow-sm" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground md:border-transparent md:hover:bg-white/70")} key={item.id} onClick={() => setAdvancedSection(item.id)} type="button">
+                        <Icon className={cn("size-[18px] shrink-0", active ? "text-primary" : "text-muted-foreground")} />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold">{item.label}</span>
+                          <span className="hidden text-xs text-muted-foreground md:block">{item.description}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </nav>
+
+                {advancedSection === "text" ? (
+                  <section aria-labelledby="text-settings-title" className="min-w-0 md:pl-6" role="region">
+                    <h3 className="text-lg font-semibold text-foreground" id="text-settings-title">文本生成</h3>
+                    <p className="mt-1 text-[13px] leading-5 text-muted-foreground">用于故事、课程正文、练习和联网资料整理，下次请求生效。</p>
+                    <div className="mt-6 space-y-6">
+                      <div>
+                        <h4 className="text-sm font-semibold text-foreground">模型配置</h4>
+                        <div className="mt-4 space-y-4">
+                      <label className="block text-[13px] font-medium text-foreground" htmlFor="text-model">
+                        文本模型
+                        <select className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="text-model" onChange={(event) => {
+                          const model = event.target.value as TextGenerationModel;
+                          setWritingProvider(model);
+                          if (!reasoningEffortsForModel(model).includes(textReasoningEffort)) setTextReasoningEffort(reasoningEffortsForModel(model)[0]!);
+                        }} value={writingProvider}>
+                          {TEXT_GENERATION_MODELS.map((model) => <option key={model} value={model}>{textModelLabels[model]}</option>)}
+                        </select>
+                      </label>
+                      <label className="block text-[13px] font-medium text-foreground" htmlFor="text-provider">
+                        文本提供方
+                        <select className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway || writingProvider === "deepseek-v4-pro"} id="text-provider" onChange={(event) => {
+                          const provider = presetProviderOptions.find((item) => item.id === event.target.value);
+                          if (!provider || provider.gateway === "deepseek") return;
+                          setAiGateway(provider.gateway);
+                          if (provider.endpoint) setQuickRouterEndpoint(provider.endpoint);
+                        }} value={writingProvider === "deepseek-v4-pro" ? "deepseek" : selectedProviderId(aiGateway, quickRouterEndpoint)}>
+                          {(writingProvider === "deepseek-v4-pro" ? [deepSeekProviderOption] : presetProviderOptions).map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
+                        </select>
+                      </label>
+                        </div>
+                      </div>
+                      <div className="border-t border-border pt-6">
+                        <h4 className="text-sm font-semibold text-foreground">生成偏好</h4>
+                        <div className="mt-4 space-y-4">
+                      <fieldset disabled={isSavingGateway}>
+                        <legend className="text-[13px] font-medium text-foreground">思考强度</legend>
+                        <div aria-label="思考强度" className="mt-2 grid h-11 grid-cols-3 gap-1 rounded-lg border border-[#DED8E8] bg-[#F1EFF6] p-1" data-testid="reasoning-options" role="radiogroup">
+                          {reasoningEffortsForModel(writingProvider).map((effort) => (
+                            <button aria-checked={textReasoningEffort === effort} className={cn("h-full rounded-md border px-3 text-sm font-medium transition-colors", textReasoningEffort === effort ? "border-primary-200 bg-white text-primary shadow-sm" : "border-transparent bg-transparent text-muted-foreground hover:bg-white/60 hover:text-foreground")} key={effort} onClick={() => setTextReasoningEffort(effort)} role="radio" type="button">{textReasoningEffortLabels[effort]}</button>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-muted-foreground">强度越高通常更适合复杂任务，但响应时间和消耗也可能增加。</p>
+                      </fieldset>
+                      <div>
+                        <p className="text-[13px] font-medium text-foreground">流式返回</p>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">服务器持续接收模型输出，完整校验后再显示到页面。</p>
+                        <div className="mt-2 flex h-11 items-center justify-between rounded-lg border border-input bg-white pl-3" data-testid="streaming-control">
+                          <span className="text-sm font-medium text-foreground" data-testid="streaming-state">{textStreamingEnabled ? "已开启" : "已关闭"}</span>
+                          <button aria-checked={textStreamingEnabled} aria-label="流式返回" className="relative flex size-11 shrink-0 items-center justify-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" disabled={isSavingGateway} onClick={() => setTextStreamingEnabled((value) => !value)} role="switch" type="button">
+                            <span className={cn("relative h-6 w-10 rounded-full border transition-colors", textStreamingEnabled ? "border-primary-100 bg-primary-50" : "border-slate-300 bg-slate-200")} data-testid="streaming-track">
+                              <span className={cn("absolute left-[3px] top-[2px] size-[18px] rounded-full border shadow-sm transition-[transform,background-color,border-color]", textStreamingEnabled ? "translate-x-4 border-primary bg-primary" : "translate-x-0 border-slate-300 bg-white")} data-testid="streaming-thumb" />
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                        </div>
+                      </div>
+                      <div className="border-t border-border pt-6">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h4 className="text-sm font-semibold text-foreground">超时保护</h4>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">只影响下次新请求；持续活跃的流式响应不会按非流式时限中断。</p>
+                          </div>
+                          <button className="shrink-0 text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} onClick={() => {
+                            setTextStreamFirstEventTimeoutSeconds(TEXT_TIMEOUT_DEFAULTS.streamFirstEventSeconds);
+                            setTextStreamIdleTimeoutSeconds(TEXT_TIMEOUT_DEFAULTS.streamIdleSeconds);
+                            setTextStreamMaxDurationSeconds(TEXT_TIMEOUT_DEFAULTS.streamMaxDurationSeconds);
+                            setTextNonStreamTimeoutSeconds(TEXT_TIMEOUT_DEFAULTS.nonStreamSeconds);
+                          }} type="button">恢复默认值</button>
+                        </div>
+                        {textStreamingEnabled ? (
+                          <div className="mt-4 grid gap-4 sm:grid-cols-3" data-testid="stream-timeout-settings">
+                            <label className="block text-[13px] font-medium text-foreground" htmlFor="stream-first-event-timeout">
+                              首个响应事件
+                              <span className="relative mt-2 block">
+                                <input className="h-11 w-full rounded-lg border border-input bg-background px-3 pr-10 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="stream-first-event-timeout" max={600} min={10} onChange={(event) => setTextStreamFirstEventTimeoutSeconds(Number(event.target.value))} type="number" value={textStreamFirstEventTimeoutSeconds} />
+                                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">秒</span>
+                              </span>
                             </label>
-                          );
-                        })}
+                            <label className="block text-[13px] font-medium text-foreground" htmlFor="stream-idle-timeout">
+                              事件空闲
+                              <span className="relative mt-2 block">
+                                <input className="h-11 w-full rounded-lg border border-input bg-background px-3 pr-10 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="stream-idle-timeout" max={600} min={10} onChange={(event) => setTextStreamIdleTimeoutSeconds(Number(event.target.value))} type="number" value={textStreamIdleTimeoutSeconds} />
+                                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">秒</span>
+                              </span>
+                            </label>
+                            <label className="block text-[13px] font-medium text-foreground" htmlFor="stream-max-duration">
+                              最长运行
+                              <span className="relative mt-2 block">
+                                <input className="h-11 w-full rounded-lg border border-input bg-background px-3 pr-12 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="stream-max-duration" max={60} min={5} onChange={(event) => setTextStreamMaxDurationSeconds(Number(event.target.value) * 60)} type="number" value={textStreamMaxDurationSeconds / 60} />
+                                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">分钟</span>
+                              </span>
+                            </label>
+                          </div>
+                        ) : (
+                          <div className="mt-4 max-w-[220px]" data-testid="non-stream-timeout-settings">
+                            <label className="block text-[13px] font-medium text-foreground" htmlFor="non-stream-timeout">
+                              非流式请求总时限
+                              <span className="relative mt-2 block">
+                                <input className="h-11 w-full rounded-lg border border-input bg-background px-3 pr-12 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="non-stream-timeout" max={30} min={1} onChange={(event) => setTextNonStreamTimeoutSeconds(Number(event.target.value) * 60)} type="number" value={textNonStreamTimeoutSeconds / 60} />
+                                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">分钟</span>
+                              </span>
+                            </label>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </fieldset>
-                </section>
+                  </section>
+                ) : (
+                  <section aria-labelledby="image-settings-title" className="min-w-0 md:pl-6" role="region">
+                    <h3 className="text-lg font-semibold text-foreground" id="image-settings-title">图片生成</h3>
+                    <p className="mt-1 text-[13px] leading-5 text-muted-foreground">统一用于人物档案、课程插图和后续图片修改。</p>
+                    <div className="mt-6 space-y-6">
+                      <div>
+                        <h4 className="text-sm font-semibold text-foreground">模型配置</h4>
+                        <div className="mt-4 space-y-4">
+                      <label className="block text-[13px] font-medium text-foreground" htmlFor="image-model">
+                        图片模型
+                        <select className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="image-model" onChange={(event) => {
+                          const model = event.target.value as ImageGenerationModel;
+                          setImageModel(model);
+                          setImageQuality(imageQualityForSelection(model, imageQuality));
+                          if (model === "gpt-image-2-c") setImageGateway("quickrouter");
+                        }} value={imageModel}>
+                          {IMAGE_GENERATION_MODELS.map((model) => <option key={model} value={model}>{imageModelLabels[model]}</option>)}
+                        </select>
+                      </label>
+                      <label className="block text-[13px] font-medium text-foreground" htmlFor="image-provider">
+                        图片提供方
+                        <select className="mt-2 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="image-provider" onChange={(event) => {
+                          const provider = presetProviderOptions.find((item) => item.id === event.target.value);
+                          if (!provider || provider.gateway === "deepseek") return;
+                          setImageGateway(provider.gateway);
+                          if (provider.endpoint) setImageQuickRouterEndpoint(provider.endpoint);
+                        }} value={selectedProviderId(imageGateway, imageQuickRouterEndpoint)}>
+                          {presetProviderOptions.filter((provider) => imageModel !== "gpt-image-2-c" || provider.gateway === "quickrouter").map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
+                        </select>
+                      </label>
+                        </div>
+                      </div>
+                      <div className="border-t border-border pt-6">
+                        <h4 className="text-sm font-semibold text-foreground">输出质量</h4>
+                        <div className="mt-4">
+                      <fieldset disabled={isSavingGateway || imageModel === "gpt-image-2-c"}>
+                        <legend className="text-[13px] font-medium text-foreground">图片质量</legend>
+                        <div aria-label="图片质量" className="mt-2 grid h-11 grid-cols-3 gap-1 rounded-lg border border-[#DED8E8] bg-[#F1EFF6] p-1" data-testid="image-quality-options" role="radiogroup">
+                          {(imageModel === "gpt-image-2-c" ? ["high" as const] : IMAGE_QUALITIES).map((quality) => (
+                            <button aria-checked={imageQualityForSelection(imageModel, imageQuality) === quality} className={cn("h-full rounded-md border px-3 text-sm font-medium transition-colors", imageQualityForSelection(imageModel, imageQuality) === quality ? "border-primary-200 bg-white text-primary shadow-sm" : "border-transparent bg-transparent text-muted-foreground hover:bg-white/60 hover:text-foreground", imageModel === "gpt-image-2-c" && "col-span-3 cursor-default")} key={quality} onClick={() => setImageQuality(quality)} role="radio" type="button">{imageQualityLabels[quality]}{imageModel === "gpt-image-2-c" ? "（模型固定）" : ""}</button>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-muted-foreground">{imageModel === "gpt-image-2-c" ? "GPT Image 2-C 只支持极高质量，并按该模型规则计费。" : "新的质量设置会同时应用于人物档案和 Step 5 后续生成。"}</p>
+                      </fieldset>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                )}
               </div>
               {gatewayError ? (
                 <p className="mt-5 text-sm text-destructive" role="alert">

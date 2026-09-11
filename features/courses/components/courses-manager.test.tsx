@@ -73,6 +73,23 @@ describe("CoursesManager", () => {
     expect(screen.getByRole("button", { name: "下一页" })).toHaveClass("max-sm:h-11", "max-sm:w-11");
   });
 
+  test("keeps the Starter teaching configuration icon stable without widening the list", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      courses: [{ id: "course-1", title: "启蒙课程", durationMinutes: 45, englishLevel: "Starter", storyTitle: null, lessonDraftExists: false, lifecycleStatus: "draft", currentStage: "audience", teacherName: "Ms. Lin", studentNames: ["Summer"], nextEditPath: "/courses/course-1/create/audience", updatedAt: "2026-09-11T00:00:00.000Z" }],
+      page: 1,
+      pageSize: 5,
+      total: 1,
+      totalPages: 1,
+    })));
+
+    render(<CoursesManager />);
+
+    expect(await screen.findByText("Starter · 45 分钟")).toBeInTheDocument();
+    expect(screen.getByTestId("courses-list-header")).toHaveClass("grid-cols-[minmax(210px,1.5fr)_minmax(160px,1fr)_136px_120px_125px_168px]");
+    expect(screen.getByTestId("course-teaching-config-course-1")).toHaveClass("whitespace-nowrap");
+    expect(screen.getByTestId("course-teaching-config-icon-course-1")).toHaveClass("size-4", "shrink-0");
+  });
+
   test("opens teaching in a new page while published editing stays in the current page", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({
       courses: [{

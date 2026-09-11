@@ -7,9 +7,8 @@ import {
 } from "./visual-resources";
 
 describe("视觉资源输入校验", () => {
-  test("只接受三种底层画面质量", () => {
-    expect(visualSettingsSchema.parse({ quality: "medium" })).toEqual({ quality: "medium" });
-    expect(() => visualSettingsSchema.parse({ quality: "ultra" })).toThrow();
+  test("拒绝已经迁移到账户高级设置的画面质量", () => {
+    expect(() => visualSettingsSchema.parse({ quality: "medium" })).toThrow();
   });
 
   test("图片批量并发数限制为一到五张", () => {

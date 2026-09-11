@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("undici", async (importOriginal) => {
   const actual = await importOriginal<typeof import("undici")>();
@@ -12,14 +12,8 @@ import { AiProviderResultUnknownError, StoryOutlineIncompleteResponseError, Stor
 
 const originalEnv = { ...process.env };
 
-beforeEach(() => {
-  delete process.env.QUICKROUTER_TEXT_STREAM;
-  delete process.env.CRAZYROUTER_TEXT_STREAM;
-  delete process.env.EASY88AI_TEXT_STREAM;
-  delete process.env.DEEPSEEK_TEXT_STREAM;
-});
-
 afterEach(() => {
+  vi.useRealTimers();
   process.env = { ...originalEnv };
   vi.restoreAllMocks();
 });
@@ -36,6 +30,16 @@ function streamResponse(events: unknown[]) {
   return new Response(events.map((event) => `event: ${Reflect.get(event as object, "type") ?? "message"}\ndata: ${JSON.stringify(event)}\n\n`).join("") + "data: [DONE]\n\n", {
     headers: { "Content-Type": "text/event-stream" },
   });
+}
+
+function timedStreamResponse(chunks: Array<{ at: number; text: string }>, closeAt: number) {
+  const encoder = new TextEncoder();
+  return new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) setTimeout(() => controller.enqueue(encoder.encode(chunk.text)), chunk.at);
+      setTimeout(() => controller.close(), closeAt);
+    },
+  }), { headers: { "Content-Type": "text/event-stream" } });
 }
 
 function fetchBody(fetchMock: ReturnType<typeof vi.fn>, index = 0) {
@@ -116,16 +120,22 @@ describe("createStoryOutlineProvider", () => {
     expect(fetchBody(fetchMock, 1).model).toBe("gpt-5.6-sol");
   });
 
-  test("allows a large generation request to override the default timeout", async () => {
+  test("uses the account non-stream timeout and ignores legacy text timeout environment variables", async () => {
     process.env.QUICKROUTER_TEXT_API_KEY = "key";
+    process.env.TEXT_GENERATION_TIMEOUT_MS = "1";
+    process.env.COURSE_CONTENT_GENERATION_TIMEOUT_MS = "2";
     const fetchMock = mockTextResponse();
     vi.stubGlobal("fetch", fetchMock);
     const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
 
-    await createStoryOutlineProvider().generateOutline({
+    await createStoryOutlineProvider(undefined, {
+      aiGateway: "quickrouter",
+      quickRouterEndpoint: "main",
+      textStreamingEnabled: false,
+      textNonStreamTimeoutSeconds: 360,
+    }).generateOutline({
       writingProvider: "gpt-5.6-sol",
       prompt: "生成较长的课程正文",
-      timeoutMs: 360_000,
     });
 
     expect(timeoutSpy).toHaveBeenCalledWith(360_000);
@@ -149,7 +159,6 @@ describe("createStoryOutlineProvider", () => {
 
   test("routes Easy88AI text requests through its preset endpoint", async () => {
     process.env.EASY88AI_TEXT_API_KEY = "easy-text-key";
-    process.env.EASY88AI_TEXT_STREAM = "false";
     process.env.EASY88AI_GPT_TEXT_MODEL = "legacy-writing-model";
     process.env.EASY88AI_RESEARCH_MODEL = "legacy-research-model";
     const fetchMock = mockTextResponse();
@@ -175,7 +184,6 @@ describe("createStoryOutlineProvider", () => {
 
   test("aggregates an Easy88AI Responses stream without changing the provider result", async () => {
     process.env.EASY88AI_TEXT_API_KEY = "easy-text-key";
-    process.env.EASY88AI_TEXT_STREAM = "true";
     const completedResponse = {
       status: "completed",
       output: [{ content: [{ type: "output_text", text: '{"ok":true}' }] }],
@@ -193,7 +201,7 @@ describe("createStoryOutlineProvider", () => {
     ]));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createStoryOutlineProvider(undefined, "easy88ai").generateOutline({
+    const result = await createStoryOutlineProvider(undefined, { aiGateway: "easy88ai", quickRouterEndpoint: "main", textReasoningEffort: "medium", textStreamingEnabled: true }).generateOutline({
       writingProvider: "gpt-5.5",
       prompt: "生成正文",
     });
@@ -212,25 +220,21 @@ describe("createStoryOutlineProvider", () => {
     });
   });
 
-  test("uses an independent text stream switch for every provider", async () => {
+  test("uses the account text stream setting for every provider", async () => {
     process.env.QUICKROUTER_TEXT_API_KEY = "quick-key";
     process.env.CRAZYROUTER_TEXT_API_KEY = "crazy-key";
     process.env.EASY88AI_TEXT_API_KEY = "easy-key";
     process.env.DEEPSEEK_TEXT_API_KEY = "deepseek-key";
-    process.env.QUICKROUTER_TEXT_STREAM = "true";
-    process.env.CRAZYROUTER_TEXT_STREAM = "true";
-    process.env.EASY88AI_TEXT_STREAM = "true";
-    process.env.DEEPSEEK_TEXT_STREAM = "true";
     const fetchMock = vi.fn(async () => streamResponse([
       { type: "response.output_text.delta", delta: '{"ok":true}' },
       { type: "response.completed", response: { status: "completed" } },
     ]));
     vi.stubGlobal("fetch", fetchMock);
 
-    await createStoryOutlineProvider().generateOutline({ writingProvider: "gpt-5.6-sol", prompt: "quick" });
-    await createStoryOutlineProvider(undefined, "crazyrouter").generateOutline({ writingProvider: "gpt-5.6-sol", prompt: "crazy" });
-    await createStoryOutlineProvider(undefined, "easy88ai").generateOutline({ writingProvider: "gpt-5.6-sol", prompt: "easy" });
-    await createStoryOutlineProvider().generateOutline({ writingProvider: "deepseek-v4-pro", prompt: "deepseek" });
+    await createStoryOutlineProvider(undefined, { aiGateway: "quickrouter", quickRouterEndpoint: "main", textReasoningEffort: "medium", textStreamingEnabled: true }).generateOutline({ writingProvider: "gpt-5.6-sol", prompt: "quick" });
+    await createStoryOutlineProvider(undefined, { aiGateway: "crazyrouter", quickRouterEndpoint: "main", textReasoningEffort: "medium", textStreamingEnabled: true }).generateOutline({ writingProvider: "gpt-5.6-sol", prompt: "crazy" });
+    await createStoryOutlineProvider(undefined, { aiGateway: "easy88ai", quickRouterEndpoint: "main", textReasoningEffort: "medium", textStreamingEnabled: true }).generateOutline({ writingProvider: "gpt-5.6-sol", prompt: "easy" });
+    await createStoryOutlineProvider(undefined, { aiGateway: "quickrouter", quickRouterEndpoint: "main", textReasoningEffort: "medium", textStreamingEnabled: true }).generateOutline({ writingProvider: "deepseek-v4-pro", prompt: "deepseek" });
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
     for (let index = 0; index < 4; index += 1) expect(fetchBody(fetchMock, index).stream).toBe(true);
@@ -238,15 +242,105 @@ describe("createStoryOutlineProvider", () => {
 
   test("does not accept a partial stream without a completion event", async () => {
     process.env.EASY88AI_TEXT_API_KEY = "easy-text-key";
-    process.env.EASY88AI_TEXT_STREAM = "true";
     vi.stubGlobal("fetch", vi.fn(async () => streamResponse([
       { type: "response.output_text.delta", delta: '{"partial":true}' },
     ])));
 
-    await expect(createStoryOutlineProvider(undefined, "easy88ai").generateOutline({
+    await expect(createStoryOutlineProvider(undefined, { aiGateway: "easy88ai", quickRouterEndpoint: "main", textReasoningEffort: "medium", textStreamingEnabled: true }).generateOutline({
       writingProvider: "gpt-5.5",
       prompt: "生成正文",
     })).rejects.toBeInstanceOf(AiProviderResultUnknownError);
+  });
+
+  test("lets an active stream run beyond one idle window by resetting on every valid event", async () => {
+    vi.useFakeTimers();
+    process.env.EASY88AI_TEXT_API_KEY = "easy-text-key";
+    vi.stubGlobal("fetch", vi.fn(async () => timedStreamResponse([
+      { at: 10, text: 'data: {"type":"response.output_text.delta","delta":"{\\"ok\\":"}\n\n' },
+      { at: 35, text: 'data: {"type":"response.output_text.delta","delta":"true}"}\n\n' },
+      { at: 60, text: 'data: {"type":"response.completed","response":{"status":"completed"}}\n\n' },
+    ], 65)));
+
+    const resultPromise = createStoryOutlineProvider({
+      apiKey: "easy-text-key",
+      baseUrl: "https://example.test",
+      gptModel: "gpt-5.5",
+      researchModel: "gpt-5.5",
+      stream: true,
+      streamFirstEventTimeoutMs: 20,
+      streamIdleTimeoutMs: 30,
+      streamMaxDurationMs: 100,
+    }).generateOutline({ writingProvider: "gpt-5.5", prompt: "生成正文" });
+    await vi.advanceTimersByTimeAsync(70);
+
+    await expect(resultPromise).resolves.toMatchObject({ text: '{"ok":true}' });
+  });
+
+  test("marks a stream result unknown when no new valid event arrives within the idle timeout", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(async () => timedStreamResponse([
+      { at: 1, text: 'data: {"type":"response.output_text.delta","delta":"partial"}\n\n' },
+    ], 100)));
+
+    const resultPromise = createStoryOutlineProvider({
+      apiKey: "key",
+      baseUrl: "https://example.test",
+      gptModel: "gpt-5.5",
+      researchModel: "gpt-5.5",
+      stream: true,
+      streamFirstEventTimeoutMs: 20,
+      streamIdleTimeoutMs: 30,
+      streamMaxDurationMs: 100,
+    }).generateOutline({ writingProvider: "gpt-5.5", prompt: "生成正文" });
+    const assertion = expect(resultPromise).rejects.toThrow("长时间没有新事件");
+    await vi.advanceTimersByTimeAsync(40);
+
+    await assertion;
+  });
+
+  test("marks a stream result unknown when the first valid event does not arrive in time", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(async () => timedStreamResponse([], 100)));
+
+    const resultPromise = createStoryOutlineProvider({
+      apiKey: "key",
+      baseUrl: "https://example.test",
+      gptModel: "gpt-5.5",
+      researchModel: "gpt-5.5",
+      stream: true,
+      streamFirstEventTimeoutMs: 20,
+      streamIdleTimeoutMs: 30,
+      streamMaxDurationMs: 100,
+    }).generateOutline({ writingProvider: "gpt-5.5", prompt: "生成正文" });
+    const assertion = expect(resultPromise).rejects.toThrow("等待首个流式事件超时");
+    await vi.advanceTimersByTimeAsync(25);
+
+    await assertion;
+  });
+
+  test("enforces the stream hard limit even when heartbeat events keep the connection active", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(async () => timedStreamResponse([
+      { at: 1, text: ": heartbeat\n\n" },
+      { at: 15, text: ": heartbeat\n\n" },
+      { at: 30, text: ": heartbeat\n\n" },
+      { at: 45, text: ": heartbeat\n\n" },
+    ], 100)));
+
+    const resultPromise = createStoryOutlineProvider({
+      apiKey: "key",
+      baseUrl: "https://example.test",
+      gptModel: "gpt-5.5",
+      researchModel: "gpt-5.5",
+      stream: true,
+      streamFirstEventTimeoutMs: 20,
+      streamIdleTimeoutMs: 20,
+      streamMaxDurationMs: 50,
+    }).generateOutline({ writingProvider: "gpt-5.5", prompt: "生成正文" });
+    const assertion = expect(resultPromise).rejects.toThrow("超过最长运行时间");
+    await vi.advanceTimersByTimeAsync(55);
+
+    await assertion;
   });
 
   test("does not retry when response headers time out after the provider may have accepted the request", async () => {
@@ -459,6 +553,25 @@ describe("createStoryOutlineProvider", () => {
       reasoning: { effort: "low" },
       max_output_tokens: 8_000,
     });
+  });
+
+  test("account reasoning strength overrides operation defaults", async () => {
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
+    const fetchMock = mockTextResponse();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createStoryOutlineProvider(undefined, {
+      aiGateway: "quickrouter",
+      quickRouterEndpoint: "main",
+      textReasoningEffort: "high",
+      textStreamingEnabled: false,
+    }).generateOutline({
+      writingProvider: "gpt-5.6-sol",
+      prompt: "生成视觉方案",
+      reasoningEffort: "low",
+    });
+
+    expect(fetchBody(fetchMock)).toMatchObject({ reasoning: { effort: "high" } });
   });
 
   test("retries once when the connection times out before a request is established", async () => {

@@ -41,6 +41,7 @@ export type CourseImageGenerationDeps = {
   loadReferences: (storagePaths: string[]) => Promise<string[]>;
   removeTemporarySource: (storagePath: string) => Promise<void>;
   normalizeQuality?: (quality: CourseImageQuality) => CourseImageQuality;
+  quality?: CourseImageQuality;
 };
 
 export class VisualResourcesNotFoundError extends Error {
@@ -101,6 +102,28 @@ export class VisualImageGenerationError extends Error {
 const COURSE_IMAGE_LEASE_MS = 2 * 60 * 1000;
 const COURSE_IMAGE_HEARTBEAT_MS = 30 * 1000;
 const COURSE_IMAGE_MAX_RUNTIME_MS = 12 * 60 * 1000;
+const VISUAL_PLAN_MAX_RUNTIME_MS = 12 * 60 * 1000;
+
+function visualPlanActiveScope(courseId: string) {
+  return `visual-plan:${courseId}`;
+}
+
+export async function recoverStaleVisualPlanOperations(db: VisualResourcesDb, courseId: string, now = new Date()) {
+  return db.aiGenerationLog.updateMany({
+    where: {
+      courseId,
+      stage: "visual_resources",
+      operation: { in: ["visual_generate_resource_plan", "visual_originalize_resource_plan"] },
+      status: "running",
+      createdAt: { lte: new Date(now.getTime() - VISUAL_PLAN_MAX_RUNTIME_MS) },
+    },
+    data: {
+      status: "failed",
+      errorMessage: "上次视觉方案生成已中断或超时，请重试",
+      activeScope: null,
+    },
+  });
+}
 
 export async function recoverStaleCourseImages(db: VisualResourcesDb, courseId: string, now = new Date()) {
   return db.courseImage.updateMany({
@@ -192,16 +215,24 @@ function toAsset(asset: {
 }
 
 export async function getCourseVisualResources(db: VisualResourcesDb, courseId: string): Promise<CourseVisualResourcesState> {
-  const course = await db.course.findUnique({ where: { id: courseId }, select: { id: true, title: true, currentStage: true, staleFromStage: true, visualQuality: true, imageGenerationConcurrency: true } });
+  const course = await db.course.findUnique({ where: { id: courseId }, select: { id: true, title: true, currentStage: true, staleFromStage: true, imageGenerationConcurrency: true } });
   if (!course) throw new VisualResourcesNotFoundError("课程不存在");
-  await recoverStaleCourseImages(db, courseId);
-  const [characters, visuals, plan, slots, people, content] = await Promise.all([
+  await Promise.all([recoverStaleCourseImages(db, courseId), recoverStaleVisualPlanOperations(db, courseId)]);
+  const [characters, visuals, plan, slots, people, content, latestPlanOperation] = await Promise.all([
     db.courseCharacter.findMany({ where: { courseId }, include: { sourceReference: true }, orderBy: { createdAt: "asc" } }),
     db.courseCharacterVisual.findMany({ where: { courseId }, include: { activeImage: true, images: { orderBy: { createdAt: "asc" } } } }),
     db.courseVisualResourcePlan.findUnique({ where: { courseId } }),
     db.courseVisualImageSlot.findMany({ where: { courseId }, include: { activeImage: true, images: { orderBy: { createdAt: "asc" } } }, orderBy: [{ chapterId: "asc" }, { createdAt: "asc" }] }),
     db.coursePerson.findMany({ where: { courseId }, include: { visualAssetSnapshot: true } }),
-    db.courseLessonContent.findUnique({ where: { courseId }, select: { chapters: true } }),
+    db.courseLessonContent.findUnique({ where: { courseId }, select: { chapters: true, sourceRevision: true, contentVersion: true } }),
+    db.aiGenerationLog.findFirst({
+      where: {
+        courseId,
+        stage: "visual_resources",
+        operation: { in: ["visual_generate_resource_plan", "visual_originalize_resource_plan"] },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
   const visualByCharacter = new Map(visuals.map((visual) => [visual.characterId, visual]));
   const visualPlan = storedVisualPlan(plan?.coverBrief);
@@ -275,10 +306,24 @@ export async function getCourseVisualResources(db: VisualResourcesDb, courseId: 
   const unsyncedSlotIds = new Set(slots
     .filter((slot) => Boolean(visualPlan && slot.activeImage && hasUnsyncedCharacterAppearance(slot.activeImage.prompt, asStrings(slot.characterIds), visualPlan.characterDesigns)))
     .map((slot) => slot.id));
+  const latestOperationInput = recordObject(latestPlanOperation?.inputSnapshot);
+  const currentSourceRevision = content && "sourceRevision" in content && "contentVersion" in content
+    ? `${content.sourceRevision}:${content.contentVersion}`
+    : null;
+  const operationMatchesCurrentInput = !latestOperationInput?.sourceRevision || !currentSourceRevision || latestOperationInput.sourceRevision === currentSourceRevision;
+  const characterCount = typeof latestOperationInput?.characterCount === "number" ? latestOperationInput.characterCount : characterStates.length;
+  const imagePlanCount = typeof latestOperationInput?.paragraphCount === "number" ? latestOperationInput.paragraphCount : contentChapters.reduce((count, chapter) => count + chapter.paragraphs.length, 0);
   return {
     course: { id: course.id, title: course.title, currentStage: course.currentStage, staleFromStage: course.staleFromStage ?? null },
-    quality: course.visualQuality,
     imageGenerationConcurrency: course.imageGenerationConcurrency,
+    planOperation: latestPlanOperation && operationMatchesCurrentInput ? {
+      kind: latestPlanOperation.operation === "visual_originalize_resource_plan" ? "originalize" : "generate",
+      status: latestPlanOperation.status,
+      startedAt: latestPlanOperation.createdAt.toISOString(),
+      errorMessage: latestPlanOperation.errorMessage,
+      characterCount,
+      imagePlanCount,
+    } : null,
     planReady: Boolean(visualPlan),
     planRevision: visualPlan ? plan?.revision ?? null : null,
     planMode: visualPlan ? plan?.mode ?? null : null,
@@ -315,20 +360,19 @@ export async function getCourseVisualResources(db: VisualResourcesDb, courseId: 
 export async function updateCourseVisualSettings(
   db: VisualResourcesDb,
   courseId: string,
-  input: { quality?: CourseImageQuality; imageGenerationConcurrency?: number },
+  input: { imageGenerationConcurrency?: number },
 ) {
   const course = await db.course.findUnique({ where: { id: courseId }, select: { id: true } });
   if (!course) throw new VisualResourcesNotFoundError("课程不存在");
   const data = {
-    ...(input.quality === undefined ? {} : { visualQuality: input.quality }),
     ...(input.imageGenerationConcurrency === undefined ? {} : { imageGenerationConcurrency: input.imageGenerationConcurrency }),
   };
   const updated = await db.course.update({
     where: { id: courseId },
     data,
-    select: { visualQuality: true, imageGenerationConcurrency: true },
+    select: { imageGenerationConcurrency: true },
   });
-  return { quality: updated.visualQuality, imageGenerationConcurrency: updated.imageGenerationConcurrency };
+  return { imageGenerationConcurrency: updated.imageGenerationConcurrency };
 }
 
 export async function updateVisualCharacterAppearance(
@@ -463,6 +507,7 @@ export async function generateCourseVisualPlan(
   deps: CourseVisualPlanDeps = createCourseVisualPlanDeps(),
   mode: "faithful" | "originalized" = "faithful",
 ) {
+  await recoverStaleVisualPlanOperations(db, courseId);
   let operation = await db.aiGenerationLog.findUnique({ where: { requestId } });
   const existingInput = recordObject(operation?.inputSnapshot);
   if (operation && existingInput?.mode !== mode) throw new VisualResourcesInvalidStateError("重复提交标识已用于其他视觉方案操作");
@@ -523,6 +568,7 @@ export async function generateCourseVisualPlan(
           stage: "visual_resources",
           operation: mode === "originalized" ? "visual_originalize_resource_plan" : "visual_generate_resource_plan",
           status: "running",
+          activeScope: visualPlanActiveScope(courseId),
           writingProvider: content.writingProvider,
           inputSnapshot: {
             mode,
@@ -617,14 +663,14 @@ export async function generateCourseVisualPlan(
     }
   }
   await db.course.update({ where: { id: courseId }, data: { currentStage: furthestCourseStage(course.currentStage, "visual_resources") } });
-  await db.aiGenerationLog.update({ where: { id: operation.id }, data: { status: "succeeded", errorMessage: null } });
+  await db.aiGenerationLog.updateMany({ where: { id: operation.id, status: "running" }, data: { status: "succeeded", errorMessage: null, activeScope: null } });
   return getCourseVisualResources(db, courseId);
   } catch (error) {
     const failure = persistedFailure(error);
     const failedOutput = { ...(capturedOutput ?? {}), ...failure.outputSnapshot } as Prisma.InputJsonObject;
-    await db.aiGenerationLog.update({
-      where: { id: operation.id },
-      data: { status: "failed", errorMessage: failure.message, ...(generatedPlanSaved ? {} : { outputSnapshot: failedOutput }) },
+    await db.aiGenerationLog.updateMany({
+      where: { id: operation.id, status: "running" },
+      data: { status: "failed", errorMessage: failure.message, activeScope: null, ...(generatedPlanSaved ? {} : { outputSnapshot: failedOutput }) },
     }).catch(() => undefined);
     throw error;
   }
@@ -816,7 +862,7 @@ export async function saveUploadedCharacterReference(
   const characterQuality: CourseImageQuality = "low";
   const [{ visual, character }, course] = await Promise.all([
     getOrCreateCharacterVisual(db, courseId, characterId),
-    db.course.findUnique({ where: { id: courseId }, select: { visualQuality: true } }),
+    db.course.findUnique({ where: { id: courseId }, select: { id: true } }),
   ]);
   if (!course) throw new VisualResourcesNotFoundError("课程不存在");
   if (character.sourceType === "person") throw new VisualResourcesInvalidStateError("老师和学生使用人物档案形象，不能在此上传参考图");
@@ -891,7 +937,7 @@ async function slotReferenceAssets(db: VisualResourcesDb, courseId: string, char
 
 export async function generateVisualSlot(db: VisualResourcesDb, courseId: string, slotId: string, idempotencyKey: string, deps: CourseImageGenerationDeps, options: { forceRegenerate?: boolean } = {}) {
   const [course, slot, planRecord] = await Promise.all([
-    db.course.findUnique({ where: { id: courseId }, select: { visualQuality: true } }),
+    db.course.findUnique({ where: { id: courseId }, select: { id: true } }),
     db.courseVisualImageSlot.findFirst({ where: { id: slotId, courseId } }),
     db.courseVisualResourcePlan.findUnique({ where: { courseId } }),
   ]);
@@ -919,7 +965,8 @@ export async function generateVisualSlot(db: VisualResourcesDb, courseId: string
   const scene = slot.slotType === "visual_cover" ? plan.cover : plan.shots.find((shot) => shot.paragraphId === slot.paragraphId);
   if (!scene) throw new VisualResourcesInvalidStateError("图片槽缺少当前视觉场景");
   const prompt = compileCourseImagePrompt(plan, scene, slot.slotType === "visual_cover" ? "cover" : "illustration", references.characters);
-  const quality = deps.normalizeQuality?.(course.visualQuality) ?? course.visualQuality;
+  const requestedQuality = deps.quality ?? "medium";
+  const quality = deps.normalizeQuality?.(requestedQuality) ?? requestedQuality;
   const sourceHash = visualGenerationFingerprint({ prompt, quality, referenceAssetIds: references.ids });
   const now = new Date();
   const asset = await db.courseImage.upsert({ where: { courseId_idempotencyKey: { courseId, idempotencyKey } }, create: { courseId, slotId, operation: "initial", prompt, quality, provider: deps.provider ?? "quickrouter_gpt_image_2", referenceAssetIds: references.ids, sourceHash, planRevision: planRecord.revision, idempotencyKey, startedAt: now, leaseExpiresAt: new Date(now.getTime() + COURSE_IMAGE_LEASE_MS) }, update: {} }).catch(async (error: unknown) => {
@@ -940,7 +987,7 @@ export async function generateVisualSlot(db: VisualResourcesDb, courseId: string
 
 export async function refineCourseVisualAsset(db: VisualResourcesDb, courseId: string, assetId: string, instruction: string, idempotencyKey: string, deps: CourseImageGenerationDeps) {
   const [course, parent, planRecord] = await Promise.all([
-    db.course.findUnique({ where: { id: courseId }, select: { visualQuality: true } }),
+    db.course.findUnique({ where: { id: courseId }, select: { id: true } }),
     db.courseImage.findFirst({ where: { id: assetId, courseId } }),
     db.courseVisualResourcePlan.findUnique({ where: { courseId } }),
   ]);
@@ -949,7 +996,7 @@ export async function refineCourseVisualAsset(db: VisualResourcesDb, courseId: s
   const referencePaths = [parent.storagePath];
   const referenceAssetIds = [parent.id];
   const prompt = buildCourseImageEditPrompt(instruction);
-  const requestedQuality = parent.characterVisualId ? "low" : course.visualQuality;
+  const requestedQuality = deps.quality ?? "medium";
   const quality = deps.normalizeQuality?.(requestedQuality) ?? requestedQuality;
   const sourceHash = visualGenerationFingerprint({ prompt, quality, referenceAssetIds });
   const now = new Date();

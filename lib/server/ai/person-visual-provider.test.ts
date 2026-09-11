@@ -39,17 +39,22 @@ describe("person visual provider", () => {
     expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.quickrouter.us/v1/images/generations");
   });
 
-  test("非固定按张收费模型的人物造型保持 low", async () => {
+  test("非固定按张收费模型的人物造型使用账户图片质量", async () => {
     process.env.QUICKROUTER_IMAGE_API_KEY = "image-key";
     process.env.QUICKROUTER_IMAGE_QUALITY = "high";
     const request = vi.fn(async () => Response.json({ data: [{ url: "https://example.com/person.webp" }] }));
     vi.stubGlobal("fetch", request);
 
-    await createPersonVisualProvider().generate({ prompt: "full body" });
+    await createPersonVisualProvider(undefined, {
+      aiGateway: "quickrouter",
+      quickRouterEndpoint: "main",
+      imageModel: "gpt-image-2",
+      imageQuality: "medium",
+    }).generate({ prompt: "full body" });
 
     const init = (request.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined;
     const body = JSON.parse(String(init?.body));
-    expect(body.quality).toBe("low");
+    expect(body.quality).toBe("medium");
   });
 
   test("gpt-image-2-c 生成人物形象时强制最高质量", async () => {
@@ -136,7 +141,7 @@ describe("person visual provider", () => {
     expect(body.get("prompt")).toBe("change the coat");
     expect(body.get("n")).toBe("1");
     expect(body.get("size")).toBe("1024x1536");
-    expect(body.get("quality")).toBe("low");
+    expect(body.get("quality")).toBe("medium");
     expect(body.get("image")).toBeInstanceOf(Blob);
     expect(body.has("format")).toBe(false);
     expect(new Headers(options?.headers).has("Content-Type")).toBe(false);
@@ -188,7 +193,7 @@ describe("person visual provider", () => {
     expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer crazy-image-key");
     expect(JSON.parse(String(init?.body))).toMatchObject({
       model: "gpt-image-2",
-      quality: "low",
+      quality: "medium",
       output_format: "webp",
     });
   });

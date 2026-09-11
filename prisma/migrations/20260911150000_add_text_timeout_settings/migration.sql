@@ -1,0 +1,5 @@
+ALTER TABLE "User"
+ADD COLUMN "textStreamFirstEventTimeoutSeconds" INTEGER NOT NULL DEFAULT 120,
+ADD COLUMN "textStreamIdleTimeoutSeconds" INTEGER NOT NULL DEFAULT 180,
+ADD COLUMN "textStreamMaxDurationSeconds" INTEGER NOT NULL DEFAULT 1200,
+ADD COLUMN "textNonStreamTimeoutSeconds" INTEGER NOT NULL DEFAULT 600;

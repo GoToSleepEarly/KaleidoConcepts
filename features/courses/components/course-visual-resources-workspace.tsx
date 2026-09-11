@@ -16,11 +16,6 @@ import { createRequestId } from "@/lib/utils/request-id";
 import { CourseCreateSteps, courseStageStep } from "./course-create-steps";
 import { CourseStaleNotice } from "./course-stale-notice";
 
-const qualityOptions: Array<{ value: CourseImageQuality; label: string }> = [
-  { value: "low", label: "中" },
-  { value: "medium", label: "高" },
-  { value: "high", label: "极高" },
-];
 const CHARACTER_PAGE_SIZE = 6;
 
 function formatElapsedTime(seconds: number) {
@@ -31,7 +26,7 @@ function formatElapsedTime(seconds: number) {
   return `${minutes}:${remainingSeconds}`;
 }
 
-function TimedOperationStatus({ description, embedded = false, startedAt, title }: { description: string; embedded?: boolean; startedAt?: string | null; title: string }) {
+function useElapsedSeconds(startedAt?: string | null) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
@@ -46,6 +41,41 @@ function TimedOperationStatus({ description, embedded = false, startedAt, title 
     };
   }, [startedAt]);
 
+  return elapsedSeconds;
+}
+
+function useRotatingHighlight(itemCount: number, intervalMs = 3_000) {
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    const reducedMotionQuery = typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)")
+      : null;
+    let timer: number | undefined;
+
+    const configureRotation = () => {
+      if (timer !== undefined) window.clearInterval(timer);
+      setActiveIndex(0);
+      if (itemCount < 2 || reducedMotionQuery?.matches) return;
+      timer = window.setInterval(() => {
+        setActiveIndex((currentIndex) => (currentIndex + 1) % itemCount);
+      }, intervalMs);
+    };
+
+    configureRotation();
+    reducedMotionQuery?.addEventListener("change", configureRotation);
+    return () => {
+      if (timer !== undefined) window.clearInterval(timer);
+      reducedMotionQuery?.removeEventListener("change", configureRotation);
+    };
+  }, [intervalMs, itemCount]);
+
+  return activeIndex;
+}
+
+function TimedOperationStatus({ description, descriptionForElapsed, details, embedded = false, startedAt, title }: { description: string; descriptionForElapsed?: (elapsedSeconds: number) => string; details?: React.ReactNode; embedded?: boolean; startedAt?: string | null; title: string }) {
+  const elapsedSeconds = useElapsedSeconds(startedAt);
+
   return (
     <div aria-live="polite" className={cn(embedded ? "flex h-full items-center justify-center bg-primary-50/60 px-5 py-4" : "rounded-xl border border-primary/20 bg-primary-50/60 px-4 py-4")} role="status">
       <div className="flex items-start gap-3">
@@ -54,7 +84,8 @@ function TimedOperationStatus({ description, embedded = false, startedAt, title 
         </span>
         <div className="min-w-0 space-y-1">
           <p className="font-semibold text-foreground">{title}</p>
-          <p className="text-pretty text-sm leading-6 text-muted-foreground">{description}</p>
+          <p className="text-pretty text-sm leading-6 text-muted-foreground">{descriptionForElapsed?.(elapsedSeconds) ?? description}</p>
+          {details}
           <p className="flex items-center gap-1.5 pt-1 text-xs font-medium tabular-nums text-primary-700">
             <Clock3 aria-hidden="true" className="size-3.5" />
             已等待 {formatElapsedTime(elapsedSeconds)}
@@ -65,8 +96,71 @@ function TimedOperationStatus({ description, embedded = false, startedAt, title 
   );
 }
 
-function VisualPlanLoading({ originalizing = false }: { originalizing?: boolean }) {
-  return <TimedOperationStatus description={originalizing ? "正在替换原作角色的视觉设定，并同步更新封面和章节图片方案；故事正文和历史图片会保留。" : "正在整理角色形象、封面构图和章节图片方案。通常需要 1–3 分钟，角色或章节较多时可能更久；系统仍在处理中，无需重复点击。"} title={originalizing ? "正在生成原创视觉设定" : "正在生成视觉方案"} />;
+function VisualPlanLoading({ operation, originalizing = false, syncing = false }: { operation: CourseVisualResourcesState["planOperation"]; originalizing?: boolean; syncing?: boolean }) {
+  const isOriginalizing = operation?.kind === "originalize" || originalizing;
+  const characterCount = operation?.characterCount ?? 0;
+  const imagePlanCount = operation?.imagePlanCount ?? 0;
+  const elapsedSeconds = useElapsedSeconds(operation?.startedAt);
+  const activeDesignIndex = useRotatingHighlight(3);
+  const countValue = (value: number, unit: string) => value > 0 ? `${value} ${unit}` : "同步中";
+  const designItems = [
+    { Icon: UserRound, label: "角色视觉形象", value: countValue(characterCount, "个"), valueTestId: "visual-plan-character-count" },
+    { Icon: ImageIcon, label: "视觉封面", value: "1 张", valueTestId: "visual-plan-cover-count" },
+    { Icon: List, label: "章节图片方案", value: countValue(imagePlanCount, "张"), valueTestId: "visual-plan-image-count" },
+  ];
+
+  return (
+    <section aria-live="polite" className="overflow-hidden rounded-xl border border-primary/20 bg-white" data-testid="visual-plan-loading" role="status">
+      <div className="bg-primary-50/55 px-4 py-4 sm:px-5 sm:py-5">
+        <div className="flex items-start gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white text-primary shadow-sm">
+            <LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" />
+          </span>
+          <div className="flex min-w-0 flex-1 items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h4 className="font-semibold text-foreground">{isOriginalizing ? "正在生成原创视觉设定" : "正在生成视觉方案"}</h4>
+              <p className="mt-1.5 max-w-2xl text-pretty text-sm leading-6 text-muted-foreground">
+                {syncing ? "系统仍在持续处理，正在重新获取任务状态，无需刷新。" : "预计耗时 3–5 分钟。系统正在持续处理，无需刷新，完成后会自动更新。"}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary-100 bg-white px-2.5 py-1 text-xs font-semibold text-primary-700" data-testid="visual-plan-processing-status">
+                <span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
+                {syncing ? "正在重新同步" : "正在处理"}
+              </span>
+              <p className="flex items-center gap-1.5 text-xs font-medium tabular-nums text-primary-700" data-testid="visual-plan-elapsed">
+                <Clock3 aria-hidden="true" className="size-3.5" />
+                已等待 {formatElapsedTime(elapsedSeconds)}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-primary/10 px-4 py-4 sm:px-5">
+        <p className="text-sm font-semibold text-foreground">本阶段会为课程设计</p>
+        <div className="mt-3 grid divide-y divide-border overflow-hidden rounded-lg border border-border bg-muted/20 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          {designItems.map(({ Icon, label, value, valueTestId }, index) => {
+            const isActive = index === activeDesignIndex;
+            return (
+              <div
+                className={cn("flex items-center justify-between gap-3 px-3 py-3 transition-colors duration-300 ease-out motion-reduce:transition-none sm:block", isActive ? "bg-primary-50/80" : "bg-transparent")}
+                data-active={isActive}
+                data-testid={`visual-plan-design-item-${index}`}
+                key={label}
+              >
+                <div className={cn("flex items-center gap-2 text-xs transition-colors duration-300 ease-out motion-reduce:transition-none", isActive ? "font-medium text-primary-700" : "text-muted-foreground")}>
+                  <Icon aria-hidden="true" className={cn("size-4 transition-colors duration-300 ease-out motion-reduce:transition-none", isActive ? "text-primary" : "text-muted-foreground")} />
+                  {label}
+                </div>
+                <p className={cn("text-sm font-semibold transition-colors duration-300 ease-out motion-reduce:transition-none sm:mt-1", isActive ? "text-primary-700" : "text-foreground")} data-testid={valueTestId}>{value}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function VisualPlanSummary({ characterCount, chapterCount, imageCount }: { characterCount: number; chapterCount: number; imageCount: number }) {
@@ -133,13 +227,14 @@ export function showsImageGenerationWait(pending: string | null) {
   return Boolean(pending && ["slot:", "generate:", "refine:"].some((prefix) => pending.startsWith(prefix)));
 }
 
-export function shouldPollVisualResources(pending: string | null, hasServerGeneration: boolean) {
-  return hasServerGeneration || showsImageGenerationWait(pending);
+export function shouldPollVisualResources(pending: string | null, hasServerGeneration: boolean, hasServerPlanOperation = false) {
+  return hasServerPlanOperation || pending === "plan" || pending === "originalize" || hasServerGeneration || showsImageGenerationWait(pending);
 }
 
 function visualStateFingerprint(state: CourseVisualResourcesState) {
   return JSON.stringify({
     planRevision: state.planRevision,
+    planOperation: state.planOperation,
     confirmedCoverAssetId: state.confirmedCoverAssetId,
     characters: state.characters.map((character) => [character.characterId, character.activeAssetId, character.status, character.versions.map((asset) => [asset.id, asset.status])]),
     slots: state.slots.map((slot) => [slot.id, slot.activeAssetId, slot.versions.map((asset) => [asset.id, asset.status])]),
@@ -153,7 +248,7 @@ function statusLabel(status: CourseVisualAsset["status"]) {
 }
 
 function qualityLabel(quality: CourseImageQuality) {
-  return qualityOptions.find((option) => option.value === quality)?.label ?? "高";
+  return quality === "low" ? "中" : quality === "high" ? "极高" : "高";
 }
 
 function findLastCompat<T>(items: T[], predicate: (item: T) => boolean) {
@@ -178,21 +273,6 @@ function slotStatusLabel(slot: CourseVisualImageSlot | null, revision: number | 
   if (hasCurrentFailure(slot, revision)) return "生成失败";
   if (slot.activeAssetId && slot.versions.some((asset) => asset.id === slot.activeAssetId && (revision === null || asset.planRevision === revision))) return "已完成";
   return "待生成";
-}
-
-function QualitySelector({ disabled, onChange, value }: { disabled: boolean; onChange: (quality: CourseImageQuality) => void; value: CourseImageQuality }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs font-medium text-muted-foreground">画面质量</span>
-      <div aria-label="画面质量" className="inline-flex rounded-lg border bg-muted p-1" role="radiogroup">
-        {qualityOptions.map((option) => (
-          <button aria-checked={value === option.value} className={cn("min-h-8 rounded-md border px-3 text-xs font-medium", value === option.value ? "border-primary bg-primary-50 text-primary-700" : "border-transparent text-muted-foreground hover:bg-background")} disabled={disabled} key={option.value} onClick={() => onChange(option.value)} role="radio" type="button">
-            {option.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function ImageGenerationConcurrencySelector({ disabled, onChange, value }: { disabled: boolean; onChange: (concurrency: number) => void; value: number }) {
@@ -548,6 +628,7 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
   const [state, setState] = useState(initialState);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [planSyncIssue, setPlanSyncIssue] = useState(false);
   const retryRequestIds = useRef(new Map<string, string>());
   const [advanced, setAdvanced] = useState(false);
   const [activeTab, setActiveTab] = useState(() => initialChapter(initialState));
@@ -569,6 +650,7 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
     if (!response.ok) throw new Error(data.message || "视觉资源加载失败");
     const nextState = data as CourseVisualResourcesState;
     setState(nextState);
+    setPlanSyncIssue(false);
     setMobileStage((current) => {
       if (!nextState.planReady) return "flow";
       if (current === "flow") return nextState.confirmedCoverAssetId ? "shots" : "cover";
@@ -578,13 +660,17 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
   }, [state.course.id]);
 
   const hasServerGeneration = state.slots.some((slot) => hasInFlightVisualVersion(slot.versions, state.planRevision));
+  const hasServerPlanOperation = state.planOperation?.status === "running";
   useEffect(() => {
-    if (!shouldPollVisualResources(pending, hasServerGeneration)) return;
+    if (!shouldPollVisualResources(pending, hasServerGeneration, hasServerPlanOperation)) return;
     const timer = window.setInterval(() => {
-      void refresh().catch((reason) => setError(reason instanceof Error ? reason.message : "图片状态同步失败"));
+      void refresh().catch((reason) => {
+        if (hasServerPlanOperation) setPlanSyncIssue(true);
+        else setError(reason instanceof Error ? reason.message : "图片状态同步失败");
+      });
     }, 3_000);
     return () => window.clearInterval(timer);
-  }, [hasServerGeneration, pending, refresh]);
+  }, [hasServerGeneration, hasServerPlanOperation, pending, refresh]);
 
   useEffect(() => {
     const sync = () => {
@@ -680,14 +766,15 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
   const visibleCharacters = characterGroup.slice((safeCharacterPage - 1) * CHARACTER_PAGE_SIZE, safeCharacterPage * CHARACTER_PAGE_SIZE);
   const missingPeople = peopleCharacters.filter((character) => coverSlot?.characterIds.includes(character.characterId) && !character.personVisualUrl);
   const coverConfirmed = Boolean(state.confirmedCoverAssetId && coverSlot?.activeAssetId === state.confirmedCoverAssetId);
-  const replacingPlan = pending === "originalize" || pending === "plan";
+  const replacingPlan = hasServerPlanOperation || pending === "originalize" || pending === "plan";
+  const planFailure = state.planOperation?.status === "failed" ? state.planOperation : null;
   const coverStatus = pending === `slot:${coverSlot?.id}` ? "生成中" : replacingPlan ? "处理中" : slotStatusLabel(coverSlot, state.planRevision);
   const completed = lessonSlots.filter((item) => item.activeAssetId && item.versions.some((asset) => asset.id === item.activeAssetId && asset.planRevision === state.planRevision)).length;
   const generating = lessonSlots.filter((item) => hasInFlightVisualVersion(item.versions, state.planRevision)).length;
   const failed = replacingPlan ? 0 : lessonSlots.filter((item) => hasCurrentFailure(item, state.planRevision)).length;
   const missing = lessonSlots.length - completed - generating;
   const currentChapter = chapters.find((chapter) => chapter.id === activeTab) ?? null;
-  const disabled = Boolean(pending || hasServerGeneration);
+  const disabled = Boolean(pending || hasServerGeneration || hasServerPlanOperation);
   const canEnterPreview = !hasServerGeneration;
 
   useEffect(() => {
@@ -773,7 +860,7 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
     });
   }
 
-  function updateVisualSettings(key: string, body: { quality?: CourseImageQuality; imageGenerationConcurrency?: number }) {
+  function updateVisualSettings(key: string, body: { imageGenerationConcurrency: number }) {
     void run(key, async () => {
       const response = await fetch(`/api/courses/${state.course.id}/visual-resources/settings`, {
         method: "PATCH",
@@ -875,9 +962,9 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
       <div className={cn(mobileStage !== "flow" && "hidden lg:block")} data-testid="visual-flow-section">
         <VisualSection icon={<Sparkles className="size-4" />} title="图片生成流程">
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <div className={cn("rounded-lg border px-3 py-2.5", state.planReady ? "border-emerald-200 bg-emerald-50/70" : "border-primary-200 bg-primary-50/60")}>
+            <div className={cn("rounded-lg border px-3 py-2.5", state.planReady && !hasServerPlanOperation ? "border-emerald-200 bg-emerald-50/70" : "border-primary-200 bg-primary-50/60")}>
               <p className="text-xs font-semibold text-foreground">1 · 视觉方案</p>
-              <p className="mt-1 text-xs text-muted-foreground">{state.planReady ? "已生成" : "待生成"}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{hasServerPlanOperation ? "生成中" : state.planReady ? "已生成" : planFailure ? "生成失败" : "待生成"}</p>
             </div>
             <div className={cn("rounded-lg border px-3 py-2.5", state.planReady ? "border-emerald-200 bg-emerald-50/70" : "border-border bg-muted/25")}>
               <p className="text-xs font-semibold text-foreground">2 · 主要角色</p>
@@ -899,10 +986,6 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
         <VisualSection icon={<Settings2 className="size-4" />} title="高级设置">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">调整后续图片的生成质量。</p>
-              <QualitySelector disabled={disabled} onChange={(quality) => updateVisualSettings(`quality:${quality}`, { quality })} value={state.quality} />
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
               <p className="max-w-2xl text-xs leading-5 text-muted-foreground">批量生成时最多同时处理这些图片。数值越高生成越快，也更容易触发图片服务限流。</p>
               <ImageGenerationConcurrencySelector disabled={disabled} onChange={(imageGenerationConcurrency) => updateVisualSettings(`concurrency:${imageGenerationConcurrency}`, { imageGenerationConcurrency })} value={state.imageGenerationConcurrency} />
             </div>
@@ -932,16 +1015,28 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
           icon={<Sparkles className="size-4" />}
           title="视觉方案"
         >
-          {replacingPlan ? (
-            <VisualPlanLoading originalizing={pending === "originalize"} />
-          ) : state.planReady ? (
-            <VisualPlanSummary chapterCount={chapters.length} characterCount={state.characters.length} imageCount={lessonSlots.length} />
-          ) : (
-            <div className="flex flex-col items-center py-4 text-center">
-              <Button disabled={disabled} onClick={() => void jsonAction("plan", `/api/courses/${state.course.id}/visual-resources/plan/generate`)}>
-                <Sparkles />
-                生成视觉方案
-              </Button>
+          {replacingPlan ? <VisualPlanLoading operation={hasServerPlanOperation ? state.planOperation : null} originalizing={pending === "originalize"} syncing={planSyncIssue} /> : (
+            <div className="space-y-3">
+              {planFailure ? (
+                <div className="flex flex-col gap-3 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between" role="alert">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-destructive">{planFailure.errorMessage || "视觉方案生成失败，请重试"}</p>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">{state.planReady ? "原视觉方案和已有图片仍保留。" : "尚未生成视觉方案，本次失败不会产生不完整方案。"}</p>
+                  </div>
+                  <Button onClick={() => planFailure.kind === "originalize" ? setConfirmOriginalize(true) : state.planReady ? setConfirmPlanUpdate(true) : void jsonAction("plan", `/api/courses/${state.course.id}/visual-resources/plan/generate`)} size="sm" variant="outline">
+                    <RefreshCw />
+                    {planFailure.kind === "originalize" ? "重新生成原创视觉设定" : state.planReady ? "重新更新视觉方案" : "重新生成视觉方案"}
+                  </Button>
+                </div>
+              ) : null}
+              {state.planReady ? <VisualPlanSummary chapterCount={chapters.length} characterCount={state.characters.length} imageCount={lessonSlots.length} /> : !planFailure ? (
+                <div className="flex flex-col items-center py-4 text-center">
+                  <Button disabled={disabled} onClick={() => void jsonAction("plan", `/api/courses/${state.course.id}/visual-resources/plan/generate`)}>
+                    <Sparkles />
+                    生成视觉方案
+                  </Button>
+                </div>
+              ) : null}
             </div>
           )}
         </VisualSection>

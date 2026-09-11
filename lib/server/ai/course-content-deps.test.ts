@@ -16,7 +16,6 @@ import {
   buildReadingRepairPromptContext,
   cefrWritingProfile,
   cefrWritingQualityRules,
-  contentReadingTimeoutMs,
   courseContentReasoningEfforts,
   createCourseContentChapterKeyProtocol,
   assertExerciseGenerationChapterKeys,
@@ -135,11 +134,6 @@ describe("course content prompt contexts", () => {
     expect(rules).toContain("前一段的结果");
     expect(rules).toContain("不能为了安放题目");
     expect(rules).toContain("不要用旁白宣布成长");
-  });
-
-  test("uses a longer timeout for the joint reading generation request", () => {
-    expect(contentReadingTimeoutMs(undefined)).toBe(600_000);
-    expect(contentReadingTimeoutMs("420000")).toBe(420_000);
   });
 
   test("allows only one paid format-repair attempt after deterministic normalization", () => {

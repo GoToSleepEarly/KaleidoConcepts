@@ -7,18 +7,25 @@ datasource db {
 }
 
 model User {
-  id                       String   @id @default(cuid())
-  username                 String   @unique
-  password                 String
-  displayName              String
-  writingProvider          String   @default("gpt-5.6-sol")
-  aiGateway                String   @default("quickrouter")
-  quickRouterEndpoint      String   @default("main")
-  imageModel               String   @default("gpt-image-2")
-  imageGateway             String   @default("quickrouter")
-  imageQuickRouterEndpoint String   @default("main")
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  id                                 String             @id @default(cuid())
+  username                           String             @unique
+  password                           String
+  displayName                        String
+  writingProvider                    String             @default("gpt-5.6-sol")
+  aiGateway                          String             @default("easy88ai")
+  quickRouterEndpoint                String             @default("main")
+  imageModel                         String             @default("gpt-image-2-c")
+  imageGateway                       String             @default("quickrouter")
+  imageQuickRouterEndpoint           String             @default("main")
+  textReasoningEffort                String             @default("medium")
+  textStreamingEnabled               Boolean            @default(true)
+  textStreamFirstEventTimeoutSeconds Int                @default(120)
+  textStreamIdleTimeoutSeconds       Int                @default(180)
+  textStreamMaxDurationSeconds       Int                @default(1200)
+  textNonStreamTimeoutSeconds        Int                @default(600)
+  imageQuality                       CourseImageQuality @default(high)
+  createdAt                          DateTime           @default(now())
+  updatedAt                          DateTime           @updatedAt
 }
 
 model Person {
@@ -83,7 +90,6 @@ model Course {
   lifecycleStatus            CourseLifecycle            @default(draft)
   currentStage               CourseStage                @default(audience)
   staleFromStage             CourseStage?
-  visualQuality              CourseImageQuality         @default(medium)
   imageGenerationConcurrency Int                        @default(3)
   idempotencyKey             String                     @unique
   createdAt                  DateTime                   @default(now())
@@ -523,8 +529,8 @@ model CourseContentChatMessage {
 }
 
 model AiGenerationLog {
-  id               String                 @id @default(cuid())
-  requestId        String?                @unique
+  id               String             @id @default(cuid())
+  requestId        String?            @unique
   courseId         String?
   stage            String
   operation        String
@@ -535,8 +541,9 @@ model AiGenerationLog {
   outputSnapshot   Json?
   errorMessage     String?
   latencyMs        Int?
-  createdAt        DateTime               @default(now())
-  course           Course?                @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  activeScope      String?            @unique
+  createdAt        DateTime           @default(now())
+  course           Course?            @relation(fields: [courseId], references: [id], onDelete: SetNull)
 
   @@index([courseId, createdAt])
   @@index([stage, operation, createdAt])

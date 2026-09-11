@@ -69,18 +69,13 @@ CRAZYROUTER_TEXT_API_KEY="..."
 CRAZYROUTER_IMAGE_API_KEY="..."
 EASY88AI_TEXT_API_KEY="..."
 EASY88AI_IMAGE_API_KEY="..."
-
-QUICKROUTER_TEXT_STREAM="false"
-CRAZYROUTER_TEXT_STREAM="false"
-EASY88AI_TEXT_STREAM="true"
-DEEPSEEK_TEXT_STREAM="false"
 ```
 
 `AUTH_COOKIE_SECURE` 默认跟随 `NODE_ENV`：生产环境为安全 Cookie，只能通过 HTTPS 使用。若公网入口暂时只能使用 HTTP，可短期显式设置为 `false`，使 Safari 等浏览器能够保存身份 Cookie；启用 HTTPS 后必须恢复为 `true`。修改该变量后需要重新发布或重启应用进程，老师随后退出并重新登录。
 
-数据库密码包含 URL 保留字符时必须编码。模型和提供方由当前账号的高级设置决定，环境变量只保存各提供方按能力拆分的密钥和请求超时，不配置模型或提供方地址。QuickRouter、Crazyrouter 和 Easy88AI 的文本、图片密钥互不回退；DeepSeek 仅配置文本密钥。DeepSeek 官方地址固定预置为 `https://api.deepseek.com`。生产环境不得配置 `HTTP_PROXY` 或 `HTTPS_PROXY`。
+数据库密码包含 URL 保留字符时必须编码。模型、提供方和全部文本超时由当前账号的高级设置决定；环境变量只保存各提供方按能力拆分的密钥和图片请求超时，不配置文本超时、模型或提供方地址。QuickRouter、Crazyrouter 和 Easy88AI 的文本、图片密钥互不回退；DeepSeek 仅配置文本密钥。DeepSeek 官方地址固定预置为 `https://api.deepseek.com`。生产环境不得配置 `HTTP_PROXY` 或 `HTTPS_PROXY`。
 
-文本流式开关按提供方独立生效，只有值严格等于 `true` 才启用。启用后仍由服务端聚合完整 Responses SSE、执行结构校验并返回原有 JSON，前端协议不变。关闭或删除开关会立即回到保留的非流式请求与解析分支。建议本轮只为 `EASY88AI_TEXT_STREAM="true"`；流式响应中断时不得保存半截结果，也不得自动重试可能已经计费的请求。
+文本思考强度、流式返回与四个文本超时由当前账号的高级设置决定，不读取任何 `*_TEXT_STREAM`、`TEXT_GENERATION_TIMEOUT_MS` 或 `COURSE_CONTENT_GENERATION_TIMEOUT_MS` 环境变量。流式模式仍由服务端聚合完整 Responses SSE、执行结构校验并返回原有 JSON，前端协议不变；流式响应中断时不得保存半截结果，也不得自动重试可能已经计费的请求。
 
 旧的原地部署脚本默认拒绝执行，防止误用 `pnpm deploy:prod` 覆盖正在运行的 `.next`。只有专用独立主机显式配置 `DEPLOYMENT_TARGET="dedicated-host"` 才能使用旧脚本；共享主机不需要额外配置该变量。
 
@@ -192,3 +187,5 @@ pm2 ls
 新版只监听 `127.0.0.1:3100`，腾讯云安全组不得开放 `3100` 或 `5432`。先通过 SSH 隧道完成登录、文本生成、图片生成、图片编辑和 PDF 验收，再为独立子域名增加反向代理。旧域名和旧 upstream 不在新版部署脚本作用域内。
 
 当前 Next.js 没有配置 `basePath`，不能挂载到旧域名的 `/v2` 子路径；必须使用独立子域名。
+
+仓库提供 `deploy/nginx-pbl-studio-v2.conf.example`。替换独立子域名和证书路径后复制到 `/etc/nginx/sites-available/pbl-studio-v2`，链接到 `sites-enabled`，先执行 `sudo nginx -t`，成功后再执行 `sudo systemctl reload nginx`。模板把连接建立时限设为 10 秒，把 `proxy_send_timeout`、`proxy_read_timeout` 和 `send_timeout` 统一设为 65 分钟：账户允许把应用流式硬上限从默认 20 分钟提高到最多 60 分钟，额外 5 分钟用于传输和收尾，因此任何合法账户配置下代理都不会成为更早的失败源。

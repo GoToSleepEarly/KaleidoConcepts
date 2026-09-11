@@ -1,11 +1,8 @@
 import { z } from "zod";
 
 export const visualSettingsSchema = z.object({
-  quality: z.enum(["low", "medium", "high"]).optional(),
-  imageGenerationConcurrency: z.number().int().min(1).max(5).optional(),
-}).strict().refine((input) => input.quality !== undefined || input.imageGenerationConcurrency !== undefined, {
-  message: "至少需要修改一项视觉设置",
-});
+  imageGenerationConcurrency: z.number().int().min(1).max(5),
+}).strict();
 
 export const visualIntentSchema = z.object({
   intent: z.enum(["preserve_identity", "originalize"]),

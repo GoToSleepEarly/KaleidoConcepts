@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import { CourseImageSourceError } from "@/lib/server/storage/course-images";
 import { CourseVisualPlanResponseError } from "@/lib/server/ai/course-visual-plan-deps";
-import { adoptLatestPersonVisual, buildCourseImageEditPrompt, generateCourseVisualPlan, generateVisualSlot, getCourseVisualResources, hasUnsyncedCharacterAppearance, recoverStaleCourseImages, refineCourseVisualAsset, saveUploadedCharacterReference, selectCourseVisualAsset, updateCourseVisualSettings, updateCharacterVisualIntent, updateVisualCharacterAppearance } from "./visual-resources";
+import { adoptLatestPersonVisual, buildCourseImageEditPrompt, generateCourseVisualPlan, generateVisualSlot, getCourseVisualResources, hasUnsyncedCharacterAppearance, recoverStaleCourseImages, recoverStaleVisualPlanOperations, refineCourseVisualAsset, saveUploadedCharacterReference, selectCourseVisualAsset, updateCourseVisualSettings, updateCharacterVisualIntent, updateVisualCharacterAppearance } from "./visual-resources";
 
 describe("视觉资源仓储", () => {
   const currentPlan = {
@@ -36,7 +36,7 @@ describe("视觉资源仓储", () => {
   test("相同视觉方案请求正在执行时不再次调用 AI", async () => {
     const generate = vi.fn();
     const db = {
-      aiGenerationLog: { findUnique: vi.fn(async () => ({ requestId: "same-key", status: "running", inputSnapshot: { mode: "faithful" }, outputSnapshot: null, errorMessage: null })) },
+      aiGenerationLog: { updateMany: vi.fn(async () => ({ count: 0 })), findUnique: vi.fn(async () => ({ requestId: "same-key", status: "running", inputSnapshot: { mode: "faithful" }, outputSnapshot: null, errorMessage: null })) },
     };
 
     await expect(generateCourseVisualPlan(db as never, "course-1", "same-key", { generate } as never)).rejects.toThrow("视觉方案请求正在处理中");
@@ -46,7 +46,7 @@ describe("视觉资源仓储", () => {
   test("相同视觉方案请求已经失败时返回持久化原因，不再次调用 AI", async () => {
     const generate = vi.fn();
     const db = {
-      aiGenerationLog: { findUnique: vi.fn(async () => ({ requestId: "same-key", status: "failed", inputSnapshot: { mode: "faithful" }, outputSnapshot: { diagnostics: { kind: "invalid_structure", issues: [{ path: "shots.3", message: "Required" }] } }, errorMessage: "AI 返回的视觉方案内容不完整，请重试" })) },
+      aiGenerationLog: { updateMany: vi.fn(async () => ({ count: 0 })), findUnique: vi.fn(async () => ({ requestId: "same-key", status: "failed", inputSnapshot: { mode: "faithful" }, outputSnapshot: { diagnostics: { kind: "invalid_structure", issues: [{ path: "shots.3", message: "Required" }] } }, errorMessage: "AI 返回的视觉方案内容不完整，请重试" })) },
     };
 
     await expect(generateCourseVisualPlan(db as never, "course-1", "same-key", { generate } as never)).rejects.toThrow("AI 返回的视觉方案内容不完整，请重试");
@@ -57,11 +57,13 @@ describe("视觉资源仓储", () => {
     const diagnostics = { kind: "invalid_structure" as const, issues: [{ path: "shots.3.sceneDescription", message: "Required", code: "invalid_type" }] };
     const failure = new CourseVisualPlanResponseError(undefined, diagnostics);
     const update = vi.fn(async () => ({}));
+    const updateMany = vi.fn(async () => ({ count: 1 }));
     const db = {
       aiGenerationLog: {
         findUnique: vi.fn(async () => null),
         create: vi.fn(async ({ data }) => ({ id: "operation-1", ...data, outputSnapshot: null, errorMessage: null })),
         update,
+        updateMany,
       },
       course: { findUnique: vi.fn(async () => ({ id: "course-1" })) },
       courseLessonContent: { findUnique: vi.fn(async () => ({ status: "confirmed", chapters: [], writingProvider: "gpt-5.6-sol", sourceRevision: 2, contentVersion: 3 })) },
@@ -76,12 +78,13 @@ describe("视觉资源仓储", () => {
 
     await expect(generateCourseVisualPlan(db as never, "course-1", "paid-request-1", { generate } as never)).rejects.toBe(failure);
 
-    expect(db.aiGenerationLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ requestId: "paid-request-1", status: "running" }) });
-    expect(update).toHaveBeenLastCalledWith({
-      where: { id: "operation-1" },
+    expect(db.aiGenerationLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ requestId: "paid-request-1", status: "running", activeScope: "visual-plan:course-1" }) });
+    expect(updateMany).toHaveBeenLastCalledWith({
+      where: { id: "operation-1", status: "running" },
       data: {
         status: "failed",
         errorMessage: "AI 返回的视觉方案内容不完整，请重试",
+        activeScope: null,
         outputSnapshot: {
           rawResponse: "{\"candidate\":true}",
           tokenUsage: { inputTokens: 100, outputTokens: 50, visibleOutputTokens: 40, reasoningTokens: 10, totalTokens: 150 },
@@ -93,7 +96,7 @@ describe("视觉资源仓储", () => {
   test("引用角色缺少资料关联时不调用视觉方案 AI", async () => {
     const generate = vi.fn();
     const db = {
-      aiGenerationLog: { findUnique: vi.fn(async () => null) },
+      aiGenerationLog: { updateMany: vi.fn(async () => ({ count: 0 })), findUnique: vi.fn(async () => null) },
       course: { findUnique: vi.fn(async () => ({ id: "course-1" })) },
       courseLessonContent: { findUnique: vi.fn(async () => ({ status: "confirmed", chapters: [], writingProvider: "gpt-5.6-sol" })) },
       courseStoryOutline: { findUnique: vi.fn(async () => ({ title: "Jett Story" })) },
@@ -106,12 +109,14 @@ describe("视觉资源仓储", () => {
   });
   test("已有原创视觉方案可以再次调整，不要求先恢复忠实模式", async () => {
     const update = vi.fn(async () => ({}));
+    const updateMany = vi.fn(async () => ({ count: 1 }));
     const generate = vi.fn(async () => { throw new Error("stop-after-guard"); });
     const db = {
       aiGenerationLog: {
         findUnique: vi.fn(async () => null),
         create: vi.fn(async ({ data }) => ({ id: "operation-1", ...data, outputSnapshot: null, errorMessage: null })),
         update,
+        updateMany,
       },
       course: { findUnique: vi.fn(async () => ({ id: "course-1" })) },
       courseLessonContent: { findUnique: vi.fn(async () => ({ status: "confirmed", chapters: [], writingProvider: "gpt-5.6-sol", sourceRevision: 2, contentVersion: 3 })) },
@@ -123,7 +128,7 @@ describe("视觉资源仓储", () => {
     await expect(generateCourseVisualPlan(db as never, "course-1", "adjust-originalized", { generate } as never, "originalized")).rejects.toThrow("stop-after-guard");
 
     expect(generate).toHaveBeenCalledOnce();
-    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "failed" }) }));
+    expect(updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "failed", activeScope: null }) }));
   });
   test("过期的图片生成租约会恢复为可重试失败而不是永久生成中", async () => {
     const updateMany = vi.fn(async () => ({ count: 2 }));
@@ -150,11 +155,33 @@ describe("视觉资源仓储", () => {
       },
     });
   });
-  test("课程视觉设置只影响后续请求", async () => {
-    const update = vi.fn(async () => ({ visualQuality: "high", imageGenerationConcurrency: 4 }));
+  test("课程视觉设置只保留批量并发数", async () => {
+    const update = vi.fn(async () => ({ imageGenerationConcurrency: 4 }));
     const db = { course: { findUnique: vi.fn(async () => ({ id: "course-1" })), update } };
-    await updateCourseVisualSettings(db as never, "course-1", { quality: "high", imageGenerationConcurrency: 4 });
-    expect(update).toHaveBeenCalledWith({ where: { id: "course-1" }, data: { visualQuality: "high", imageGenerationConcurrency: 4 }, select: { visualQuality: true, imageGenerationConcurrency: true } });
+    await updateCourseVisualSettings(db as never, "course-1", { imageGenerationConcurrency: 4 });
+    expect(update).toHaveBeenCalledWith({ where: { id: "course-1" }, data: { imageGenerationConcurrency: 4 }, select: { imageGenerationConcurrency: true } });
+  });
+  test("过期的视觉方案任务会失败并释放课程级活动作用域", async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const db = { aiGenerationLog: { updateMany } };
+    const now = new Date("2026-09-11T12:00:00.000Z");
+
+    await recoverStaleVisualPlanOperations(db as never, "course-1", now);
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        courseId: "course-1",
+        stage: "visual_resources",
+        operation: { in: ["visual_generate_resource_plan", "visual_originalize_resource_plan"] },
+        status: "running",
+        createdAt: { lte: new Date("2026-09-11T11:48:00.000Z") },
+      },
+      data: {
+        status: "failed",
+        errorMessage: "上次视觉方案生成已中断或超时，请重试",
+        activeScope: null,
+      },
+    });
   });
 
   test("高级编辑更新中文角色形象和本课造型，但保留当前图片和封面确认", async () => {
@@ -588,11 +615,13 @@ describe("视觉资源仓储", () => {
       courseVisualImageSlot: { findMany: vi.fn(async () => [{ id: "cover-slot", stableKey: "visual-cover", slotType: "visual_cover", chapterId: null, paragraphId: null, sourceText: "Story", characterIds: ["character-1"], focus: "Open the path", sceneDescription: "Sky Runner opens an air path.", prompt: "stored", activeImageId: null, activeImage: null, images: [] }]) },
       coursePerson: { findMany: vi.fn(async () => []) },
       courseLessonContent: { findUnique: vi.fn(async () => ({ chapters: [] })) },
+      aiGenerationLog: { updateMany: vi.fn(async () => ({ count: 0 })), findFirst: vi.fn(async () => ({ operation: "visual_generate_resource_plan", status: "running", createdAt: new Date("2026-09-11T10:00:00.000Z"), errorMessage: null, inputSnapshot: { sourceRevision: "2:3", characterCount: 1, paragraphCount: 0 } })) },
     };
 
     const state = await getCourseVisualResources(db as never, "course-1");
 
     expect(state.imageGenerationConcurrency).toBe(3);
+    expect(state.planOperation).toEqual({ kind: "generate", status: "running", startedAt: "2026-09-11T10:00:00.000Z", errorMessage: null, characterCount: 1, imagePlanCount: 0 });
     expect(state.slots[0]?.prompt).toContain("C01 — Sky Runner");
     expect(state.slots[0]?.prompt).not.toContain("Jett");
     expect(state.slots[0]?.prompt).not.toContain("捷特");
@@ -658,7 +687,7 @@ describe("视觉资源仓储", () => {
     expect(visualUpdate).toHaveBeenCalledWith({ where: { id: "visual-1" }, data: { activeImageId: "asset-ref", source: "uploaded_reference", status: "ready" } });
   });
 
-  test("人物外形版本修改固定使用 low，不读取课程画面质量", async () => {
+  test("人物外形版本修改使用账户图片质量", async () => {
     const parent = { id: "person-shape", courseId: "course-1", slotId: null, characterVisualId: "visual-1", prompt: "character prompt", quality: "low", planRevision: 1, status: "succeeded", storagePath: "person.webp", providerImageUrl: null, temporarySourcePath: null };
     const revision = { ...parent, id: "person-revision", parentAssetId: parent.id, status: "pending" };
     const edit = vi.fn(async (input: { prompt: string; quality: "low" | "medium" | "high"; imageDataUrls: string[]; portrait?: boolean }) => {
@@ -680,10 +709,11 @@ describe("视觉资源仓储", () => {
       loadReferences: vi.fn(async () => ["data:image/webp;base64,aGVsbG8="],
       ),
       removeTemporarySource: vi.fn(),
+      quality: "high",
     });
 
-    expect(imageUpsert.mock.calls[0]?.[0].create.quality).toBe("low");
-    expect(edit.mock.calls[0]?.[0].quality).toBe("low");
+    expect(imageUpsert.mock.calls[0]?.[0].create.quality).toBe("high");
+    expect(edit.mock.calls[0]?.[0].quality).toBe("high");
   });
 
   test("编辑图片只提交原图和本次修改要求，不混入完整旧 Prompt 或角色参考图", async () => {

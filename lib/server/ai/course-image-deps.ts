@@ -12,7 +12,7 @@ import { loadCourseImageReferences, persistCourseImage, removeTemporaryCourseIma
 function resolvedImageSettings(input: AiProviderSettingsInput | AccountAiSettings | ImageProviderSettings): ImageProviderSettings {
   if (typeof input === "object" && "imageGateway" in input) return imageProviderSettings(input);
   if (typeof input === "object" && "imageModel" in input) return input;
-  return { ...normalizeAiProviderSettings(input), imageModel: "gpt-image-2" };
+  return { ...normalizeAiProviderSettings(input), imageModel: "gpt-image-2", imageQuality: "medium" };
 }
 
 export function createCourseImageGenerationDeps(input: AiProviderSettingsInput | AccountAiSettings | ImageProviderSettings = "quickrouter") {
@@ -28,6 +28,7 @@ export function createCourseImageGenerationDeps(input: AiProviderSettingsInput |
     persist: persistCourseImage,
     loadReferences: loadCourseImageReferences,
     removeTemporarySource: removeTemporaryCourseImage,
+    quality: settings.imageQuality,
     normalizeQuality: (quality: Parameters<typeof imageQualityForModel>[1]) => imageQualityForModel(model, quality),
   };
 }

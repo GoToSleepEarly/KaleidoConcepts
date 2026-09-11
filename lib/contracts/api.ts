@@ -813,8 +813,15 @@ export type CourseVisualImageSlot = {
 
 export type CourseVisualResourcesState = {
   course: { id: string; title: string; currentStage: CourseStage; staleFromStage?: CourseStage | null };
-  quality: CourseImageQuality;
   imageGenerationConcurrency: number;
+  planOperation: {
+    kind: "generate" | "originalize";
+    status: "running" | "succeeded" | "failed";
+    startedAt: string;
+    errorMessage: string | null;
+    characterCount: number;
+    imagePlanCount: number;
+  } | null;
   planReady: boolean;
   planRevision: number | null;
   planMode: VisualPlanMode | null;

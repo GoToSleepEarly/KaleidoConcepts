@@ -2,6 +2,13 @@ import { describe, expect, test, vi } from "vitest";
 
 import { AiGatewayAuthenticationError, aiGatewayFromRequest } from "./request-gateway";
 
+const timeoutSettings = {
+  textStreamFirstEventTimeoutSeconds: 120,
+  textStreamIdleTimeoutSeconds: 180,
+  textStreamMaxDurationSeconds: 1_200,
+  textNonStreamTimeoutSeconds: 600,
+};
+
 describe("aiGatewayFromRequest", () => {
   test("uses the authenticated account preference and ignores unrelated cookies", async () => {
     const findUnique = vi.fn().mockResolvedValue({
@@ -15,6 +22,10 @@ describe("aiGatewayFromRequest", () => {
       imageModel: "gpt-image-2-c",
       imageGateway: "quickrouter",
       imageQuickRouterEndpoint: "direct",
+      textReasoningEffort: "high",
+      textStreamingEnabled: true,
+      ...timeoutSettings,
+      imageQuality: "low",
     });
     const request = new Request("http://localhost/api/test", {
       headers: { cookie: "kaleido.user-id=teacher-1; theme=dark" },
@@ -27,6 +38,10 @@ describe("aiGatewayFromRequest", () => {
       imageModel: "gpt-image-2-c",
       imageGateway: "quickrouter",
       imageQuickRouterEndpoint: "direct",
+      textReasoningEffort: "high",
+      textStreamingEnabled: true,
+      ...timeoutSettings,
+      imageQuality: "high",
     });
     expect(findUnique).toHaveBeenCalledWith({ where: { id: "teacher-1" } });
   });
@@ -44,6 +59,10 @@ describe("aiGatewayFromRequest", () => {
       imageModel: "gpt-image-2" as const,
       imageGateway: "crazyrouter" as const,
       imageQuickRouterEndpoint: "main" as const,
+      textReasoningEffort: "medium" as const,
+      textStreamingEnabled: true,
+      ...timeoutSettings,
+      imageQuality: "medium" as const,
     }));
     const db = { user: { findUnique } };
     const request = new Request("http://localhost/api/test", {
@@ -57,6 +76,10 @@ describe("aiGatewayFromRequest", () => {
       imageModel: "gpt-image-2",
       imageGateway: "crazyrouter",
       imageQuickRouterEndpoint: "main",
+      textReasoningEffort: "medium",
+      textStreamingEnabled: true,
+      ...timeoutSettings,
+      imageQuality: "medium",
     });
     aiGateway = "crazyrouter";
     await expect(aiGatewayFromRequest(request, db)).resolves.toEqual({
@@ -66,6 +89,10 @@ describe("aiGatewayFromRequest", () => {
       imageModel: "gpt-image-2",
       imageGateway: "crazyrouter",
       imageQuickRouterEndpoint: "main",
+      textReasoningEffort: "medium",
+      textStreamingEnabled: true,
+      ...timeoutSettings,
+      imageQuality: "medium",
     });
     expect(findUnique).toHaveBeenCalledTimes(2);
   });
@@ -97,6 +124,10 @@ describe("aiGatewayFromRequest", () => {
       imageModel: "gpt-image-2-c",
       imageGateway: "crazyrouter",
       imageQuickRouterEndpoint: "main",
+      textReasoningEffort: "medium",
+      textStreamingEnabled: true,
+      ...timeoutSettings,
+      imageQuality: "medium",
     });
     const request = new Request("http://localhost/api/test", {
       headers: { cookie: "kaleido.user-id=teacher-1" },

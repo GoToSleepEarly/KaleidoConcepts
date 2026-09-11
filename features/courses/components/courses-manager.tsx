@@ -127,13 +127,13 @@ export function CoursesManager() {
       {error ? <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div> : null}
 
       <section className="overflow-hidden rounded-xl bg-white shadow-[0_2px_8px_rgba(46,78,108,0.08)]" data-testid="courses-list">
-        <div className="hidden min-h-14 grid-cols-[minmax(210px,1.5fr)_minmax(160px,1fr)_120px_120px_125px_184px] items-center gap-3 border-b border-[#CCD8F8] bg-[#E9EEFF] px-5 py-3.5 text-sm font-bold text-[#30459E] xl:grid">
+        <div className="hidden min-h-14 grid-cols-[minmax(210px,1.5fr)_minmax(160px,1fr)_136px_120px_125px_168px] items-center gap-3 border-b border-[#CCD8F8] bg-[#E9EEFF] px-5 py-3.5 text-sm font-bold text-[#30459E] xl:grid" data-testid="courses-list-header">
           <span className="pl-[52px]">课程信息</span><span>授课对象</span><span>教学配置</span><span>制作进度</span><span>状态与更新</span><span className="text-center">操作</span>
         </div>
         <div className="divide-y divide-[#E5EFF7]">
           {loading ? Array.from({ length: 3 }).map((_, index) => <div className="flex items-center gap-4 px-5 py-5" key={index}><div className="skeleton size-10 rounded-md" /><div className="flex-1 space-y-2"><div className="skeleton h-4 w-48 rounded" /><div className="skeleton h-3 w-72 max-w-full rounded" /></div></div>) : null}
           {!loading && courses.map((course) => (
-            <article className="grid gap-x-4 gap-y-3 px-4 py-4 transition-colors hover:bg-[#F8FBFE] sm:grid-cols-2 lg:px-5 xl:min-h-20 xl:grid-cols-[minmax(210px,1.5fr)_minmax(160px,1fr)_120px_120px_125px_184px] xl:items-center xl:gap-3 xl:py-3.5" key={course.id}>
+            <article className="grid gap-x-4 gap-y-3 px-4 py-4 transition-colors hover:bg-[#F8FBFE] sm:grid-cols-2 lg:px-5 xl:min-h-20 xl:grid-cols-[minmax(210px,1.5fr)_minmax(160px,1fr)_136px_120px_125px_168px] xl:items-center xl:gap-3 xl:py-3.5" key={course.id}>
               <div className="flex min-w-0 items-center gap-3 sm:col-span-2 xl:col-span-1">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#EEF0FF] text-[#5365EC] xl:size-10 xl:rounded-xl"><BookOpen className="size-[18px] xl:size-5" /></span>
                 <div className="min-w-0">
@@ -148,7 +148,7 @@ export function CoursesManager() {
               </div>
               <div>
                 <p className="text-xs font-medium text-[#7890A7] xl:hidden">教学配置</p>
-                <p className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-sm font-medium text-[#2D4964] xl:mt-0"><Clock3 className="size-4 text-[#5365EC]" /><span>{course.englishLevel ?? "未设置"} · {course.durationMinutes} 分钟</span></p>
+                <p className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-sm font-medium text-[#2D4964] xl:mt-0" data-testid={`course-teaching-config-${course.id}`}><Clock3 className="size-4 shrink-0 text-[#5365EC]" data-testid={`course-teaching-config-icon-${course.id}`} /><span>{course.englishLevel ?? "未设置"} · {course.durationMinutes} 分钟</span></p>
               </div>
               <div className="min-w-0"><p className="text-xs font-medium text-[#7890A7] xl:hidden">制作进度</p><p className="mt-1 truncate text-sm font-semibold tabular-nums text-[#4659DC] xl:mt-0">Step {stageSteps[course.currentStage]}/6</p><p className="mt-1 truncate text-[13px] text-[#69829B]">{stageLabels[course.currentStage]}</p></div>
               <div><p className="text-xs font-medium text-[#7890A7] xl:hidden">状态与更新</p><div className="mt-1 flex items-center gap-2 xl:mt-0 xl:block"><Badge variant={course.lifecycleStatus === "published" ? "success" : "secondary"}>{course.lifecycleStatus === "published" ? "已发布" : "草稿"}</Badge><p className="text-xs tabular-nums text-[#69829B] xl:mt-2">{formatDate(course.updatedAt)}</p></div></div>

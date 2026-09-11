@@ -16,6 +16,13 @@ type DbUser = {
   imageModel?: AccountAiSettings["imageModel"];
   imageGateway?: AccountAiSettings["imageGateway"];
   imageQuickRouterEndpoint?: AccountAiSettings["imageQuickRouterEndpoint"];
+  textReasoningEffort?: AccountAiSettings["textReasoningEffort"];
+  textStreamingEnabled?: AccountAiSettings["textStreamingEnabled"];
+  textStreamFirstEventTimeoutSeconds?: AccountAiSettings["textStreamFirstEventTimeoutSeconds"];
+  textStreamIdleTimeoutSeconds?: AccountAiSettings["textStreamIdleTimeoutSeconds"];
+  textStreamMaxDurationSeconds?: AccountAiSettings["textStreamMaxDurationSeconds"];
+  textNonStreamTimeoutSeconds?: AccountAiSettings["textNonStreamTimeoutSeconds"];
+  imageQuality?: AccountAiSettings["imageQuality"];
 };
 
 export type AuthDb = {

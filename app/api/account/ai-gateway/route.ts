@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { authenticatedUserId } from "@/lib/auth-cookie";
-import { AI_GATEWAYS, IMAGE_GENERATION_MODELS, QUICKROUTER_ENDPOINTS, TEXT_GENERATION_MODELS, isImageSelectionSupported } from "@/lib/ai-gateway";
+import { AI_GATEWAYS, IMAGE_GENERATION_MODELS, IMAGE_QUALITIES, QUICKROUTER_ENDPOINTS, TEXT_GENERATION_MODELS, TEXT_REASONING_EFFORTS, TEXT_TIMEOUT_LIMITS, defaultTextTimeoutSettings, imageQualityForSelection, isImageSelectionSupported, isTextTimeoutSettingsValid } from "@/lib/ai-gateway";
 import { getDb } from "@/lib/server/db";
 
 const inputSchema = z
@@ -13,6 +13,13 @@ const inputSchema = z
     imageQuickRouterEndpoint: z.enum(QUICKROUTER_ENDPOINTS).optional(),
     quickRouterEndpoint: z.enum(QUICKROUTER_ENDPOINTS).optional(),
     writingProvider: z.enum(TEXT_GENERATION_MODELS).optional(),
+    textReasoningEffort: z.enum(TEXT_REASONING_EFFORTS).optional(),
+    textStreamingEnabled: z.boolean().optional(),
+    textStreamFirstEventTimeoutSeconds: z.number().int().min(TEXT_TIMEOUT_LIMITS.streamFirstEventSeconds.min).max(TEXT_TIMEOUT_LIMITS.streamFirstEventSeconds.max).optional(),
+    textStreamIdleTimeoutSeconds: z.number().int().min(TEXT_TIMEOUT_LIMITS.streamIdleSeconds.min).max(TEXT_TIMEOUT_LIMITS.streamIdleSeconds.max).optional(),
+    textStreamMaxDurationSeconds: z.number().int().min(TEXT_TIMEOUT_LIMITS.streamMaxDurationSeconds.min).max(TEXT_TIMEOUT_LIMITS.streamMaxDurationSeconds.max).optional(),
+    textNonStreamTimeoutSeconds: z.number().int().min(TEXT_TIMEOUT_LIMITS.nonStreamSeconds.min).max(TEXT_TIMEOUT_LIMITS.nonStreamSeconds.max).optional(),
+    imageQuality: z.enum(IMAGE_QUALITIES).optional(),
   })
   .strict();
 
@@ -28,6 +35,13 @@ export async function GET(request: Request) {
     imageModel: user.imageModel,
     imageGateway: user.imageGateway,
     imageQuickRouterEndpoint: user.imageQuickRouterEndpoint,
+    textReasoningEffort: user.textReasoningEffort,
+    textStreamingEnabled: user.textStreamingEnabled,
+    textStreamFirstEventTimeoutSeconds: user.textStreamFirstEventTimeoutSeconds,
+    textStreamIdleTimeoutSeconds: user.textStreamIdleTimeoutSeconds,
+    textStreamMaxDurationSeconds: user.textStreamMaxDurationSeconds,
+    textNonStreamTimeoutSeconds: user.textNonStreamTimeoutSeconds,
+    imageQuality: user.imageQuality,
   });
 }
 
@@ -41,8 +55,19 @@ export async function PATCH(request: Request) {
   if (!current) return NextResponse.json({ message: "账号不存在" }, { status: 404 });
   const imageModel = input.data.imageModel ?? current.imageModel;
   const imageGateway = input.data.imageGateway ?? current.imageGateway;
+  const timeoutDefaults = defaultTextTimeoutSettings();
+  const timeoutSettings = {
+    textStreamFirstEventTimeoutSeconds: input.data.textStreamFirstEventTimeoutSeconds ?? current.textStreamFirstEventTimeoutSeconds ?? timeoutDefaults.textStreamFirstEventTimeoutSeconds,
+    textStreamIdleTimeoutSeconds: input.data.textStreamIdleTimeoutSeconds ?? current.textStreamIdleTimeoutSeconds ?? timeoutDefaults.textStreamIdleTimeoutSeconds,
+    textStreamMaxDurationSeconds: input.data.textStreamMaxDurationSeconds ?? current.textStreamMaxDurationSeconds ?? timeoutDefaults.textStreamMaxDurationSeconds,
+    textNonStreamTimeoutSeconds: input.data.textNonStreamTimeoutSeconds ?? current.textNonStreamTimeoutSeconds ?? timeoutDefaults.textNonStreamTimeoutSeconds,
+  };
+  const imageQuality = imageQualityForSelection(imageModel as (typeof IMAGE_GENERATION_MODELS)[number], (input.data.imageQuality ?? current.imageQuality) as (typeof IMAGE_QUALITIES)[number]);
   if (!isImageSelectionSupported(imageModel as (typeof IMAGE_GENERATION_MODELS)[number], imageGateway as (typeof AI_GATEWAYS)[number])) {
     return NextResponse.json({ message: "图片模型与调用线路不兼容" }, { status: 400 });
+  }
+  if (!isTextTimeoutSettingsValid(timeoutSettings)) {
+    return NextResponse.json({ message: "文本超时设置无效：最长运行时间必须大于首个响应和事件空闲时间" }, { status: 400 });
   }
   const user = await db.user.update({
     where: { id },
@@ -53,6 +78,10 @@ export async function PATCH(request: Request) {
       imageModel,
       imageGateway,
       imageQuickRouterEndpoint: input.data.imageQuickRouterEndpoint ?? current.imageQuickRouterEndpoint,
+      textReasoningEffort: input.data.textReasoningEffort ?? current.textReasoningEffort,
+      textStreamingEnabled: input.data.textStreamingEnabled ?? current.textStreamingEnabled,
+      ...timeoutSettings,
+      imageQuality,
     },
   });
   return NextResponse.json({
@@ -62,5 +91,12 @@ export async function PATCH(request: Request) {
     imageModel: user.imageModel,
     imageGateway: user.imageGateway,
     imageQuickRouterEndpoint: user.imageQuickRouterEndpoint,
+    textReasoningEffort: user.textReasoningEffort,
+    textStreamingEnabled: user.textStreamingEnabled,
+    textStreamFirstEventTimeoutSeconds: user.textStreamFirstEventTimeoutSeconds,
+    textStreamIdleTimeoutSeconds: user.textStreamIdleTimeoutSeconds,
+    textStreamMaxDurationSeconds: user.textStreamMaxDurationSeconds,
+    textNonStreamTimeoutSeconds: user.textNonStreamTimeoutSeconds,
+    imageQuality: user.imageQuality,
   });
 }

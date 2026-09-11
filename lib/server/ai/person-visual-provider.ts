@@ -9,9 +9,8 @@ type ProviderConfig = {
   timeoutMs: number;
   gateway?: AiGateway;
   baseUrl?: string;
+  quality?: CourseImageQuality;
 };
-
-const PERSON_VISUAL_QUALITY = "low" as const;
 type ProviderResponse = {
   data?: Array<{ url?: string; b64_json?: string }>;
   error?: { message?: string };
@@ -37,6 +36,7 @@ function configFromEnvironment(input: AiProviderSettingsInput | ImageProviderSet
     gateway,
     baseUrl: aiProviderBaseUrl(settings),
     model: upstreamImageModel(typeof input === "object" && "imageModel" in input ? input.imageModel : "gpt-image-2", gateway),
+    quality: typeof input === "object" && "imageQuality" in input ? input.imageQuality : "medium",
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
   };
 }
@@ -89,7 +89,7 @@ export function createPersonVisualProvider(config?: ProviderConfig, selectedSett
 
   async function request(operation: string, path: string, buildBody: (requestModel: string, quality: CourseImageQuality) => BodyInit, headers: HeadersInit, logPayload: Record<string, unknown>) {
     const requestModel = resolved.model;
-    const quality = imageQualityForModel(requestModel, PERSON_VISUAL_QUALITY);
+    const quality = imageQualityForModel(requestModel, resolved.quality ?? "medium");
     devAiLog({
       operation,
       phase: "request",

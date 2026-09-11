@@ -123,7 +123,7 @@
 
 每次付费操作只生成 1 张图。成功版本永不被新生成隐式覆盖；只有点击“设为当前形象”才更新人物当前形象。
 
-人物图片 provider 读取账户高级设置，可使用 QuickRouter 或 Crazyrouter 的 `gpt-image-2`：描述生成调用图片生成接口，照片生成和后续微调调用图片编辑接口。QuickRouter 保留其专属 `gpt-image-2-c` 限流回退，Crazyrouter 只使用标准 Images API。领域层通过 provider adapter 隔离，人物资产合同不绑定第三方响应结构。
+人物图片 provider 读取账户高级设置中的图片模型、提供方和图片质量：描述生成调用图片生成接口，照片生成和后续微调调用图片编辑接口。`gpt-image-2` 使用账号选择的中、高或极高质量；`gpt-image-2-c` 固定使用极高质量且只允许 QuickRouter。任何错误都不隐式切换模型或提供方。领域层通过 provider adapter 隔离，人物资产合同不绑定第三方响应结构。
 
 ### 上传照片生成
 
