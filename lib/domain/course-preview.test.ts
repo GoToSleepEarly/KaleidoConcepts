@@ -56,7 +56,7 @@ describe("compilePreviewPages", () => {
     expect(pages.map((page) => page.type)).toEqual([
       "cover_pure", "cover_title", "chapter_divider", "shot_image", "shot_text",
       "grammar_practice", "grammar_practice", "main_idea",
-      "grammar_practice", "grammar_practice", "vocabulary_matching",
+      "vocabulary_matching", "grammar_practice", "grammar_practice",
     ]);
     expect(pages.find((page) => page.type === "cover_title")).toMatchObject({ title: "夏天的谜题 / Summer's Mystery" });
     expect(pages.find((page) => page.type === "chapter_divider")).toMatchObject({ chapterTitleZh: "新起点", chapterTitleEn: "A New Start" });
@@ -83,9 +83,9 @@ describe("compilePreviewPages", () => {
       "grammar_practice",
       "grammar_practice",
       "main_idea",
-      "grammar_practice",
-      "grammar_practice",
       "vocabulary_matching",
+      "grammar_practice",
+      "grammar_practice",
     ]);
     expect(pdfPagesForMode(pages, "all")).toEqual(pages);
   });

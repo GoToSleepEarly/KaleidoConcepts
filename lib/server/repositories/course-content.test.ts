@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import { STEP4_CONTENT_CONTRACT_VERSION, readingGenerationEnvelopeSchema } from "@/lib/server/ai/course-content-template";
 import type { CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
 import { AiProviderResultUnknownError } from "@/lib/server/ai/story-outline-provider";
-import { CourseContentConflictError, courseContentGenerationFailureStatus, courseContentSemanticRepairAttempts, exerciseQuestionIssues, generateCourseExercises, generateCourseReading, modifyCourseContent, recordContentAiStructureFailure, recoverStaleCourseContentOperation, requiresExerciseAi, resetCourseContent, shouldRegenerateFailedReading, type CourseContentDb } from "@/lib/server/repositories/course-content";
+import { buildPendingExerciseHomework, CourseContentConflictError, courseContentGenerationFailureStatus, courseContentSemanticRepairAttempts, exerciseQuestionIssues, generateCourseExercises, generateCourseReading, modifyCourseContent, recordContentAiStructureFailure, recoverStaleCourseContentOperation, requiresExerciseAi, resetCourseContent, shouldRegenerateFailedReading, type CourseContentDb } from "@/lib/server/repositories/course-content";
 import { AiJsonResponseError, generatedExercisesSchema, parseAiJson } from "@/lib/server/validation/course-content";
 
 describe("course content repository", () => {
@@ -98,6 +98,24 @@ describe("course content repository", () => {
       ...plan,
       chapters: [{ chapterPractice: { enabled: true, grammar: { enabledTypes: ["optionCloze"], total: 1 } } }],
     } as never)).toBe(true);
+  });
+
+  test("builds vocabulary matching locally when the exercise task starts", () => {
+    const plan = {
+      afterClassPractice: { enabled: true, vocabularyReviewEnabled: true },
+    };
+    const chapters = [{
+      paragraphs: [{ parts: [
+        { type: "vocabulary", id: "v1", answer: "found", canonicalForm: "find", meaningZh: "找到" },
+        { type: "vocabulary", id: "v2", answer: "found", canonicalForm: "find", meaningZh: "找到" },
+      ] }],
+    }];
+
+    expect(buildPendingExerciseHomework(plan as never, chapters as never)).toEqual({
+      grammar: [],
+      vocabularyMatching: [{ id: "v1", canonicalForm: "find", meaningZh: "找到" }],
+    });
+    expect(buildPendingExerciseHomework({ afterClassPractice: { enabled: true, vocabularyReviewEnabled: false } } as never, chapters as never)).toEqual({ grammar: [], vocabularyMatching: [] });
   });
 
   test("describes exercise validation issues with teacher-facing labels and exact counts", () => {

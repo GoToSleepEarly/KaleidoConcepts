@@ -191,6 +191,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const previewScrollRef = useRef<HTMLDivElement>(null);
   const requestEpoch = useRef(0);
+  const openedVocabularyOperationRef = useRef<string | null>(null);
   const [state, setState] = useState(initialState);
   const [selectedSection, setSelectedSection] = useState(initialState.chapters[0] ? `reading:${initialState.chapters[0].id}` : "main-idea");
   const [selectedPage, setSelectedPage] = useState(0);
@@ -284,6 +285,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
     return result;
   }, [state.chapters, textPages]);
   const hasGeneratedGrammarExercises = state.chapters.some((chapter) => chapter.chapterPractice.length > 0) || Boolean(state.homework?.grammar.length);
+  const hasPendingVocabularyPage = textPages.some((page) => page.type === "vocabulary_matching");
   const latestRepairMessageIndex = findLastIndexCompat(state.messages, (message) => isRepairMessage(message.content));
   const repairInProgress = isGenerating && Boolean(state.phase?.startsWith("repairing_"));
   const timelineItems = useMemo<TimelineItem[]>(() => {
@@ -391,6 +393,15 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
   }, [isWorking, startedAt]);
 
   useEffect(() => {
+    const operationId = state.operation?.type === "exercises" ? state.operation.id : null;
+    if (!operationId || !hasPendingVocabularyPage || hasGeneratedGrammarExercises || openedVocabularyOperationRef.current === operationId) return;
+    openedVocabularyOperationRef.current = operationId;
+    setSelectedSection("homework");
+    setSelectedPage(0);
+    setMobileView("preview");
+  }, [hasGeneratedGrammarExercises, hasPendingVocabularyPage, state.operation]);
+
+  useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (hasUnsentInput) event.preventDefault();
     };
@@ -490,6 +501,10 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       if (kind === "reading" && body.chapters[0]) {
         setSelectedSection(`reading:${body.chapters[0].id}`);
         setSelectedPage(0);
+      } else if (kind === "exercises" && !regenerate && body.homework?.vocabularyMatching.length) {
+        setSelectedSection("homework");
+        setSelectedPage(0);
+        setMobileView("preview");
       }
     } catch (caught) {
       if (requestEpoch.current === requestToken) {

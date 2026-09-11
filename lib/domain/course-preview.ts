@@ -167,8 +167,8 @@ export function compilePreviewPages(input: CompileInput): CoursePreviewPage[] {
 
   if (input.mainIdea) pages.push({ id: `main-idea-${input.mainIdea.id}`, type: "main_idea", title: input.mainIdea.title, text: input.mainIdea.text });
   if (input.homework) {
-    addGrammarPages(pages, "homework", input.homework.grammar, labels, input.homeworkKnowledgePointIds ?? []);
     paginateBalanced(input.homework.vocabularyMatching, courseContentVocabularyPageSize).forEach((items, index) => pages.push({ id: `homework-vocabulary-${index + 1}`, type: "vocabulary_matching", pageNumber: index + 1, items }));
+    addGrammarPages(pages, "homework", input.homework.grammar, labels, input.homeworkKnowledgePointIds ?? []);
   }
   return pages;
 }

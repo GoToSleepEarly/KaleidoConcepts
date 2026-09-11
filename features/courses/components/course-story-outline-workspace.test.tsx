@@ -1661,6 +1661,30 @@ describe("CourseStoryOutlineWorkspace", () => {
     expect(screen.getAllByRole("button", { name: "下一步：教学规划" })).toHaveLength(1);
   });
 
+  test("原创角色展示故事层本体设定，人物档案角色不展示", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...outlineState,
+      outline: outlineState.outline ? {
+        ...outlineState.outline,
+        characters: [...outlineState.outline.characters, {
+          ...outlineState.outline.characters[0],
+          id: "char-creature",
+          displayName: "晶角兽",
+          englishName: "Crystalhorn",
+          sourceType: "original",
+          roleInStory: "帮助学生寻找出口。",
+          shortDescription: "帮助学生寻找出口。",
+          visualDescription: "一只四足双翼的晶体生物，鹿角，半透明矿石身体，不拟人化。",
+        }],
+      } : null,
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "角色" }));
+    expect(screen.getByText("本体设定")).toBeInTheDocument();
+    expect(screen.getByText(/一只四足双翼的晶体生物/)).toBeInTheDocument();
+    expect(screen.getAllByText("本体设定")).toHaveLength(1);
+  });
+
   test("shows non-blocking outline quality hints after rendering the result", () => {
     render(<CourseStoryOutlineWorkspace initialState={{
       ...outlineState,

@@ -71,6 +71,7 @@ export class AiProviderResultUnknownError extends Error {
 
 const textDispatchers = new Map<string, Dispatcher>();
 const transportTimeoutMarginMs = 30_000;
+const defaultTextMaxOutputTokens = 16_500;
 
 export function textTransportTimeoutMs(requestTimeoutMs: number) {
   return requestTimeoutMs + transportTimeoutMarginMs;
@@ -348,7 +349,10 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
 
   async function request(operation: string, body: Record<string, unknown>, activeConfig: ProviderConfig) {
     const startedAt = Date.now();
-    const requestBody = activeConfig.stream ? { ...body, stream: true } : body;
+    const boundedBody = body.max_output_tokens === undefined
+      ? { ...body, max_output_tokens: defaultTextMaxOutputTokens }
+      : body;
+    const requestBody = activeConfig.stream ? { ...boundedBody, stream: true } : boundedBody;
     const injectedTimeoutMs = activeConfig.timeoutMs;
     const nonStreamTimeoutMs = activeConfig.nonStreamTimeoutMs ?? injectedTimeoutMs ?? 600_000;
     const streamFirstEventTimeoutMs = activeConfig.streamFirstEventTimeoutMs ?? injectedTimeoutMs ?? 120_000;

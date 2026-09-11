@@ -481,6 +481,19 @@ describe("createStoryOutlineProvider", () => {
     expect(body.tools).toEqual([{ type: "web_search" }]);
   });
 
+  test("adds the shared max output limit to every text request that does not set one", async () => {
+    process.env.QUICKROUTER_TEXT_API_KEY = "key";
+    const fetchMock = mockTextResponse();
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = createStoryOutlineProvider();
+
+    await provider.generateOutline({ writingProvider: "gpt-5.6-sol", prompt: "生成大纲" });
+    await provider.searchReference({ writingProvider: "gpt-5.6-sol", prompt: "整理资料" });
+
+    expect(fetchBody(fetchMock, 0).max_output_tokens).toBe(16_500);
+    expect(fetchBody(fetchMock, 1).max_output_tokens).toBe(16_500);
+  });
+
   test("throws a business configuration error when QuickRouter key is missing", async () => {
     delete process.env.QUICKROUTER_TEXT_API_KEY;
 

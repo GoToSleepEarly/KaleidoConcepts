@@ -1737,6 +1737,12 @@ function CharacterCard({ character }: { character: CourseStoryOutline["character
       <p className="mt-1 text-xs text-muted-foreground">
         {sourceTypeLabel(character.sourceType)} · {character.roleInStory}
       </p>
+      {character.sourceType === "original" && character.visualDescription ? (
+        <div className="mt-2 rounded-md bg-muted/60 px-2.5 py-2">
+          <p className="text-xs font-semibold text-foreground">本体设定</p>
+          <p className="mt-1 text-pretty text-sm leading-5 text-muted-foreground">{character.visualDescription}</p>
+        </div>
+      ) : null}
       {character.shortDescription !== character.roleInStory ? <p className="mt-2 text-sm text-muted-foreground">{character.shortDescription}</p> : null}
     </article>
   );

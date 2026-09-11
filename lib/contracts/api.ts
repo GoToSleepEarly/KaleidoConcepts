@@ -779,6 +779,7 @@ export type CourseCharacterVisual = {
   visualAnchorMode: CharacterVisualAnchorMode | null;
   visualAnchorLabel: string | null;
   visualAnchorContext: string | null;
+  identityDescription?: string | null;
   appearanceDescription: string | null;
   shouldAppearInImages: boolean;
   isMain: boolean;

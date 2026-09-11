@@ -112,14 +112,28 @@ describe("CourseContentWorkspace", () => {
     }} />);
 
     fireEvent.click(screen.getByRole("tab", { name: "课后练习" }));
-    const editableAction = screen.getByRole("button", { name: "修改课后选项填空第 1 页" });
-    expect(editableAction).toHaveClass("w-20");
-
-    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
     const generatedAction = screen.getByRole("button", { name: "词汇配对由正文词汇自动汇总" });
     expect(generatedAction).toBeDisabled();
     expect(generatedAction).toHaveClass("w-20");
+
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    const editableAction = screen.getByRole("button", { name: "修改课后选项填空第 1 页" });
+    expect(editableAction).toHaveClass("w-20");
     expect(screen.getByText("第 2 / 2 页")).toBeInTheDocument();
+  });
+
+  test("opens the persisted vocabulary page when exercise generation polling reveals it", async () => {
+    render(<CourseContentWorkspace initialState={{
+      ...initialState,
+      status: "generating_exercises",
+      phase: "generating_exercises",
+      operation: { id: "exercise-generation-1", type: "exercises", status: "running", startedAt: "2026-08-09T00:00:00.000Z", updatedAt: "2026-08-09T00:00:00.000Z" },
+    }} />);
+
+    await waitFor(() => expect(screen.getByRole("tab", { name: "课后练习" })).toHaveAttribute("aria-selected", "true"));
+    expect(screen.getByRole("button", { name: "预览" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/hidden door/)).toBeInTheDocument();
+    expect(screen.getByText("第 1 / 1 页")).toBeInTheDocument();
   });
 
   test("shows only the Chinese vocabulary hint in complete-reading mode", () => {
@@ -602,6 +616,8 @@ describe("CourseContentWorkspace", () => {
     await waitFor(() => expect(within(timeline).queryByText("正在生成章节与课后练习")).not.toBeInTheDocument());
     expect(within(timeline).getByText("正文已经生成。")).toBeInTheDocument();
     expect(within(timeline).getAllByText("我确认阅读内容，请生成章节与课后练习。")).toHaveLength(1);
+    expect(screen.getByRole("tab", { name: "课后练习" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText(/hidden door/)).toBeInTheDocument();
   });
 
   test("restores a persisted modification as working after refresh and keeps polling", async () => {

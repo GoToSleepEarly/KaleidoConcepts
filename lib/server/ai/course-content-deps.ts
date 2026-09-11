@@ -26,7 +26,7 @@ import {
 } from "@/lib/server/validation/course-content";
 
 export type CourseContentPromptPerson = { role: "teacher" | "student"; chineseName: string; englishName: string };
-export type CourseContentPromptCharacter = { displayName: string; englishName: string; roleInStory: string; shortDescription: string };
+export type CourseContentPromptCharacter = { displayName: string; englishName: string; roleInStory: string; shortDescription: string; visualDescription?: string | null };
 export type CourseContentPromptInput = Pick<TeachingPlanState, "course" | "outline" | "knowledgePoints" | "plan"> & {
   lengthPolicy?: TeachingPlanState["lengthPolicy"];
   promptPeople?: CourseContentPromptPerson[];
@@ -167,6 +167,7 @@ export function buildReadingPromptContext(input: CourseContentPromptInput) {
       return {
         displayName: character.englishName,
         storyRole: replaceNames(role),
+        ...(character.visualDescription ? { identityDescription: character.visualDescription } : {}),
       };
     }),
     ...(grammarSource(input) ? { grammarSource: grammarSource(input) } : {}),
@@ -387,6 +388,7 @@ export const readingGrammarCoherenceRules = [
 export const readingStoryQualityRules = [
   ...cefrWritingQualityRules,
   "先忠实展开上游故事，不改变人物目标、关键因果、物品去向、章节结果或最终任务；不得新增能直接解决核心问题的万能道具、能力或规则。",
+  "storyCharacters 中的 identityDescription 是原创角色不可改写的本体事实；正文必须保持其物种或角色形态、拟人化程度、材质、身体结构和必要能力边界，不得根据名字或情节重新猜测。",
   "每个段落承担一个清楚的剧情推进，并让前一段的结果成为下一段行动成立的原因；人物位置、已知信息和关键物品归属必须连续。",
   "正文应像自然的儿童故事，而不是大纲复述或练习句集合。使用符合 CEFR 的清楚句式、具体动作和必要对话，避免连续解释、重复总结和空泛评价。",
   "人物成长通过行动、选择和结果表现，不要用旁白宣布成长、友谊、勇气或合作。",
@@ -557,7 +559,7 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
       const requirements = buildReadingTemplateRequirements(input);
       const context = buildReadingTemplatePromptContext(chapterProtocol.input);
       const generationStartedAt = Date.now();
-      const response = await callWithUsage(writingProvider, "content_generate_reading_v5", buildReadingTemplatePrompt(context), { reasoningEffort: courseContentReasoningEfforts.readingGeneration, maxOutputTokens: 6_500 });
+      const response = await callWithUsage(writingProvider, "content_generate_reading_v5", buildReadingTemplatePrompt(context), { reasoningEffort: courseContentReasoningEfforts.readingGeneration });
       const latencyMs = Date.now() - generationStartedAt;
       const payload = parseWithDiagnostics(response.text, readingGenerationEnvelopeSchema, "阅读内容结构无效", "content_generate_reading_v5", generationStartedAt);
       assertExactChapterKeys(payload.chapters.map((chapter) => chapter.outlineChapterId), chapterProtocol.keys, "阅读内容章节短键不完整");
@@ -580,7 +582,7 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
         requirements: { ...target.requirements, outlineChapterId: chapterProtocol.toKey(target.requirements.outlineChapterId) },
       }));
       const startedAt = Date.now();
-      const response = await callWithUsage(writingProvider, "content_repair_reading_v3", buildReadingTemplateRepairPrompt(keyedTargets, buildReadingTemplatePromptContext(chapterProtocol.input), mainIdeaTarget), { reasoningEffort: courseContentReasoningEfforts.readingRepair, maxOutputTokens: 6_500 });
+      const response = await callWithUsage(writingProvider, "content_repair_reading_v3", buildReadingTemplateRepairPrompt(keyedTargets, buildReadingTemplatePromptContext(chapterProtocol.input), mainIdeaTarget), { reasoningEffort: courseContentReasoningEfforts.readingRepair });
       const latencyMs = Date.now() - startedAt;
       const bundle = parseWithDiagnostics(response.text, chapterTemplateRepairBundleSchema, "正文最小修复结构解析失败", "content_repair_reading_v3", startedAt);
       assertReadingRepairCoverage(bundle.repairs, keyedTargets.map((target) => target.requirements.outlineChapterId));

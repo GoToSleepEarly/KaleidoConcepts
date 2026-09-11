@@ -130,6 +130,29 @@ describe("视觉资源仓储", () => {
     expect(generate).toHaveBeenCalledOnce();
     expect(updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "failed", activeScope: null }) }));
   });
+  test("视觉方案输入从 Step 2 透传原创角色本体设定", async () => {
+    const generate = vi.fn(async (input: { characters: Array<{ sourceType: string; identityDescription?: string | null }> }) => {
+      void input;
+      throw new Error("stop-after-input");
+    });
+    const db = {
+      aiGenerationLog: {
+        findUnique: vi.fn(async () => null),
+        create: vi.fn(async ({ data }) => ({ id: "operation-identity", ...data, outputSnapshot: null, errorMessage: null })),
+        update: vi.fn(async () => ({})),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      course: { findUnique: vi.fn(async () => ({ id: "course-1" })) },
+      courseLessonContent: { findUnique: vi.fn(async () => ({ status: "confirmed", chapters: [], writingProvider: "gpt-5.6-sol", sourceRevision: 2, contentVersion: 3 })) },
+      courseStoryOutline: { findUnique: vi.fn(async () => ({ title: "Crystal Garden" })) },
+      courseCharacter: { findMany: vi.fn(async () => [{ id: "creature-1", displayName: "晶角兽", englishName: "Crystalhorn", sourceType: "original", shouldAppearInImages: true, roleInStory: "guide", visualDescription: "一只四足双翼的晶体生物，鹿角，半透明矿石身体，不拟人化。", sourceReference: null }]) },
+      courseVisualResourcePlan: { findUnique: vi.fn(async () => null) },
+    };
+
+    await expect(generateCourseVisualPlan(db as never, "course-1", "identity-input", { generate } as never)).rejects.toThrow("stop-after-input");
+
+    expect(generate.mock.calls[0]?.[0].characters[0]).toMatchObject({ sourceType: "original", identityDescription: "一只四足双翼的晶体生物，鹿角，半透明矿石身体，不拟人化。" });
+  });
   test("过期的图片生成租约会恢复为可重试失败而不是永久生成中", async () => {
     const updateMany = vi.fn(async () => ({ count: 2 }));
     const db = { courseImage: { updateMany } };
@@ -314,7 +337,7 @@ describe("视觉资源仓储", () => {
       course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
       courseVisualImageSlot: { findFirst: vi.fn(async () => ({ id: "slot-1", courseId: "course-1", slotType: "lesson_shot", paragraphId: "p1", prompt: asset.prompt, characterIds: ["character-1"] })), update: slotUpdate },
       courseVisualResourcePlan: { findUnique: vi.fn(async () => currentPlan), update: vi.fn() },
-      courseCharacter: { findFirst: vi.fn(async () => ({ id: "character-1", sourceType: "original", displayName: "原创角色", englishName: "Original Character" })) },
+      courseCharacter: { findFirst: vi.fn(async () => ({ id: "character-1", sourceType: "original", displayName: "原创角色", englishName: "Original Character", visualDescription: "一只成年边境牧羊犬，保持四足犬类形态，立耳、长尾，不拟人化。" })) },
       courseCharacterVisual: { findUnique: vi.fn(async () => null), update: vi.fn() },
       courseImage: {
         findFirst: vi.fn(async () => null),
@@ -334,6 +357,7 @@ describe("视觉资源仓储", () => {
     });
 
     expect(generate.mock.calls[0]?.[0].prompt).toContain("一名身形小巧的原创探险家");
+    expect(generate.mock.calls[0]?.[0].prompt).toContain("角色本体：一只成年边境牧羊犬");
     expect(generate.mock.calls[0]?.[0].prompt).toContain("原创角色 / Original Character");
     expect(generate.mock.calls[0]?.[0].prompt).toContain("never crop a head or face");
     expect(edit).not.toHaveBeenCalled();

@@ -1359,7 +1359,8 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           "任何新地点、物品、规则、路线关系或信息首次出现时立刻说明它与当前任务的关系，不能先使用后解释；避免“连接处”“上方区域”“另一边”“旧痕迹”等只有作者知道所指的表达。相邻章节不得重复同一种“发现信息—重新选择路线—继续前进”或其他相同动作模板；每章承担不同功能并造成不同类型的局面变化。",
           "先在不考虑知识点的情况下完成故事概括和全部章节剧情，再从全课视角根据已经形成的自然语境匹配知识点。不得为使用某个知识点新增道具、规则、人物行为或支线；summary 和 whatHappens 不得出现语法、知识点或教学安排说明。",
           "只返回 JSON 对象，字段为 title, summary, characters, chapters。故事 title 和章节 title 返回中英文双语对象 {zh,en}；英文标题应简洁、自然并忠实对应中文标题。面向老师展示的说明使用中文，但课堂人物名称按下述规则使用人物快照英文名。",
-          "characters 每项字段为 key, displayName, englishName, sourceType, sourcePersonId?, sourceReferenceKey?, roleInStory；displayName 保存自然中文名，englishName 保存后续英文正文、界面展示和生图都能稳定复用的自然英文名；key 使用 C1、C2 等响应内稳定短键，sourceType 只能是 person, referenced, original。不要生成视觉描述或是否出图标记。summary、roleInStory 和 chapters 中提到课堂人物时统一使用人物快照的 englishName，不混用中文名。",
+          "characters 每项字段为 key, displayName, englishName, sourceType, sourcePersonId?, sourceReferenceKey?, roleInStory, visualDescription?；displayName 保存自然中文名，englishName 保存后续英文正文、界面展示和生图都能稳定复用的自然英文名；key 使用 C1、C2 等响应内稳定短键，sourceType 只能是 person, referenced, original。不要生成是否出图标记。summary、roleInStory 和 chapters 中提到课堂人物时统一使用人物快照的 englishName，不混用中文名。",
+          "visualDescription 只为 sourceType=original 的原创角色返回，person 和 referenced 必须省略。它不是完整外观设计，而是故事层不可改变的中文本体设定：用一条自包含描述明确具体物种或角色形态、四足/双足等基础身体结构、是否拟人化、主要材质和身份所必需的结构特征。动物尽量明确到剧情能够确定的具体种类或品种；科幻、魔法和虚构角色必须说明能够稳定重画的形态与结构。不要写画风、服装、精确配色、动作、表情或场景。",
           "characters 是后续视觉资产名单，不是所有被故事提到的实体清单。只保留具体、持续参与剧情、需要保持视觉一致性的角色；机构、公司、团队、部门、监管方和其他背景群体不得进入 characters，只能在 summary 或章节 whatHappens 中按需提及。参考资料中出现某个实体，不代表它是角色。",
           "外部真实人物或已有作品角色实际出场时，sourceType 必须为 referenced，并且 sourceReferenceKey 必须逐字复制已保存参考资料中的 Rxx key；同一份组合资料可以由多个角色共同引用。原创人物才使用 original，且不得返回 sourceReferenceKey。",
           "如果角色的中文名或英文名已经出现在已保存参考资料中，该角色绝不能标记为 original，必须标记为 referenced 并返回对应 sourceReferenceKey。",
@@ -1425,6 +1426,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
         const modelDisplayName = nameValue(character.displayName);
         const modelEnglishName = nameValue(character.englishName);
         const roleInStory = proseValue(character.roleInStory);
+        const visualDescription = proseValue(character.visualDescription);
         const requestedSourceType = character.sourceType === "person" || character.sourceType === "referenced" || character.sourceType === "original"
           ? character.sourceType
           : null;
@@ -1456,6 +1458,9 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
         if (normalizedSourceType === "referenced" && !reference) {
           throw new StoryOutlineResponseError(`引用角色 ${displayName} 缺少有效 sourceReferenceKey`);
         }
+        if (normalizedSourceType === "original" && !visualDescription) {
+          throw new StoryOutlineResponseError(`原创角色 ${displayName} 缺少本体设定 visualDescription，请重试本步`);
+        }
         return {
           key,
           displayName,
@@ -1465,6 +1470,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           sourceReferenceId: normalizedSourceType === "referenced" ? reference!.id : null,
           roleInStory,
           shortDescription: roleInStory,
+          visualDescription: normalizedSourceType === "original" ? visualDescription : null,
           shouldAppearInImages: true,
         };
       });

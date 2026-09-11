@@ -835,7 +835,7 @@ async function writeOutline(db: StoryOutlineDb, course: DbCourse, outline: Gener
       sourceReferenceId: character.sourceReferenceId ?? null,
       roleInStory: character.roleInStory,
       shortDescription: character.shortDescription,
-      visualDescription: null,
+      visualDescription: character.sourceType === "original" ? character.visualDescription ?? null : null,
       shouldAppearInImages: true,
     };
   });

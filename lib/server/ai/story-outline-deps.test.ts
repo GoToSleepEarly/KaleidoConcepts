@@ -543,8 +543,8 @@ describe("createStoryOutlineGenerationDeps", () => {
         title: { zh: "测试故事", en: "Test Story" },
         summary: "测试。",
         characters: [
-          { key: "C1", displayName: "甲", englishName: "Alpha", sourceType: "original", roleInStory: "主角。" },
-          { key: "C1", displayName: "乙", englishName: "Beta", sourceType: "original", roleInStory: "伙伴。" },
+          { key: "C1", displayName: "甲", englishName: "Alpha", sourceType: "original", roleInStory: "主角。", visualDescription: "一名人类探险家。" },
+          { key: "C1", displayName: "乙", englishName: "Beta", sourceType: "original", roleInStory: "伙伴。", visualDescription: "一名人类向导。" },
         ],
         chapters: [{ order: 1, title: { zh: "开始", en: "Start" }, whatHappens: "故事开始。", characterKeys: ["C1"], recommendedKnowledgePointKeys: [], knowledgePointRecommendationSummary: "" }],
       }),
@@ -1059,6 +1059,9 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("不要求每个人单独制造一次状态变化");
     expect(prompt).toContain("characters 是后续视觉资产名单");
     expect(prompt).toContain("displayName, englishName");
+    expect(prompt).toContain("visualDescription");
+    expect(prompt).toContain("只为 sourceType=original");
+    expect(prompt).toContain("具体物种或角色形态");
     expect(prompt).toContain("sourcePersonId、displayName 和 englishName 必须逐字复制对应人物快照");
     expect(prompt).not.toContain("storyDescription");
     expect(prompt).not.toContain("narrativeType");
@@ -1092,6 +1095,35 @@ describe("createStoryOutlineGenerationDeps", () => {
     });
     expect(outline.chapters[0].title).toBe("发光地图 / The Glowing Map");
     expect(prompt).not.toContain("课程：海底图书馆");
+  });
+
+  test("原创角色必须返回故事层本体设定并保存，人物与引用角色不生成", async () => {
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
+      title: { zh: "星际花园", en: "The Star Garden" },
+      summary: "晶角兽帮助学生穿过花园。",
+      characters: [{
+        key: "C1",
+        displayName: "晶角兽",
+        englishName: "Crystalhorn",
+        sourceType: "original",
+        roleInStory: "帮助学生寻找出口。",
+        visualDescription: "一只四足双翼的晶体生物，鹿角，半透明矿石身体，不拟人化。",
+      }],
+      chapters: [{ order: 1, title: { zh: "花园入口", en: "The Garden Gate" }, whatHappens: "晶角兽带学生找到入口。", characterKeys: ["C1"], recommendedKnowledgePointKeys: [], knowledgePointRecommendationSummary: "" }],
+    }) });
+
+    const outline = await createStoryOutlineGenerationDeps().generateOutline({
+      task: "生成原创故事大纲。",
+      references: [],
+      chapterCount: 1,
+      writingProvider: "gpt-5.6-sol",
+      coursePeople: [],
+      conversationHistory: [],
+      selectedDirection: null,
+      currentOutline: null,
+    });
+
+    expect(outline.characters[0]?.visualDescription).toBe("一只四足双翼的晶体生物，鹿角，半透明矿石身体，不拟人化。");
   });
 
   test("normalizes structured direction character names without rewriting free prose", async () => {

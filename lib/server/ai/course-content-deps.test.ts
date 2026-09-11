@@ -43,11 +43,11 @@ const input = {
     { role: "teacher", chineseName: "李老师", englishName: "Linda" },
     { role: "student", chineseName: "小明", englishName: "Milo" },
   ],
-  promptCharacters: [{ displayName: "地图守护者", englishName: "Map Guardian", roleInStory: "阻止小明找到地图", shortDescription: "守护错误路线的角色" }],
+  promptCharacters: [{ displayName: "地图守护者", englishName: "Map Guardian", roleInStory: "阻止小明找到地图", shortDescription: "守护错误路线的角色", visualDescription: "一只四足机械犬，金属躯干，不拟人化。" }],
   contentIntent: { kind: "concept", storyMode: "new_story", classroomPresence: "participant", objective: "理解地图如何帮助人定位", learningTargets: [{ concept: "地图方向", expectedUnderstanding: "能够用地图判断基本方向" }], assumedPriorKnowledge: [], sourceRequirements: [], required: [], excluded: ["不要把地图写成万能魔法"] },
 } as TeachingPlanState & {
   promptPeople: Array<{ role: "teacher" | "student"; chineseName: string; englishName: string }>;
-  promptCharacters: Array<{ displayName: string; englishName: string; roleInStory: string; shortDescription: string }>;
+  promptCharacters: Array<{ displayName: string; englishName: string; roleInStory: string; shortDescription: string; visualDescription?: string | null }>;
   contentIntent: StoryContentIntent;
 };
 
@@ -131,6 +131,7 @@ describe("course content prompt contexts", () => {
   test("makes story continuity and readable prose higher priority than exercise placement", () => {
     const rules = readingStoryQualityRules.join(" ");
     expect(rules).toContain("上游故事");
+    expect(rules).toContain("identityDescription 是原创角色不可改写的本体事实");
     expect(rules).toContain("前一段的结果");
     expect(rules).toContain("不能为了安放题目");
     expect(rules).toContain("不要用旁白宣布成长");
@@ -162,7 +163,7 @@ describe("course content prompt contexts", () => {
       storyComplexity: "clear_linear",
       storyComplexityProfile: storyComplexityWritingProfile("clear_linear"),
       people: [{ role: "teacher", englishName: "Linda" }, { role: "student", englishName: "Milo" }],
-      storyCharacters: [{ displayName: "Map Guardian", storyRole: "阻止Milo找到地图；守护错误路线的角色" }],
+      storyCharacters: [{ displayName: "Map Guardian", storyRole: "阻止Milo找到地图；守护错误路线的角色", identityDescription: "一只四足机械犬，金属躯干，不拟人化。" }],
       chapters: [{
         id: "ch1", order: 1, title: "Milo出发", summary: "Linda帮助Milo。", targetWordCount: 90, acceptedWordCountRange: [75, 110], generationAimRange: [80, 90], paragraphCount: 2,
         grammarPoints: [{ key: "KP1", label: "一般过去时" }],

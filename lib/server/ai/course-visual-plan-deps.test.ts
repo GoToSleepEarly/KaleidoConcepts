@@ -9,7 +9,7 @@ const input: CourseVisualPlanPromptInput = {
     { id: "teacher", displayName: "林老师", englishName: "Ms. Lin", sourceType: "person", reference: null, roleInStory: "teacher guide" },
     { id: "jett", displayName: "捷特", englishName: "Jett", sourceType: "referenced", reference: { name: "Jett and Sage", type: "game_character", summary: "Two agents from VALORANT." }, roleInStory: "agile hero" },
     { id: "sage", displayName: "贤者", englishName: "Sage", sourceType: "referenced", reference: { name: "Jett and Sage", type: "game_character", summary: "Two agents from VALORANT." }, roleInStory: "protector" },
-    { id: "sprite", displayName: "风精灵", englishName: "Wind Sprite", sourceType: "original", reference: null, roleInStory: "helper" },
+    { id: "sprite", displayName: "风精灵", englishName: "Wind Sprite", sourceType: "original", reference: null, roleInStory: "helper", identityDescription: "一只四足双翼的晶体生物，鹿角，身体由半透明矿石构成，不拟人化。" },
   ],
   chapters: [{
     id: "chapter-1",
@@ -54,6 +54,9 @@ describe("Step 5 视觉资源方案", () => {
     expect(prompt).toContain("Valorant Classroom Mission");
     expect(prompt).toContain("Jett");
     expect(prompt).toContain("cleanReading");
+    expect(prompt).toContain('"identityDescription":"一只四足双翼的晶体生物');
+    expect(prompt).toContain("must not change its species, entity form, anthropomorphism, material, body plan, or defining anatomy");
+    expect(prompt).toContain("For a naturally unclothed animal, creature, robot, or anthropomorphic object");
     expect(prompt).not.toContain('"id":"teacher"');
     expect(prompt).not.toContain('"id":"paragraph-1"');
     expect(prompt).not.toContain("englishLevel");
@@ -126,6 +129,23 @@ describe("Step 5 视觉资源方案", () => {
     expect(prompt).toContain("C03 — 贤者 / Sage");
     expect(prompt).toContain("角色形象：白色短发");
     expect(prompt).not.toContain("invent a long physical description");
+  });
+
+  test("原创角色的本体设定独立进入最终生图 Prompt，稳定外貌不能替代它", () => {
+    const plan = parseCourseVisualPlan(rawPlan, input);
+    const prompt = compileCourseImagePrompt(plan, plan.shots[0], "illustration", [{
+      characterId: "sprite",
+      characterKey: "C04",
+      chineseName: "风精灵",
+      englishName: "Wind Sprite",
+      identityDescription: "一只四足双翼的晶体生物，鹿角，身体由半透明矿石构成，不拟人化。",
+      referenceIndex: 1,
+    }]);
+
+    expect(prompt).toContain("角色本体：一只四足双翼的晶体生物");
+    expect(prompt).toContain("use reference image 1 for identity only");
+    expect(prompt).toContain("角色形象：薄荷绿色的小风精灵");
+    expect(prompt).toContain("角色本体的物种、形态、拟人化程度、材质和身体结构优先级最高");
   });
 
   test("多名参考人物增加身份隔离约束", () => {
@@ -238,12 +258,15 @@ describe("Step 5 视觉资源方案", () => {
   test("服装字段明确排除身份、动作、姿势、表情和能力", () => {
     const prompt = buildCourseVisualPlanPrompt(input);
     expect(prompt).toContain("courseAppearance is required for every character and must be concise Simplified Chinese");
-    expect(prompt).toContain("one fixed head-to-toe course-wide continuity specification");
-    expect(prompt).toContain("upper garment, lower garment, footwear, and any outer layer");
+    expect(prompt).toContain("one fixed course-wide continuity specification");
+    expect(prompt).toContain("For a clothing-wearing character");
+    expect(prompt).toContain("naturally unclothed animal, creature, robot, or anthropomorphic object");
+    expect(prompt).toContain("never invent human garments or anatomy merely to fill a template");
+    expect(prompt).toContain("If a legacy original character has no identityDescription");
     expect(prompt).toContain("exact main and secondary colors");
     expect(prompt).toContain("material or pattern");
     expect(prompt).toContain("Do not use vague placeholders such as 'classic outfit'");
-    expect(prompt).toContain("restate every visible clothing component and its exact color palette");
+    expect(prompt).toContain("restate every applicable visible clothing, equipment, and accessory component");
     expect(prompt).toContain("characterAppearance is required for every non-person character");
     expect(prompt).toContain("It must be concise Simplified Chinese");
     expect(prompt).not.toContain("courseClothingAndProps");

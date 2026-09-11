@@ -32,7 +32,7 @@ const state: CourseVisualResourcesState = {
   }, {
     id: "visual-1", characterId: "jett", displayName: "捷特", sourceType: "referenced", sourceReferenceType: "game_character",
     chineseName: "捷特", englishName: "Jett", sourceReferenceName: "VALORANT", visualAnchorMode: "semantic", visualAnchorLabel: "Jett", visualAnchorContext: "VALORANT game character", appearanceDescription: "白色短发高高束起，身形轻盈敏捷。", shouldAppearInImages: true, isMain: true, intent: "preserve_identity",
-    source: null, status: "ready", personVisualUrl: null, storyVisualDesign: "蓝灰色轻便战斗服和短靴", activeAssetId: null, activeAsset: null, versions: [],
+    source: null, status: "ready", personVisualUrl: null, identityDescription: null, storyVisualDesign: "蓝灰色轻便战斗服和短靴", activeAssetId: null, activeAsset: null, versions: [],
   }],
   slots: [],
 };
@@ -194,6 +194,30 @@ describe("Step 5 视觉资源工作区", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
     expect(screen.getByTestId("visual-plan-design-item-1")).toHaveAttribute("data-active", "false");
     expect(screen.getByTestId("visual-plan-design-item-2")).toHaveAttribute("data-active", "true");
+  });
+
+  test("只有原创角色展示 Step 2 的本体设定", () => {
+    render(<CourseVisualResourcesWorkspace initialState={{
+      ...plannedState,
+      characters: [...plannedState.characters, {
+        ...plannedState.characters[1],
+        id: "visual-creature",
+        characterId: "creature",
+        displayName: "晶角兽",
+        chineseName: "晶角兽",
+        englishName: "Crystalhorn",
+        sourceType: "original",
+        sourceReferenceType: null,
+        sourceReferenceName: null,
+        identityDescription: "一只四足双翼的晶体生物，鹿角，半透明矿石身体，不拟人化。",
+        appearanceDescription: "蓝绿色晶面，金色眼睛。",
+      }],
+    }} />);
+    fireEvent.click(screen.getByRole("tab", { name: "主要角色（2）" }));
+
+    expect(screen.getByText("本体设定")).toBeInTheDocument();
+    expect(screen.getByText(/一只四足双翼的晶体生物/)).toBeInTheDocument();
+    expect(screen.getAllByText("本体设定")).toHaveLength(1);
   });
 
   test("减少动态效果时固定突出第一类设计内容", async () => {
@@ -380,7 +404,7 @@ describe("Step 5 视觉资源工作区", () => {
     fireEvent.click(screen.getByRole("button", { name: "高级模式" }));
     fireEvent.click(screen.getByRole("tab", { name: "主要角色（1）" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑捷特形象描述" }));
-    fireEvent.change(screen.getByLabelText("角色形象"), { target: { value: "银白短发，蓝色眼睛。" } });
+    fireEvent.change(screen.getByLabelText("稳定外观（不改变本体设定）"), { target: { value: "银白短发，蓝色眼睛。" } });
     fireEvent.change(screen.getByLabelText("本课造型"), { target: { value: "深蓝短外套、轻便长裤和短靴。" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 

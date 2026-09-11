@@ -39,7 +39,7 @@ type MessageRecord = {
   operation?: ContentOperation | null; requestId?: string | null; title?: string | null; details?: unknown; eventKey?: string | null; createdAt: Date;
 };
 type PromptPersonRecord = { role: "teacher" | "student"; chineseNameSnapshot: string; englishNameSnapshot: string };
-type PromptCharacterRecord = { displayName: string; englishName: string; roleInStory: string; shortDescription: string };
+type PromptCharacterRecord = { displayName: string; englishName: string; roleInStory: string; shortDescription: string; visualDescription?: string | null };
 type Delegate<T> = {
   findUnique: (query: Record<string, unknown>) => Promise<T | null>;
   findMany?: (query: Record<string, unknown>) => Promise<T[]>;
@@ -96,11 +96,17 @@ export function requiresExerciseAi(plan: TeachingPlanState["plan"]) {
     || (plan.afterClassPractice.practice.enabled && plan.afterClassPractice.knowledgePointIds.length > 0);
 }
 
+export function buildPendingExerciseHomework(plan: TeachingPlanState["plan"], chapters: CourseContentChapter[]) {
+  if (!plan.afterClassPractice.enabled) return null;
+  return {
+    grammar: [],
+    vocabularyMatching: plan.afterClassPractice.vocabularyReviewEnabled ? collectVocabularyMatching(chapters) : [],
+  };
+}
+
 function locallyAssembledExercises(state: TeachingPlanState, chapters: CourseContentChapter[]) {
   const normalizedChapters = chapters.map((chapter) => ({ ...chapter, chapterPractice: [] }));
-  const homework = state.plan.afterClassPractice.enabled
-    ? { grammar: [], vocabularyMatching: state.plan.afterClassPractice.vocabularyReviewEnabled ? collectVocabularyMatching(normalizedChapters) : [] }
-    : null;
+  const homework = buildPendingExerciseHomework(state.plan, normalizedChapters);
   return { chapters: normalizedChapters, homework };
 }
 
@@ -243,7 +249,7 @@ async function prerequisite(db: CourseContentDb, courseId: string) {
     ...state,
     contentIntent: storyContentIntentFromAlignmentDetails(course?.storySetting?.alignmentDetails),
     promptPeople: people.map((person) => ({ role: person.role, chineseName: person.chineseNameSnapshot, englishName: person.englishNameSnapshot })),
-    promptCharacters: characters.map((character) => ({ displayName: character.displayName, englishName: character.englishName, roleInStory: character.roleInStory, shortDescription: character.shortDescription })),
+    promptCharacters: characters.map((character) => ({ displayName: character.displayName, englishName: character.englishName, roleInStory: character.roleInStory, shortDescription: character.shortDescription, visualDescription: character.visualDescription ?? null })),
   };
 }
 
@@ -765,16 +771,22 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
   const baseRevision = `${sourceRevision(state)}:${content.contentVersion}`;
   const revision = options.regenerate ? `${baseRevision}:regenerate` : baseRevision;
   const actionLabel = options.regenerate ? "重新生成章节与课后练习" : content.errorMessage ? "重试章节与课后练习" : "我确认阅读内容，请生成章节与课后练习。";
-  const operation = await claim(db, courseId, revision, "exercises", idempotencyKey, { status: "generating_exercises", phase: "generating_exercises", writingProvider }, { teacherMessage: { content: actionLabel, details: { triggerSource: "ui_action", triggerLabel: actionLabel } } });
+  const chapters = content.chapters as CourseContentChapter[];
+  const operation = await claim(db, courseId, revision, "exercises", idempotencyKey, {
+    status: "generating_exercises",
+    phase: "generating_exercises",
+    writingProvider,
+    ...(!options.regenerate ? { homework: buildPendingExerciseHomework(state.plan, chapters) } : {}),
+  }, { teacherMessage: { content: actionLabel, details: { triggerSource: "ui_action", triggerLabel: actionLabel } } });
   if (!operation.claimed) return getCourseContentState(db, courseId);
   return withLease(db, operation.id, async () => {
   try {
     if (!requiresExerciseAi(state.plan)) {
-      const localExercises = locallyAssembledExercises(state, content.chapters as CourseContentChapter[]);
+      const localExercises = locallyAssembledExercises(state, chapters);
       await finishOperation(db, courseId, operation, { status: "ready", phase: null, chapters: localExercises.chapters, homework: localExercises.homework, exercisesStale: false, errorMessage: null }, { status: "succeeded" });
       return getCourseContentState(db, courseId);
     }
-    const cleanChapters = (content.chapters as CourseContentChapter[]).map((chapter) => ({
+    const cleanChapters = chapters.map((chapter) => ({
       outlineChapterId: chapter.outlineChapterId,
       title: chapter.title,
       cleanText: chapter.paragraphs.map(buildCleanParagraphText).join(" "),
@@ -785,7 +797,7 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
     const homeworkPlan = state.plan.afterClassPractice;
     for (let round = 0; round <= courseContentSemanticRepairAttempts; round += 1) {
       const failedTargets: Array<{ id: string; label: string; issues: string[] }> = [];
-      const chapters = (content.chapters as CourseContentChapter[]).map((chapter) => {
+      const generatedChapters = chapters.map((chapter) => {
         const plan = state.plan.chapters.find((item) => item.outlineChapterId === chapter.outlineChapterId)!;
         if (!plan.chapterPractice.enabled) return { ...chapter, chapterPractice: [] };
         const raw = generated.chapters.find((item) => item.outlineChapterId === chapter.outlineChapterId)?.questions ?? [];
@@ -804,8 +816,8 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
         if (issues.length) failedTargets.push({ id: "homework", label: "课后练习", issues });
       }
       if (!failedTargets.length) {
-        const homework = homeworkPlan.enabled ? { grammar, vocabularyMatching: homeworkPlan.vocabularyReviewEnabled ? collectVocabularyMatching(chapters) : [] } : null;
-        await finishOperation(db, courseId, operation, { status: "ready", phase: null, chapters, homework, exercisesStale: false, contentVersion: { increment: 1 }, errorMessage: null }, { status: "succeeded" });
+        const homework = homeworkPlan.enabled ? { grammar, vocabularyMatching: homeworkPlan.vocabularyReviewEnabled ? collectVocabularyMatching(generatedChapters) : [] } : null;
+        await finishOperation(db, courseId, operation, { status: "ready", phase: null, chapters: generatedChapters, homework, exercisesStale: false, contentVersion: { increment: 1 }, errorMessage: null }, { status: "succeeded" });
         return getCourseContentState(db, courseId);
       }
       if (round === courseContentSemanticRepairAttempts) throw new Error(`练习一次修复后仍未通过：${failedTargets.map((target) => `${target.label}（${target.issues.join("；")}）`).join("；")}`);

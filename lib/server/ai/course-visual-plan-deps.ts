@@ -24,6 +24,7 @@ export type CourseVisualPlanPromptInput = {
       summary?: string;
     } | null;
     roleInStory: string;
+    identityDescription?: string | null;
   }>;
   chapters: Array<{
     id: string;
@@ -166,6 +167,7 @@ export type CourseImagePromptCharacter = {
   characterKey: string;
   chineseName: string;
   englishName: string;
+  identityDescription?: string | null;
   referenceIndex?: number;
   useVisualLabel?: boolean;
 };
@@ -270,6 +272,7 @@ function aliasContext(input: CourseVisualPlanPromptInput) {
       sourceType: character.sourceType,
       reference: character.reference,
       roleInStory: character.roleInStory,
+      ...(character.sourceType === "original" && character.identityDescription ? { identityDescription: character.identityDescription } : {}),
     })),
     chapters: input.chapters.map((chapter) => ({
       order: chapter.order,
@@ -395,14 +398,14 @@ export function buildCourseVisualPlanPrompt(input: CourseVisualPlanPromptInput) 
       ];
   const context = aliasContext(input);
   return [
-    "Create one concise visual bible for a children's English picture-book lesson. Return strict JSON only. visualStyle, storyWorld, focus, sceneDescription, and visualLabel must be English. characterAppearance and courseAppearance must be concise Simplified Chinese and are the only character-description truth source used by both teacher editing and image generation.",
+    "Create one concise visual bible for a children's English picture-book lesson. Return strict JSON only. visualStyle, storyWorld, focus, sceneDescription, and visualLabel must be English. characterAppearance and courseAppearance must be concise Simplified Chinese Step 5 outputs used by teacher editing and image generation. A supplied identityDescription is an upstream immutable story fact, not an output to rewrite.",
     "Use only the supplied short characterKey values (C01, C02, ...) and paragraphKey values (P01, P02, ...). Never output or invent database IDs.",
     "Return exactly one characterDesign per supplied characterKey and exactly one shot per supplied paragraphKey. Copy each short key exactly. characterKeys may contain only supplied characterKey values and must not contain duplicates.",
     ...identityRules,
     "Create one visualStyle and one storyWorld for the whole lesson.",
-    "characterAppearance is required for every non-person character and must be null for sourceType=person. It must be concise Simplified Chinese and describe only visible, stable identity appearance; do not include biography, personality, plot function, actions, or scene directions.",
-    "courseAppearance is required for every character and must be concise Simplified Chinese. Write one fixed head-to-toe course-wide continuity specification: explicitly name the upper garment, lower garment, footwear, and any outer layer; give their exact main and secondary colors; add material or pattern plus the type and color of visually important portable props or accessories. Use one concrete choice for every item, never alternatives. When no new costume is needed, still describe the retained outfit in full instead of returning null.",
-    "Do not use vague placeholders such as 'classic outfit', 'signature outfit', 'appropriate clothing', 'period clothing', 'sportswear', 'similar colors', 'retain the original outfit', or 'as in the reference'. Even for a faithful referenced character, restate every visible clothing component and its exact color palette concretely in courseAppearance.",
+    "characterAppearance is required for every non-person character and must be null for sourceType=person. It must be concise Simplified Chinese and describe only visible, stable appearance; do not include biography, personality, plot function, actions, or scene directions. For sourceType=original, identityDescription is an immutable story fact: characterAppearance may add face, surface, color, silhouette, and recognition details, but must not change its species, entity form, anthropomorphism, material, body plan, or defining anatomy. If a legacy original character has no identityDescription, characterAppearance must itself be self-contained and explicitly state its concrete species or entity form, anthropomorphism, material, body plan, and defining anatomy before adding appearance details.",
+    "courseAppearance is required for every character and must be concise Simplified Chinese. Write one fixed course-wide continuity specification for clothing, outer layers, footwear, equipment, portable props, and accessories. For a clothing-wearing character, explicitly name each visible item and its exact main and secondary colors, plus material or pattern when visually important. For a naturally unclothed animal, creature, robot, or anthropomorphic object, explicitly say it wears no clothing and describe only genuinely needed collars, harnesses, shell components, equipment, or ornaments; never invent human garments or anatomy merely to fill a template. Use one concrete choice for every included item, never alternatives.",
+    "Do not use vague placeholders such as 'classic outfit', 'signature outfit', 'appropriate clothing', 'period clothing', 'sportswear', 'similar colors', 'retain the original outfit', or 'as in the reference'. Even for a faithful referenced character, concretely restate every applicable visible clothing, equipment, and accessory component with its exact color palette; if the identity naturally wears none, explicitly state that instead of inventing clothing.",
     "For sourceType=person, derive course clothing and props from the supplied story title and cleanReading together with the storyWorld you create. Do not default teachers to modern teacher clothing or students to generic sportswear. If the story uses a historical, fantasy, literary, or franchise world, adapt their clothing to that world while preserving identity from the reference image. Keep the result age-appropriate, practical for the character's actions, and visually coherent across the course.",
     "Never put identity, age, face, body, personality, expression, action, pose, gaze, ability, environment, or scene directions in courseAppearance.",
     "The same courseAppearance is immutable across the cover and every shot. Do not invent, omit, recolor, or restyle any listed item in focus or sceneDescription. Only when cleanReading explicitly describes a costume change may that scene state the changed item; all unspecified items remain fixed.",
@@ -425,14 +428,15 @@ function promptCharacterLine(design: CourseVisualPlan["characterDesigns"][number
     ? `${context.characterKey} — ${design.visualAnchor.label}`
     : `${context.characterKey} — ${context.chineseName} / ${context.englishName}`;
   const appearance = design.appearanceDescription ? ` 角色形象：${design.appearanceDescription}` : "";
+  const identity = context.identityDescription ? ` 角色本体：${context.identityDescription}` : "";
   const courseAppearance = ` 本课造型：${design.courseAppearance}`;
   if (context.referenceIndex) {
-    return `- ${heading}: reference image ${context.referenceIndex} belongs exclusively to ${context.characterKey} — ${context.englishName}; use reference image ${context.referenceIndex} for identity only—body build, face shape, facial features, hairstyle, hair color, glasses, distinctive traits, and age impression. Ignore reference clothing, pose, background, and framing.${appearance}${courseAppearance}`;
+    return `- ${heading}: reference image ${context.referenceIndex} belongs exclusively to ${context.characterKey} — ${context.englishName}; use reference image ${context.referenceIndex} for identity only—body build, face shape, facial features, hairstyle, hair color, glasses, distinctive traits, and age impression. Ignore reference clothing, pose, background, and framing.${identity}${appearance}${courseAppearance}`;
   }
   if (design.visualAnchor.mode === "semantic") {
     return `- ${heading}: known identity ${design.visualAnchor.label} (${design.visualAnchor.context}); preserve the recognizable named identity and do not merge it with another person or character.${appearance}${courseAppearance}`;
   }
-  if (design.visualAnchor.mode === "description") return `- ${heading}:${appearance}${courseAppearance}`;
+  if (design.visualAnchor.mode === "description") return `- ${heading}:${identity}${appearance}${courseAppearance}`;
   return `- ${heading}: requires the identity reference image selected for this character; do not invent or replace the person's identity.${courseAppearance}`;
 }
 
@@ -480,6 +484,9 @@ export function compileCourseImagePrompt(
     characterLines.length ? `Characters:\n${characterLines.join("\n")}` : "Characters: no named recurring character is visible.",
     characterLines.length
       ? "Character continuity lock: Treat every 本课造型 above as an exact, immutable course-wide specification. Keep garment types, exact colors, materials, patterns, footwear, and portable props identical across the cover and every lesson illustration. Scene text must not override this specification unless it explicitly describes a costume change; then change only the stated item."
+      : null,
+    characters.some((character) => character.identityDescription)
+      ? "Original-character identity lock: 角色本体的物种、形态、拟人化程度、材质和身体结构优先级最高。Never reinterpret or replace those facts from the name, scene, 角色形象, or 本课造型."
       : null,
     referencedCharacterCount >= 2
       ? "Identity separation lock: Each input reference image belongs only to its mapped character. Never merge, duplicate, or exchange identity traits between referenced characters."

@@ -267,6 +267,7 @@ export async function getCourseVisualResources(db: VisualResourcesDb, courseId: 
       visualAnchorMode: visual?.activeImageId && character.sourceType === "referenced" && design?.visualAnchor.mode !== "description" ? "reference" as const : design?.visualAnchor.mode ?? null,
       visualAnchorLabel: design?.visualAnchor.label ?? null,
       visualAnchorContext: design?.visualAnchor.context ?? null,
+      identityDescription: character.sourceType === "original" ? character.visualDescription ?? null : null,
       appearanceDescription: design?.appearanceDescription ?? null,
       shouldAppearInImages: character.shouldAppearInImages,
       isMain: Boolean(visualPlan?.mainCharacterIds.includes(character.id)),
@@ -298,6 +299,7 @@ export async function getCourseVisualResources(db: VisualResourcesDb, courseId: 
         characterKey: characterKeyById.get(characterId) ?? "C00",
         chineseName: character?.chineseName ?? characterId,
         englishName: character?.englishName ?? characterId,
+        identityDescription: character?.sourceType === "original" ? character.identityDescription : null,
         referenceIndex: hasReference ? referenceIndex : undefined,
         useVisualLabel: character?.sourceType === "referenced" && designByCharacter.get(characterId)?.visualAnchor.mode === "description",
       };
@@ -551,6 +553,7 @@ export async function generateCourseVisualPlan(
         summary: character.sourceReference.summary,
       } : null,
       roleInStory: character.roleInStory,
+      identityDescription: character.sourceType === "original" ? character.visualDescription ?? null : null,
     })),
     chapters: chapters.map((chapter, index) => ({
       id: chapter.id,
@@ -928,6 +931,7 @@ async function slotReferenceAssets(db: VisualResourcesDb, courseId: string, char
       characterKey: characterKeys.get(characterId) ?? "C00",
       chineseName: character.displayName,
       englishName: character.englishName,
+      identityDescription: character.sourceType === "original" ? character.visualDescription ?? null : null,
       referenceIndex,
       useVisualLabel: character.sourceType === "referenced" && designByCharacterId.get(characterId)?.visualAnchor.mode === "description",
     });
