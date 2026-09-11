@@ -400,7 +400,7 @@ type CourseVisualResourcesState = {
 
 状态测试必须覆盖首次生成中刷新、已有方案更新中刷新、原创化中刷新、网络响应丢失、不同幂等键重复提交、任务失败、12 分钟过期恢复、状态查询暂时失败、成功后自动切换，以及旧方案和图片在更新失败后的保留。
 
-实现记录：`AiGenerationLog.activeScope` migration、课程级唯一运行约束、12 分钟过期恢复和 `planOperation` 查询契约已落地；Step 5 已由服务端任务状态驱动 Loading、轮询、失败恢复和操作禁用。新增刷新恢复、持久失败与过期恢复测试。验证通过目标测试、全量 92 个测试文件 / 783 项测试、目标 ESLint、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`；本地 migration 已通过项目 `dev:preview` 安全流程部署，未调用真实 AI。提交号待用户验收后记录。
+实现记录：`AiGenerationLog.activeScope` migration、课程级唯一运行约束、12 分钟过期恢复和 `planOperation` 查询契约已落地；Step 5 已由服务端任务状态驱动 Loading、轮询、失败恢复和操作禁用。新增刷新恢复、持久失败与过期恢复测试。验证通过目标测试、全量 92 个测试文件 / 783 项测试、目标 ESLint、`pnpm exec tsc --noEmit`、`pnpm exec prisma validate`、`pnpm build`、乱码扫描和 `git diff --check`；本地 migration 已通过项目 `dev:preview` 安全流程部署，未调用真实 AI。实现提交：`bb65789`。
 
 Loading 界面优化记录：已将视觉中心收敛为任务状态、真实等待时间和持续活动反馈，并在第二层使用 `planOperation` 的实时角色数与章节图片数说明本次任务规模；未增加虚假阶段、百分比、剩余时间或额外操作。验证通过 Step 5 组件 37 项测试、视觉资源目标 67 项测试、TypeScript、目标 ESLint、Impeccable 规则检查和生产构建；全量回归覆盖 92 个测试文件 / 788 项测试，其中最后一个文件首次因 Windows 文件锁未加载，单独重跑通过。未使用浏览器验收，留待用户检查实际视觉效果。
 
