@@ -87,6 +87,25 @@ describe("Step 5 视觉资源方案", () => {
     expect(() => parseCourseVisualPlanResponse(JSON.stringify(missingTeacher), input)).toThrow("AI 返回的视觉方案内容不完整，请重试");
   });
 
+  test("封面必须同时包含最终被程序判定为主要角色的故事人物", () => {
+    const missingMainCharacter = {
+      ...aiResponse,
+      cover: { ...aiResponse.cover, characterKeys: ["C01"] },
+    };
+
+    expect(() => parseCourseVisualPlanResponse(JSON.stringify(missingMainCharacter), input)).toThrow("AI 返回的视觉方案内容不完整，请重试");
+  });
+
+  test("封面必需集合不会把老师学生追加到章节分镜", () => {
+    const chapterOnlyUsesStoryCharacters = {
+      ...aiResponse,
+      shots: [{ ...aiResponse.shots[0], characterKeys: ["C02", "C03"] }],
+    };
+
+    const plan = parseCourseVisualPlanResponse(JSON.stringify(chapterOnlyUsesStoryCharacters), input);
+    expect(plan.shots[0]?.characterIds).toEqual(["jett", "sage"]);
+  });
+
   test("忠实模式的引用角色缺少资料关联时明确失败，不降级成 description", () => {
     const brokenInput: CourseVisualPlanPromptInput = {
       ...input,

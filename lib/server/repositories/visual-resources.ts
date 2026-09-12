@@ -15,7 +15,7 @@ import { buildCleanParagraphText } from "@/lib/domain/course-content";
 import { furthestCourseStage } from "@/lib/domain/course-stage";
 import { defaultCharacterVisualIntent, matchCoursePersonForCharacter } from "@/lib/domain/visual-resources";
 import { visualGenerationFingerprint } from "@/lib/domain/visual-resources";
-import { compileCourseImagePrompt, CourseVisualPlanResponseError, createCourseVisualPlanDeps, mergeOriginalizedVisualPlan, parseCourseVisualPlan, type CourseImagePromptCharacter, type CourseVisualPlan, type CourseVisualPlanDeps, type CourseVisualPlanDiagnostics, type CourseVisualPlanScene } from "@/lib/server/ai/course-visual-plan-deps";
+import { compileCourseImagePrompt, CourseVisualPlanResponseError, createCourseVisualPlanDeps, mainCharacterIdsForPlan, mergeOriginalizedVisualPlan, parseCourseVisualPlan, type CourseImagePromptCharacter, type CourseVisualPlan, type CourseVisualPlanDeps, type CourseVisualPlanDiagnostics, type CourseVisualPlanScene } from "@/lib/server/ai/course-visual-plan-deps";
 import { CourseImageSourceError } from "@/lib/server/storage/course-images";
 
 export type VisualResourcesDb = Pick<PrismaClient,
@@ -167,21 +167,6 @@ function storedVisualPlan(value: unknown): StoredVisualPlan | null {
   if (typeof Reflect.get(value, "visualStyle") !== "string" || typeof Reflect.get(value, "storyWorld") !== "string") return null;
   if (!Array.isArray(Reflect.get(value, "characterDesigns")) || !Array.isArray(Reflect.get(value, "mainCharacterIds"))) return null;
   return value as StoredVisualPlan;
-}
-
-function mainCharacters(plan: CourseVisualPlan, characters: Array<{ id: string; sourceType: string; roleInStory: string }>) {
-  const appearances = new Map<string, number>();
-  for (const scene of [plan.cover, ...plan.shots]) {
-    for (const id of scene.characterIds) appearances.set(id, (appearances.get(id) ?? 0) + 1);
-  }
-  const people = characters.filter((character) => character.sourceType === "person").map((character) => character.id);
-  const candidates = characters.filter((character) => character.sourceType !== "person" && appearances.has(character.id)).sort((a, b) => {
-    const score = (character: typeof a) => (plan.cover.characterIds.includes(character.id) ? 100 : 0)
-      + (appearances.get(character.id) ?? 0) * 10
-      + (/主角|核心|protagonist|hero|antagonist|对手/i.test(character.roleInStory) ? 30 : 0);
-    return score(b) - score(a);
-  }).slice(0, 3).map((character) => character.id);
-  return [...new Set([...people, ...candidates])];
 }
 
 function toAsset(asset: {
@@ -632,7 +617,7 @@ export async function generateCourseVisualPlan(
       if (mode === "originalized" && baselinePlan) generatedPlan = mergeOriginalizedVisualPlan(baselinePlan, generatedPlan, promptInput.characters);
     }
   const revision = (existingPlan?.revision ?? 0) + 1;
-  const plan: StoredVisualPlan = { ...generatedPlan, schemaVersion: 4, mainCharacterIds: mainCharacters(generatedPlan, characters) };
+  const plan: StoredVisualPlan = { ...generatedPlan, schemaVersion: 4, mainCharacterIds: mainCharacterIdsForPlan(generatedPlan, characters) };
   const coverCharacterIds = generatedPlan.cover.characterIds;
   const characterNames = new Map(characters.map((character, index) => [character.id, {
     characterKey: `C${String(index + 1).padStart(2, "0")}`,

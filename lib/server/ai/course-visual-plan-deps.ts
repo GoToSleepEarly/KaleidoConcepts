@@ -210,6 +210,24 @@ function sameMembers(actual: string[], expected: string[]) {
   return actual.length === expected.length && [...actual].sort().every((value, index) => value === [...expected].sort()[index]);
 }
 
+export function mainCharacterIdsForPlan(
+  plan: CourseVisualPlan,
+  characters: Array<{ id: string; sourceType: string; roleInStory: string }>,
+) {
+  const appearances = new Map<string, number>();
+  for (const scene of [plan.cover, ...plan.shots]) {
+    for (const id of scene.characterIds) appearances.set(id, (appearances.get(id) ?? 0) + 1);
+  }
+  const people = characters.filter((character) => character.sourceType === "person").map((character) => character.id);
+  const candidates = characters.filter((character) => character.sourceType !== "person" && appearances.has(character.id)).sort((a, b) => {
+    const score = (character: typeof a) => (plan.cover.characterIds.includes(character.id) ? 100 : 0)
+      + (appearances.get(character.id) ?? 0) * 10
+      + (/主角|核心|protagonist|hero|antagonist|对手/i.test(character.roleInStory) ? 30 : 0);
+    return score(b) - score(a);
+  }).slice(0, 3).map((character) => character.id);
+  return [...new Set([...people, ...candidates])];
+}
+
 export function parseCourseVisualPlan(value: unknown, input: CourseVisualPlanPromptInput): CourseVisualPlan {
   const parsed = generatedPlanSchema.parse(value);
   const characterIds = input.characters.map((character) => character.id);
@@ -221,9 +239,9 @@ export function parseCourseVisualPlan(value: unknown, input: CourseVisualPlanPro
   if (!sameMembers(shotParagraphIds, paragraphIds)) throw new Error("视觉资源方案没有逐段覆盖已确认正文");
   const scenes: CourseVisualPlanScene[] = [parsed.cover, ...parsed.shots];
   if (scenes.some((scene) => scene.characterIds.some((id) => !knownCharacterIds.has(id)))) throw new Error("视觉资源方案包含未知角色");
-  const requiredCoverPersonIds = input.characters.filter((character) => character.sourceType === "person").map((character) => character.id);
-  if (input.mode === "faithful" && requiredCoverPersonIds.some((id) => !parsed.cover.characterIds.includes(id))) {
-    throw new Error("视觉资源封面必须包含全部老师和学生");
+  const requiredCoverCharacterIds = mainCharacterIdsForPlan(parsed, input.characters);
+  if (input.mode === "faithful" && requiredCoverCharacterIds.some((id) => !parsed.cover.characterIds.includes(id))) {
+    throw new Error("视觉资源封面必须包含全部老师、学生和主要角色");
   }
   for (const design of parsed.characterDesigns) {
     const source = input.characters.find((character) => character.id === design.characterId);
@@ -431,7 +449,9 @@ export function buildCourseVisualPlanPrompt(input: CourseVisualPlanPromptInput) 
     "For sourceType=person, personRole, age, gender, and lifeStage are program-supplied identity facts. Use them only to make courseAppearance age-appropriate and role-appropriate; do not rewrite, infer, or contradict them. When the story world permits, give co-visible people clearly different dominant clothing colors, garment silhouettes, or accessories without inventing pairwise comparison rules.",
     "Never put identity, age, face, body, personality, expression, action, pose, gaze, ability, environment, or scene directions in courseAppearance.",
     "The same courseAppearance is immutable across the cover and every shot. Do not invent, omit, recolor, or restyle any listed item in focus or sceneDescription. Only when cleanReading explicitly describes a costume change may that scene state the changed item; all unspecified items remain fixed.",
-    "Create one wide cover and exactly one shot per cleanReading paragraph. Use characterKeys only for the structured visible-character list. cover.characterKeys must include every key in coverRequiredCharacterKeys exactly once; the cover may also include other supplied characters required by the story.",
+    input.mode === "faithful"
+      ? "Create one wide cover and exactly one shot per cleanReading paragraph. Use characterKeys only for the structured visible-character list. cover.characterKeys must include every key in coverRequiredCharacterKeys exactly once. It must also include the central non-person story characters that the complete plan treats as main: prioritize protagonists, key antagonists, plot-driving roles, repeated shot appearances, and normally no more than three. The cover may also include other supplied characters required by the story."
+      : "Create one wide cover and exactly one shot per cleanReading paragraph. Use characterKeys only for the structured visible-character list and preserve the baseline cover and shot character lists exactly.",
     input.mode === "faithful"
       ? "Keep focus and sceneDescription as complete, natural English. Refer to people and roles by their supplied englishName, never by C01/C02 internal keys. Keep sceneDescription about action, environment, mood, and composition. Carry explicit age, period clothing, costume changes, or transformations from cleanReading into that scene, but do not repeat full stable character descriptions."
       : "Keep focus and sceneDescription as complete, natural English and never expose C01/C02 internal keys. Use supplied englishName for unchanged people and original characters, but use only the new visualLabel for originalized referenced characters. Keep the baseline scene meaning and composition unchanged.",
