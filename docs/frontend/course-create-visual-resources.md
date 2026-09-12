@@ -27,7 +27,7 @@
 
 实现验证通过全量 92 个测试文件 / 800 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm exec prisma validate`、本地 `pnpm prisma:deploy`、`pnpm build`、中文乱码特征扫描和 `git diff --check`；未调用付费 AI。实现提交：`05a4dd1`。
 
-封面主要角色补充修复（2026-09-12）：忠实模式复用既有主要角色评分结果校验封面，使程序保存的 `mainCharacterIds` 与封面必需集合保持一致；不修改章节分镜角色集合，原创化仍保留基线方案的出场集合。验证通过全量 92 个测试文件 / 802 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm exec prisma validate`、`pnpm build`、中文乱码特征扫描和 `git diff --check`；未调用付费 AI。实现提交：待提交后补记。
+封面主要角色补充修复（2026-09-12）：忠实模式复用既有主要角色评分结果校验封面，使程序保存的 `mainCharacterIds` 与封面必需集合保持一致；不修改章节分镜角色集合，原创化仍保留基线方案的出场集合。验证通过全量 92 个测试文件 / 802 项测试、`pnpm exec tsc --noEmit`、`pnpm lint`、`pnpm exec prisma validate`、`pnpm build`、中文乱码特征扫描和 `git diff --check`；未调用付费 AI。实现提交：`30d60f5`。
 
 ## 设计原则
 
