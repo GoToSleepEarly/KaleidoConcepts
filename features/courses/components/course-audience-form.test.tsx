@@ -81,12 +81,10 @@ describe("CourseAudienceForm basic information UI", () => {
     expect(screen.queryByRole("button", { name: /分钟/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Starter" })).toBeInTheDocument();
     expect(screen.getByText("参考 Pre-A1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "A2" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByText("选择等级后查看对应的语言能力描述")).not.toBeInTheDocument();
-    expect(screen.getByText("综合能力")).toBeInTheDocument();
-    expect(screen.getByText("语法表现")).toBeInTheDocument();
-    expect(screen.getByText(/能理解个人信息、购物、居住地等日常表达/)).toBeInTheDocument();
-    expect(screen.getByText(/仍会反复出现时态、主谓一致等错误/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "A2" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("选择学生后自动推荐难度")).toBeInTheDocument();
+    expect(screen.queryByText("综合能力")).not.toBeInTheDocument();
+    expect(screen.queryByText("语法表现")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "CEFR 官方标准" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "B1" }));
     expect(screen.getAllByText("独立使用者")).toHaveLength(3);
@@ -108,6 +106,37 @@ describe("CourseAudienceForm basic information UI", () => {
     expect(screen.queryByText("一门课程只能选择一位老师。")).not.toBeInTheDocument();
     expect(screen.queryByText("至少选择一位学生，可以继续添加多人。")).not.toBeInTheDocument();
     expect(screen.queryByText("时长会影响后续章节数和内容密度。")).not.toBeInTheDocument();
+  });
+
+  test("recommends from average student age and preserves a manual override", async () => {
+    const students = [
+      { id: "student-6", role: "student", chineseName: "小六", englishName: "Six", age: 6, gender: "female", notes: "", visualStatus: "ready", activeVisual: { id: "visual-6", publicUrl: "/six.png", sourceMode: "description", createdAt: "" }, createdAt: "", updatedAt: "" },
+      { id: "student-12", role: "student", chineseName: "小十二", englishName: "Twelve", age: 12, gender: "male", notes: "", visualStatus: "ready", activeVisual: { id: "visual-12", publicUrl: "/twelve.png", sourceMode: "description", createdAt: "" }, createdAt: "", updatedAt: "" },
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/grammar/catalog") return Response.json(grammarCatalog);
+      if (url.includes("/api/people?role=student")) return Response.json({ people: students, page: 1, pageSize: 100, total: students.length, totalPages: 1 });
+      return Response.json({ people: [], page: 1, pageSize: 100, total: 0, totalPages: 1 });
+    }));
+
+    render(<CourseAudienceForm />);
+    fireEvent.click(screen.getByRole("button", { name: "添加学生" }));
+    fireEvent.click(await screen.findByTestId("person-picker-card-student-6"));
+    fireEvent.click(screen.getByTestId("person-picker-card-student-12"));
+    fireEvent.click(screen.getByRole("button", { name: "确认选择" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "A2" })).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByText("已根据学生年龄推荐 A2，可手动调整")).toBeInTheDocument();
+    expect(screen.queryByText(/平均年龄/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "B1" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续添加学生" }));
+    fireEvent.click(await screen.findByTestId("person-picker-card-student-12"));
+    fireEvent.click(screen.getByRole("button", { name: "确认选择" }));
+
+    expect(screen.getByRole("button", { name: "B1" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("根据学生年龄推荐 Starter，可手动调整")).toBeInTheDocument();
   });
 
   test("shows people as visual cards and blocks profiles without a current visual", async () => {
@@ -193,6 +222,8 @@ describe("CourseAudienceForm basic information UI", () => {
     render(<CourseAudienceForm courseId="course-1" />);
 
     expect(await screen.findByText("林老师")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "B1" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("根据学生年龄推荐 A2，可手动调整")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "更换" })).not.toBeInTheDocument();
   });
 

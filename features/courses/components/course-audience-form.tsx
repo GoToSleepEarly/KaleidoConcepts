@@ -13,6 +13,7 @@ import { GrammarKnowledgePointPickerDialog } from "@/features/courses/components
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
 import { PersonEditorDialog } from "@/features/people/components/person-form-drawer";
 import type { CourseAudienceDetail, EnglishLevel, GrammarCatalogPoint, GrammarCatalogResponse, PeopleListResponse, PersonProfile, PersonRole } from "@/lib/contracts/api";
+import { recommendedEnglishLevelForStudentAges } from "@/lib/domain/course-audience-policy";
 import { defaultGrammarBookId, grammarLearningSummary, unitRangeLabel } from "@/lib/domain/grammar-catalog";
 import { cn } from "@/lib/utils";
 import { createRequestId } from "@/lib/utils/request-id";
@@ -39,9 +40,10 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   const createKey = useRef(createRequestId());
   const [title, setTitle] = useState("");
   const [duration, setDuration] = useState<30 | 45 | 60>(60);
-  const [englishLevel, setEnglishLevel] = useState<EnglishLevel | null>(courseId ? null : "A2");
+  const [englishLevel, setEnglishLevel] = useState<EnglishLevel | null>(null);
+  const [difficultyAutoManaged, setDifficultyAutoManaged] = useState(!courseId);
   const [grammarCatalog, setGrammarCatalog] = useState<GrammarCatalogResponse>({ books: [] });
-  const [grammarBookEditionId, setGrammarBookEditionId] = useState(courseId ? "" : defaultGrammarBookId("A2"));
+  const [grammarBookEditionId, setGrammarBookEditionId] = useState("");
   const [selectedKnowledgePointIds, setSelectedKnowledgePointIds] = useState<string[]>([]);
   const [expandedKnowledgePointId, setExpandedKnowledgePointId] = useState<string | null>(null);
   const [knowledgePickerOpen, setKnowledgePickerOpen] = useState(false);
@@ -64,6 +66,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
 
   const currentSnapshot = audienceSnapshot({ title, duration, englishLevel, teacherId: teacher?.id ?? null, studentIds: students.map((student) => student.id), grammarBookEditionId, knowledgePointIds: selectedKnowledgePointIds });
   const hasUnsavedChanges = Boolean(courseId && savedSnapshot !== null && currentSnapshot !== savedSnapshot);
+  const recommendedEnglishLevel = recommendedEnglishLevelForStudentAges(students.map((student) => student.age));
 
   async function fetchPerson(id: string, role: PersonRole) {
     const response = await fetch(`/api/people?role=${role}&status=active&pageSize=100`);
@@ -152,9 +155,17 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
     return () => window.removeEventListener("beforeunload", beforeUnload);
   }, [hasUnsavedChanges]);
 
+  function applyStudents(nextStudents: AudiencePerson[]) {
+    setStudents(nextStudents);
+    if (courseId || !difficultyAutoManaged || selectedKnowledgePointIds.length) return;
+    const recommendation = recommendedEnglishLevelForStudentAges(nextStudents.map((student) => student.age));
+    setEnglishLevel(recommendation);
+    setGrammarBookEditionId(recommendation ? defaultGrammarBookId(recommendation) : "");
+  }
+
   function replacePerson(saved: PersonProfile) {
     if (saved.role === "teacher" && teacher?.id === saved.id) setTeacher(saved);
-    if (saved.role === "student") setStudents((current) => current.map((person) => person.id === saved.id ? saved : person));
+    if (saved.role === "student") applyStudents(students.map((person) => person.id === saved.id ? saved : person));
     setPersonNotice(`${saved.chineseName}的人物资料已更新`);
   }
 
@@ -262,13 +273,14 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
 
         <AudienceSection icon={<UsersRound className="size-4" />} title="学生">
           <div className="space-y-3">
-            {students.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{students.map((student) => <SelectedPerson key={student.id} person={student} onEdit={legacyReadOnly ? undefined : () => setEditing(student)} onRemove={legacyReadOnly ? undefined : () => setStudents((current) => current.filter((person) => person.id !== student.id))} />)}</div> : legacyReadOnly ? <p className="text-sm text-muted-foreground">旧课程未记录学生</p> : null}
+            {students.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{students.map((student) => <SelectedPerson key={student.id} person={student} onEdit={legacyReadOnly ? undefined : () => setEditing(student)} onRemove={legacyReadOnly ? undefined : () => applyStudents(students.filter((person) => person.id !== student.id))} />)}</div> : legacyReadOnly ? <p className="text-sm text-muted-foreground">旧课程未记录学生</p> : null}
             {!legacyReadOnly ? <AddPersonButton label={students.length ? "继续添加学生" : "添加学生"} onClick={() => setPickerRole("student")} /> : null}
           </div>
         </AudienceSection>
 
         <AudienceSection icon={<GraduationCap className="size-4" />} title="英语难度">
-          <div aria-label="英语难度等级" className="grid grid-cols-4 gap-2 sm:grid-cols-7" role="group">{englishLevelOptions.map(({ level, band }) => <button aria-label={level} aria-pressed={englishLevel === level} className={cn("min-h-16 rounded-lg border px-2 py-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5365EC] focus-visible:ring-offset-2 disabled:cursor-default", englishLevel === level ? "border-[#5365EC] bg-[#5365EC] text-white shadow-sm" : "border-[#D7E5F1] bg-white text-[#30459E] hover:border-[#BFC9F7] hover:bg-[#EEF0FF]")} disabled={legacyReadOnly} key={level} onClick={() => { setEnglishLevel(level); if (!selectedKnowledgePointIds.length) setGrammarBookEditionId(defaultGrammarBookId(level)); }} type="button"><span className="block text-base font-bold">{level}</span><span className={cn("mt-0.5 block truncate text-[11px] font-semibold", englishLevel === level ? "text-white/85" : "text-[#69829B]")}>{band.replace("产品起步级 · ", "")}</span></button>)}</div>
+          <div aria-label="英语难度等级" className="grid grid-cols-4 gap-2 sm:grid-cols-7" role="group">{englishLevelOptions.map(({ level, band }) => <button aria-label={level} aria-pressed={englishLevel === level} className={cn("min-h-16 rounded-lg border px-2 py-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5365EC] focus-visible:ring-offset-2 disabled:cursor-default", englishLevel === level ? "border-[#5365EC] bg-[#5365EC] text-white shadow-sm" : "border-[#D7E5F1] bg-white text-[#30459E] hover:border-[#BFC9F7] hover:bg-[#EEF0FF]")} disabled={legacyReadOnly} key={level} onClick={() => { setDifficultyAutoManaged(false); setEnglishLevel(level); if (!selectedKnowledgePointIds.length) setGrammarBookEditionId(defaultGrammarBookId(level)); }} type="button"><span className="block text-base font-bold">{level}</span><span className={cn("mt-0.5 block truncate text-[11px] font-semibold", englishLevel === level ? "text-white/85" : "text-[#69829B]")}>{band.replace("产品起步级 · ", "")}</span></button>)}</div>
+          {!legacyReadOnly ? <p aria-live="polite" className="mt-2 text-sm text-[#526B83]">{recommendedEnglishLevel ? `${difficultyAutoManaged && englishLevel === recommendedEnglishLevel ? "已" : ""}根据学生年龄推荐 ${recommendedEnglishLevel}，可手动调整` : "选择学生后自动推荐难度"}</p> : null}
           {selectedLevelOption ? <div aria-live="polite" className="mt-3 rounded-lg border border-[#CCD8F8] bg-[#F8FAFF] px-4 py-3.5"><div className="flex flex-wrap items-center gap-2"><span className="rounded-md bg-[#5365EC] px-2 py-1 text-xs font-bold text-white">{selectedLevelOption.level}</span><span className="text-sm font-bold text-[#30459E]">{selectedLevelOption.band}</span></div><dl className="mt-2 grid gap-2 text-sm leading-6 text-[#38536E]"><div className="grid gap-0.5 sm:grid-cols-[5rem_minmax(0,1fr)] sm:gap-3"><dt className="font-semibold text-[#30459E]">综合能力</dt><dd className="text-pretty">{selectedLevelOption.communicationDescription}</dd></div><div className="grid gap-0.5 sm:grid-cols-[5rem_minmax(0,1fr)] sm:gap-3"><dt className="font-semibold text-[#30459E]">语法表现</dt><dd className="text-pretty">{selectedLevelOption.grammarDescription}</dd></div></dl></div> : null}
           {!selectedLevelOption && legacyReadOnly ? <p className="mt-3 rounded-lg border border-dashed border-[#CCD8F8] bg-[#F8FAFF] px-4 py-3 text-sm text-[#69829B]">旧课程未记录英语难度</p> : null}
         </AudienceSection>
@@ -325,7 +337,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
           onClose={() => setPickerRole(null)}
           onConfirm={(selected) => {
             if (pickerRole === "teacher") setTeacher(selected[0] ?? null);
-            else setStudents(selected);
+            else applyStudents(selected);
             setPickerRole(null);
           }}
           role={pickerRole}
