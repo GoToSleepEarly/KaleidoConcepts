@@ -44,35 +44,6 @@ function useElapsedSeconds(startedAt?: string | null) {
   return elapsedSeconds;
 }
 
-function useRotatingHighlight(itemCount: number, intervalMs = 3_000) {
-  const [activeIndex, setActiveIndex] = useState(0);
-
-  useEffect(() => {
-    const reducedMotionQuery = typeof window.matchMedia === "function"
-      ? window.matchMedia("(prefers-reduced-motion: reduce)")
-      : null;
-    let timer: number | undefined;
-
-    const configureRotation = () => {
-      if (timer !== undefined) window.clearInterval(timer);
-      setActiveIndex(0);
-      if (itemCount < 2 || reducedMotionQuery?.matches) return;
-      timer = window.setInterval(() => {
-        setActiveIndex((currentIndex) => (currentIndex + 1) % itemCount);
-      }, intervalMs);
-    };
-
-    configureRotation();
-    reducedMotionQuery?.addEventListener("change", configureRotation);
-    return () => {
-      if (timer !== undefined) window.clearInterval(timer);
-      reducedMotionQuery?.removeEventListener("change", configureRotation);
-    };
-  }, [intervalMs, itemCount]);
-
-  return activeIndex;
-}
-
 function TimedOperationStatus({ description, descriptionForElapsed, details, embedded = false, startedAt, title }: { description: string; descriptionForElapsed?: (elapsedSeconds: number) => string; details?: React.ReactNode; embedded?: boolean; startedAt?: string | null; title: string }) {
   const elapsedSeconds = useElapsedSeconds(startedAt);
 
@@ -101,7 +72,6 @@ function VisualPlanLoading({ operation, originalizing = false, syncing = false }
   const characterCount = operation?.characterCount ?? 0;
   const imagePlanCount = operation?.imagePlanCount ?? 0;
   const elapsedSeconds = useElapsedSeconds(operation?.startedAt);
-  const activeDesignIndex = useRotatingHighlight(3);
   const countValue = (value: number, unit: string) => value > 0 ? `${value} ${unit}` : "同步中";
   const designItems = [
     { Icon: UserRound, label: "角色视觉形象", value: countValue(characterCount, "个"), valueTestId: "visual-plan-character-count" },
@@ -110,54 +80,64 @@ function VisualPlanLoading({ operation, originalizing = false, syncing = false }
   ];
 
   return (
-    <section aria-live="polite" className="overflow-hidden rounded-xl border border-primary/20 bg-white" data-testid="visual-plan-loading" role="status">
-      <div className="bg-primary-50/55 px-4 py-4 sm:px-5 sm:py-5">
-        <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white text-primary shadow-sm">
-            <LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" />
+    <section
+      aria-live="polite"
+      className="overflow-hidden rounded-lg bg-primary-50/75"
+      data-density="compact"
+      data-layout="focus-workbench"
+      data-testid="visual-plan-loading"
+      role="status"
+    >
+      <div className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground" aria-hidden="true">
+            <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />
           </span>
-          <div className="flex min-w-0 flex-1 items-start justify-between gap-4">
-            <div className="min-w-0">
-              <h4 className="font-semibold text-foreground">{isOriginalizing ? "正在生成原创视觉设定" : "正在生成视觉方案"}</h4>
-              <p className="mt-1.5 max-w-2xl text-pretty text-sm leading-6 text-muted-foreground">
-                {syncing ? "系统仍在持续处理，正在重新获取任务状态，无需刷新。" : "预计耗时 3–5 分钟。系统正在持续处理，无需刷新，完成后会自动更新。"}
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-1.5">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary-100 bg-white px-2.5 py-1 text-xs font-semibold text-primary-700" data-testid="visual-plan-processing-status">
-                <span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
-                {syncing ? "正在重新同步" : "正在处理"}
-              </span>
-              <p className="flex items-center gap-1.5 text-xs font-medium tabular-nums text-primary-700" data-testid="visual-plan-elapsed">
-                <Clock3 aria-hidden="true" className="size-3.5" />
-                已等待 {formatElapsedTime(elapsedSeconds)}
-              </p>
-            </div>
+          <div className="min-w-0">
+            <h4 className="text-sm font-semibold text-foreground">{isOriginalizing ? "正在生成原创视觉设定" : "正在生成视觉方案"}</h4>
+            <p className="mt-1 max-w-2xl text-pretty text-xs leading-5 text-muted-foreground">
+              {syncing ? "系统仍在持续处理，正在重新获取任务状态" : "AI 正在统一课程的角色与画面风格"}
+            </p>
           </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 pl-12 sm:flex-col sm:items-end sm:gap-0.5 sm:pl-0">
+          <p className="text-xs font-semibold text-primary-700" data-testid="visual-plan-processing-status">
+            {syncing ? "正在重新同步" : "正在处理"}
+          </p>
+          <p className="text-sm font-semibold tabular-nums text-primary-700" data-testid="visual-plan-elapsed">
+            <span className="font-normal text-muted-foreground">已等待 </span>{formatElapsedTime(elapsedSeconds)}
+          </p>
         </div>
       </div>
 
-      <div className="border-t border-primary/10 px-4 py-4 sm:px-5">
-        <p className="text-sm font-semibold text-foreground">本阶段会为课程设计</p>
-        <div className="mt-3 grid divide-y divide-border overflow-hidden rounded-lg border border-border bg-muted/20 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-          {designItems.map(({ Icon, label, value, valueTestId }, index) => {
-            const isActive = index === activeDesignIndex;
-            return (
+      <div className="mx-4 overflow-hidden rounded-md bg-white/75 ring-1 ring-primary-100">
+        <div className="grid divide-y divide-primary-100 sm:grid-cols-3 sm:divide-x sm:divide-y-0" role="list">
+          {designItems.map(({ Icon, label, value, valueTestId }, index) => (
               <div
-                className={cn("flex items-center justify-between gap-3 px-3 py-3 transition-colors duration-300 ease-out motion-reduce:transition-none sm:block", isActive ? "bg-primary-50/80" : "bg-transparent")}
-                data-active={isActive}
+                className="flex min-h-14 items-center justify-between gap-3 px-3 py-3 sm:min-h-16"
                 data-testid={`visual-plan-design-item-${index}`}
                 key={label}
+                role="listitem"
               >
-                <div className={cn("flex items-center gap-2 text-xs transition-colors duration-300 ease-out motion-reduce:transition-none", isActive ? "font-medium text-primary-700" : "text-muted-foreground")}>
-                  <Icon aria-hidden="true" className={cn("size-4 transition-colors duration-300 ease-out motion-reduce:transition-none", isActive ? "text-primary" : "text-muted-foreground")} />
+                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <span className="flex size-7 items-center justify-center rounded-md bg-primary-50 text-primary-600">
+                    <Icon aria-hidden="true" className="size-3.5" />
+                  </span>
                   {label}
                 </div>
-                <p className={cn("text-sm font-semibold transition-colors duration-300 ease-out motion-reduce:transition-none sm:mt-1", isActive ? "text-primary-700" : "text-foreground")} data-testid={valueTestId}>{value}</p>
+                <p className="text-sm font-semibold tabular-nums text-foreground" data-testid={valueTestId}>{value}</p>
               </div>
-            );
-          })}
+          ))}
         </div>
+        <div aria-hidden="true" className="visual-plan-activity-track h-0.5 overflow-hidden bg-primary-100" data-testid="visual-plan-activity-track">
+          <span className="visual-plan-activity-sweep block h-full w-1/4 rounded-full bg-primary motion-reduce:hidden" />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 px-4 py-3 text-xs text-primary-700">
+        <Clock3 aria-hidden="true" className="size-3.5 shrink-0" />
+        <p>{syncing ? "无需刷新，状态恢复后会自动更新" : "预计需要 3–5 分钟 · 无需刷新，完成后自动更新"}</p>
       </div>
     </section>
   );

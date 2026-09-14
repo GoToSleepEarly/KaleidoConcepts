@@ -248,6 +248,15 @@ p {
   40% { transform: scale(1); opacity: 1; }
 }
 
+@keyframes visual-plan-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(400%); }
+}
+
+.visual-plan-activity-sweep {
+  animation: visual-plan-sweep 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
 .skeleton {
   background: linear-gradient(
     90deg,
@@ -314,6 +323,10 @@ p {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .visual-plan-activity-track {
+    background: var(--primary-200);
+  }
+
   *,
   *::before,
   *::after {

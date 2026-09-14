@@ -171,29 +171,24 @@ describe("Step 5 视觉资源工作区", () => {
     expect(screen.getByRole("tab", { name: /第 1 章/ })).toHaveClass("shrink-0", "whitespace-nowrap");
   });
 
-  test("生成视觉方案时合并耗时说明并轮流突出三类设计内容", async () => {
+  test("生成视觉方案时使用紧凑工作台和连续活动轨道", () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
     render(<CourseVisualResourcesWorkspace initialState={state} />);
 
     fireEvent.click(screen.getByRole("button", { name: "生成视觉方案" }));
-    expect(screen.getByRole("status")).toHaveTextContent("正在生成视觉方案");
+    expect(screen.getByTestId("visual-plan-loading")).toHaveAttribute("data-layout", "focus-workbench");
+    expect(screen.getByTestId("visual-plan-loading")).toHaveAttribute("data-density", "compact");
+    expect(screen.getByRole("heading", { name: "正在生成视觉方案" })).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("正在处理");
-    expect(screen.getByRole("status")).toHaveTextContent("预计耗时 3–5 分钟。系统正在持续处理，无需刷新，完成后会自动更新。");
+    expect(screen.getByRole("status")).toHaveTextContent("AI 正在统一课程的角色与画面风格");
+    expect(screen.getByRole("status")).toHaveTextContent("预计需要 3–5 分钟 · 无需刷新，完成后自动更新");
     expect(screen.getByTestId("visual-plan-elapsed")).toHaveTextContent("已等待 00:00");
     expect(screen.queryByRole("progressbar", { name: "视觉方案处理进度" })).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("本阶段会为课程设计");
     expect(screen.getByRole("status")).toHaveTextContent("同步中");
-    expect(screen.getByTestId("visual-plan-design-item-0")).toHaveAttribute("data-active", "true");
-    expect(screen.getByTestId("visual-plan-design-item-1")).toHaveAttribute("data-active", "false");
-
-    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
-    expect(screen.getByTestId("visual-plan-design-item-0")).toHaveAttribute("data-active", "false");
-    expect(screen.getByTestId("visual-plan-design-item-1")).toHaveAttribute("data-active", "true");
-
-    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
-    expect(screen.getByTestId("visual-plan-design-item-1")).toHaveAttribute("data-active", "false");
-    expect(screen.getByTestId("visual-plan-design-item-2")).toHaveAttribute("data-active", "true");
+    expect(screen.getByTestId("visual-plan-activity-track")).toBeInTheDocument();
+    expect(screen.getByTestId("visual-plan-design-item-0")).not.toHaveAttribute("data-active");
+    expect(screen.getByTestId("visual-plan-design-item-1")).not.toHaveAttribute("data-active");
   });
 
   test("只有原创角色展示 Step 2 的本体设定", () => {
@@ -220,9 +215,7 @@ describe("Step 5 视觉资源工作区", () => {
     expect(screen.getAllByText("本体设定")).toHaveLength(1);
   });
 
-  test("减少动态效果时固定突出第一类设计内容", async () => {
-    vi.useFakeTimers();
-    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  test("成果轨道不使用闪烁状态切换", () => {
     render(<CourseVisualResourcesWorkspace initialState={{
       ...state,
       planOperation: {
@@ -235,10 +228,10 @@ describe("Step 5 视觉资源工作区", () => {
       },
     }} />);
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(9_000); });
-    expect(screen.getByTestId("visual-plan-design-item-0")).toHaveAttribute("data-active", "true");
-    expect(screen.getByTestId("visual-plan-design-item-1")).toHaveAttribute("data-active", "false");
-    expect(screen.getByTestId("visual-plan-design-item-2")).toHaveAttribute("data-active", "false");
+    expect(screen.getByTestId("visual-plan-activity-track")).toHaveClass("visual-plan-activity-track");
+    expect(screen.getByTestId("visual-plan-design-item-0")).not.toHaveClass("animate-pulse");
+    expect(screen.getByTestId("visual-plan-design-item-1")).not.toHaveClass("animate-pulse");
+    expect(screen.getByTestId("visual-plan-design-item-2")).not.toHaveClass("animate-pulse");
   });
 
   test("刷新后从服务端任务继续显示视觉方案 loading 并阻止重复提交", async () => {
@@ -259,7 +252,7 @@ describe("Step 5 视觉资源工作区", () => {
     expect(screen.getByTestId("visual-plan-character-count")).toHaveTextContent("2 个");
     expect(screen.getByTestId("visual-plan-cover-count")).toHaveTextContent("1 张");
     expect(screen.getByTestId("visual-plan-image-count")).toHaveTextContent("6 张");
-    expect(screen.getByRole("status")).toHaveTextContent("预计耗时 3–5 分钟。系统正在持续处理，无需刷新，完成后会自动更新。");
+    expect(screen.getByRole("status")).toHaveTextContent("预计需要 3–5 分钟 · 无需刷新，完成后自动更新");
     expect(screen.getByRole("status")).not.toHaveTextContent("刷新后继续同步");
     expect(screen.getByText("生成中")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "生成视觉方案" })).not.toBeInTheDocument();

@@ -20,9 +20,14 @@ async function removeDemoCourse() {
 async function createRunningOperation() {
   await prisma.aiGenerationLog.deleteMany({
     where: {
-      courseId: COURSE_ID,
-      stage: "visual_resources",
-      operation: "visual_generate_resource_plan",
+      OR: [
+        { requestId: REQUEST_ID },
+        {
+          courseId: COURSE_ID,
+          stage: "visual_resources",
+          operation: "visual_generate_resource_plan",
+        },
+      ],
     },
   });
   await prisma.aiGenerationLog.create({
