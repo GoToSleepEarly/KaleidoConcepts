@@ -334,7 +334,7 @@ type CoursePerson = {
 
 ## 实现状态
 
-- 2026-09-14：新课程已按已选学生平均年龄自动推荐 Starter–B2，不展示具体平均年龄；老师可手动覆盖，已有课程和已选知识点不被自动改写。未新增数据库字段或 API。验证通过 `pnpm test`（95 个测试文件、824 条用例）、`pnpm exec tsc --noEmit`、`pnpm lint` 和 `pnpm build`；提交号待用户验收后记录。
+- 2026-09-14：新课程已按已选学生平均年龄自动推荐 Starter–B2，不展示具体平均年龄；老师可手动覆盖，已有课程和已选知识点不被自动改写。未新增数据库字段或 API。验证通过 `pnpm test`（95 个测试文件、824 条用例）、`pnpm exec tsc --noEmit`、`pnpm lint` 和 `pnpm build`；实现提交：`ab196cb`。
 
 - 2026-09-09：本轮基础信息变更确认与下游原子清理实现提交为 `8bbf852`。
 - 2026-08-27：Step 1 正式不再承担课程时长概念。遗留 `durationMinutes` 仅作旧接口 / 数据兼容，不进入新课程的方向、大纲、教学规划或正文篇幅规则；统一规则见 `docs/frontend/story-complexity-length-policy.md`。旧课程读取不改写。实现提交：`3636339`。
