@@ -5,7 +5,7 @@ import { buildCleanParagraphText, collectVocabularyMatching, courseContentQuesti
 import { courseStageIndex, furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
 import { clearCourseDataAfterStage, removeCourseImageFiles, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 import { englishWordRangesForTarget } from "@/lib/domain/story-length-policy";
-import { readingPageCount } from "@/lib/domain/teaching-plan-policy";
+import { readingPageCount, recommendedAfterClassReadingWordCount } from "@/lib/domain/teaching-plan-policy";
 import { storyContentIntentFromAlignmentDetails } from "@/lib/domain/story-content-intent";
 import { buildPromptParts, buildPromptQuestions, buildReadingTemplateRequirements, mainIdeaWordCountPolicy, type CourseContentGenerationDeps } from "@/lib/server/ai/course-content-deps";
 import { AiProviderResultUnknownError } from "@/lib/server/ai/story-outline-provider";
@@ -115,7 +115,7 @@ function pointKeyMap(state: TeachingPlanState) {
 }
 
 function promptPoints(state: TeachingPlanState, ids: string[]) {
-  const keys = new Map(state.knowledgePoints.map((point, index) => [point.id, { key: `KP${index + 1}`, label: point.label, category: point.category, bookTitle: point.bookTitle, edition: point.edition, officialLevel: point.officialLevel, unitStart: point.unitStart, unitEnd: point.unitEnd, sourceUnits: point.units }]));
+  const keys = new Map(state.knowledgePoints.map((point, index) => [point.id, { key: `KP${index + 1}`, label: point.label, category: point.category, bookTitle: point.bookTitle, edition: point.edition, officialLevel: point.officialLevel, unitStart: point.unitStart, unitEnd: point.unitEnd, units: point.units }]));
   return ids.map((id) => keys.get(id)).filter((point): point is NonNullable<ReturnType<typeof keys.get>> => Boolean(point));
 }
 
@@ -683,7 +683,7 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
     let mainIdeaRaw = reusableMainIdea ?? generatedReading?.mainIdea ?? { text: "" };
     if (generatedReading) {
       const firstPassValidChapterCount = chapterResults.filter((result) => !result.structuredIssues.length && !validateChapter(state, result.chapter).length).length;
-      const mainIdeaPolicy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? 120);
+      const mainIdeaPolicy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? recommendedAfterClassReadingWordCount(state.course.englishLevel ?? "A2"));
       const firstPassMainIdeaCount = wordCount(mainIdeaRaw.text);
       const firstPassMainIdeaValid = firstPassMainIdeaCount >= mainIdeaPolicy.acceptedRange[0] && firstPassMainIdeaCount <= mainIdeaPolicy.acceptedRange[1];
       await recordContentAiUsage(db, courseId, operation, writingProvider, idempotencyKey, "generate", generatedReading.usage, requirements.length, {
@@ -695,7 +695,7 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
     await updateOwnedContent(db, courseId, operation, { chapters, mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle } });
 
     const failed = chapterResults.filter((result) => result.structuredIssues.length || validateChapter(state, result.chapter).length);
-    const mainIdeaPolicy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? 120);
+    const mainIdeaPolicy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? recommendedAfterClassReadingWordCount(state.course.englishLevel ?? "A2"));
     let mainIdeaCount = wordCount(mainIdeaRaw.text);
     const mainIdeaIssue = mainIdeaCount < mainIdeaPolicy.acceptedRange[0] || mainIdeaCount > mainIdeaPolicy.acceptedRange[1]
       ? `Main Idea 词数应为 ${mainIdeaPolicy.acceptedRange[0]}–${mainIdeaPolicy.acceptedRange[1]}，实际 ${mainIdeaCount}`
@@ -931,7 +931,7 @@ export async function modifyCourseContent(db: CourseContentDb, courseId: string,
     constraints = { exercisePlan: plan.chapterPractice.grammar, pageType: pageTarget.type, pageSize: Array.isArray(target) ? target.length : 0, grammarPoints: promptPoints(state, plan.knowledgePointIds), preserveKnowledgePointPerQuestion: true };
     relatedContext = { chapterText: chapter.paragraphs.map(buildCleanParagraphText).join(" ") };
   }
-  else if (input.targetType === "main_idea") { const policy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? 120); target = content.mainIdea && typeof content.mainIdea === "object" ? { text: Reflect.get(content.mainIdea, "text") } : null; constraints = { wordCount: policy.acceptedRange, targetWordCount: policy.targetWordCount, pureReading: true }; }
+  else if (input.targetType === "main_idea") { const policy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? recommendedAfterClassReadingWordCount(state.course.englishLevel ?? "A2")); target = content.mainIdea && typeof content.mainIdea === "object" ? { text: Reflect.get(content.mainIdea, "text") } : null; constraints = { wordCount: policy.acceptedRange, targetWordCount: policy.targetWordCount, pureReading: true }; }
   else if (pageTarget) { const grammar = (content.homework as CourseContentState["homework"])?.grammar ?? []; const currentPage = exercisePage(grammar, pageTarget.type, pageTarget.page); target = currentPage ? buildPromptQuestions(state, currentPage) : null; constraints = { exercisePlan: state.plan.afterClassPractice.practice, pageType: pageTarget.type, pageSize: currentPage?.length ?? 0, grammarPoints: promptPoints(state, state.plan.afterClassPractice.knowledgePointIds), preserveKnowledgePointPerQuestion: true }; relatedContext = { englishLevel: state.course.englishLevel }; }
   if (input.targetType === "main_idea") relatedContext = { cleanChapters: chapters.map((item) => ({ id: item.outlineChapterId, title: item.title, cleanText: item.paragraphs.map(buildCleanParagraphText).join(" ") })) };
   if (!target) throw new CourseContentPrerequisiteError("未找到要修改的内容区域");
@@ -964,7 +964,7 @@ export async function modifyCourseContent(db: CourseContentDb, courseId: string,
     chapter.chapterPractice = questions;
   } else if (input.targetType === "main_idea" && result.mainIdea) {
     const count = wordCount(result.mainIdea.text);
-    const policy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? 120);
+    const policy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? recommendedAfterClassReadingWordCount(state.course.englishLevel ?? "A2"));
     if (count < policy.acceptedRange[0] || count > policy.acceptedRange[1]) throw new Error(`课后阅读修改后词数应为 ${policy.acceptedRange[0]}–${policy.acceptedRange[1]}，实际 ${count}`);
   } else if (input.targetType === "homework" && pageTarget && result.questions) {
     const homework = content.homework as NonNullable<CourseContentState["homework"]>;

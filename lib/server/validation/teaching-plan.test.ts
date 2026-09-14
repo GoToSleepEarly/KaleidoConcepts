@@ -48,7 +48,7 @@ describe("teaching plan validation", () => {
 
     expect(draft.englishLevel).toBe("B1");
     expect(draft.status).toBe("draft");
-    expect(draft.mainIdeaTargetWordCount).toBe(120);
+    expect(draft.mainIdeaTargetWordCount).toBe(110);
     expect(draft.chapters).toHaveLength(2);
     expect(draft.chapters[0]).toMatchObject({
       outlineChapterId: "chapter-1",
@@ -126,10 +126,12 @@ describe("teaching plan validation", () => {
       .toThrow(new TeachingPlanValidationError("请选择英语难度。"));
   });
 
-  test("keeps after-class reading between 80 and 150 words", () => {
-    expect(() => validateTeachingPlanForConfirm(completePlan({ mainIdeaTargetWordCount: 80 }), outlineChapters.map((chapter) => chapter.id))).not.toThrow();
+  test("keeps after-class reading between 50 and 150 words", () => {
+    expect(() => validateTeachingPlanForConfirm(completePlan({ mainIdeaTargetWordCount: 50 }), outlineChapters.map((chapter) => chapter.id))).not.toThrow();
+    expect(() => validateTeachingPlanForConfirm(completePlan({ mainIdeaTargetWordCount: 49 }), outlineChapters.map((chapter) => chapter.id)))
+      .toThrow(new TeachingPlanValidationError("课后阅读词数需在 50-150 之间。"));
     expect(() => validateTeachingPlanForConfirm(completePlan({ mainIdeaTargetWordCount: 151 }), outlineChapters.map((chapter) => chapter.id)))
-      .toThrow(new TeachingPlanValidationError("课后阅读词数需在 80-150 之间。"));
+      .toThrow(new TeachingPlanValidationError("课后阅读词数需在 50-150 之间。"));
   });
 
   test("accepts the default decision to skip after-class practice", () => {

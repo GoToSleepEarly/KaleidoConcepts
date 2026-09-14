@@ -3,7 +3,7 @@
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BookOpen, Check, GraduationCap, Loader2, Pencil, Plus, Search, Target, Trash2, UserRound, UsersRound, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, ChevronDown, GraduationCap, Loader2, Pencil, Plus, Search, Target, Trash2, UserRound, UsersRound, X } from "lucide-react";
 
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { GrammarKnowledgePointPickerDialog } from "@/features/courses/components
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
 import { PersonEditorDialog } from "@/features/people/components/person-form-drawer";
 import type { CourseAudienceDetail, EnglishLevel, GrammarCatalogPoint, GrammarCatalogResponse, PeopleListResponse, PersonProfile, PersonRole } from "@/lib/contracts/api";
-import { defaultGrammarBookId, unitRangeLabel } from "@/lib/domain/grammar-catalog";
+import { defaultGrammarBookId, grammarLearningSummary, unitRangeLabel } from "@/lib/domain/grammar-catalog";
 import { cn } from "@/lib/utils";
 import { createRequestId } from "@/lib/utils/request-id";
 import { readJsonResponse } from "@/lib/utils/response-json";
@@ -43,6 +43,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   const [grammarCatalog, setGrammarCatalog] = useState<GrammarCatalogResponse>({ books: [] });
   const [grammarBookEditionId, setGrammarBookEditionId] = useState(courseId ? "" : defaultGrammarBookId("A2"));
   const [selectedKnowledgePointIds, setSelectedKnowledgePointIds] = useState<string[]>([]);
+  const [expandedKnowledgePointId, setExpandedKnowledgePointId] = useState<string | null>(null);
   const [knowledgePickerOpen, setKnowledgePickerOpen] = useState(false);
   const [teacher, setTeacher] = useState<AudiencePerson | null>(null);
   const [students, setStudents] = useState<AudiencePerson[]>([]);
@@ -274,7 +275,40 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
 
         <AudienceSection action={!legacyReadOnly ? <Button onClick={() => setKnowledgePickerOpen(true)} size="sm" type="button" variant="outline">选择知识点</Button> : null} icon={<Target className="size-4" />} title="全课知识点">
           {selectedBook ? <div className="mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2"><p className="text-sm font-semibold text-foreground">《{selectedBook.title}》</p><p className="mt-0.5 text-xs text-muted-foreground">默认按难度推荐 · {selectedBook.edition} · {selectedBook.officialLevel}</p></div> : legacyReadOnly ? <div className="mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2"><p className="text-sm font-semibold text-foreground">旧版知识点库</p><p className="mt-0.5 text-xs text-muted-foreground">保留课程创建时选择的原知识点</p></div> : null}
-          <div className="flex min-h-12 flex-wrap gap-2 rounded-md border border-primary-100 bg-primary-50/45 p-3">{legacyReadOnly ? legacyKnowledgePoints.length ? legacyKnowledgePoints.map((point) => { const displayName = point.labelZh ? `${point.labelZh} · ${point.label}` : point.label; return <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary-200 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-800" key={point.id}><OverflowingKnowledgePointTitle title={displayName} />{point.category ? <span className="shrink-0 text-xs font-normal text-primary-600">{point.category}</span> : null}</span>; }) : <span className="text-sm text-muted-foreground">旧课程未记录知识点</span> : selectedKnowledgePointIds.length ? selectedKnowledgePointIds.map((id) => { const point = selectedPointMap.get(id); return point ? <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary-200 bg-primary-50 py-1.5 pl-3 pr-1.5 text-sm font-medium text-primary-800" key={id}><OverflowingKnowledgePointTitle title={point.title} /><span className="shrink-0 text-xs font-normal text-primary-600">{unitRangeLabel(point)}</span><button aria-label={`移除 ${point.title}`} className="flex min-h-7 min-w-7 shrink-0 items-center justify-center" onClick={() => setSelectedKnowledgePointIds((current) => current.filter((item) => item !== id))} type="button"><X aria-hidden className="size-3.5 text-primary-600" /></button></span> : null; }) : <span className="text-sm text-muted-foreground">至少选择 1 个知识点</span>}</div>
+          <div className="flex min-h-12 flex-wrap gap-2 rounded-md border border-primary-100 bg-primary-50/45 p-3">
+            {legacyReadOnly ? legacyKnowledgePoints.length ? legacyKnowledgePoints.map((point) => { const displayName = point.labelZh ? `${point.labelZh} · ${point.label}` : point.label; return <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary-200 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-800" key={point.id}><OverflowingKnowledgePointTitle title={displayName} />{point.category ? <span className="shrink-0 text-xs font-normal text-primary-600">{point.category}</span> : null}</span>; }) : <span className="text-sm text-muted-foreground">旧课程未记录知识点</span> : selectedKnowledgePointIds.length ? selectedKnowledgePointIds.map((id) => {
+              const point = selectedPointMap.get(id);
+              if (!point) return null;
+              const unitLabel = unitRangeLabel(point);
+              const rules = grammarLearningSummary(point.units);
+              const expanded = expandedKnowledgePointId === id;
+              const accessibleName = `${unitLabel} · ${point.title}`;
+              return (
+                <div className={cn("max-w-full rounded-2xl border border-primary-200 bg-primary-50 text-primary-800", expanded && "basis-full")} key={id}>
+                  <div className="flex max-w-full items-center gap-1.5 py-1.5 pl-3 pr-1.5 text-sm font-medium">
+                    <OverflowingKnowledgePointTitle title={point.title} />
+                    <span className="shrink-0 text-xs font-normal text-primary-600">{unitLabel}</span>
+                    <button
+                      aria-expanded={expanded}
+                      aria-label={`${expanded ? "收起" : "展开"} ${accessibleName} 的语法要点`}
+                      className="flex min-h-7 min-w-7 shrink-0 items-center justify-center rounded-full text-primary-600 transition-colors hover:bg-primary-100 hover:text-primary-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-300"
+                      onClick={() => setExpandedKnowledgePointId(expanded ? null : id)}
+                      title={expanded ? "收起语法要点" : "展开语法要点"}
+                      type="button"
+                    >
+                      <ChevronDown aria-hidden className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />
+                    </button>
+                    <button aria-label={`移除 ${accessibleName}`} className="flex min-h-7 min-w-7 shrink-0 items-center justify-center" onClick={() => { setSelectedKnowledgePointIds((current) => current.filter((item) => item !== id)); if (expanded) setExpandedKnowledgePointId(null); }} type="button"><X aria-hidden className="size-3.5 text-primary-600" /></button>
+                  </div>
+                  {expanded ? (
+                    <ul className="space-y-1.5 border-t border-primary-200/70 px-3 pb-3 pt-2 text-xs font-normal leading-5 text-primary-800">
+                      {rules.map((rule) => <li className="flex gap-2" key={rule}><span aria-hidden className="mt-[0.45rem] size-1 shrink-0 rounded-full bg-primary-400" /><span>{rule}</span></li>)}
+                    </ul>
+                  ) : null}
+                </div>
+              );
+            }) : <span className="text-sm text-muted-foreground">至少选择 1 个知识点</span>}
+          </div>
           {selectedKnowledgePointIds.length > 10 ? <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">已选择 {selectedKnowledgePointIds.length} 个知识点，知识密度可能偏高。AI 会优先匹配适合各章节的重点，未推荐内容可在配置页调整。</p> : null}
         </AudienceSection>
 
@@ -299,7 +333,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
           onCompleteVisual={(person) => { setReturnToPickerRole(pickerRole); setPickerRole(null); setEditing(person); }}
         />
       ) : null}
-      {knowledgePickerOpen && grammarCatalog.books.length ? <GrammarKnowledgePointPickerDialog books={grammarCatalog.books} initialBookId={grammarBookEditionId || defaultGrammarBookId(englishLevel)} initialSelectedIds={selectedKnowledgePointIds} onClose={() => setKnowledgePickerOpen(false)} onConfirm={({ bookId, selectedIds }) => { setGrammarBookEditionId(bookId); setSelectedKnowledgePointIds(selectedIds); setKnowledgePickerOpen(false); }} /> : null}
+      {knowledgePickerOpen && grammarCatalog.books.length ? <GrammarKnowledgePointPickerDialog books={grammarCatalog.books} compactExpandableDetails initialBookId={grammarBookEditionId || defaultGrammarBookId(englishLevel)} initialSelectedIds={selectedKnowledgePointIds} onClose={() => setKnowledgePickerOpen(false)} onConfirm={({ bookId, selectedIds }) => { setGrammarBookEditionId(bookId); setSelectedKnowledgePointIds(selectedIds); setKnowledgePickerOpen(false); }} /> : null}
       {downstreamChoice ? <Dialog description="本次修改尚未保存" onClose={() => setDownstreamChoice(null)} open size="compact" title="修改将重置后续流程">
         <div className="space-y-5 p-5 sm:p-6">
           <div className="space-y-2 text-pretty text-sm leading-6">

@@ -17,11 +17,13 @@ import {
   DEFAULT_READING_GRAMMAR_TOTAL,
   DEFAULT_READING_VOCABULARY_TOTAL,
   grammarExerciseTotal,
+  MAX_AFTER_CLASS_READING_WORD_COUNT,
   MAX_CHAPTER_TARGET_WORD_COUNT,
   MAX_GRAMMAR_EXERCISE_TOTAL,
   MAX_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
   MAX_READING_PAGE_COUNT,
   MIN_CHAPTER_TARGET_WORD_COUNT,
+  MIN_AFTER_CLASS_READING_WORD_COUNT,
   MIN_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
   MIN_READING_PAGE_COUNT,
   practicePageCount,
@@ -29,11 +31,24 @@ import {
   readingExerciseTotal,
   readingPageCount,
   readingPageDensity,
+  recommendedAfterClassReadingWordCount,
   recommendedReadingPageCount,
 } from "@/lib/domain/teaching-plan-policy";
 import { isCourseStageStale } from "@/lib/domain/course-stage";
+import { grammarLearningSummary } from "@/lib/domain/grammar-catalog";
 import { cn } from "@/lib/utils";
 import { readJsonResponse } from "@/lib/utils/response-json";
+
+const KNOWLEDGE_POINT_CHIP_CLASS = "max-w-full overflow-hidden rounded-2xl text-sm";
+const KNOWLEDGE_POINT_CHIP_ROW_CLASS = "flex min-h-9 max-w-full items-center gap-1.5 py-1 pl-3 pr-1.5";
+
+function KnowledgePointRuleList({ rules }: { rules: string[] }) {
+  return (
+    <ul className="space-y-1.5 border-t border-current/10 px-3 pb-3 pt-2 text-xs font-normal leading-5">
+      {rules.map((rule) => <li className="flex gap-2" key={rule}><span aria-hidden className="mt-[0.45rem] size-1 shrink-0 rounded-full bg-current/50" /><span>{rule}</span></li>)}
+    </ul>
+  );
+}
 
 const grammarLabels: Record<GrammarExerciseType, string> = {
   optionCloze: "选项填空",
@@ -162,6 +177,8 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
   const planIssue = exercisePlanIssue(plan);
   const confirmHint = plan.englishLevel ? `章节 ${readyChapterCount}/${plan.chapters.length} · ${plan.afterClassPractice.enabled ? "课后练习已开启" : "课后练习不生成"}` : "还需选择英语难度";
   const questionTotal = configuredQuestionTotal(plan);
+  const courseEnglishLevel = (plan.englishLevel ?? initialState.course.englishLevel ?? "A2") as EnglishLevel;
+  const recommendedAfterClassWords = recommendedAfterClassReadingWordCount(courseEnglishLevel);
   const afterClassNeedsReview = useMemo(() => {
     if (!plan.afterClassPractice.touched.knowledgePointIds) return false;
     const union = new Set(unionKnowledgePointIds(plan.chapters));
@@ -474,7 +491,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
                 );
               })}
               <div className="my-2 border-t border-border" />
-              <PanelTab active={activePanel === "afterClass"} label="课后设置" onClick={() => setActivePanel("afterClass")} summary={`课后阅读 ${plan.mainIdeaTargetWordCount ?? 120} 词 · ${plan.afterClassPractice.enabled ? "已配置练习" : "无课后练习"}`} />
+              <PanelTab active={activePanel === "afterClass"} label="课后设置" onClick={() => setActivePanel("afterClass")} summary={`课后阅读 ${plan.mainIdeaTargetWordCount ?? recommendedAfterClassWords} 词 · ${plan.afterClassPractice.enabled ? "已配置练习" : "无课后练习"}`} />
             </div>
           </section>
         </aside>
@@ -496,8 +513,8 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
                       <input
                         aria-label="课后阅读目标词数"
                         className="h-10 w-20 rounded-md border border-primary-200 bg-card px-2 text-center text-xl font-bold tabular-nums text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary-100"
-                        max={150}
-                        min={80}
+                        max={MAX_AFTER_CLASS_READING_WORD_COUNT}
+                        min={MIN_AFTER_CLASS_READING_WORD_COUNT}
                         onChange={(event) =>
                           updatePlan((current) => ({
                             ...current,
@@ -505,13 +522,13 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
                           }))
                         }
                         type="number"
-                        value={plan.mainIdeaTargetWordCount ?? 120}
+                        value={plan.mainIdeaTargetWordCount ?? recommendedAfterClassWords}
                       />
                       <span className="text-sm text-muted-foreground">词</span>
                     </span>
                   </label>
                 </div>
-                <p className="mt-3 text-xs text-muted-foreground">可设置 80–150 词，默认 120 词；用于 Step 4 生成和修改课后阅读。</p>
+                <p className="mt-3 text-xs text-muted-foreground">{courseEnglishLevel} 推荐 {recommendedAfterClassWords} 词，可设置 {MIN_AFTER_CLASS_READING_WORD_COUNT}–{MAX_AFTER_CLASS_READING_WORD_COUNT} 词；用于 Step 4 生成和修改课后阅读。</p>
               </section>
               <AfterClassEditor
                 afterClassNeedsReview={afterClassNeedsReview}
@@ -690,6 +707,7 @@ function ChapterSummary({ summary }: { summary: string }) {
 function ChapterEditor({ chapter, outline, index, englishLevel, knowledgePoints, step1KnowledgePointIds, unrecommendedSelectedKnowledgePointIds, mobileSection, onApplyReadingToAll, onApplyChapterPracticeToAll, onChange }: { chapter: TeachingPlanChapter; outline: TeachingPlanState["outline"]["chapters"][number]; index: number; englishLevel: EnglishLevel; knowledgePoints: TeachingPlanState["knowledgePoints"]; step1KnowledgePointIds: string[]; unrecommendedSelectedKnowledgePointIds: string[]; mobileSection?: MobileChapterSection; onApplyReadingToAll: () => void; onApplyChapterPracticeToAll: () => void; onChange: (updater: (chapter: TeachingPlanChapter) => TeachingPlanChapter) => void }) {
   const chapterLabel = `第 ${index + 1} 章`;
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [expandedKnowledgePointId, setExpandedKnowledgePointId] = useState<string | null>(null);
   const grammarBook = useMemo(() => toGrammarBookCatalog(knowledgePoints), [knowledgePoints]);
   const recommendedIds = outline.recommendedKnowledgePointIds;
   const step1Ids = useMemo(() => new Set(step1KnowledgePointIds), [step1KnowledgePointIds]);
@@ -834,13 +852,18 @@ function ChapterEditor({ chapter, outline, index, englishLevel, knowledgePoints,
               {chapter.knowledgePointIds.length ? (
                 chapter.knowledgePointIds.map((id) => {
                   const point = knowledgePoints.find((item) => item.id === id);
-                  const label = point ? knowledgePointName(point) : id;
                   const source = chapterPointSources[id];
+                  if (!point) return null;
+                  const label = knowledgePointName(point);
+                  const rules = grammarLearningSummary(point.units);
+                  const expanded = expandedKnowledgePointId === id;
                   return (
-                    <span className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full py-1 pl-3 pr-1.5 text-sm", source?.tone === "primary" ? "bg-primary-50 text-primary-700" : source?.tone === "warning" ? "bg-amber-50 text-amber-800" : "bg-muted text-foreground")} key={id}>
-                      <OverflowingKnowledgePointTitle title={label} />
-                      <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-semibold", source?.tone === "primary" ? "bg-primary-100 text-primary-700" : source?.tone === "warning" ? "bg-amber-100 text-amber-800" : "bg-background text-muted-foreground")}>{source?.label ?? "本章添加"}</span>
-                      <button
+                    <div className={cn(KNOWLEDGE_POINT_CHIP_CLASS, source?.tone === "primary" ? "bg-primary-50 text-primary-700" : source?.tone === "warning" ? "bg-amber-50 text-amber-800" : "bg-muted text-foreground", expanded && "basis-full")} data-variant="knowledge-point-chip" key={id}>
+                      <div className={KNOWLEDGE_POINT_CHIP_ROW_CLASS}>
+                        <OverflowingKnowledgePointTitle title={label} />
+                        <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-semibold", source?.tone === "primary" ? "bg-primary-100 text-primary-700" : source?.tone === "warning" ? "bg-amber-100 text-amber-800" : "bg-background text-muted-foreground")}>{source?.label ?? "本章添加"}</span>
+                        {rules.length ? <button aria-expanded={expanded} aria-label={`${expanded ? "收起" : "展开"}本章知识点 ${label} 的语法要点`} className="flex min-h-7 min-w-7 shrink-0 items-center justify-center rounded-full text-current hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setExpandedKnowledgePointId(expanded ? null : id)} title={expanded ? "收起语法要点" : "展开语法要点"} type="button"><ChevronDown aria-hidden className={cn("size-3.5 transition-transform", expanded && "rotate-180")} /></button> : null}
+                        <button
                         aria-label={`删除知识点 ${label}`}
                         className="rounded-full p-0.5 text-primary-700 hover:bg-primary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() =>
@@ -859,9 +882,11 @@ function ChapterEditor({ chapter, outline, index, englishLevel, knowledgePoints,
                         }
                         type="button"
                       >
-                        <X className="size-3.5" />
-                      </button>
-                    </span>
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                      {expanded ? <KnowledgePointRuleList rules={rules} /> : null}
+                    </div>
                   );
                 })
               ) : (
@@ -876,6 +901,7 @@ function ChapterEditor({ chapter, outline, index, englishLevel, knowledgePoints,
               aiUnrecommendedIds={unrecommendedSelectedKnowledgePointIds}
               allowEmpty
               books={[grammarBook]}
+              compactExpandableDetails
               initialBookId={grammarBook.id}
               initialSelectedIds={chapter.knowledgePointIds}
               onClose={() => setPickerOpen(false)}
@@ -1040,7 +1066,7 @@ function ReadingExerciseEditor({ config, ariaPrefix, grammarDisabled = false, on
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold text-foreground">语法题</div>
-            <div className="mt-1 text-xs text-muted-foreground">AI 根据知识点匹配度分配题型，并尽量均匀覆盖。</div>
+            <div className="mt-1 text-xs text-muted-foreground">AI 优先选择适合知识点和语境的题型；同样合适时再兼顾均衡。</div>
           </div>
           {!grammarDisabled ? <Stepper ariaPrefix={ariaPrefix} label="语法题总数" max={MAX_GRAMMAR_EXERCISE_TOTAL} min={1} onChange={(total) => onChange({ ...config, grammar: { ...config.grammar, total } })} value={config.grammar.total} /> : null}
         </div>
@@ -1103,7 +1129,7 @@ function GrammarPracticeEditor({ config, ariaPrefix, onChange }: { config: Gramm
   return (
     <div className="mt-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">AI 自动分配题型并尽量均匀覆盖知识点。</p>
+        <p className="text-xs text-muted-foreground">AI 优先按知识点和语境选择题型，同样合适时再兼顾均衡。</p>
         <Stepper ariaPrefix={ariaPrefix} label="总题数" max={MAX_GRAMMAR_EXERCISE_TOTAL} min={1} onChange={(total) => onChange({ ...config, grammar: { ...config.grammar, total } })} value={config.grammar.total} />
       </div>
       <ExerciseTypeSelector ariaPrefix={ariaPrefix} enabledTypes={config.grammar.enabledTypes} onChange={(enabledTypes) => onChange({ ...config, grammar: { ...config.grammar, enabledTypes } })} />
@@ -1134,7 +1160,7 @@ function AfterClassGrammarEditor({ practice, knowledgePointCount, onChange }: { 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-foreground">每个知识点题数</p>
-          <p className="mt-1 text-xs text-muted-foreground">每个知识点保证相同题量，AI 根据匹配度分配题型。</p>
+          <p className="mt-1 text-xs text-muted-foreground">每个知识点保证相同题量，题型由 AI 按学习内容和语境选择。</p>
         </div>
         <Stepper ariaPrefix="课后练习" label="每个知识点题数" max={MAX_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT} min={MIN_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT} onChange={(questionsPerKnowledgePoint) => onChange({ ...practice, questionsPerKnowledgePoint })} value={practice.questionsPerKnowledgePoint} />
       </div>
@@ -1152,6 +1178,7 @@ function AfterClassGrammarEditor({ practice, knowledgePointCount, onChange }: { 
 
 function AfterClassEditor({ plan, knowledgePoints, knowledgePointIds, afterClassNeedsReview, onChange }: { plan: TeachingPlan; knowledgePoints: TeachingPlanState["knowledgePoints"]; knowledgePointIds: string[]; afterClassNeedsReview: boolean; onChange: (updater: (config: TeachingPlan["afterClassPractice"]) => TeachingPlan["afterClassPractice"]) => void }) {
   const availablePoints = knowledgePoints.filter((point) => knowledgePointIds.includes(point.id));
+  const [expandedKnowledgePointId, setExpandedKnowledgePointId] = useState<string | null>(null);
   const decisionMade = true;
   const includesVocabularyReview = plan.chapters.some((chapter) => chapter.readingExercises.vocabulary.enabledTypes.includes("chineseHint") && chapter.readingExercises.vocabulary.total > 0);
   return (
@@ -1237,30 +1264,20 @@ function AfterClassEditor({ plan, knowledgePoints, knowledgePointIds, afterClass
                 <>
                   <div className="mt-5 border-t border-border pt-4 text-sm font-medium text-foreground">课后考查知识点</div>
                   <p className="mt-1 text-sm leading-6 text-muted-foreground">已默认选中各章节使用的知识点；取消勾选即可排除不需要考查的内容。</p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {availablePoints.map((point) => (
-                      <label className={cn("flex min-h-11 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors", plan.afterClassPractice.knowledgePointIds.includes(point.id) ? "border-input bg-muted/70 text-foreground" : "border-border bg-background text-muted-foreground hover:border-input hover:text-foreground")} key={point.id}>
-                        <input
-                          checked={plan.afterClassPractice.knowledgePointIds.includes(point.id)}
-                          className="sr-only"
-                          onChange={() =>
-                            onChange((current) => ({
-                              ...current,
-                              knowledgePointIds: current.knowledgePointIds.includes(point.id) ? current.knowledgePointIds.filter((id) => id !== point.id) : [...current.knowledgePointIds, point.id],
-                              touched: {
-                                ...current.touched,
-                                knowledgePointIds: true,
-                              },
-                            }))
-                          }
-                          type="checkbox"
-                        />
-                        <span aria-hidden className={cn("flex size-5 shrink-0 items-center justify-center rounded border", plan.afterClassPractice.knowledgePointIds.includes(point.id) ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card")}>
-                          {plan.afterClassPractice.knowledgePointIds.includes(point.id) ? <Check className="size-3.5" /> : null}
-                        </span>
-                        <span className="min-w-0 flex-1 font-medium">{knowledgePointName(point)}</span>
-                      </label>
-                    ))}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {availablePoints.map((point) => {
+                      const checked = plan.afterClassPractice.knowledgePointIds.includes(point.id);
+                      const label = knowledgePointName(point);
+                      const rules = grammarLearningSummary(point.units);
+                      const expanded = expandedKnowledgePointId === point.id;
+                      return <div className={cn(KNOWLEDGE_POINT_CHIP_CLASS, "transition-colors", checked ? "bg-primary-50 text-primary-700" : "bg-muted text-muted-foreground hover:text-foreground", expanded && "basis-full")} data-testid={`after-class-knowledge-point-${point.id}`} data-variant="knowledge-point-chip" key={point.id}>
+                        <div className={KNOWLEDGE_POINT_CHIP_ROW_CLASS}>
+                          <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2"><input aria-label={label} checked={checked} className="sr-only" onChange={() => onChange((current) => ({ ...current, knowledgePointIds: current.knowledgePointIds.includes(point.id) ? current.knowledgePointIds.filter((id) => id !== point.id) : [...current.knowledgePointIds, point.id], touched: { ...current.touched, knowledgePointIds: true } }))} type="checkbox" /><span aria-hidden className={cn("flex size-4 shrink-0 items-center justify-center rounded border", checked ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card")}>{checked ? <Check className="size-3" /> : null}</span><span className="min-w-0 max-w-[min(18rem,calc(100vw-10rem))] truncate font-medium" title={label}>{label}</span></label>
+                          {rules.length ? <button aria-expanded={expanded} aria-label={`${expanded ? "收起" : "展开"}课后知识点 ${label} 的语法要点`} className="flex min-h-7 min-w-7 shrink-0 items-center justify-center rounded-full text-current hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setExpandedKnowledgePointId(expanded ? null : point.id)} title={expanded ? "收起语法要点" : "展开语法要点"} type="button"><ChevronDown aria-hidden className={cn("size-3.5 transition-transform", expanded && "rotate-180")} /></button> : null}
+                        </div>
+                        {expanded ? <KnowledgePointRuleList rules={rules} /> : null}
+                      </div>;
+                    })}
                   </div>
                   <AfterClassGrammarEditor
                     knowledgePointCount={plan.afterClassPractice.knowledgePointIds.length}

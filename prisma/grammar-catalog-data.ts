@@ -1,4 +1,5 @@
 import { compileGrammarBook, type RawGrammarBook } from "../lib/domain/grammar-catalog";
+import { grammarUnitLearningContents } from "../lib/domain/grammar-unit-profile";
 
 type BookMeta = Omit<RawGrammarBook, "sections"> & { expectedUnitCount: number };
 
@@ -19,7 +20,12 @@ function parseBook(meta: BookMeta, source: string): RawGrammarBook {
     }
     const unit = /^(\d+)\s+(.+)$/.exec(line);
     if (!unit || !sections.length) throw new Error(`Invalid grammar catalog line: ${line}`);
-    sections.at(-1)!.units.push({ unitNumber: Number(unit[1]), officialTitle: unit[2] });
+    const unitNumber = Number(unit[1]);
+    sections.at(-1)!.units.push({
+      unitNumber,
+      officialTitle: unit[2],
+      learningContents: grammarUnitLearningContents(meta.id, unitNumber, unit[2]),
+    });
   }
   const units = sections.flatMap((section) => section.units);
   if (units.length !== meta.expectedUnitCount) throw new Error(`${meta.title} expected ${meta.expectedUnitCount} units, received ${units.length}`);

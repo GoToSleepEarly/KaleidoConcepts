@@ -6,8 +6,8 @@ import { CourseAudienceForm } from "./course-audience-form";
 
 const grammarCatalog = {
   books: [
-    { id: "essential-grammar-in-use-4", title: "Essential Grammar in Use", edition: "4th Edition", officialLevel: "A1–B1", sections: [{ id: "essential-present", officialTitle: "Present", points: [{ id: "essential-present-simple", title: "Present simple", unitStart: 5, unitEnd: 6, units: [{ unitNumber: 5, officialTitle: "I do/work/like etc." }, { unitNumber: 6, officialTitle: "I don't ..." }] }] }] },
-    { id: "english-grammar-in-use-5", title: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2", sections: [{ id: "english-present", officialTitle: "Present and past", points: [{ id: "grammar-1", title: "Past simple", unitStart: 5, unitEnd: 5, units: [{ unitNumber: 5, officialTitle: "Past simple" }] }, { id: "grammar-2", title: "Present perfect and past", unitStart: 13, unitEnd: 14, units: [{ unitNumber: 13, officialTitle: "Present perfect and past 1" }, { unitNumber: 14, officialTitle: "Present perfect and past 2" }] }] }] },
+    { id: "essential-grammar-in-use-4", title: "Essential Grammar in Use", edition: "4th Edition", officialLevel: "A1–B1", sections: [{ id: "essential-present", officialTitle: "Present", points: [{ id: "essential-present-simple", title: "I do/work/like etc.", unitStart: 5, unitEnd: 5, units: [{ unitNumber: 5, officialTitle: "I do/work/like etc.", learningContents: ["使用动词原形描述习惯和事实", "第三人称单数使用 -s/-es", "使用频率词表达重复行为"] }] }] }] },
+    { id: "english-grammar-in-use-5", title: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2", sections: [{ id: "english-present", officialTitle: "Present and past", points: [{ id: "grammar-1", title: "Past simple", unitStart: 5, unitEnd: 5, units: [{ unitNumber: 5, officialTitle: "Past simple", learningContents: ["使用一般过去时描述完成动作", "规则动词使用 -ed", "不规则动词使用对应过去式"] }] }, { id: "grammar-2", title: "Present perfect and past 1", unitStart: 13, unitEnd: 13, units: [{ unitNumber: 13, officialTitle: "Present perfect and past 1", learningContents: ["未说明过去时间且结果与现在相关时使用现在完成时", "明确的已结束过去时间使用一般过去时", "回答过去事件细节时使用一般过去时"] }] }] }] },
     { id: "advanced-grammar-in-use-4", title: "Advanced Grammar in Use", edition: "4th Edition", officialLevel: "C1–C2", sections: [] },
   ],
 };
@@ -44,17 +44,24 @@ describe("CourseAudienceForm basic information UI", () => {
     expect(screen.getByRole("link", { name: "前往人物档案" })).toHaveAttribute("href", "/people");
   });
 
-  test("lands on the level-matched book and selects merged official knowledge points", async () => {
+  test("lands on the level-matched book and selects an independent official Unit", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json(grammarCatalog)));
     render(<CourseAudienceForm />);
 
     fireEvent.click(screen.getByRole("button", { name: "B1" }));
     fireEvent.click(screen.getByRole("button", { name: "选择知识点" }));
     expect(await screen.findByRole("tab", { name: /English Grammar in Use/ })).toHaveAttribute("aria-selected", "true");
-    fireEvent.click(screen.getByRole("button", { name: /Units 13–14.*Present perfect and past/ }));
+    fireEvent.click(screen.getByRole("button", { name: "选择 Unit 13 Present perfect and past 1" }));
     fireEvent.click(screen.getByRole("button", { name: "确认选择" }));
-    expect(screen.getByText("Present perfect and past")).toBeInTheDocument();
-    expect(screen.getByText("Units 13–14")).toBeInTheDocument();
+    expect(screen.getByText("Present perfect and past 1")).toBeInTheDocument();
+    expect(screen.getByText("Unit 13")).toBeInTheDocument();
+    const detailsButton = screen.getByRole("button", { name: "展开 Unit 13 · Present perfect and past 1 的语法要点" });
+    expect(detailsButton).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(detailsButton);
+    expect(detailsButton).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("未说明过去时间且结果与现在相关时使用现在完成时")).toBeInTheDocument();
+    fireEvent.click(detailsButton);
+    expect(screen.queryByText("未说明过去时间且结果与现在相关时使用现在完成时")).not.toBeInTheDocument();
     expect(screen.getByText(/5th Edition.*B1–B2/)).toBeInTheDocument();
   });
 

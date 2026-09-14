@@ -81,6 +81,14 @@ async function main() {
       }
     }
   }
+
+  const grammarPointIds = grammarCatalogBooks.flatMap((book) => book.sections.flatMap((section) => section.points.map((point) => point.id)));
+  await prisma.knowledgePoint.deleteMany({
+    where: {
+      source: KnowledgePointSource.grammar_in_use,
+      id: { notIn: grammarPointIds },
+    },
+  });
 }
 
 main()

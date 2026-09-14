@@ -11,11 +11,14 @@ import {
   MAX_CHAPTER_TARGET_WORD_COUNT,
   MAX_GRAMMAR_EXERCISE_TOTAL,
   MAX_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
+  MAX_AFTER_CLASS_READING_WORD_COUNT,
+  MIN_AFTER_CLASS_READING_WORD_COUNT,
   MAX_READING_PAGE_COUNT,
   MIN_CHAPTER_TARGET_WORD_COUNT,
   MIN_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
   MIN_READING_PAGE_COUNT,
   recommendedChapterWordCount,
+  recommendedAfterClassReadingWordCount,
   recommendedReadingPageCount,
 } from "@/lib/domain/teaching-plan-policy";
 
@@ -53,7 +56,7 @@ export const teachingPlanSchema = z.object({
   courseId: z.string().min(1),
   status: z.union([z.literal("draft"), z.literal("confirmed")]),
   englishLevel: englishLevelSchema.nullable(),
-  mainIdeaTargetWordCount: z.number().int().default(120),
+  mainIdeaTargetWordCount: z.number().int().default(90),
   chapters: z.array(z.object({
     outlineChapterId: z.string().min(1),
     targetWordCount: z.number().int().nullable(),
@@ -110,7 +113,7 @@ export function buildTeachingPlanDraft(input: {
     courseId: input.courseId,
     status: "draft",
     englishLevel: input.englishLevel,
-    mainIdeaTargetWordCount: 120,
+    mainIdeaTargetWordCount: recommendedAfterClassReadingWordCount(input.englishLevel),
     chapters: input.chapters.map((chapter) => {
       const targetWordCount = recommendedChapterWordCount(input.englishLevel, input.storyComplexity ?? defaultStoryComplexity(input.englishLevel));
       const readingExercises = chapter.recommendedKnowledgePointIds.length
@@ -168,8 +171,8 @@ export function validateTeachingPlanForConfirm(plan: TeachingPlan, outlineChapte
   const parsed = teachingPlanSchema.safeParse(plan);
   if (!parsed.success) throw new TeachingPlanValidationError();
   if (!plan.englishLevel) throw new TeachingPlanValidationError("请选择英语难度。");
-  const mainIdeaTargetWordCount = plan.mainIdeaTargetWordCount ?? 120;
-  if (mainIdeaTargetWordCount < 80 || mainIdeaTargetWordCount > 150) throw new TeachingPlanValidationError("课后阅读词数需在 80-150 之间。");
+  const mainIdeaTargetWordCount = plan.mainIdeaTargetWordCount ?? recommendedAfterClassReadingWordCount(plan.englishLevel);
+  if (mainIdeaTargetWordCount < MIN_AFTER_CLASS_READING_WORD_COUNT || mainIdeaTargetWordCount > MAX_AFTER_CLASS_READING_WORD_COUNT) throw new TeachingPlanValidationError(`课后阅读词数需在 ${MIN_AFTER_CLASS_READING_WORD_COUNT}-${MAX_AFTER_CLASS_READING_WORD_COUNT} 之间。`);
   const planChapterIds = plan.chapters.map((chapter) => chapter.outlineChapterId);
   if (!sameIds(planChapterIds, outlineChapterIds)) throw new TeachingPlanValidationError("教学规划章节与故事大纲不一致。");
 

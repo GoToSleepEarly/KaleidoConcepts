@@ -24,8 +24,8 @@ function state(): TeachingPlanState {
       ],
     },
     knowledgePoints: [
-      { id: "grammar-1", label: "Past Simple", labelZh: "一般过去时", category: "Past", bookTitle: "English Grammar in Use", edition: "Fifth Edition", officialLevel: "B1–B2", unitStart: 1, unitEnd: 1, units: [{ unitNumber: 1, officialTitle: "Past simple" }] },
-      { id: "grammar-2", label: "Wh- Questions", labelZh: "特殊疑问句", category: "Questions", bookTitle: "English Grammar in Use", edition: "Fifth Edition", officialLevel: "B1–B2", unitStart: 2, unitEnd: 2, units: [{ unitNumber: 2, officialTitle: "Questions" }] },
+      { id: "grammar-1", label: "Past Simple", labelZh: "一般过去时", category: "Past", bookTitle: "English Grammar in Use", edition: "Fifth Edition", officialLevel: "B1–B2", unitStart: 1, unitEnd: 1, units: [{ unitNumber: 1, officialTitle: "Past simple", learningContents: ["使用一般过去时描述已完成的动作", "规则动词使用 -ed", "使用 did 构成疑问句"] }] },
+      { id: "grammar-2", label: "Wh- Questions", labelZh: "特殊疑问句", category: "Questions", bookTitle: "English Grammar in Use", edition: "Fifth Edition", officialLevel: "B1–B2", unitStart: 2, unitEnd: 2, units: [{ unitNumber: 2, officialTitle: "Questions", learningContents: ["使用疑问词询问信息", "区分主语疑问句和宾语疑问句", "间接问句使用陈述语序"] }] },
       { id: "grammar-3", label: "Present Perfect", labelZh: "现在完成时", category: "Past", bookTitle: "English Grammar in Use", edition: "Fifth Edition", officialLevel: "B1–B2", unitStart: 3, unitEnd: 3, units: [{ unitNumber: 3, officialTitle: "Present perfect" }] },
       { id: "grammar-4", label: "Modal Verbs", labelZh: "情态动词", category: "Modals", bookTitle: "English Grammar in Use", edition: "Fifth Edition", officialLevel: "B1–B2", unitStart: 4, unitEnd: 4, units: [{ unitNumber: 4, officialTitle: "Modals" }] },
     ],
@@ -420,6 +420,9 @@ describe("CourseTeachingPlanWorkspace", () => {
   test("allows clearing a chapter from the chapter configuration", () => {
     render(<CourseTeachingPlanWorkspace initialState={state()} />);
 
+    expect(screen.queryByText("使用一般过去时描述已完成的动作")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开本章知识点 一般过去时 · Past Simple · Unit 1 的语法要点" }));
+    expect(screen.getByText("使用一般过去时描述已完成的动作")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/删除知识点 一般过去时 · Past Simple · Unit 1/));
 
     expect(screen.getByText("本章不分配语法知识点，仅生成阅读与词汇内容")).toBeInTheDocument();
@@ -540,6 +543,12 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.getByLabelText("课后练习给词变形")).toBeChecked();
     expect(screen.getByLabelText("一般过去时 · Past Simple · Unit 1")).toBeChecked();
     expect(screen.getByLabelText("特殊疑问句 · Wh- Questions · Unit 2")).toBeChecked();
+    const afterClassPoint = screen.getByTestId("after-class-knowledge-point-grammar-1");
+    expect(afterClassPoint).toHaveAttribute("data-variant", "knowledge-point-chip");
+    expect(afterClassPoint).toHaveClass("rounded-2xl");
+    expect(screen.queryByText("使用一般过去时描述已完成的动作")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开课后知识点 一般过去时 · Past Simple · Unit 1 的语法要点" }));
+    expect(screen.getByText("使用一般过去时描述已完成的动作")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("一般过去时 · Past Simple · Unit 1"));
     expect(screen.getByLabelText("一般过去时 · Past Simple · Unit 1")).not.toBeChecked();
   });

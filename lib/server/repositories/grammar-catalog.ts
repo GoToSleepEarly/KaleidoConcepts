@@ -1,4 +1,5 @@
 import type { GrammarCatalogResponse } from "@/lib/contracts/api";
+import { grammarUnitLearningContents } from "@/lib/domain/grammar-unit-profile";
 
 type DbUnit = { unitNumber: number; officialTitle: string };
 type DbPoint = { id: string; title: string; units: DbUnit[] };
@@ -42,7 +43,10 @@ export async function getGrammarCatalog(db: GrammarCatalogDb): Promise<GrammarCa
           title: point.title,
           unitStart: point.units[0].unitNumber,
           unitEnd: point.units.at(-1)!.unitNumber,
-          units: point.units,
+          units: point.units.map((unit) => ({
+            ...unit,
+            learningContents: grammarUnitLearningContents(book.id, unit.unitNumber, unit.officialTitle),
+          })),
         })),
       })),
     })),

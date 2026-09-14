@@ -3,12 +3,14 @@ import { z } from "zod";
 import type { CourseContentChapter, CourseContentPart, CourseGrammarQuestion, EnglishLevel, StoryContentIntent, StoryWritingProvider, TeachingPlanState } from "@/lib/contracts/api";
 import { buildCleanParagraphText, englishWordCount } from "@/lib/domain/course-content";
 import { defaultStoryComplexity, englishWordRangesForTarget, storyLengthPolicy } from "@/lib/domain/story-length-policy";
+import { recommendedAfterClassReadingWordCount } from "@/lib/domain/teaching-plan-policy";
 import { AiProviderResultUnknownError, createStoryOutlineProvider } from "@/lib/server/ai/story-outline-provider";
 import type { AccountAiSettings, AiProviderSettingsInput } from "@/lib/ai-gateway";
 import { devAiLog } from "@/lib/server/ai/dev-ai-log";
 import {
   buildReadingTemplatePrompt,
   buildReadingTemplateRepairPrompt,
+  grammarQuestionSemanticsRule,
   chapterTemplateRepairBundleSchema,
   parseReadingTemplatePayload,
   readingGenerationEnvelopeSchema,
@@ -198,7 +200,7 @@ export function buildReadingPromptContext(input: CourseContentPromptInput) {
         },
       };
     }),
-    mainIdea: mainIdeaWordCountPolicy(input.plan.mainIdeaTargetWordCount ?? 120),
+    mainIdea: mainIdeaWordCountPolicy(input.plan.mainIdeaTargetWordCount ?? recommendedAfterClassReadingWordCount(input.course.englishLevel ?? "A2")),
   };
 }
 
@@ -208,7 +210,7 @@ export function buildReadingTemplateRequirements(input: CourseContentPromptInput
     const plan = input.plan.chapters.find((chapter) => chapter.outlineChapterId === outline.id)!;
     const grammarPoints = plan.knowledgePointIds.flatMap((knowledgePointId, index) => {
       const point = points.get(knowledgePointId);
-      return point ? [{ ...point, key: `G${index + 1}`, knowledgePointId }] : [];
+      return point ? [{ ...point, key: `G${index + 1}`, definitionKey: point.key, knowledgePointId }] : [];
     });
     return {
       outlineChapterId: outline.id,
@@ -252,8 +254,8 @@ export function buildReadingTemplatePromptContext(input: CourseContentPromptInpu
 export function mainIdeaWordCountPolicy(targetWordCount: number) {
   return {
     targetWordCount,
-    preferredRange: [Math.max(80, targetWordCount - 5), Math.min(150, targetWordCount + 5)] as [number, number],
-    acceptedRange: [Math.max(80, targetWordCount - 10), Math.min(150, targetWordCount + 10)] as [number, number],
+    preferredRange: [Math.max(50, targetWordCount - 5), Math.min(150, targetWordCount + 5)] as [number, number],
+    acceptedRange: [Math.max(50, targetWordCount - 10), Math.min(150, targetWordCount + 10)] as [number, number],
   };
 }
 
@@ -278,7 +280,7 @@ export function buildExercisePromptContext(input: CourseContentPromptInput, clea
     englishLevel: input.course.englishLevel,
     cefrWritingProfile: cefrWritingProfile(input.course.englishLevel),
     ...(grammarSource(input) ? { grammarSource: grammarSource(input) } : {}),
-    knowledgePoints: [...points.values()].filter((point) => usedKeys.has(point.key)),
+    knowledgePoints: [...points.values()].filter((point) => usedKeys.has(point.key)).map(({ sourceUnits, ...point }) => ({ ...point, units: sourceUnits })),
     chapters: chapterSpecs,
     homework: {
       enabled: input.plan.afterClassPractice.practice.enabled,
@@ -369,8 +371,8 @@ const schemaDescriptions = {
 } as const;
 
 const optionOutputRule = "选项填空必须返回 answer 和 distractors；distractors 恰好两个、互不重复且都不等于 answer。禁止返回 options，程序会把 answer 与 distractors 合并并打乱。";
-const optionQualityRule = "两个干扰项必须与答案属于相同词性或语法维度；每项都必须是标准英语中真实存在、拼写正确的完整词形或结构，禁止虚构变形或残缺助动词、情态动词结构。分别把 answer 和每个 distractor 拼回 before+空格+after：只要干扰项在当前语法、时间线和语义中也成立，就先改写 before/after 提供决定性线索；不能把‘不如 answer 合适’当作错误，也不要使用明显无关的随机词。";
-const wordFormOutputRule = "给词填空必须返回 answer 和 baseForm；baseForm 是横线后括号内展示的给词提示，必须是 answer 中目标实词的词典原形，并与 knowledgePointKey、answer 构成清楚的词形或语法结构关系，例如 answer='went' 时 baseForm='go'，answer='was waiting' 时 baseForm='wait'。answer 必须使完整句正确且空格本身考查绑定知识点。构成目标语法的功能词、助动词或情态词必须包含在 answer 内，不得预先写进 before/after；若目标是 to + verb，answer 必须是完整的 'to verb'，不得把 to 放进 before 后只让学生照抄 verb。仅在句子其他位置出现知识点不算考查。answer 可按句法变化或与 baseForm 相同，不得为制造变化写错句子。";
+const optionQualityRule = "两个干扰项必须是标准英语中真实存在、拼写正确的完整词形或结构，不得使用随机无关词。分别把 answer 和每个 distractor 拼回 before+空格+after；只有 answer 能同时满足当前语法、时间线和语义，否则改写 before/after 提供决定性线索。";
+const wordFormOutputRule = "给词填空必须返回 answer 和 baseForm；baseForm 是横线后括号内展示的目标实词词典原形，例如 answer='went' 时 baseForm='go'，answer='was waiting' 时 baseForm='wait'。answer 可以按句法变化，也可以与 baseForm 相同；answer 与紧邻语境构成的完整题目必须能练习绑定知识点，不得为制造变化写错句子。";
 const questionPositionRule = "before 是空格前文本，after 是空格后文本；不得包含下划线、题号、括号提示或答案，程序会在两者之间插入空格和提示。";
 const vocabularyQualityRule = "词汇题选择对当前 CEFR 学生有复用价值、能脱离本句复习的实词或常用词组；不要选择人物名、地名、纯功能词、缩写、带连字符的词或同一 canonicalForm 的重复项目。canonicalForm 使用词典原形，meaningZh 必须对应当前语境。";
 
@@ -380,7 +382,7 @@ export const courseContentPromptExamples = {
 } as const;
 
 export const readingGrammarCoherenceRules = [
-  "英语正确性高于题目植入：先结合章节剧情、grammarPoints、官方 Unit 和可选 knowledgePointUsagePlan 确定叙事基准时态及真实使用语境，不得为了覆盖知识点或凑题量制造错误英语。",
+  "英语正确性高于题目植入：先结合章节剧情、grammarPoints 的学习内容和可选 knowledgePointUsagePlan 确定叙事基准时态及真实使用语境，不得为了覆盖知识点或凑题量制造错误英语。knowledgePointUsagePlan 只建议自然使用位置，不得改变或扩大学习范围。",
   "先在内部形成语法、时间和逻辑正确的 clean text，再从自然存在的结构设置题目锚点；知识点无法自然嵌入时改写局部语境，禁止先定答案再倒推句子。",
   "输出前回填全部 grammar answer 并通读，确认每句语法与时间线正确、选项只有一个正确答案；不要输出检查过程。",
 ] as const;
@@ -396,16 +398,14 @@ export const readingStoryQualityRules = [
 ] as const;
 
 function modificationOutputRules(targetType: string) {
-  if (targetType === "chapter_practice" || targetType === "homework") return [optionOutputRule, optionQualityRule, wordFormOutputRule, questionPositionRule, courseContentPromptExamples.questions];
-  if (targetType === "chapter" || targetType === "paragraph") return [...readingStoryQualityRules, optionOutputRule, optionQualityRule, wordFormOutputRule, vocabularyQualityRule, ...readingGrammarCoherenceRules, courseContentPromptExamples.modificationReading];
+  if (targetType === "chapter_practice" || targetType === "homework") return [grammarQuestionSemanticsRule, optionOutputRule, optionQualityRule, wordFormOutputRule, questionPositionRule, courseContentPromptExamples.questions];
+  if (targetType === "chapter" || targetType === "paragraph") return [...readingStoryQualityRules, grammarQuestionSemanticsRule, optionOutputRule, optionQualityRule, wordFormOutputRule, vocabularyQualityRule, ...readingGrammarCoherenceRules, courseContentPromptExamples.modificationReading];
   return [];
 }
 
-const independentExerciseDistributionRule = "章节目标先让各知识点题量尽量接近；所有目标都在 enabledTypes 中尽量均匀分配题型。多个题型都适配同一知识点时，优先使用当前数量较少的题型；只有知识点与某题型明显不适配时才允许偏斜，不要求机械平均。课后目标在保证每个知识点精确 questionsPerKnowledgePoint 道的同时，每个知识点内部也按同一原则分配。";
-
 const exerciseGenerationInstructions = [
   "生成全部章节练习和课后语法练习，只返回 {chapters:[{outlineChapterId,questions}],homeworkGrammar} 的严格 JSON。outlineChapterId 必须原样复制 context.chapters 中对应的 C1/C2 等章节短键，不得返回或猜测数据库 ID。每个目标的题型只能来自 enabledTypes，题目总数必须等于 total。knowledgePointKey 只能取所属目标 knowledgePointKeys；其定义和官方 Unit 统一见 context.knowledgePoints。章节练习必须覆盖全部知识点；课后练习的每个知识点必须精确生成 questionsPerKnowledgePoint 道题。",
-  independentExerciseDistributionRule,
+  grammarQuestionSemanticsRule,
   "question 只能是 optionCloze={type,knowledgePointKey,before,after,answer,distractors:[两个]} 或 wordForm={type,knowledgePointKey,before,after,answer,baseForm}，不得混用字段。",
   optionOutputRule,
   optionQualityRule,
@@ -434,7 +434,7 @@ export function buildExerciseRepairPrompt(
   return jsonOnly([
     "一次修复 targets 中全部失败练习目标；只重写失败目标，不返回成功目标。",
     "章节目标返回到 chapters；若无失败章节则 chapters=[]。课后目标返回到 homeworkGrammar；若课后未失败则 homeworkGrammar=[]。严格解决每个目标的全部 issues。",
-    independentExerciseDistributionRule,
+    grammarQuestionSemanticsRule,
     optionOutputRule,
     optionQualityRule,
     wordFormOutputRule,
@@ -626,7 +626,7 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
       "只修改明确指定的目标，不联动改写任何其他区域。",
       "返回 {kind,chapter?,paragraph?,questions?,mainIdea?}；kind 等于 targetType，且只填写对应目标字段。",
       "严格执行 instruction，并满足 constraints。",
-      ...cefrWritingQualityRules,
+      ...(targetType === "chapter" || targetType === "paragraph" ? [] : cefrWritingQualityRules),
       "如目标含题目，必须保持原题型、题量和知识点映射，并使用严格题型契约。",
       ...modificationOutputRules(targetType),
       "输出前核对目标范围、必填字段和 constraints；不要输出核对过程。",

@@ -100,7 +100,7 @@ type StoryPromptContext = {
   durationMinutes?: 30 | 45 | 60;
   storyComplexity?: StoryComplexity;
   lengthPolicy?: StoryLengthPolicy;
-  selectedKnowledgePoints?: Array<{ id: string; label: string; category?: string; bookTitle?: string; edition?: string; officialLevel?: string; unitStart?: number; unitEnd?: number; units?: Array<{ unitNumber: number; officialTitle: string }> }>;
+  selectedKnowledgePoints?: Array<{ id: string; label: string; category?: string; bookTitle?: string; edition?: string; officialLevel?: string; unitStart?: number; unitEnd?: number; units?: Array<{ unitNumber: number; officialTitle: string; learningContents?: string[] }> }>;
   confirmedRequirement?: string;
   requirementBrief?: StoryRequirementBrief;
   storyMode?: "faithful" | "new_story";
@@ -174,6 +174,7 @@ function knowledgePointOptions(input: Pick<StoryPromptContext, "selectedKnowledg
     unitStart: point.unitStart,
     unitEnd: point.unitEnd,
     sourceUnits: point.units,
+    grammarPoints: point.units?.flatMap((unit) => unit.learningContents ?? []) ?? [],
     id: point.id,
   }));
 }
@@ -335,7 +336,7 @@ function contextPrompt(input: StoryPromptContext, options: { includeCurrentDirec
       `英语难度：${input.englishLevel}`,
       `故事复杂度：${policy.storyComplexity}`,
       `每章英文正文容量：${JSON.stringify(generationLengthForPrompt(policy))}`,
-      ...(options.includeKnowledgePoints ? [`全课可选知识点：${JSON.stringify(knowledgePointOptions(input).map((point) => ({ key: point.key, label: point.label, category: point.category })))}`] : []),
+      ...(options.includeKnowledgePoints ? [`全课可选知识点：${JSON.stringify(knowledgePointOptions(input).map((point) => ({ key: point.key, unit: point.unitStart ? `Unit ${point.unitStart} · ${point.label}` : point.label, grammarPoints: point.grammarPoints })))}`] : []),
     ] : []),
     `老师和学生人物快照：${JSON.stringify(peopleSnapshots)}`,
     ...requirementForPrompt(input),

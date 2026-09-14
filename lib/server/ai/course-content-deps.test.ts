@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type { StoryContentIntent, TeachingPlanState } from "@/lib/contracts/api";
 import { englishWordRangesForTarget, storyLengthPolicy } from "@/lib/domain/story-length-policy";
+import { buildReadingTemplatePrompt } from "@/lib/server/ai/course-content-template";
 import {
   buildExercisePromptContext,
   buildExerciseGenerationPrompt,
@@ -22,6 +23,7 @@ import {
   assertReadingRepairCoverage,
   courseContentFormatRepairAttempts,
   courseContentPromptExamples,
+  mainIdeaWordCountPolicy,
   readingGrammarCoherenceRules,
   readingStoryQualityRules,
   storyComplexityWritingProfile,
@@ -84,7 +86,7 @@ describe("course content prompt contexts", () => {
 
   test("passes Grammar in Use source metadata to reading generation without replacing existing constraints", () => {
     const withSource = structuredClone(input);
-    withSource.knowledgePoints[0] = { id: "kp1", label: "Present perfect and past", category: "Present perfect and past", bookTitle: "English Grammar in Use", edition: "Fifth Edition", officialLevel: "B1–B2", unitStart: 13, unitEnd: 14, units: [{ unitNumber: 13, officialTitle: "Present perfect and past 1" }, { unitNumber: 14, officialTitle: "Present perfect and past 2" }] };
+    withSource.knowledgePoints[0] = { id: "kp1", label: "Present perfect and past", category: "Present perfect and past", bookTitle: "English Grammar in Use", edition: "Fifth Edition", officialLevel: "B1–B2", unitStart: 13, unitEnd: 14, units: [{ unitNumber: 13, officialTitle: "Present perfect and past 1", learningContents: ["用现在完成时表达与现在有关的过去事情"] }, { unitNumber: 14, officialTitle: "Present perfect and past 2", learningContents: ["用一般过去时继续讲述过去细节"] }] };
 
     expect(buildReadingPromptContext(withSource)).toMatchObject({
       grammarSource: {
@@ -99,6 +101,9 @@ describe("course content prompt contexts", () => {
       unitEnd: 14,
       sourceUnits: [{ unitNumber: 13, officialTitle: "Present perfect and past 1" }, { unitNumber: 14, officialTitle: "Present perfect and past 2" }],
     });
+    const prompt = buildReadingTemplatePrompt(buildReadingTemplatePromptContext(withSource));
+    expect(prompt).toContain("用一般过去时继续讲述过去细节");
+    expect(prompt).toContain("整道题能有效考查该要点即可");
   });
 
   test("passes the confirmed content intent to the first reading prompt", () => {
@@ -143,6 +148,8 @@ describe("course content prompt contexts", () => {
 
   test("gives generation and repair a safe word-count range instead of an ambiguous exact target", () => {
     expect(englishWordRangesForTarget(100)).toEqual({ generationRange: [90, 110], validationRange: [85, 120] });
+    expect(mainIdeaWordCountPolicy(60)).toEqual({ targetWordCount: 60, preferredRange: [55, 65], acceptedRange: [50, 70] });
+    expect(mainIdeaWordCountPolicy(130)).toEqual({ targetWordCount: 130, preferredRange: [125, 135], acceptedRange: [120, 140] });
     const requirements = buildReadingRepairRequirements(input, [{
       id: "chapter-ch1", outlineChapterId: "ch1", order: 1, title: "Milo出发", targetWordCount: 90, readingExerciseMode: "interactive",
       paragraphs: [{ id: "paragraph-ch1-1", parts: [{ type: "text", text: `${Array(70).fill("story").join(" ")} ` }, { type: "grammar", id: "g1", exerciseType: "wordForm", knowledgePointId: "kp1", answer: "ended", baseForm: "end" }] }],
@@ -226,7 +233,7 @@ describe("course content prompt contexts", () => {
       grammarCount: 3,
       enabledGrammarTypes: ["optionCloze", "wordForm"],
       vocabularyCount: 2,
-      grammarPoints: [{ key: "G1", label: "一般过去时", knowledgePointId: "kp1" }],
+      grammarPoints: [{ key: "G1", definitionKey: "KP1", label: "一般过去时", knowledgePointId: "kp1" }],
     }]);
     expect(context.chapters[0]?.requirements).toEqual(requirements[0]);
     expect(context.chapters[0]?.knowledgePointUsagePlan).toBe("一般过去时：用于描述Milo已经完成的开门动作。");
@@ -311,7 +318,7 @@ describe("course content prompt contexts", () => {
     expect(() => createCourseContentChapterKeyProtocol(duplicate)).toThrow("课程大纲章节 ID 重复");
   });
 
-  test("makes selected exercise types balanced by default while allowing knowledge-point fit to override", () => {
+  test("chooses exercise types by knowledge-point fit and only uses balance as a tie-breaker", () => {
     const cleanChapters = [{ outlineChapterId: "ch1", title: "Milo出发", cleanText: "Milo opened the door." }];
     const generationPrompt = buildExerciseGenerationPrompt(input, cleanChapters);
     const repairPrompt = buildExerciseRepairPrompt(input, [{ id: "ch1", issues: ["题型分配不合理"] }], {
@@ -320,9 +327,9 @@ describe("course content prompt contexts", () => {
     }, cleanChapters);
 
     for (const prompt of [generationPrompt, repairPrompt]) {
-      expect(prompt).toContain("优先使用当前数量较少的题型");
-      expect(prompt).toContain("只有知识点与某题型明显不适配时才允许偏斜");
-      expect(prompt).toContain("每个知识点内部也按同一原则分配");
+      expect(prompt).toContain("题型首先根据语法要点和当前语境选择");
+      expect(prompt).toContain("只有多种已启用题型同样合适时，才考虑总体均衡");
+      expect(prompt).not.toContain("功能词、助动词或情态词必须包含在 answer 内");
       expect(prompt).toContain("answer='was waiting' 时 baseForm='wait'");
     }
   });

@@ -186,8 +186,8 @@ describe("CourseStoryOutlineWorkspace", () => {
     const state = structuredClone(outlineState);
     state.course = { ...state.course, englishLevel: "A1", durationMinutes: 30 };
     state.selectedKnowledgePoints = [
-      { id: "knowledge-2", label: "Present Simple", category: "时态" },
-      { id: "knowledge-3", label: "Present Continuous", category: "时态" },
+      { id: "knowledge-2", label: "Present Simple", category: "时态", unitStart: 2, unitEnd: 2, units: [{ unitNumber: 2, officialTitle: "Present simple", learningContents: ["使用一般现在时描述习惯", "第三人称单数使用 -s", "使用 do/does 构成问句"] }] },
+      { id: "knowledge-3", label: "Present Continuous", category: "时态", unitStart: 3, unitEnd: 3, units: [{ unitNumber: 3, officialTitle: "Present continuous", learningContents: ["使用 am/is/are + -ing 描述正在发生的动作", "描述当前阶段的暂时情况", "不用于通常不用进行时的状态动词"] }] },
       { id: "knowledge-4", label: "Past Continuous", category: "时态" },
     ];
     state.unrecommendedKnowledgePoints = [state.selectedKnowledgePoints[2]];
@@ -201,6 +201,11 @@ describe("CourseStoryOutlineWorkspace", () => {
 
     expect(screen.getByText("Present Simple")).toBeInTheDocument();
     expect(screen.getByText("Present Continuous")).toBeInTheDocument();
+    expect(screen.getByText("Unit 2")).toBeInTheDocument();
+    expect(screen.getByText("Unit 3")).toBeInTheDocument();
+    expect(screen.queryByText("使用一般现在时描述习惯")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开 Unit 2 · Present Simple 的语法要点" }));
+    expect(screen.getByText("使用一般现在时描述习惯")).toBeInTheDocument();
     expect(screen.queryByText(/^KP\d+$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^建议\s+\d+\s+词$/)).not.toBeInTheDocument();
     expect(screen.getByText("已根据 A1 难度和 30 分钟课时智能匹配。Past Continuous 暂未放入章节推荐，可在下一阶段：教学规划手动调整。")).toBeInTheDocument();

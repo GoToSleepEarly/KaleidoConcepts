@@ -16,6 +16,7 @@ export function GrammarKnowledgePointPickerDialog({
   highlightedIds = [],
   step1SelectedIds,
   aiUnrecommendedIds = [],
+  compactExpandableDetails = false,
   onClose,
   onConfirm,
   title = "选择语法知识点",
@@ -28,6 +29,7 @@ export function GrammarKnowledgePointPickerDialog({
   highlightedIds?: string[];
   step1SelectedIds?: string[];
   aiUnrecommendedIds?: string[];
+  compactExpandableDetails?: boolean;
   onClose: () => void;
   onConfirm: (value: { bookId: string; selectedIds: string[] }) => void;
   title?: string;
@@ -77,6 +79,7 @@ export function GrammarKnowledgePointPickerDialog({
         <GrammarCatalogBrowser
           activeBookId={bookId}
           books={books}
+          compactExpandableDetails={compactExpandableDetails}
           emptyMessage={emptyMessage}
           highlightedIds={highlightedIds}
           onActiveBookChange={requestBookChange}

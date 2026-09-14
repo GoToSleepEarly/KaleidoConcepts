@@ -16,6 +16,7 @@ import {
   MAX_READING_PAGE_COUNT,
   MIN_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT,
   MIN_READING_PAGE_COUNT,
+  recommendedAfterClassReadingWordCount,
   recommendedReadingPageCount,
 } from "@/lib/domain/teaching-plan-policy";
 import { defaultStoryComplexity, storyLengthPolicy } from "@/lib/domain/story-length-policy";
@@ -143,7 +144,7 @@ function toTeachingPlan(record: DbTeachingPlan): TeachingPlan {
     courseId: record.courseId,
     status: record.status,
     englishLevel: record.englishLevel,
-    mainIdeaTargetWordCount: typeof record.mainIdeaTargetWordCount === "number" ? record.mainIdeaTargetWordCount : 120,
+    mainIdeaTargetWordCount: typeof record.mainIdeaTargetWordCount === "number" ? record.mainIdeaTargetWordCount : recommendedAfterClassReadingWordCount(record.englishLevel ?? "A2"),
     chapters: normalizeChapters(record.chapters, record.englishLevel),
     afterClassPractice: normalizeAfterClassPractice(record.afterClassPractice),
     updatedAt: record.updatedAt.toISOString(),
@@ -270,7 +271,7 @@ function normalizeAfterClassPractice(value: unknown): TeachingPlan["afterClassPr
 function planWriteData(plan: TeachingPlan) {
   return {
     englishLevel: plan.englishLevel,
-    mainIdeaTargetWordCount: plan.mainIdeaTargetWordCount ?? 120,
+    mainIdeaTargetWordCount: plan.mainIdeaTargetWordCount ?? recommendedAfterClassReadingWordCount(plan.englishLevel ?? "A2"),
     chapters: plan.chapters,
     afterClassPractice: plan.afterClassPractice,
   };

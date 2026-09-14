@@ -1032,7 +1032,7 @@ describe("createStoryOutlineGenerationDeps", () => {
       currentOutline: null,
       englishLevel: "B1",
       durationMinutes: 45,
-      selectedKnowledgePoints: [{ id: "grammar-1", label: "Past Simple", category: "时态" }],
+      selectedKnowledgePoints: [{ id: "grammar-1", label: "Past Simple", category: "时态", unitStart: 5, unitEnd: 5, units: [{ unitNumber: 5, officialTitle: "Past simple", learningContents: ["使用一般过去时描述已经完成的过去动作", "规则动词使用 -ed，不规则动词使用对应过去式", "使用 did / didn't + 动词原形构成疑问句和否定句"] }] }],
     });
 
     const input = generateOutlineMock.mock.calls.at(-1)?.[0];
@@ -1078,6 +1078,8 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("英语难度：B1");
     expect(prompt).not.toContain("课程时长");
     expect(prompt).toContain('"key":"KP1"');
+    expect(prompt).toContain('"unit":"Unit 5 · Past Simple"');
+    expect(prompt).toContain('"grammarPoints":["使用一般过去时描述已经完成的过去动作"');
     expect(prompt).not.toContain('"id":"grammar-1"');
     expect(prompt).toContain("recommendedKnowledgePointKeys");
     expect(prompt).toContain("从全课视角统一规划知识点分布");

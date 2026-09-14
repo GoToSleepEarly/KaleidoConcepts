@@ -151,7 +151,7 @@ describe("teaching plan repository", () => {
     expect(state.knowledgePoints.map((point) => point.label)).toEqual(["Past Simple", "Wh- Questions", "Present Perfect"]);
     expect(state.knowledgePoints[0]).toMatchObject({ bookTitle: "English Grammar in Use", edition: "5th Edition", unitStart: 5, unitEnd: 5 });
     expect(state.plan.status).toBe("draft");
-    expect(state.plan.mainIdeaTargetWordCount).toBe(120);
+    expect(state.plan.mainIdeaTargetWordCount).toBe(110);
     expect(state.plan.englishLevel).toBe("B1");
     expect(state.plan.chapters[0]).toMatchObject({ targetWordCount: 130, knowledgePointIds: ["grammar-1"], readingExerciseMode: "interactive", chapterPractice: { enabled: false, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 10 } } });
     expect(state.plan.chapters.map((chapter) => chapter.outlineChapterId)).toEqual(["outline-chapter-1", "outline-chapter-2"]);

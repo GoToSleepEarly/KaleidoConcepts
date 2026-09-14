@@ -14,6 +14,18 @@ export const MAX_HOMEWORK_QUESTIONS_PER_KNOWLEDGE_POINT = 10;
 export const MAX_GRAMMAR_EXERCISE_TOTAL = 100;
 export const READING_EXERCISE_DENSITY_WARNING_TOTAL = 10;
 export const ALL_GRAMMAR_EXERCISE_TYPES: GrammarExerciseType[] = ["optionCloze", "wordForm"];
+export const MIN_AFTER_CLASS_READING_WORD_COUNT = 50;
+export const MAX_AFTER_CLASS_READING_WORD_COUNT = 150;
+
+const AFTER_CLASS_READING_TARGETS: Record<EnglishLevel, number> = {
+  Starter: 60,
+  A1: 70,
+  A2: 90,
+  B1: 110,
+  B2: 120,
+  C1: 130,
+  C2: 130,
+};
 
 const READING_PAGE_DENSITY: Record<EnglishLevel, { min: number; ideal: number; max: number }> = {
   Starter: { min: 35, ideal: 45, max: 55 },
@@ -27,6 +39,10 @@ const READING_PAGE_DENSITY: Record<EnglishLevel, { min: number; ideal: number; m
 
 export function recommendedChapterWordCount(level: EnglishLevel, storyComplexity: StoryComplexity) {
   return storyLengthPolicy(level, storyComplexity).english.chapterTargetWords;
+}
+
+export function recommendedAfterClassReadingWordCount(level: EnglishLevel) {
+  return AFTER_CLASS_READING_TARGETS[level];
 }
 
 export function defaultPracticeConfig(enabled = true): GrammarPracticeConfig {

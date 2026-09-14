@@ -1,12 +1,13 @@
 import type { TeachingPlanKnowledgePoint } from "@/lib/contracts/api";
+import { grammarUnitLearningContents } from "@/lib/domain/grammar-unit-profile";
 
 type GrammarPointRecord = {
   id: string;
   title: string;
   source?: "legacy" | "grammar_in_use";
   section?: { officialTitle: string } | null;
-  bookEdition?: { title: string; edition: string; officialLevel: string } | null;
-  units?: Array<{ unitNumber: number; officialTitle: string }>;
+  bookEdition?: { id?: string; title: string; edition: string; officialLevel: string } | null;
+  units?: Array<{ unitNumber: number; officialTitle: string; learningContents?: string[] }>;
 };
 
 type LegacyPresetRecord = { id: string; label: string; labelZh?: string | null; category: string | null };
@@ -17,7 +18,14 @@ export type GrammarContextDb = {
 };
 
 function toTeachingPlanKnowledgePoint(record: GrammarPointRecord): TeachingPlanKnowledgePoint {
-  const units = [...(record.units ?? [])].sort((left, right) => left.unitNumber - right.unitNumber);
+  const units = [...(record.units ?? [])]
+    .sort((left, right) => left.unitNumber - right.unitNumber)
+    .map((unit) => ({
+      unitNumber: unit.unitNumber,
+      officialTitle: unit.officialTitle,
+      learningContents: unit.learningContents
+        ?? grammarUnitLearningContents(record.bookEdition?.id ?? (record.bookEdition?.title ? bookIdFromTitle(record.bookEdition.title, record.bookEdition.edition) : ""), unit.unitNumber, unit.officialTitle),
+    }));
   return {
     id: record.id,
     label: record.title,
@@ -29,6 +37,13 @@ function toTeachingPlanKnowledgePoint(record: GrammarPointRecord): TeachingPlanK
     unitEnd: units.at(-1)?.unitNumber,
     units,
   };
+}
+
+function bookIdFromTitle(title: string, edition: string | undefined) {
+  if (title === "Essential Grammar in Use" && edition?.includes("Fourth")) return "essential-grammar-in-use-4";
+  if (title === "English Grammar in Use" && edition?.includes("Fifth")) return "english-grammar-in-use-5";
+  if (title === "Advanced Grammar in Use" && edition?.includes("Fourth")) return "advanced-grammar-in-use-4";
+  return "";
 }
 
 export async function resolveGrammarBookKnowledgePoints(db: GrammarContextDb, bookEditionId: string): Promise<TeachingPlanKnowledgePoint[]> {

@@ -501,6 +501,8 @@ export type StoryComplexity = "clear_linear" | "conflict_driven" | "layered";
 export type GrammarSourceUnit = {
   unitNumber: number;
   officialTitle: string;
+  /** Product-authored scope summary; not Cambridge copy or an exhaustive checklist. */
+  learningContents?: string[];
 };
 
 export type GrammarCatalogPoint = {

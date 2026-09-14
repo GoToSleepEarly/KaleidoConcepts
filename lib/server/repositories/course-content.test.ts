@@ -377,7 +377,7 @@ describe("course content repository", () => {
       mainIdea: { title: "Main Idea", text: Array(178).fill("summary").join(" ") },
       mainIdeaError: null,
     }));
-    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v9" as const, repairs: [], mainIdea: { text: Array(120).fill("summary").join(" ") } }));
+    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v9" as const, repairs: [], mainIdea: { text: Array(90).fill("summary").join(" ") } }));
     const generateExercises = vi.fn();
     const deps = { generateReading, repairReading, generateExercises } as unknown as CourseContentGenerationDeps;
 

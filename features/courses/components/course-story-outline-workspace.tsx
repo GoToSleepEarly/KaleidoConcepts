@@ -2,7 +2,7 @@
 
 import React, { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, BookOpen, Bot, Check, CircleHelp, Loader2, Pencil, RotateCcw, Search, Send, Sparkles, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Bot, Check, ChevronDown, CircleHelp, Loader2, Pencil, RotateCcw, Search, Send, Sparkles, UserRound } from "lucide-react";
 
 import { AutoGrowTextarea } from "@/components/ui/auto-grow-textarea";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { CourseCreateSteps, courseStageStep } from "@/features/courses/component
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
 import type { CourseSourceReference, CourseStoryChatAction, CourseStoryChatMessage, CourseStoryMessageInput, CourseStoryOutline, CourseStoryOutlineState, CourseStoryDirection, PresetOption, StoryComplexity } from "@/lib/contracts/api";
+import { grammarLearningSummary } from "@/lib/domain/grammar-catalog";
 import { chineseDisplayLength, normalizeStoryChapterCount, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import { cn } from "@/lib/utils";
 import { createRequestId } from "@/lib/utils/request-id";
@@ -1650,6 +1651,7 @@ function CardGroup({ title, children }: { title: string; children: React.ReactNo
 function OutlineSummary({ outline, state, pending, onReviseOutline, onReviseChapter }: { outline: CourseStoryOutline; state: CourseStoryOutlineState; pending: boolean; onReviseOutline: () => void; onReviseChapter: (order: number) => void }) {
   const title = splitBilingual(outline.title);
   const summary = splitBilingual(outline.summary);
+  const [expandedGrammarKey, setExpandedGrammarKey] = useState<string | null>(null);
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-primary-100 bg-primary-50/40 p-4">
@@ -1699,12 +1701,19 @@ function OutlineSummary({ outline, state, pending, onReviseOutline, onReviseChap
                       const unit = point?.unitStart
                         ? point.unitStart === point.unitEnd ? `Unit ${point.unitStart}` : `Units ${point.unitStart}–${point.unitEnd}`
                         : "";
-                      return (
-                        <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700" key={id}>
-                          <OverflowingKnowledgePointTitle title={point?.label ?? id} />
-                          {unit ? <span className="shrink-0 text-primary-600">{unit}</span> : null}
-                        </span>
-                      );
+                      const grammarKey = `${chapter.id}:${id}`;
+                      const rules = grammarLearningSummary(point?.units);
+                      const expanded = expandedGrammarKey === grammarKey;
+                      return point ? (
+                        <div className={cn("max-w-full rounded-2xl bg-primary-50 text-primary-700", expanded && "basis-full")} key={id}>
+                          <div className="flex max-w-full items-center gap-1.5 py-1 pl-2 pr-1">
+                            <OverflowingKnowledgePointTitle title={point.label} />
+                            {unit ? <span className="shrink-0 text-xs text-primary-600">{unit}</span> : null}
+                            {rules.length ? <button aria-expanded={expanded} aria-label={`${expanded ? "收起" : "展开"} ${unit} · ${point.label} 的语法要点`} className="flex min-h-7 min-w-7 shrink-0 items-center justify-center rounded-full text-primary-600 hover:bg-primary-100 hover:text-primary-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-300" onClick={() => setExpandedGrammarKey(expanded ? null : grammarKey)} title={expanded ? "收起语法要点" : "展开语法要点"} type="button"><ChevronDown aria-hidden className={cn("size-3.5 transition-transform", expanded && "rotate-180")} /></button> : null}
+                          </div>
+                          {expanded ? <ul className="space-y-1.5 border-t border-primary-100 px-3 pb-3 pt-2 text-xs font-normal leading-5 text-primary-800">{rules.map((rule) => <li className="flex gap-2" key={rule}><span aria-hidden className="mt-[0.45rem] size-1 shrink-0 rounded-full bg-primary-400" /><span>{rule}</span></li>)}</ul> : null}
+                        </div>
+                      ) : null;
                     })}
                     {!chapter.recommendedKnowledgePointIds?.length ? <span className="text-xs text-muted-foreground">本章暂无自然适配的知识点</span> : null}
                   </div>

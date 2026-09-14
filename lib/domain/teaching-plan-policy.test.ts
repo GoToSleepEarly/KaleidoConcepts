@@ -7,6 +7,7 @@ import {
   practicePageCount,
   readingPageCount,
   readingPageDensity,
+  recommendedAfterClassReadingWordCount,
   recommendedChapterWordCount,
   recommendedReadingPageCount,
 } from "@/lib/domain/teaching-plan-policy";
@@ -22,6 +23,18 @@ describe("teaching plan policy", () => {
 
   it("starts grammar practice with both types and one total", () => {
     expect(defaultPracticeConfig()).toEqual({ enabled: true, grammar: { enabledTypes: ["optionCloze", "wordForm"], total: 10 } });
+  });
+
+  it("uses a compact difficulty-based after-class reading target", () => {
+    expect([
+      recommendedAfterClassReadingWordCount("Starter"),
+      recommendedAfterClassReadingWordCount("A1"),
+      recommendedAfterClassReadingWordCount("A2"),
+      recommendedAfterClassReadingWordCount("B1"),
+      recommendedAfterClassReadingWordCount("B2"),
+      recommendedAfterClassReadingWordCount("C1"),
+      recommendedAfterClassReadingWordCount("C2"),
+    ]).toEqual([60, 70, 90, 110, 120, 130, 130]);
   });
 
   it("starts正文 with all types and independent grammar and vocabulary totals", () => {

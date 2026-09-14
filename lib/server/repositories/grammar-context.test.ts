@@ -13,6 +13,7 @@ describe("grammar prompt context", () => {
 
     expect(points.map((point) => point.id)).toEqual(["kp-1", "kp-2"]);
     expect(points[1]).toMatchObject({ bookTitle: "English Grammar in Use", edition: "5th Edition", officialLevel: "B1–B2", unitStart: 13, unitEnd: 14 });
+    expect(points[1].units?.[0].learningContents).toEqual(expect.any(Array));
   });
 
   test("uses the original preset metadata for migrated legacy knowledge points", async () => {
