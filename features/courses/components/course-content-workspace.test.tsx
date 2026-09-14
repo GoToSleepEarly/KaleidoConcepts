@@ -576,14 +576,43 @@ describe("CourseContentWorkspace", () => {
 
   test("shows only failed and repair events inside failure reasons", () => {
     const messages = [
-      { id: "running", role: "assistant", content: "系统正在生成全部章节正文、正文内互动题和课后阅读。", kind: "operation", status: "running", operation: "reading", requestId: "request-1", title: "正在生成阅读内容", createdAt: "2026-08-10T00:00:00.000Z" },
-      { id: "failed", role: "assistant", content: "正文候选结构无效", kind: "operation", status: "failed", operation: "reading", requestId: "request-1", title: "阅读内容生成未完成", createdAt: "2026-08-10T00:01:00.000Z" },
+      { id: "running", role: "assistant", content: "系统正在生成全部章节正文、正文内互动题和课后阅读。", kind: "operation", status: "running", operation: "reading", requestId: "request-1", title: "正在生成阅读内容", details: { retryAttempt: 1 }, createdAt: "2026-08-10T00:00:00.000Z" },
+      { id: "repair-1", role: "system", content: "正在进行第 1/2 轮自动修复。", kind: "repair", status: "running", operation: "reading", requestId: "request-1", title: "自动检查与修复", details: { repairRound: 1, repairLimit: 2 }, createdAt: "2026-08-10T00:00:20.000Z" },
+      { id: "repair-2", role: "system", content: "正在进行第 2/2 轮自动修复。", kind: "repair", status: "running", operation: "reading", requestId: "request-1", title: "自动检查与修复", details: { repairRound: 2, repairLimit: 2 }, createdAt: "2026-08-10T00:00:40.000Z" },
+      { id: "failed", role: "assistant", content: "正文候选结构无效", kind: "operation", status: "failed", operation: "reading", requestId: "request-1", title: "阅读内容生成未完成", details: { retryAttempt: 1, failureStage: "validation", semanticRepairRounds: 2 }, createdAt: "2026-08-10T00:01:00.000Z" },
     ] as CourseContentState["messages"];
     render(<CourseContentWorkspace initialState={{ ...initialState, status: "failed", errorMessage: "正文候选结构无效", messages }} />);
 
     const card = screen.getByTestId("content-operation-card");
+    expect(card).toHaveTextContent("首次生成未完成。系统已尝试 2 轮自动修复，仍有部分内容未通过检查。已完成的内容已保存。");
     expect(card).toHaveTextContent("正文候选结构无效");
     expect(card).not.toHaveTextContent("系统正在生成全部章节正文");
+  });
+
+  test("distinguishes a format failure that never entered semantic repair", () => {
+    const messages = [
+      { id: "running", role: "assistant", content: "系统正在生成。", kind: "operation", status: "running", operation: "exercises", requestId: "request-format", createdAt: "2026-08-10T00:00:00.000Z" },
+      { id: "failed", role: "assistant", content: "练习结构解析失败", kind: "operation", status: "failed", operation: "exercises", requestId: "request-format", title: "章节与课后练习生成未完成", details: { retryAttempt: 2, failureStage: "format", semanticRepairRounds: 0 }, createdAt: "2026-08-10T00:01:00.000Z" },
+    ] as CourseContentState["messages"];
+
+    render(<CourseContentWorkspace initialState={{ ...initialState, status: "failed", errorMessage: "练习结构解析失败", messages }} />);
+
+    expect(screen.getByTestId("content-operation-card")).toHaveTextContent("第 2 次尝试因 AI 返回格式异常而中断，尚未进入内容校验和自动修复。");
+  });
+
+  test("shows a prominent recovery warning after the fifth failed attempt in one stage", () => {
+    const messages = [
+      { id: "running", role: "assistant", content: "系统正在生成。", kind: "operation", status: "running", operation: "reading", requestId: "request-5", createdAt: "2026-08-10T00:00:00.000Z" },
+      { id: "failed", role: "assistant", content: "正文仍未通过", kind: "operation", status: "failed", operation: "reading", requestId: "request-5", title: "阅读内容生成未完成", details: { retryAttempt: 5, failureStage: "validation", semanticRepairRounds: 2 }, createdAt: "2026-08-10T00:01:00.000Z" },
+    ] as CourseContentState["messages"];
+
+    render(<CourseContentWorkspace initialState={{ ...initialState, status: "failed", errorMessage: "正文仍未通过", messages }} />);
+
+    const warning = screen.getByTestId("repeated-generation-failure-warning");
+    expect(warning).toHaveTextContent("多次尝试仍未完成");
+    expect(warning).toHaveTextContent("本阶段已连续尝试 5 次（含首次生成）");
+    expect(warning).toHaveTextContent("请联系管理员");
+    expect(warning).not.toHaveTextContent("任务编号");
   });
 
   test("keeps the reading confirmation before loading and preserves all records after exercises finish", async () => {

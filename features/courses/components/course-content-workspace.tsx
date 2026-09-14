@@ -1196,6 +1196,9 @@ function TimelineOperationCard({ messages, requestId, phase, elapsedSeconds, tar
     ? messages.filter((message) => message.kind === "repair" || (message.kind === "operation" && message.status === "failed"))
     : messages.filter((message) => message.id !== latest.id);
   const retryAttempt = operationDetailNumber(terminal ?? latest, "retryAttempt") ?? operationDetailNumber(latest, "retryAttempt") ?? 1;
+  const semanticRepairRounds = operationDetailNumber(terminal ?? latest, "semanticRepairRounds")
+    ?? messages.filter((message) => message.kind === "repair").length;
+  const failureStage = operationDetailString(terminal ?? latest, "failureStage");
   const recordedDurationMs = operationDetailNumber(terminal ?? latest, "durationMs");
   const firstEventAt = new Date(operationEvents[0]?.createdAt ?? latest.createdAt).getTime();
   const terminalAt = terminal ? new Date(terminal.createdAt).getTime() : Number.NaN;
@@ -1214,7 +1217,8 @@ function TimelineOperationCard({ messages, requestId, phase, elapsedSeconds, tar
   const estimate = operation === "reading" ? "5–10 分钟" : operation === "exercises" ? "2–5 分钟" : "1–3 分钟";
   return (
     <TimelineCard createdAt={latest.createdAt} footer={footer} meta={meta} requestId={requestId} status={status} statusEmphasis targetLabel={targetLabel} testId="content-operation-card" title={latest.title ?? presentation.title} wide={status !== "running" || Boolean(onContinue)}>
-      <p className="text-muted-foreground">{status === "failed" ? "已完成的内容已保存，只需重试未通过的部分。" : onContinue ? "阅读内容已保存。确认后即可生成章节与课后练习。" : latest.content}</p>
+      <p className="text-muted-foreground">{status === "failed" ? contentOperationFailureSummary(retryAttempt, failureStage, semanticRepairRounds) : onContinue ? "阅读内容已保存。确认后即可生成章节与课后练习。" : latest.content}</p>
+      {status === "failed" && retryAttempt >= 5 ? <RepeatedFailureWarning attempt={retryAttempt} /> : null}
       {status === "running" ? (
         <div className="mt-3 rounded-lg bg-muted/60 px-3 py-2.5">
           <div className="flex items-start justify-between gap-3">
@@ -1270,6 +1274,27 @@ function isRepairMessage(content: string) {
 function operationDetailNumber(message: CourseContentState["messages"][number], key: string) {
   const value = message.details?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function operationDetailString(message: CourseContentState["messages"][number], key: string) {
+  const value = message.details?.[key];
+  return typeof value === "string" ? value : null;
+}
+
+function contentOperationFailureSummary(attempt: number, failureStage: string | null, semanticRepairRounds: number) {
+  const attemptLabel = attempt === 1 ? "首次生成" : `第 ${attempt} 次尝试`;
+  if (failureStage === "format") return `${attemptLabel}因 AI 返回格式异常而中断，尚未进入内容校验和自动修复。`;
+  if (semanticRepairRounds > 0) return `${attemptLabel}未完成。系统已尝试 ${semanticRepairRounds} 轮自动修复，仍有部分内容未通过检查。已完成的内容已保存。`;
+  return `${attemptLabel}未完成。已完成的内容已保存，可以重试本次操作。`;
+}
+
+function RepeatedFailureWarning({ attempt }: { attempt: number }) {
+  return (
+    <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3 text-sm" data-testid="repeated-generation-failure-warning" role="alert">
+      <p className="flex items-center gap-2 font-semibold text-destructive"><AlertCircle aria-hidden className="size-4 shrink-0" />多次尝试仍未完成</p>
+      <p className="mt-1.5 text-pretty leading-6 text-foreground">本阶段已连续尝试 {attempt} 次（含首次生成），仍未获得可用结果。底层 AI 服务或当前生成条件可能存在持续异常，建议重新开始本流程；如问题仍然存在，请联系管理员。</p>
+    </div>
+  );
 }
 
 function repairIssueDetails(message: CourseContentState["messages"][number]) {

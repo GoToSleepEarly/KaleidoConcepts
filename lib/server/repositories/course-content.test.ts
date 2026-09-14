@@ -7,8 +7,8 @@ import { buildPendingExerciseHomework, CourseContentConflictError, courseContent
 import { AiJsonResponseError, generatedExercisesSchema, parseAiJson } from "@/lib/server/validation/course-content";
 
 describe("course content repository", () => {
-  test("allows at most one semantic repair per generation stage", () => {
-    expect(courseContentSemanticRepairAttempts).toBe(1);
+  test("allows at most two semantic repairs per generation stage", () => {
+    expect(courseContentSemanticRepairAttempts).toBe(2);
   });
 
   test("freshly regenerates only when every persisted chapter has structural damage", () => {
@@ -336,7 +336,7 @@ describe("course content repository", () => {
     expect(resetWithLaterStages.course.currentStage).toBe("content");
   });
 
-  test("generates chapters and Main Idea together, then uses the one shared repair budget for an invalid Main Idea", async () => {
+  test("generates chapters and Main Idea together, then uses the two-round shared repair budget for an invalid Main Idea", async () => {
     const now = new Date("2026-08-10T00:00:00.000Z");
     const course = { id: "course-1", title: "Hidden Door", durationMinutes: 30, currentStage: "content", englishLevel: "A2", knowledgePointIds: ["kp-1"], storySetting: { storyComplexity: "clear_linear", alignmentDetails: { schemaVersion: 2, requirement: { kind: "resolved", storyMode: "new_story", classroomPresence: "participant", brief: { kind: "concept", objective: "理解重力", learningTargets: [{ concept: "重力", expectedUnderstanding: "物体之间会相互吸引" }], assumedPriorKnowledge: [], sourceRequirements: [], requiredNamedCharacters: [], fixedPlot: null, additionalConstraints: { required: [], preferred: [], excluded: [] } } } } } };
     const outline = { id: "outline-1", title: "隐藏的门 / The Hidden Door", chapters: [{ id: "chapter-1", order: 1, title: "发光地图 / The Glowing Map", storyGoal: "Find it", keyEvents: ["Find it"], recommendedKnowledgePointIds: ["kp-1"] }] };
@@ -377,7 +377,9 @@ describe("course content repository", () => {
       mainIdea: { title: "Main Idea", text: Array(178).fill("summary").join(" ") },
       mainIdeaError: null,
     }));
-    const repairReading = vi.fn(async () => ({ contractVersion: "step4.content.v9" as const, repairs: [], mainIdea: { text: Array(90).fill("summary").join(" ") } }));
+    const repairReading = vi.fn()
+      .mockResolvedValueOnce({ contractVersion: "step4.content.v9" as const, repairs: [], mainIdea: { text: Array(178).fill("summary").join(" ") } })
+      .mockResolvedValueOnce({ contractVersion: "step4.content.v9" as const, repairs: [], mainIdea: { text: Array(90).fill("summary").join(" ") } });
     const generateExercises = vi.fn();
     const deps = { generateReading, repairReading, generateExercises } as unknown as CourseContentGenerationDeps;
 
@@ -392,17 +394,20 @@ describe("course content repository", () => {
     expect(result.writingProvider).toBe("deepseek-v4-pro");
     expect((generateReading.mock.calls as unknown[][])[0]?.[0]).toMatchObject({ contentIntent: { kind: "concept", objective: "理解重力", learningTargets: [{ expectedUnderstanding: "物体之间会相互吸引" }] } });
     expect(generateExercises).not.toHaveBeenCalled();
-    expect(repairReading).toHaveBeenCalledTimes(1);
+    expect(repairReading).toHaveBeenCalledTimes(2);
     expect((repairReading.mock.calls as unknown[][])[0]?.[2]).toEqual([]);
     expect((repairReading.mock.calls as unknown[][])[0]?.[3]).toMatchObject({ issues: [expect.stringContaining("Main Idea")] });
     expect(result.mainIdea?.title).toBe("Main Idea Reading Practice");
-    expect(messages.some((message) => message.content.includes("正在统一修复"))).toBe(true);
+    expect(messages.filter((message) => message.kind === "repair").map((message) => message.content)).toEqual([
+      expect.stringContaining("第 1/2 轮自动修复"),
+      expect.stringContaining("第 2/2 轮自动修复"),
+    ]);
     expect(messages.find((message) => message.requestId === "request-1" && message.role === "teacher")).toMatchObject({ content: "开始生成阅读内容", details: { triggerSource: "ui_action", retryAttempt: 1 } });
     expect(messages.map((message) => message.content)).toContain("我确认阅读内容，请生成章节与课后练习。");
     expect(messages.filter((message) => message.requestId === "request-1" && message.kind === "operation").map((message) => message.status)).toEqual(["running", "succeeded"]);
     expect(messages.find((message) => message.requestId === "request-1" && message.status === "succeeded")?.details).toMatchObject({ retryAttempt: 1, durationMs: expect.any(Number) });
     expect(messages.filter((message) => message.requestId === "request-2" && message.kind === "operation").map((message) => message.status)).toEqual(["running", "succeeded"]);
-    expect(messages.find((message) => message.requestId === "request-1" && message.kind === "repair")).toMatchObject({ operation: "reading", title: "自动检查与修复" });
+    expect(messages.find((message) => message.requestId === "request-1" && message.kind === "repair")).toMatchObject({ operation: "reading", title: "自动检查与修复", details: { repairRound: 1, repairLimit: 2 } });
     expect(exerciseResult.messages.map((message) => message.content)).toEqual(messages.map((message) => message.content));
   });
 

@@ -67,7 +67,7 @@ export class CourseContentSupersededError extends Error { constructor(message = 
 const mainIdeaTitle = "Main Idea Reading Practice";
 const operationLeaseMs = 90_000;
 const operationHeartbeatMs = 25_000;
-export const courseContentSemanticRepairAttempts = 1;
+export const courseContentSemanticRepairAttempts = 2;
 const structuralReadingIssueCodes = new Set<ChapterTemplateIssue["code"]>(["paragraph_count", "slot_set", "marker_set", "part_structure"]);
 
 export function shouldRegenerateFailedReading(
@@ -425,7 +425,7 @@ function operationTimelineCopy(operation: ContentOperation, status: "running" | 
   return { title: "本次修改未完成", content: "修改结果未通过检查，原内容已保留。" };
 }
 
-function operationTimelineMessage(courseId: string, operation: ClaimedOperation, status: "running" | "succeeded" | "failed", content?: string) {
+function operationTimelineMessage(courseId: string, operation: ClaimedOperation, status: "running" | "succeeded" | "failed", content?: string, extraDetails: Record<string, unknown> = {}) {
   const copy = operationTimelineCopy(operation.operation, status);
   const runningTitle = status === "running" && operation.triggerLabel && /^(重新生成|重试)/.test(operation.triggerLabel)
     ? `正在${operation.triggerLabel}`
@@ -435,6 +435,7 @@ function operationTimelineMessage(courseId: string, operation: ClaimedOperation,
     startedAt: operation.startedAt.toISOString(),
     ...(status !== "running" ? { durationMs: Math.max(0, Date.now() - operation.startedAt.getTime()) } : {}),
     ...(operation.targetType ? { targetType: operation.targetType, targetId: operation.targetId ?? null } : {}),
+    ...extraDetails,
   };
   return {
     courseId,
@@ -534,13 +535,13 @@ async function appendOwnedMessage(db: CourseContentDb, courseId: string, operati
   });
 }
 
-async function finishOperation(db: CourseContentDb, courseId: string, operation: ClaimedOperation, contentData: Record<string, unknown>, generationData: Record<string, unknown>, sideEffect?: (tx: CourseContentDb) => Promise<void>) {
+async function finishOperation(db: CourseContentDb, courseId: string, operation: ClaimedOperation, contentData: Record<string, unknown>, generationData: Record<string, unknown>, sideEffect?: (tx: CourseContentDb) => Promise<void>, terminalDetails: Record<string, unknown> = {}) {
   return inTransaction(db, async (tx) => {
     await updateOwnedContent(tx, courseId, operation, { ...contentData, activeGenerationId: null });
     await sideEffect?.(tx);
     const terminalStatus = generationData.status === "succeeded" ? "succeeded" : "failed";
     const terminalContent = typeof generationData.errorMessage === "string" ? generationData.errorMessage : undefined;
-    await tx.courseContentChatMessage.create!({ data: operationTimelineMessage(courseId, operation, terminalStatus, terminalContent) });
+    await tx.courseContentChatMessage.create!({ data: operationTimelineMessage(courseId, operation, terminalStatus, terminalContent, terminalDetails) });
     await tx.courseContentGeneration.update!({ where: { id: operation.id }, data: generationData });
   });
 }
@@ -549,13 +550,13 @@ export function courseContentGenerationFailureStatus(error: unknown): "failed" |
   return error instanceof AiProviderResultUnknownError ? "result_unknown" : "failed";
 }
 
-async function failOperation(db: CourseContentDb, courseId: string, operation: ClaimedOperation, message: string, fallbackStatus?: CourseContentStatus, generationStatus: "failed" | "result_unknown" = "failed") {
+async function failOperation(db: CourseContentDb, courseId: string, operation: ClaimedOperation, message: string, fallbackStatus?: CourseContentStatus, generationStatus: "failed" | "result_unknown" = "failed", failureDetails: Record<string, unknown> = {}) {
   try {
     await finishOperation(db, courseId, operation, {
       ...(fallbackStatus ? { status: fallbackStatus } : {}),
       phase: null,
       errorMessage: message,
-    }, { status: generationStatus, errorMessage: message });
+    }, { status: generationStatus, errorMessage: message }, undefined, failureDetails);
   } catch (failure) {
     if (!(failure instanceof CourseContentSupersededError)) throw failure;
   }
@@ -575,7 +576,7 @@ async function recordContentAiUsage(
 ) {
   if (!db.aiGenerationLog?.create) return;
   await db.aiGenerationLog.create({ data: {
-    requestId: `${operation.id}:${idempotencyKey}:step4-reading:${callType}`,
+    requestId: `${operation.id}:${idempotencyKey}:step4-reading:${callType}${typeof diagnostics.repairRound === "number" ? `:${diagnostics.repairRound}` : ""}`,
     courseId,
     stage: "content",
     operation: `reading_v2_${callType}`,
@@ -638,6 +639,8 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
   if (!operation.claimed) return getCourseContentState(db, courseId);
   const requirements = buildReadingTemplateRequirements(state);
   return withLease(db, operation.id, async () => {
+  let semanticRepairRounds = 0;
+  let failureStage: "request" | "validation" = "request";
   try {
     const requirementById = new Map(requirements.map((requirement) => [requirement.outlineChapterId, requirement]));
     const persistedRetryChapters = !options.regenerate && current.status === "failed" && Array.isArray(current.chapters) && current.chapters.length
@@ -671,6 +674,7 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
     const generatedReading = reusableChapters ? null : await deps.generateReading(state, writingProvider, async () => {
       await updateOwnedContent(db, courseId, operation, { phase: "validating_chapters" });
     });
+    failureStage = "validation";
     await updateOwnedContent(db, courseId, operation, { phase: "validating_chapters" });
     let chapterResults = reusableChapters
       ? persistedRetryResults!
@@ -694,25 +698,29 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
     }
     await updateOwnedContent(db, courseId, operation, { chapters, mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle } });
 
-    const failed = chapterResults.filter((result) => result.structuredIssues.length || validateChapter(state, result.chapter).length);
     const mainIdeaPolicy = mainIdeaWordCountPolicy(state.plan.mainIdeaTargetWordCount ?? recommendedAfterClassReadingWordCount(state.course.englishLevel ?? "A2"));
     let mainIdeaCount = wordCount(mainIdeaRaw.text);
-    const mainIdeaIssue = mainIdeaCount < mainIdeaPolicy.acceptedRange[0] || mainIdeaCount > mainIdeaPolicy.acceptedRange[1]
-      ? `Main Idea 词数应为 ${mainIdeaPolicy.acceptedRange[0]}–${mainIdeaPolicy.acceptedRange[1]}，实际 ${mainIdeaCount}`
-      : null;
-    if (failed.length || mainIdeaIssue) {
+    for (let round = 1; round <= courseContentSemanticRepairAttempts; round += 1) {
+      const failed = chapterResults.filter((result) => result.structuredIssues.length || validateChapter(state, result.chapter).length);
+      const mainIdeaIssue = mainIdeaCount < mainIdeaPolicy.acceptedRange[0] || mainIdeaCount > mainIdeaPolicy.acceptedRange[1]
+        ? `Main Idea 词数应为 ${mainIdeaPolicy.acceptedRange[0]}–${mainIdeaPolicy.acceptedRange[1]}，实际 ${mainIdeaCount}`
+        : null;
+      if (!failed.length && !mainIdeaIssue) break;
+      semanticRepairRounds = round;
       const phase = failed.length ? "repairing_chapters" : "repairing_main_idea";
       await updateOwnedContent(db, courseId, operation, { phase, chapters: chapters.map((chapter) => ({ ...chapter, validationIssues: validateChapter(state, chapter) })) });
       const chapterDetails = failed.map((item) => `第 ${item.chapter.order} 章（${[...item.structuredIssues.map((issue) => issue.message), ...validateChapter(state, item.chapter)].filter((message, index, all) => all.indexOf(message) === index).join("；")}）`);
       const repairDetails = [...chapterDetails, ...(mainIdeaIssue ? [mainIdeaIssue.replaceAll("Main Idea", "课后阅读")] : [])];
       const repairScope = [failed.length ? `${failed.length} 个章节` : "", mainIdeaIssue ? "课后阅读" : ""].filter(Boolean).join("和");
-      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${repairScope}需要调整，正在统一修复。`, details: { issues: repairDetails }, kind: "repair", status: "running", operation: "reading", requestId: operation.requestId, title: "自动检查与修复", eventKey: `${operation.requestId}:repair:1` });
+      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${repairScope}需要调整，正在进行第 ${round}/${courseContentSemanticRepairAttempts} 轮自动修复。`, details: { issues: repairDetails, repairRound: round, repairLimit: courseContentSemanticRepairAttempts }, kind: "repair", status: "running", operation: "reading", requestId: operation.requestId, title: "自动检查与修复", eventKey: `${operation.requestId}:repair:${round}` });
+      failureStage = "request";
       const repairBundle = await deps.repairReading(state, writingProvider, failed.map((item) => ({
         current: item.draft,
         requirements: item.requirement,
         issues: item.structuredIssues.length ? item.structuredIssues : validateChapter(state, item.chapter).map((message) => ({ code: "part_structure" as const, message })),
         parseError: item.parseError,
       })), mainIdeaIssue ? { current: mainIdeaRaw.text ? { text: mainIdeaRaw.text } : null, issues: [mainIdeaIssue] } : undefined);
+      failureStage = "validation";
       await updateOwnedContent(db, courseId, operation, { phase: "validating_chapters" });
       chapterResults = chapterResults.map((result) => {
         if (!failed.some((item) => item.chapter.outlineChapterId === result.chapter.outlineChapterId)) return result;
@@ -738,16 +746,16 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
       }).length;
       if (mainIdeaIssue && repairBundle.mainIdea) mainIdeaRaw = repairBundle.mainIdea;
       mainIdeaCount = wordCount(mainIdeaRaw.text);
-      await recordContentAiUsage(db, courseId, operation, writingProvider, idempotencyKey, "repair", repairBundle.usage, failed.length + (mainIdeaIssue ? 1 : 0), { resolvedChapterCount, mainIdeaResolved: !mainIdeaIssue || (mainIdeaCount >= mainIdeaPolicy.acceptedRange[0] && mainIdeaCount <= mainIdeaPolicy.acceptedRange[1]) }, repairBundle.latencyMs);
+      await recordContentAiUsage(db, courseId, operation, writingProvider, idempotencyKey, "repair", repairBundle.usage, failed.length + (mainIdeaIssue ? 1 : 0), { repairRound: round, resolvedChapterCount, mainIdeaResolved: !mainIdeaIssue || (mainIdeaCount >= mainIdeaPolicy.acceptedRange[0] && mainIdeaCount <= mainIdeaPolicy.acceptedRange[1]) }, repairBundle.latencyMs);
       chapters = chapterResults.map((result) => result.chapter);
       await updateOwnedContent(db, courseId, operation, { chapters, mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle } });
     }
 
     const remaining = chapterResults.map((result) => ({ ...result.chapter, validationIssues: [...new Set([...result.structuredIssues.map((issue) => issue.message), ...validateChapter(state, result.chapter)])] }));
     await updateOwnedContent(db, courseId, operation, { chapters: remaining });
-    if (remaining.some((chapter) => chapter.validationIssues.length)) throw new Error("部分章节一次最小修复后仍未通过校验，请重试失败章节");
+    if (remaining.some((chapter) => chapter.validationIssues.length)) throw new Error(`部分章节经过 ${semanticRepairRounds} 轮自动修复后仍未通过校验，请重试失败章节`);
     await updateOwnedContent(db, courseId, operation, { phase: "validating_main_idea" });
-    if (mainIdeaCount < mainIdeaPolicy.acceptedRange[0] || mainIdeaCount > mainIdeaPolicy.acceptedRange[1]) throw new Error(`课后阅读一次修复后词数仍应为 ${mainIdeaPolicy.acceptedRange[0]}–${mainIdeaPolicy.acceptedRange[1]}，实际 ${mainIdeaCount}`);
+    if (mainIdeaCount < mainIdeaPolicy.acceptedRange[0] || mainIdeaCount > mainIdeaPolicy.acceptedRange[1]) throw new Error(`课后阅读经过 ${semanticRepairRounds} 轮自动修复后，词数仍应为 ${mainIdeaPolicy.acceptedRange[0]}–${mainIdeaPolicy.acceptedRange[1]}，实际 ${mainIdeaCount}`);
     const needsExerciseAi = requiresExerciseAi(state.plan);
     const localExercises = needsExerciseAi ? { chapters: remaining, homework: null } : locallyAssembledExercises(state, remaining);
     await finishOperation(db, courseId, operation, { status: needsExerciseAi ? "reading_ready" : "ready", phase: null, chapters: localExercises.chapters, mainIdea: { id: "main-idea", ...mainIdeaRaw, title: mainIdeaTitle }, homework: localExercises.homework, exercisesStale: false, contentVersion: { increment: 1 }, errorMessage: null }, { status: "succeeded" });
@@ -757,7 +765,7 @@ export async function generateCourseReading(db: CourseContentDb, courseId: strin
       await recordContentAiStructureFailure(db, courseId, operation, writingProvider, error, requirements.length);
     }
     const message = error instanceof Error ? error.message : "正文生成失败";
-    await failOperation(db, courseId, operation, message, options.regenerate ? current.status : "failed", courseContentGenerationFailureStatus(error));
+    await failOperation(db, courseId, operation, message, options.regenerate ? current.status : "failed", courseContentGenerationFailureStatus(error), { failureStage: error instanceof AiJsonResponseError ? "format" : failureStage, semanticRepairRounds });
     throw error;
   }
   });
@@ -780,6 +788,8 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
   }, { teacherMessage: { content: actionLabel, details: { triggerSource: "ui_action", triggerLabel: actionLabel } } });
   if (!operation.claimed) return getCourseContentState(db, courseId);
   return withLease(db, operation.id, async () => {
+  let semanticRepairRounds = 0;
+  let failureStage: "request" | "validation" = "request";
   try {
     if (!requiresExerciseAi(state.plan)) {
       const localExercises = locallyAssembledExercises(state, chapters);
@@ -792,6 +802,7 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
       cleanText: chapter.paragraphs.map(buildCleanParagraphText).join(" "),
     }));
     let generated = await deps.generateExercises(state, writingProvider, cleanChapters);
+    failureStage = "validation";
     await updateOwnedContent(db, courseId, operation, { phase: "validating_exercises" });
     const keys = pointKeyMap(state);
     const homeworkPlan = state.plan.afterClassPractice;
@@ -820,10 +831,13 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
         await finishOperation(db, courseId, operation, { status: "ready", phase: null, chapters: generatedChapters, homework, exercisesStale: false, contentVersion: { increment: 1 }, errorMessage: null }, { status: "succeeded" });
         return getCourseContentState(db, courseId);
       }
-      if (round === courseContentSemanticRepairAttempts) throw new Error(`练习一次修复后仍未通过：${failedTargets.map((target) => `${target.label}（${target.issues.join("；")}）`).join("；")}`);
+      if (round === courseContentSemanticRepairAttempts) throw new Error(`练习经过 ${semanticRepairRounds} 轮自动修复后仍未通过：${failedTargets.map((target) => `${target.label}（${target.issues.join("；")}）`).join("；")}`);
+      semanticRepairRounds = round + 1;
       await updateOwnedContent(db, courseId, operation, { phase: "repairing_chapters" });
-      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${failedTargets.length} 个练习区域需要修复：${failedTargets.map((target) => `${target.label}（${target.issues.join("；")}）`).join("；")}。正在统一修复。`, kind: "repair", status: "running", operation: "exercises", requestId: operation.requestId, title: "自动检查与修复", eventKey: `${operation.requestId}:repair:${round + 1}` });
+      await appendOwnedMessage(db, courseId, operation, { role: "system", content: `检测到 ${failedTargets.length} 个练习区域需要修复，正在进行第 ${semanticRepairRounds}/${courseContentSemanticRepairAttempts} 轮自动修复。`, details: { issues: failedTargets.map((target) => `${target.label}（${target.issues.join("；")}）`), repairRound: semanticRepairRounds, repairLimit: courseContentSemanticRepairAttempts }, kind: "repair", status: "running", operation: "exercises", requestId: operation.requestId, title: "自动检查与修复", eventKey: `${operation.requestId}:repair:${semanticRepairRounds}` });
+      failureStage = "request";
       const repaired = await deps.repairExercises(state, writingProvider, failedTargets, generated, cleanChapters);
+      failureStage = "validation";
       await updateOwnedContent(db, courseId, operation, { phase: "validating_exercises" });
       const repairedIds = new Set(repaired.chapters.map((item) => item.outlineChapterId));
       generated = {
@@ -837,7 +851,7 @@ export async function generateCourseExercises(db: CourseContentDb, courseId: str
       await recordContentAiStructureFailure(db, courseId, operation, writingProvider, error, state.plan.chapters.length + (state.plan.afterClassPractice.practice.enabled ? 1 : 0));
     }
     const message = error instanceof Error ? error.message : "练习生成失败";
-    await failOperation(db, courseId, operation, message, options.regenerate ? content.status : "reading_ready", courseContentGenerationFailureStatus(error));
+    await failOperation(db, courseId, operation, message, options.regenerate ? content.status : "reading_ready", courseContentGenerationFailureStatus(error), { failureStage: error instanceof AiJsonResponseError ? "format" : failureStage, semanticRepairRounds });
     throw error;
   }
   });
