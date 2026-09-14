@@ -435,7 +435,7 @@ Loading 动效与信息层级二次优化：移除快速闪烁进度轨道，将
 
 Loading 聚焦工作台优化（2026-09-14）：移除视觉方案模块内的二次边框卡片，把任务名称与真实计时确立为第一视觉层级；根据页面验收反馈进一步恢复 Step 5 原有紧凑密度，三类成果改为稳定的连续三等分轨道，以底部循环流动线代替轮流闪烁、变色和位移。保留真实任务规模、服务端任务恢复、同步异常和减少动态效果语义，不增加虚假进度或新依赖。验证结果见本模块最新实现记录。
 
-本轮验证：Step 5 组件与视觉资源领域、仓储、HTTP 共 5 个文件 / 81 项测试通过，目标 ESLint、`pnpm exec tsc --noEmit`、`pnpm build`、`git diff --check` 和中文乱码扫描通过。使用真实 `visual_plan / running` 验收课程在 1240×921 桌面视口完成浏览器检查，确认状态工作台、三项成果轨道、真实计时和相邻模块密度一致。验收脚本同步修复旧课程删除后孤立账本仍占用固定 `requestId` 的问题，现在重复运行 seed 会精确清理该验收记录，不影响其他课程。
+本轮验证：Step 5 组件与视觉资源领域、仓储、HTTP 共 5 个文件 / 81 项测试通过，目标 ESLint、`pnpm exec tsc --noEmit`、`pnpm build`、`git diff --check` 和中文乱码扫描通过。使用真实 `visual_plan / running` 验收课程在 1240×921 桌面视口完成浏览器检查，确认状态工作台、三项成果轨道、真实计时和相邻模块密度一致。验收脚本同步修复旧课程删除后孤立账本仍占用固定 `requestId` 的问题，现在重复运行 seed 会精确清理该验收记录，不影响其他课程。实现提交：`7a52323`。
 
 本地 Loading 验收数据：运行 `pnpm demo:step5` 创建 `[Step5验收] 视觉方案 Loading` 课程和真实 `visual_plan / running` 账本，不调用 AI。运行态遵循生产规则，超过 12 分钟会自动恢复为失败；验收前可运行 `pnpm demo:step5:refresh-loading` 重置开始时间，使用 `pnpm demo:step5:validate` 校验，验收完成后使用 `pnpm demo:step5:cleanup` 删除。
 
