@@ -17,7 +17,6 @@ import {
   buildReadingRepairPromptContext,
   cefrWritingProfile,
   cefrWritingQualityRules,
-  courseContentReasoningEfforts,
   createCourseContentChapterKeyProtocol,
   assertExerciseGenerationChapterKeys,
   assertReadingRepairCoverage,
@@ -274,17 +273,6 @@ describe("course content prompt contexts", () => {
     const withChapterPractice = createCourseContentChapterKeyProtocol(input);
     expect(() => assertExerciseGenerationChapterKeys(["C1"], withChapterPractice.input, cleanChapters)).not.toThrow();
     expect(() => assertExerciseGenerationChapterKeys([], withChapterPractice.input, cleanChapters)).toThrow("练习章节短键不完整（期望：C1；实际：空）");
-  });
-
-  test("uses explicit reasoning levels for every Step 4 AI operation", () => {
-    expect(courseContentReasoningEfforts).toEqual({
-      readingGeneration: "high",
-      readingRepair: "medium",
-      exerciseGeneration: "medium",
-      exerciseRepair: "medium",
-      modification: "medium",
-      formatRepair: "medium",
-    });
   });
 
   test("replaces database chapter IDs with short keys at the AI boundary", () => {

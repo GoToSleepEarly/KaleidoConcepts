@@ -276,7 +276,7 @@ describe("createStoryOutlineProvider", () => {
     await expect(resultPromise).resolves.toMatchObject({ text: '{"ok":true}' });
   });
 
-  test("marks a stream result unknown when no new valid event arrives within the idle timeout", async () => {
+  test("marks a stream result unknown when no new content arrives within the idle timeout", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn(async () => timedStreamResponse([
       { at: 1, text: 'data: {"type":"response.output_text.delta","delta":"partial"}\n\n' },
@@ -292,15 +292,19 @@ describe("createStoryOutlineProvider", () => {
       streamIdleTimeoutMs: 30,
       streamMaxDurationMs: 100,
     }).generateOutline({ writingProvider: "gpt-5.5", prompt: "生成正文" });
-    const assertion = expect(resultPromise).rejects.toThrow("长时间没有新事件");
+    const assertion = expect(resultPromise).rejects.toThrow("长时间没有新内容");
     await vi.advanceTimersByTimeAsync(40);
 
     await assertion;
   });
 
-  test("marks a stream result unknown when the first valid event does not arrive in time", async () => {
+  test("does not let heartbeats extend the content idle timeout", async () => {
     vi.useFakeTimers();
-    vi.stubGlobal("fetch", vi.fn(async () => timedStreamResponse([], 100)));
+    vi.stubGlobal("fetch", vi.fn(async () => timedStreamResponse([
+      { at: 1, text: 'data: {"type":"response.output_text.delta","delta":"partial"}\n\n' },
+      { at: 15, text: ": heartbeat\n\n" },
+      { at: 25, text: 'data: {"type":"response.in_progress"}\n\n' },
+    ], 100)));
 
     const resultPromise = createStoryOutlineProvider({
       apiKey: "key",
@@ -312,19 +316,43 @@ describe("createStoryOutlineProvider", () => {
       streamIdleTimeoutMs: 30,
       streamMaxDurationMs: 100,
     }).generateOutline({ writingProvider: "gpt-5.5", prompt: "生成正文" });
-    const assertion = expect(resultPromise).rejects.toThrow("等待首个流式事件超时");
+    const assertion = expect(resultPromise).rejects.toThrow("长时间没有新内容");
+    await vi.advanceTimersByTimeAsync(35);
+
+    await assertion;
+  });
+
+  test("does not treat lifecycle events or heartbeats as the first content output", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(async () => timedStreamResponse([
+      { at: 1, text: 'data: {"type":"response.created"}\n\n' },
+      { at: 10, text: ": heartbeat\n\n" },
+      { at: 15, text: 'data: {"type":"response.in_progress"}\n\n' },
+    ], 100)));
+
+    const resultPromise = createStoryOutlineProvider({
+      apiKey: "key",
+      baseUrl: "https://example.test",
+      gptModel: "gpt-5.5",
+      researchModel: "gpt-5.5",
+      stream: true,
+      streamFirstEventTimeoutMs: 20,
+      streamIdleTimeoutMs: 30,
+      streamMaxDurationMs: 100,
+    }).generateOutline({ writingProvider: "gpt-5.5", prompt: "生成正文" });
+    const assertion = expect(resultPromise).rejects.toThrow("等待首段内容超时");
     await vi.advanceTimersByTimeAsync(25);
 
     await assertion;
   });
 
-  test("enforces the stream hard limit even when heartbeat events keep the connection active", async () => {
+  test("enforces the stream hard limit even when content keeps the stream active", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn(async () => timedStreamResponse([
-      { at: 1, text: ": heartbeat\n\n" },
-      { at: 15, text: ": heartbeat\n\n" },
-      { at: 30, text: ": heartbeat\n\n" },
-      { at: 45, text: ": heartbeat\n\n" },
+      { at: 1, text: 'data: {"type":"response.output_text.delta","delta":"a"}\n\n' },
+      { at: 15, text: 'data: {"type":"response.output_text.delta","delta":"b"}\n\n' },
+      { at: 30, text: 'data: {"type":"response.output_text.delta","delta":"c"}\n\n' },
+      { at: 45, text: 'data: {"type":"response.output_text.delta","delta":"d"}\n\n' },
     ], 100)));
 
     const resultPromise = createStoryOutlineProvider({
@@ -444,7 +472,6 @@ describe("createStoryOutlineProvider", () => {
     const result = await createStoryOutlineProvider().generateOutline({
       writingProvider: "deepseek-v4-pro",
       prompt: "生成大纲",
-      maxOutputTokens: 2_000,
     });
 
     const body = fetchBody(fetchMock);
@@ -452,7 +479,7 @@ describe("createStoryOutlineProvider", () => {
     expect(new Headers(((fetchMock.mock.calls[0] as unknown[] | undefined)?.[1] as RequestInit | undefined)?.headers).get("Authorization")).toBe("Bearer deepseek-text-key");
     expect(body.model).toBe("deepseek-v4-pro");
     expect(body.input).toBe("生成大纲");
-    expect(body.max_output_tokens).toBe(2_000);
+    expect(body.max_output_tokens).toBe(8_000);
     expect(result).toEqual({
       text: '{"ok":true}',
       usage: {
@@ -490,8 +517,8 @@ describe("createStoryOutlineProvider", () => {
     await provider.generateOutline({ writingProvider: "gpt-5.6-sol", prompt: "生成大纲" });
     await provider.searchReference({ writingProvider: "gpt-5.6-sol", prompt: "整理资料" });
 
-    expect(fetchBody(fetchMock, 0).max_output_tokens).toBe(16_500);
-    expect(fetchBody(fetchMock, 1).max_output_tokens).toBe(16_500);
+    expect(fetchBody(fetchMock, 0).max_output_tokens).toBe(8_000);
+    expect(fetchBody(fetchMock, 1).max_output_tokens).toBe(8_000);
   });
 
   test("throws a business configuration error when QuickRouter key is missing", async () => {
@@ -550,16 +577,19 @@ describe("createStoryOutlineProvider", () => {
     });
   });
 
-  test("supports a bounded low-reasoning request for structured visual plans", async () => {
+  test("uses only the account reasoning strength and the shared output limit", async () => {
     process.env.QUICKROUTER_TEXT_API_KEY = "key";
     const fetchMock = mockTextResponse();
     vi.stubGlobal("fetch", fetchMock);
 
-    await createStoryOutlineProvider().generateOutline({
+    await createStoryOutlineProvider(undefined, {
+      aiGateway: "quickrouter",
+      quickRouterEndpoint: "main",
+      textReasoningEffort: "low",
+      textStreamingEnabled: false,
+    }).generateOutline({
       writingProvider: "gpt-5.6-sol",
       prompt: "生成视觉方案",
-      reasoningEffort: "low",
-      maxOutputTokens: 8_000,
     });
 
     expect(fetchBody(fetchMock)).toMatchObject({
@@ -568,7 +598,7 @@ describe("createStoryOutlineProvider", () => {
     });
   });
 
-  test("account reasoning strength overrides operation defaults", async () => {
+  test("uses the selected account reasoning strength for every operation", async () => {
     process.env.QUICKROUTER_TEXT_API_KEY = "key";
     const fetchMock = mockTextResponse();
     vi.stubGlobal("fetch", fetchMock);
@@ -581,7 +611,6 @@ describe("createStoryOutlineProvider", () => {
     }).generateOutline({
       writingProvider: "gpt-5.6-sol",
       prompt: "生成视觉方案",
-      reasoningEffort: "low",
     });
 
     expect(fetchBody(fetchMock)).toMatchObject({ reasoning: { effort: "high" } });

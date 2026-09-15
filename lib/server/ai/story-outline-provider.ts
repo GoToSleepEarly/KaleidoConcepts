@@ -71,7 +71,7 @@ export class AiProviderResultUnknownError extends Error {
 
 const textDispatchers = new Map<string, Dispatcher>();
 const transportTimeoutMarginMs = 30_000;
-const defaultTextMaxOutputTokens = 16_500;
+const textMaxOutputTokens = 8_000;
 
 export function textTransportTimeoutMs(requestTimeoutMs: number) {
   return requestTimeoutMs + transportTimeoutMarginMs;
@@ -193,11 +193,11 @@ function parseResponsesStream(rawResponse: string) {
   return outputText(data) ? data : { ...data, output_text: doneText || deltaText };
 }
 
-type StreamTimeoutKind = "first_event" | "idle" | "max_duration";
+type StreamTimeoutKind = "first_output" | "idle" | "max_duration";
 
 const streamTimeoutMessages: Record<StreamTimeoutKind, string> = {
-  first_event: "故事大纲服务等待首个流式事件超时，生成结果未能确认，请手动重试本步",
-  idle: "故事大纲服务流式响应长时间没有新事件，生成结果未能确认，请手动重试本步",
+  first_output: "故事大纲服务等待首段内容超时，生成结果未能确认，请手动重试本步",
+  idle: "故事大纲服务流式响应长时间没有新内容，生成结果未能确认，请手动重试本步",
   max_duration: "故事大纲服务超过最长运行时间，生成结果未能确认，请手动重试本步",
 };
 
@@ -210,31 +210,39 @@ function createStreamTimeoutGuard(firstEventTimeoutMs: number, idleTimeoutMs: nu
     timeoutKind = kind;
     controller.abort(new DOMException(streamTimeoutMessages[kind], "TimeoutError"));
   };
-  const armActivity = (kind: "first_event" | "idle", timeoutMs: number) => {
+  const armActivity = (kind: "first_output" | "idle", timeoutMs: number) => {
     clearTimeout(activityTimer);
     activityTimer = setTimeout(() => abortFor(kind), timeoutMs);
     activityTimer.unref?.();
   };
-  armActivity("first_event", firstEventTimeoutMs);
+  armActivity("first_output", firstEventTimeoutMs);
   const hardTimer = setTimeout(() => abortFor("max_duration"), maxDurationMs);
   hardTimer.unref?.();
   return {
     signal: controller.signal,
-    markActivity(timeoutMs = idleTimeoutMs) { armActivity("idle", timeoutMs); },
+    markContentActivity() { armActivity("idle", idleTimeoutMs); },
+    waitForBody(timeoutMs: number) { armActivity("idle", timeoutMs); },
     timeoutError() { return timeoutKind ? new AiProviderResultUnknownError(streamTimeoutMessages[timeoutKind]) : null; },
     dispose() { clearTimeout(activityTimer); clearTimeout(hardTimer); },
   };
 }
 
-function isValidSseActivity(frame: string) {
-  if (frame.split(/\r?\n/).some((line) => line.startsWith(":"))) return true;
+function isMeaningfulSseActivity(frame: string) {
   const payload = frame.split(/\r?\n/)
     .filter((line) => line.startsWith("data:"))
     .map((line) => line.slice(5).trimStart())
     .join("\n");
   if (!payload) return false;
   if (payload === "[DONE]") return true;
-  try { return typeof JSON.parse(payload) === "object"; }
+  try {
+    const event = JSON.parse(payload) as ResponsesStreamEvent;
+    if (event.type === "response.output_text.delta") return typeof event.delta === "string" && event.delta.length > 0;
+    return event.type === "response.output_text.done"
+      || event.type === "response.completed"
+      || event.type === "response.incomplete"
+      || event.type === "response.failed"
+      || event.type === "error";
+  }
   catch { return false; }
 }
 
@@ -268,13 +276,13 @@ async function readResponsesStream(response: Response, guard: ReturnType<typeof 
         if (!match || match.index === undefined) break;
         const frame = pendingFrames.slice(0, match.index);
         pendingFrames = pendingFrames.slice(match.index + match[0].length);
-        if (isValidSseActivity(frame)) guard.markActivity();
+        if (isMeaningfulSseActivity(frame)) guard.markContentActivity();
       }
     }
     const tail = decoder.decode();
     rawResponse += tail;
     pendingFrames += tail;
-    if (pendingFrames && isValidSseActivity(pendingFrames)) guard.markActivity();
+    if (pendingFrames && isMeaningfulSseActivity(pendingFrames)) guard.markContentActivity();
     return rawResponse;
   } catch (error) {
     await reader.cancel().catch(() => undefined);
@@ -349,9 +357,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
 
   async function request(operation: string, body: Record<string, unknown>, activeConfig: ProviderConfig) {
     const startedAt = Date.now();
-    const boundedBody = body.max_output_tokens === undefined
-      ? { ...body, max_output_tokens: defaultTextMaxOutputTokens }
-      : body;
+    const boundedBody = { ...body, max_output_tokens: textMaxOutputTokens };
     const requestBody = activeConfig.stream ? { ...boundedBody, stream: true } : boundedBody;
     const injectedTimeoutMs = activeConfig.timeoutMs;
     const nonStreamTimeoutMs = activeConfig.nonStreamTimeoutMs ?? injectedTimeoutMs ?? 600_000;
@@ -410,7 +416,7 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
       const isResponsesStream = activeConfig.stream && response.ok && response.headers.get("content-type")?.includes("text/event-stream");
       if (isResponsesStream && streamGuard) rawResponse = await readResponsesStream(response, streamGuard);
       else {
-        streamGuard?.markActivity(nonStreamTimeoutMs);
+        streamGuard?.waitForBody(nonStreamTimeoutMs);
         rawResponse = await response.text();
       }
       devAiLog({
@@ -487,15 +493,14 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
   }
 
   return {
-    generateOutline: ({ writingProvider, prompt, operation, reasoningEffort, maxOutputTokens }: { writingProvider: StoryWritingProvider; prompt: string; operation?: string; reasoningEffort?: "low" | "medium" | "high"; maxOutputTokens?: number }) => {
+    generateOutline: ({ writingProvider, prompt, operation }: { writingProvider: StoryWritingProvider; prompt: string; operation?: string }) => {
       const activeConfig = resolvedConfig(writingProvider);
       return request(
         operation || "story_outline",
         {
           model: activeConfig.gptModel,
           input: prompt,
-          ...((activeConfig.reasoningEffort ?? reasoningEffort) ? { reasoning: { effort: activeConfig.reasoningEffort ?? reasoningEffort } } : {}),
-          ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
+          ...(activeConfig.reasoningEffort ? { reasoning: { effort: activeConfig.reasoningEffort } } : {}),
         },
         activeConfig,
       );

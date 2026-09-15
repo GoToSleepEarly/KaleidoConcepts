@@ -198,11 +198,11 @@ describe("AppShell account menu", () => {
     expect(screen.getByTestId("streaming-state")).toHaveTextContent("已开启");
     expect(screen.getByTestId("streaming-track")).toHaveClass("h-6", "w-10", "bg-primary-50");
     expect(screen.getByTestId("streaming-thumb")).toHaveClass("size-[18px]", "translate-x-4", "bg-primary");
-    expect(within(textSettings).getByRole("spinbutton", { name: "首个响应事件 秒" })).toHaveValue(120);
-    expect(within(textSettings).getByRole("spinbutton", { name: "事件空闲 秒" })).toHaveValue(180);
+    expect(within(textSettings).getByRole("spinbutton", { name: "首段内容等待 秒" })).toHaveValue(120);
+    expect(within(textSettings).getByRole("spinbutton", { name: "内容空闲 秒" })).toHaveValue(180);
     expect(within(textSettings).getByRole("spinbutton", { name: "最长运行 分钟" })).toHaveValue(20);
-    fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "首个响应事件 秒" }), { target: { value: "150" } });
-    fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "事件空闲 秒" }), { target: { value: "240" } });
+    fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "首段内容等待 秒" }), { target: { value: "150" } });
+    fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "内容空闲 秒" }), { target: { value: "240" } });
     fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "最长运行 分钟" }), { target: { value: "25" } });
     fireEvent.click(streamingSwitch);
     expect(screen.getByTestId("streaming-state")).toHaveTextContent("已关闭");

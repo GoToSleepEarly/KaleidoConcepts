@@ -573,7 +573,6 @@ export function createCourseVisualPlanDeps(settings: AiProviderSettingsInput | A
           writingProvider,
           operation: input.mode === "originalized" ? "visual_originalize_resource_plan" : "visual_generate_resource_plan",
           prompt: buildCourseVisualPlanPrompt(input),
-          reasoningEffort: "low",
         });
         await onResponse?.(response);
         return { plan: parseCourseVisualPlanResponse(response.text, input, response.usage), usage: response.usage };

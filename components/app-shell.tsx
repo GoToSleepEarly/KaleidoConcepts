@@ -232,7 +232,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setGatewayError("");
     const timeoutSettings = { textStreamFirstEventTimeoutSeconds, textStreamIdleTimeoutSeconds, textStreamMaxDurationSeconds, textNonStreamTimeoutSeconds };
     if (!isTextTimeoutSettingsValid(timeoutSettings)) {
-      setGatewayError("请检查文本超时设置：最长运行时间必须大于首个响应和事件空闲时间，且所有数值需在提示范围内。");
+      setGatewayError("请检查文本超时设置：最长运行时间必须大于首段内容等待和内容空闲时间，且所有数值需在提示范围内。");
       return;
     }
     setIsSavingGateway(true);
@@ -486,7 +486,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         <div className="flex items-start justify-between gap-4">
                           <div>
                             <h4 className="text-sm font-semibold text-foreground">超时保护</h4>
-                            <p className="mt-1 text-xs leading-5 text-muted-foreground">只影响下次新请求；持续活跃的流式响应不会按非流式时限中断。</p>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">只影响下次新请求；持续输出实际内容的流式响应不会按非流式时限中断。</p>
                           </div>
                           <button className="shrink-0 text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} onClick={() => {
                             setTextStreamFirstEventTimeoutSeconds(TEXT_TIMEOUT_DEFAULTS.streamFirstEventSeconds);
@@ -498,14 +498,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         {textStreamingEnabled ? (
                           <div className="mt-4 grid gap-4 sm:grid-cols-3" data-testid="stream-timeout-settings">
                             <label className="block text-[13px] font-medium text-foreground" htmlFor="stream-first-event-timeout">
-                              首个响应事件
+                              首段内容等待
                               <span className="relative mt-2 block">
                                 <input className="h-11 w-full rounded-lg border border-input bg-background px-3 pr-10 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="stream-first-event-timeout" max={600} min={10} onChange={(event) => setTextStreamFirstEventTimeoutSeconds(Number(event.target.value))} type="number" value={textStreamFirstEventTimeoutSeconds} />
                                 <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">秒</span>
                               </span>
                             </label>
                             <label className="block text-[13px] font-medium text-foreground" htmlFor="stream-idle-timeout">
-                              事件空闲
+                              内容空闲
                               <span className="relative mt-2 block">
                                 <input className="h-11 w-full rounded-lg border border-input bg-background px-3 pr-10 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="stream-idle-timeout" max={600} min={10} onChange={(event) => setTextStreamIdleTimeoutSeconds(Number(event.target.value))} type="number" value={textStreamIdleTimeoutSeconds} />
                                 <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">秒</span>

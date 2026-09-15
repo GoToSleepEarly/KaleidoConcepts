@@ -70,7 +70,7 @@ export async function PATCH(request: Request) {
   }
   const imageQuality = imageQualityForSelection(imageModel as (typeof IMAGE_GENERATION_MODELS)[number], imageGateway as (typeof AI_GATEWAYS)[number], imageBillingMode as (typeof IMAGE_BILLING_MODES)[number], (input.data.imageQuality ?? current.imageQuality) as (typeof IMAGE_QUALITIES)[number]);
   if (!isTextTimeoutSettingsValid(timeoutSettings)) {
-    return NextResponse.json({ message: "文本超时设置无效：最长运行时间必须大于首个响应和事件空闲时间" }, { status: 400 });
+    return NextResponse.json({ message: "文本超时设置无效：最长运行时间必须大于首段内容等待和内容空闲时间" }, { status: 400 });
   }
   const user = await db.user.update({
     where: { id },
