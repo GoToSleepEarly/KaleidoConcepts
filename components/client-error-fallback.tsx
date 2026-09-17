@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from "react";
 
 import {
-  clearStoredAuthState,
   createClientErrorReportId,
   sendClientErrorReport,
 } from "@/lib/client-error-report";
@@ -29,9 +28,12 @@ export function ClientErrorFallback({ error }: { error: ErrorWithDigest; reset?:
     window.location.replace(url.toString());
   }
 
-  function clearAndRetry() {
-    clearStoredAuthState();
-    window.location.replace(`/login?recovery=${encodeURIComponent(reportId)}`);
+  async function clearAndRetry() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      window.location.replace(`/login?recovery=${encodeURIComponent(reportId)}`);
+    }
   }
 
   async function copyReportId() {
@@ -70,7 +72,7 @@ export function ClientErrorFallback({ error }: { error: ErrorWithDigest; reset?:
           <button className="min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={reloadPage} type="button">
             重新加载页面
           </button>
-          <button className="min-h-11 rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={clearAndRetry} type="button">
+          <button className="min-h-11 rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={() => void clearAndRetry()} type="button">
             清除登录状态并重试
           </button>
         </div>

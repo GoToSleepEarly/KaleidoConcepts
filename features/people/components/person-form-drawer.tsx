@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { PersonVisualStudio } from "@/features/people/components/person-visual-studio";
+import { authenticatedFetch } from "@/lib/auth-client";
 import type { Gender, PersonProfile, PersonRole } from "@/lib/contracts/api";
 
 type FormState = {
@@ -72,7 +73,7 @@ export function PersonEditorDialog({
   async function refreshWorkingPerson() {
     if (!workingPerson) return;
     const params = new URLSearchParams({ role: workingPerson.role, status: "active", pageSize: "100" });
-    const response = await fetch(`/api/people?${params}`);
+    const response = await authenticatedFetch(`/api/people?${params}`);
     const data = (await response.json()) as { people?: PersonProfile[] };
     const refreshed = data.people?.find((candidate) => candidate.id === workingPerson.id);
     if (response.ok && refreshed) {
@@ -105,7 +106,7 @@ export function PersonEditorDialog({
         gender: form.gender,
         notes: form.notes.trim(),
       };
-      const response = await fetch(
+      const response = await authenticatedFetch(
         workingPerson ? `/api/people/${workingPerson.id}` : "/api/people",
         {
           method: workingPerson ? "PATCH" : "POST",

@@ -11,8 +11,8 @@ export const TEXT_REASONING_EFFORTS = ["low", "medium", "high"] as const;
 export type TextReasoningEffort = (typeof TEXT_REASONING_EFFORTS)[number];
 
 export const TEXT_TIMEOUT_DEFAULTS = {
-  streamFirstEventSeconds: 120,
-  streamIdleSeconds: 180,
+  streamFirstEventSeconds: 360,
+  streamIdleSeconds: 360,
   streamMaxDurationSeconds: 1_200,
   nonStreamSeconds: 600,
 } as const;

@@ -1,4 +1,4 @@
-import { authenticatedUserId } from "@/lib/auth-cookie";
+import { authenticatedUserId } from "@/lib/server/auth-session-cookie";
 import { AI_GATEWAYS, IMAGE_BILLING_MODES, IMAGE_GENERATION_MODELS, IMAGE_QUALITIES, QUICKROUTER_ENDPOINTS, TEXT_GENERATION_MODELS, TEXT_REASONING_EFFORTS, imageQualityForSelection, isImageSelectionSupported, isTextTimeoutSettingsValid, type AccountAiSettings } from "@/lib/ai-gateway";
 import { getDb } from "@/lib/server/db";
 import type { AuthDb } from "@/lib/server/repositories/auth";

@@ -51,7 +51,9 @@ sudo chmod 600 /etc/pbl-studio-v2.env
 
 ```dotenv
 NODE_ENV="production"
-AUTH_COOKIE_SECURE="true"
+AUTH_PUBLIC_SCHEME="http"
+AUTH_COOKIE_SECURE="false"
+AUTH_SESSION_SECRET="至少32个字符且后续发版保持不变的随机值"
 HOSTNAME="127.0.0.1"
 PORT="3100"
 APP_NAME="pbl-studio-v2"
@@ -71,7 +73,7 @@ EASY88AI_TEXT_API_KEY="..."
 EASY88AI_IMAGE_API_KEY="..."
 ```
 
-`AUTH_COOKIE_SECURE` 默认跟随 `NODE_ENV`：生产环境为安全 Cookie，只能通过 HTTPS 使用。若公网入口暂时只能使用 HTTP，可短期显式设置为 `false`，使 Safari 等浏览器能够保存身份 Cookie；启用 HTTPS 后必须恢复为 `true`。修改该变量后需要重新发布或重启应用进程，老师随后退出并重新登录。
+`AUTH_PUBLIC_SCHEME` 声明老师实际访问入口的协议，必须与 `AUTH_COOKIE_SECURE` 成对配置：当前 HTTP 入口使用 `http + false`；启用 HTTPS 后改为 `https + true`。发布脚本会拒绝不一致的组合，避免登录接口返回成功但浏览器因 `Secure` 属性拒绝保存身份 Cookie。`AUTH_SESSION_SECRET` 用于签名身份 Cookie，至少 32 个字符；本次升级后老师需要重新登录一次，此后不得随发版更换，否则全部现有会话都会失效。
 
 数据库密码包含 URL 保留字符时必须编码。模型、提供方和全部文本超时由当前账号的高级设置决定；环境变量只保存各提供方按能力拆分的密钥和图片请求超时，不配置文本超时、模型或提供方地址。QuickRouter、Crazyrouter 和 Easy88AI 的文本、图片密钥互不回退；DeepSeek 仅配置文本密钥。DeepSeek 官方地址固定预置为 `https://api.deepseek.com`。生产环境不得配置 `HTTP_PROXY` 或 `HTTPS_PROXY`。
 

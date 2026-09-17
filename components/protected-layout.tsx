@@ -1,51 +1,65 @@
 "use client";
 
-import React, { useEffect, useSyncExternalStore } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
-import { resolveAuthGuardState } from "@/lib/auth-guard";
-import { getAuthSessionChangeEventName, getStoredSession } from "@/lib/auth-session";
-
-function subscribeAuthSession(onStoreChange: () => void) {
-  window.addEventListener("storage", onStoreChange);
-  window.addEventListener(getAuthSessionChangeEventName(), onStoreChange);
-
-  return () => {
-    window.removeEventListener("storage", onStoreChange);
-    window.removeEventListener(getAuthSessionChangeEventName(), onStoreChange);
-  };
-}
-
-function getClientSessionSnapshot() {
-  return getStoredSession();
-}
-
-function getServerSessionSnapshot() {
-  return null;
-}
-
-const emptySubscribe = () => () => {};
+import { getAuthInvalidEventName, readServerAuthSession, type AuthSession } from "@/lib/auth-client";
 
 export function ProtectedLayout({ children, chromeless = false }: { children: React.ReactNode; chromeless?: boolean }) {
   const router = useRouter();
-  const session = useSyncExternalStore(subscribeAuthSession, getClientSessionSnapshot, getServerSessionSnapshot);
-  // false during SSR and the first hydration pass, true once mounted on the client — avoids redirecting
-  // before sessionStorage is readable without a setState-in-effect hydration flag.
-  const hasMounted = useSyncExternalStore(
-    emptySubscribe,
-    () => true,
-    () => false,
-  );
-  const authState = resolveAuthGuardState(session);
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [status, setStatus] = useState<"checking" | "authenticated" | "error">("checking");
+
+  async function retrySession() {
+    setStatus("checking");
+    try {
+      const auth = await readServerAuthSession();
+      if (auth.status === "authenticated") {
+        setSession(auth.session);
+        setStatus("authenticated");
+        return;
+      }
+      const reason = auth.reason === "session-upgrade" ? "session-upgrade" : auth.reason === "session-expired" ? "session-expired" : null;
+      router.replace(reason ? `/login?reason=${reason}` : "/login");
+    } catch {
+      setStatus("error");
+    }
+  }
 
   useEffect(() => {
-    if (hasMounted && authState.status === "unauthenticated") {
-      router.replace("/login");
-    }
-  }, [hasMounted, authState.status, router]);
+    let active = true;
+    void readServerAuthSession()
+      .then((auth) => {
+        if (!active) return;
+        if (auth.status === "authenticated") {
+          setSession(auth.session);
+          setStatus("authenticated");
+          return;
+        }
+        const reason = auth.reason === "session-upgrade" ? "session-upgrade" : auth.reason === "session-expired" ? "session-expired" : null;
+        router.replace(reason ? `/login?reason=${reason}` : "/login");
+      })
+      .catch(() => { if (active) setStatus("error"); });
+    return () => { active = false; };
+  }, [router]);
 
-  if (!hasMounted || authState.status === "unauthenticated") {
+  useEffect(() => {
+    const handleInvalidSession = () => router.replace("/login?reason=session-expired");
+    window.addEventListener(getAuthInvalidEventName(), handleInvalidSession);
+    return () => window.removeEventListener(getAuthInvalidEventName(), handleInvalidSession);
+  }, [router]);
+
+  if (status === "error") {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-[#F7F8FB] text-sm text-slate-600">
+        <p>登录状态检查失败，请确认网络后重试。</p>
+        <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-medium" onClick={() => void retrySession()} type="button">重新检查</button>
+      </div>
+    );
+  }
+
+  if (status !== "authenticated" || !session) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-[#F7F8FB] text-sm text-slate-500">
         正在检查登录状态...
@@ -57,5 +71,5 @@ export function ProtectedLayout({ children, chromeless = false }: { children: Re
     return children;
   }
 
-  return <AppShell>{children}</AppShell>;
+  return <AppShell session={session}>{children}</AppShell>;
 }

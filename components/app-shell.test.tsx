@@ -5,8 +5,7 @@ import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { AppShell } from "@/components/app-shell";
 
-const { clearAuthSession, pathnameMock, replace } = vi.hoisted(() => ({
-  clearAuthSession: vi.fn(),
+const { pathnameMock, replace } = vi.hoisted(() => ({
   pathnameMock: vi.fn(() => "/courses"),
   replace: vi.fn(),
 }));
@@ -25,18 +24,10 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace }),
 }));
 
-vi.mock("@/lib/auth-session", () => ({
-  clearAuthSession,
-  getStoredSession: () => ({
-    user: { id: "user-1", displayName: "教师账号", aiGateway: "quickrouter" },
-  }),
-}));
-
 describe("AppShell account menu", () => {
   beforeEach(() => {
     replace.mockClear();
     pathnameMock.mockReturnValue("/courses");
-    clearAuthSession.mockClear();
     vi.unstubAllGlobals();
   });
 
@@ -198,11 +189,11 @@ describe("AppShell account menu", () => {
     expect(screen.getByTestId("streaming-state")).toHaveTextContent("已开启");
     expect(screen.getByTestId("streaming-track")).toHaveClass("h-6", "w-10", "bg-primary-50");
     expect(screen.getByTestId("streaming-thumb")).toHaveClass("size-[18px]", "translate-x-4", "bg-primary");
-    expect(within(textSettings).getByRole("spinbutton", { name: "首段内容等待 秒" })).toHaveValue(120);
-    expect(within(textSettings).getByRole("spinbutton", { name: "内容空闲 秒" })).toHaveValue(180);
+    expect(within(textSettings).getByRole("spinbutton", { name: "首个上游响应 秒" })).toHaveValue(120);
+    expect(within(textSettings).getByRole("spinbutton", { name: "上游活动空闲 秒" })).toHaveValue(180);
     expect(within(textSettings).getByRole("spinbutton", { name: "最长运行 分钟" })).toHaveValue(20);
-    fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "首段内容等待 秒" }), { target: { value: "150" } });
-    fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "内容空闲 秒" }), { target: { value: "240" } });
+    fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "首个上游响应 秒" }), { target: { value: "150" } });
+    fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "上游活动空闲 秒" }), { target: { value: "240" } });
     fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "最长运行 分钟" }), { target: { value: "25" } });
     fireEvent.click(streamingSwitch);
     expect(screen.getByTestId("streaming-state")).toHaveTextContent("已关闭");
@@ -380,8 +371,8 @@ describe("AppShell account menu", () => {
             imageBillingMode: "per_image",
             textReasoningEffort: "medium",
             textStreamingEnabled: true,
-            textStreamFirstEventTimeoutSeconds: 120,
-            textStreamIdleTimeoutSeconds: 180,
+            textStreamFirstEventTimeoutSeconds: 360,
+            textStreamIdleTimeoutSeconds: 360,
             textStreamMaxDurationSeconds: 1200,
             textNonStreamTimeoutSeconds: 600,
             imageQuality: "medium",
@@ -446,8 +437,8 @@ describe("AppShell account menu", () => {
             imageBillingMode: "per_image",
             textReasoningEffort: "medium",
             textStreamingEnabled: true,
-            textStreamFirstEventTimeoutSeconds: 120,
-            textStreamIdleTimeoutSeconds: 180,
+            textStreamFirstEventTimeoutSeconds: 360,
+            textStreamIdleTimeoutSeconds: 360,
             textStreamMaxDurationSeconds: 1200,
             textNonStreamTimeoutSeconds: 600,
             imageQuality: "high",
@@ -457,7 +448,7 @@ describe("AppShell account menu", () => {
     );
   });
 
-  test("clears both the server cookie and browser session on logout", async () => {
+  test("clears the server cookie on logout", async () => {
     const request = vi.fn(async () => Response.json({ success: true }));
     vi.stubGlobal("fetch", request);
     render(
@@ -474,7 +465,6 @@ describe("AppShell account menu", () => {
         method: "POST",
       }),
     );
-    expect(clearAuthSession).toHaveBeenCalled();
     expect(replace).toHaveBeenCalledWith("/login");
   });
 });

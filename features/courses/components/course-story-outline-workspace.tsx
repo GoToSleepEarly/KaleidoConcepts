@@ -11,6 +11,7 @@ import { AiHistoryCard, AiOperationStatusCard, CourseAiWorkspaceFrame, formatAiD
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
+import { authenticatedFetch } from "@/lib/auth-client";
 import type { CourseSourceReference, CourseStoryChatAction, CourseStoryChatMessage, CourseStoryMessageInput, CourseStoryOutline, CourseStoryOutlineState, CourseStoryDirection, PresetOption, StoryComplexity } from "@/lib/contracts/api";
 import { grammarLearningSummary } from "@/lib/domain/grammar-catalog";
 import { chineseDisplayLength, normalizeStoryChapterCount, storyLengthPolicy } from "@/lib/domain/story-length-policy";
@@ -202,7 +203,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     let active = true;
     const refreshPersistedState = async () => {
       try {
-        const response = await fetch(`/api/courses/${initialState.course.id}/story-outline`, { cache: "no-store" });
+        const response = await authenticatedFetch(`/api/courses/${initialState.course.id}/story-outline`, { cache: "no-store" });
         if (!response.ok || !active) return;
         const nextState: unknown = await response.json();
         if (!active || requestInFlight.current || settingsSaveInFlight.current || !isCourseStoryOutlineState(nextState)) return;
@@ -231,7 +232,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     settingsSaveInFlight.current = true;
     setError("");
     try {
-      const response = await fetch(`/api/courses/${state.course.id}/story-outline/settings`, {
+      const response = await authenticatedFetch(`/api/courses/${state.course.id}/story-outline/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chapterCount, storyComplexity: nextComplexity }),
@@ -254,7 +255,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     let active = true;
     const refresh = async () => {
       try {
-        const response = await fetch(`/api/courses/${state.course.id}/story-outline`, { cache: "no-store" });
+        const response = await authenticatedFetch(`/api/courses/${state.course.id}/story-outline`, { cache: "no-store" });
         if (!response.ok || !active) return;
         const nextState = (await response.json()) as CourseStoryOutlineState;
         if (!active) return;
@@ -317,7 +318,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     if (!options.preserveComposer) setMessage("");
     if (input.mode === "random") setRandomSupplement("");
     try {
-      const response = await fetch(`/api/courses/${state.course.id}/story-outline/message`, {
+      const response = await authenticatedFetch(`/api/courses/${state.course.id}/story-outline/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -346,7 +347,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
       setRandomSupplement("");
     } catch {
       try {
-        const latestResponse = await fetch(`/api/courses/${state.course.id}/story-outline`, { cache: "no-store" });
+        const latestResponse = await authenticatedFetch(`/api/courses/${state.course.id}/story-outline`, { cache: "no-store" });
         if (latestResponse.ok) {
           const latestState = (await latestResponse.json()) as CourseStoryOutlineState;
           if (latestState.operation?.requestId === requestId) {
@@ -402,7 +403,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     setConfirmingOutline(true);
     setError("");
     try {
-      const response = await fetch(`/api/courses/${state.course.id}/story-outline/confirm`, { method: "POST" });
+      const response = await authenticatedFetch(`/api/courses/${state.course.id}/story-outline/confirm`, { method: "POST" });
       const data = (await response.json()) as { message?: string };
       if (!response.ok) throw new Error(data.message || "故事大纲确认失败");
       router.push(`/courses/${state.course.id}/create/teaching-plan`);
@@ -504,7 +505,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     setPendingLabel("正在重新开始...");
     setError("");
     try {
-      const response = await fetch(`/api/courses/${state.course.id}/story-outline/reset`, { method: "POST" });
+      const response = await authenticatedFetch(`/api/courses/${state.course.id}/story-outline/reset`, { method: "POST" });
       const data = (await response.json()) as CourseStoryOutlineState & {
         message?: string;
       };

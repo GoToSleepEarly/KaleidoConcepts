@@ -124,9 +124,18 @@ export async function persistCourseImage(input: { sourceUrl: string; courseId: s
   const height = input.portrait ? 1536 : 864;
   let encoded: Buffer;
   try {
-    encoded = await sharp(buffer).rotate().resize(width, height, input.portrait
-      ? { fit: "contain", background: { r: 248, g: 250, b: 252, alpha: 1 } }
-      : { fit: "cover", position: "attention" }).webp({ quality: 86 }).toBuffer();
+    const metadata = await sharp(buffer).metadata();
+    const sourceWidth = metadata.autoOrient.width;
+    const sourceHeight = metadata.autoOrient.height;
+    const requiresResize = sourceWidth !== width || sourceHeight !== height;
+    let image = sharp(buffer).rotate();
+    if (requiresResize) {
+      image = image.resize(width, height, {
+        fit: "contain",
+        background: { r: 248, g: 250, b: 252, alpha: 1 },
+      });
+    }
+    encoded = await image.webp({ quality: 86 }).toBuffer();
   } catch {
     throw new CourseImageSourceError("图片生成服务返回的内容不是有效图片", false);
   }

@@ -11,6 +11,7 @@ import { AiHistoryCard, CourseAiWorkspaceFrame, formatAiDuration, type AiHistory
 import { CourseCreateSteps, courseStageStep } from "@/features/courses/components/course-create-steps";
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
 import { PreviewSlide } from "@/features/courses/components/course-slide-deck";
+import { authenticatedFetch } from "@/lib/auth-client";
 import type { CourseContentState, CoursePreviewPage } from "@/lib/contracts/api";
 import { compilePreviewPages, DEFAULT_COURSE_PRESENTATION, previewPageAnswerText } from "@/lib/domain/course-preview";
 import { cn } from "@/lib/utils";
@@ -434,7 +435,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
     const pollEpoch = requestEpoch.current;
     const timer = window.setInterval(async () => {
       try {
-        const response = await fetch(`/api/courses/${state.course.id}/content`);
+        const response = await authenticatedFetch(`/api/courses/${state.course.id}/content`);
         if (response.ok) {
           const nextState = (await response.json()) as CourseContentState;
           if (requestEpoch.current !== pollEpoch) return;
@@ -481,7 +482,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
     }));
     try {
       const query = regenerate ? `?regenerate=true${resetDownstream ? "&resetDownstream=true" : ""}` : "";
-      const response = await fetch(`/api/courses/${state.course.id}/content/${kind}/generate${query}`, { method: "POST", headers: { "Idempotency-Key": requestId } });
+      const response = await authenticatedFetch(`/api/courses/${state.course.id}/content/${kind}/generate${query}`, { method: "POST", headers: { "Idempotency-Key": requestId } });
       const body = (await response.json()) as CourseContentState & {
         message?: string;
         requiresReset?: boolean;
@@ -521,7 +522,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
     const requestToken = beginRequest();
     setError(null);
     try {
-      const response = await fetch(`/api/courses/${state.course.id}/content/confirm`, { method: "POST" });
+      const response = await authenticatedFetch(`/api/courses/${state.course.id}/content/confirm`, { method: "POST" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.message || "确认失败");
       if (requestEpoch.current === requestToken) router.push(`/courses/${state.course.id}/create/visual-resources`);
@@ -537,7 +538,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
     setResetting(true);
     setError(null);
     try {
-      const response = await fetch(`/api/courses/${state.course.id}/content/reset`, { method: "POST" });
+      const response = await authenticatedFetch(`/api/courses/${state.course.id}/content/reset`, { method: "POST" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.message || "重新开始文案与练习失败");
       if (requestEpoch.current === requestToken) {
@@ -574,7 +575,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
     setElapsed(0);
     setError(null);
     try {
-      const response = await fetch(`/api/courses/${state.course.id}/content/modify${resetDownstream ? "?resetDownstream=true" : ""}`, {
+      const response = await authenticatedFetch(`/api/courses/${state.course.id}/content/modify${resetDownstream ? "?resetDownstream=true" : ""}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -604,7 +605,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
       setOptimisticOperation(null);
       setError(caught instanceof Error ? caught.message : "修改失败；原内容已保留");
       try {
-        const latest = await fetch(`/api/courses/${state.course.id}/content`, {
+        const latest = await authenticatedFetch(`/api/courses/${state.course.id}/content`, {
           cache: "no-store",
         });
         if (latest.ok) setState(await latest.json());

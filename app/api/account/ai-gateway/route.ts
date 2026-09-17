@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { authenticatedUserId } from "@/lib/auth-cookie";
+import { authenticatedUserId } from "@/lib/server/auth-session-cookie";
 import { AI_GATEWAYS, IMAGE_BILLING_MODES, IMAGE_GENERATION_MODELS, IMAGE_QUALITIES, QUICKROUTER_ENDPOINTS, TEXT_GENERATION_MODELS, TEXT_REASONING_EFFORTS, TEXT_TIMEOUT_LIMITS, defaultTextTimeoutSettings, imageQualityForSelection, isImageSelectionSupported, isTextTimeoutSettingsValid } from "@/lib/ai-gateway";
 import { getDb } from "@/lib/server/db";
 

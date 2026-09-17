@@ -8,19 +8,3 @@ export function authCookieSecure() {
   if (override === "false") return false;
   return process.env.NODE_ENV === "production";
 }
-
-export function authenticatedUserId(request: Request) {
-  const cookie = request.headers.get("cookie") ?? "";
-  const encodedValue = cookie
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${AUTH_USER_COOKIE}=`))
-    ?.slice(AUTH_USER_COOKIE.length + 1);
-
-  if (!encodedValue) return null;
-  try {
-    return decodeURIComponent(encodedValue);
-  } catch {
-    return null;
-  }
-}

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import type { GrammarCatalogResponse } from "@/lib/contracts/api";
 import { GrammarCatalogBrowser } from "@/features/grammar/components/grammar-catalog-browser";
+import { authenticatedFetch } from "@/lib/auth-client";
 
 const sessionKey = "pblstudio:last-grammar-book";
 
@@ -13,7 +14,7 @@ export function GrammarKnowledgeLibrary() {
 
   useEffect(() => {
     const remembered = window.sessionStorage.getItem(sessionKey);
-    void fetch("/api/grammar/catalog", { cache: "no-store" })
+    void authenticatedFetch("/api/grammar/catalog", { cache: "no-store" })
       .then(async (response) => {
         const data = await response.json() as GrammarCatalogResponse & { message?: string };
         if (!response.ok || !data.books?.length) throw new Error(data.message || "语法知识库加载失败");

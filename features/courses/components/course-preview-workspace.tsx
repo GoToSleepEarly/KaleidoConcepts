@@ -10,6 +10,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { CourseCreateSteps } from "@/features/courses/components/course-create-steps";
 import { CourseStaleNotice } from "@/features/courses/components/course-stale-notice";
 import { CourseSlideDeck } from "@/features/courses/components/course-slide-deck";
+import { authenticatedFetch } from "@/lib/auth-client";
 import type { CoursePreviewResponse } from "@/lib/contracts/api";
 import { pdfPagesForMode, type CoursePdfMode } from "@/lib/domain/course-preview";
 import { cn } from "@/lib/utils";
@@ -71,7 +72,7 @@ export function CoursePreviewWorkspace({ initialState }: { initialState: CourseP
       setSaveStatus("saving");
       setError(null);
       try {
-        const response = await fetch(`/api/courses/${initialState.course.id}/presentation`, {
+        const response = await authenticatedFetch(`/api/courses/${initialState.course.id}/presentation`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(value),
@@ -159,7 +160,7 @@ export function CoursePreviewWorkspace({ initialState }: { initialState: CourseP
     setPending("publish");
     setError(null);
     try {
-      const response = await fetch(`/api/courses/${initialState.course.id}/publish`, {
+      const response = await authenticatedFetch(`/api/courses/${initialState.course.id}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(presentation),

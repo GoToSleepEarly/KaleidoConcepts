@@ -20,6 +20,7 @@ type CatalogBrowserProps = {
   pointDescriptions?: Record<string, string>;
   selectionLabels?: { selected: string; unselected: string };
   compactExpandableDetails?: boolean;
+  defaultExpandFirstDetails?: boolean;
 };
 
 function pointMap(book: GrammarBookCatalog | undefined) {
@@ -34,13 +35,15 @@ function GrammarRuleList({ rules, className }: { rules: string[]; className?: st
   return <span className={cn("grid gap-1 text-xs font-normal leading-5 text-[#526B84]", className)}>{rules.map((rule) => <span className="flex gap-2" key={rule}><span aria-hidden className="mt-[0.55rem] size-1 shrink-0 rounded-full bg-[#7A88EF]" />{rule}</span>)}</span>;
 }
 
-export function GrammarCatalogBrowser({ books, activeBookId, onActiveBookChange, selectedIds, onSelectedIdsChange, highlightedIds = [], visiblePointIds, emptyMessage = "当前书籍没有匹配的知识点", pointDescriptions = {}, selectionLabels, compactExpandableDetails = false }: CatalogBrowserProps) {
+export function GrammarCatalogBrowser({ books, activeBookId, onActiveBookChange, selectedIds, onSelectedIdsChange, highlightedIds = [], visiblePointIds, emptyMessage = "当前书籍没有匹配的知识点", pointDescriptions = {}, selectionLabels, compactExpandableDetails = false, defaultExpandFirstDetails = false }: CatalogBrowserProps) {
   const selectable = Boolean(onSelectedIdsChange);
   const activeBook = books.find((book) => book.id === activeBookId) ?? books[0];
   const [activeSectionId, setActiveSectionId] = useState(activeBook?.sections[0]?.id ?? "");
   const [query, setQuery] = useState("");
   const [mobileView, setMobileView] = useState<"browse" | "selected">("browse");
-  const [expandedBrowseId, setExpandedBrowseId] = useState<string | null>(null);
+  const [expandedBrowseId, setExpandedBrowseId] = useState<string | null>(() => compactExpandableDetails && defaultExpandFirstDetails
+    ? activeBook?.sections.flatMap((section) => section.points).find((point) => grammarRules(point).length)?.id ?? null
+    : null);
   const [expandedSelectedId, setExpandedSelectedId] = useState<string | null>(null);
   const selected = useMemo(() => new Set(selectedIds ?? []), [selectedIds]);
   const highlighted = useMemo(() => new Set(highlightedIds), [highlightedIds]);

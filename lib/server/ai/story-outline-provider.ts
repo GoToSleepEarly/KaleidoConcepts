@@ -136,7 +136,9 @@ export class StoryOutlineIncompleteResponseError extends Error {
     readonly reason?: string,
     readonly usage?: StoryOutlineUsage,
   ) {
-    super(reason === "max_output_tokens" ? "模型输出达到上限，返回内容未完成" : "模型返回内容未完成");
+    super(reason === "max_output_tokens"
+      ? `模型输出达到 max_output_tokens=${textMaxOutputTokens} 上限（推理与正文共用），返回内容未完成`
+      : "模型返回内容未完成");
     this.name = "StoryOutlineIncompleteResponseError";
   }
 }
@@ -193,11 +195,11 @@ function parseResponsesStream(rawResponse: string) {
   return outputText(data) ? data : { ...data, output_text: doneText || deltaText };
 }
 
-type StreamTimeoutKind = "first_output" | "idle" | "max_duration";
+type StreamTimeoutKind = "first_event" | "idle" | "max_duration";
 
 const streamTimeoutMessages: Record<StreamTimeoutKind, string> = {
-  first_output: "故事大纲服务等待首段内容超时，生成结果未能确认，请手动重试本步",
-  idle: "故事大纲服务流式响应长时间没有新内容，生成结果未能确认，请手动重试本步",
+  first_event: "故事大纲服务等待首个上游响应超时，生成结果未能确认，请手动重试本步",
+  idle: "故事大纲服务流式响应长时间没有新的上游活动，生成结果未能确认，请手动重试本步",
   max_duration: "故事大纲服务超过最长运行时间，生成结果未能确认，请手动重试本步",
 };
 
@@ -210,24 +212,25 @@ function createStreamTimeoutGuard(firstEventTimeoutMs: number, idleTimeoutMs: nu
     timeoutKind = kind;
     controller.abort(new DOMException(streamTimeoutMessages[kind], "TimeoutError"));
   };
-  const armActivity = (kind: "first_output" | "idle", timeoutMs: number) => {
+  const armActivity = (kind: "first_event" | "idle", timeoutMs: number) => {
     clearTimeout(activityTimer);
     activityTimer = setTimeout(() => abortFor(kind), timeoutMs);
     activityTimer.unref?.();
   };
-  armActivity("first_output", firstEventTimeoutMs);
+  armActivity("first_event", firstEventTimeoutMs);
   const hardTimer = setTimeout(() => abortFor("max_duration"), maxDurationMs);
   hardTimer.unref?.();
   return {
     signal: controller.signal,
-    markContentActivity() { armActivity("idle", idleTimeoutMs); },
+    markActivity() { armActivity("idle", idleTimeoutMs); },
     waitForBody(timeoutMs: number) { armActivity("idle", timeoutMs); },
     timeoutError() { return timeoutKind ? new AiProviderResultUnknownError(streamTimeoutMessages[timeoutKind]) : null; },
     dispose() { clearTimeout(activityTimer); clearTimeout(hardTimer); },
   };
 }
 
-function isMeaningfulSseActivity(frame: string) {
+function isUpstreamSseActivity(frame: string) {
+  if (frame.split(/\r?\n/).some((line) => line.startsWith(":"))) return true;
   const payload = frame.split(/\r?\n/)
     .filter((line) => line.startsWith("data:"))
     .map((line) => line.slice(5).trimStart())
@@ -235,13 +238,8 @@ function isMeaningfulSseActivity(frame: string) {
   if (!payload) return false;
   if (payload === "[DONE]") return true;
   try {
-    const event = JSON.parse(payload) as ResponsesStreamEvent;
-    if (event.type === "response.output_text.delta") return typeof event.delta === "string" && event.delta.length > 0;
-    return event.type === "response.output_text.done"
-      || event.type === "response.completed"
-      || event.type === "response.incomplete"
-      || event.type === "response.failed"
-      || event.type === "error";
+    const event = JSON.parse(payload);
+    return typeof event === "object" && event !== null;
   }
   catch { return false; }
 }
@@ -276,13 +274,13 @@ async function readResponsesStream(response: Response, guard: ReturnType<typeof 
         if (!match || match.index === undefined) break;
         const frame = pendingFrames.slice(0, match.index);
         pendingFrames = pendingFrames.slice(match.index + match[0].length);
-        if (isMeaningfulSseActivity(frame)) guard.markContentActivity();
+        if (isUpstreamSseActivity(frame)) guard.markActivity();
       }
     }
     const tail = decoder.decode();
     rawResponse += tail;
     pendingFrames += tail;
-    if (pendingFrames && isMeaningfulSseActivity(pendingFrames)) guard.markContentActivity();
+    if (pendingFrames && isUpstreamSseActivity(pendingFrames)) guard.markActivity();
     return rawResponse;
   } catch (error) {
     await reader.cancel().catch(() => undefined);
@@ -361,8 +359,8 @@ export function createStoryOutlineProvider(config?: ProviderConfig, selectedSett
     const requestBody = activeConfig.stream ? { ...boundedBody, stream: true } : boundedBody;
     const injectedTimeoutMs = activeConfig.timeoutMs;
     const nonStreamTimeoutMs = activeConfig.nonStreamTimeoutMs ?? injectedTimeoutMs ?? 600_000;
-    const streamFirstEventTimeoutMs = activeConfig.streamFirstEventTimeoutMs ?? injectedTimeoutMs ?? 120_000;
-    const streamIdleTimeoutMs = activeConfig.streamIdleTimeoutMs ?? injectedTimeoutMs ?? 180_000;
+    const streamFirstEventTimeoutMs = activeConfig.streamFirstEventTimeoutMs ?? injectedTimeoutMs ?? 360_000;
+    const streamIdleTimeoutMs = activeConfig.streamIdleTimeoutMs ?? injectedTimeoutMs ?? 360_000;
     const streamMaxDurationMs = activeConfig.streamMaxDurationMs ?? injectedTimeoutMs ?? 1_200_000;
     devAiLog({ operation, phase: "request", payload: requestBody });
     let response: Response | null = null;

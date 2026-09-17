@@ -1,5 +1,4 @@
 export const clientErrorEndpoint = "/api/client-errors";
-export const authSessionStorageKey = "kaleido.mock.session";
 
 type StorageProbe = {
   available: boolean;
@@ -92,19 +91,6 @@ export function probeBrowserCapabilities(scope?: BrowserCapabilityScope): Browse
     randomUUIDAvailable: typeof browserCrypto?.randomUUID === "function",
     sessionStorage: probeStorage(() => browserScope ? browserScope.sessionStorage : window.sessionStorage),
   };
-}
-
-export function clearStoredAuthState() {
-  try {
-    window.sessionStorage.removeItem(authSessionStorageKey);
-  } catch {
-    // Storage access can be the original failure; recovery must continue without it.
-  }
-  try {
-    window.localStorage.removeItem(authSessionStorageKey);
-  } catch {
-    // Storage access can be the original failure; recovery must continue without it.
-  }
 }
 
 export function sendClientErrorReport(input: ClientErrorInput, reportId = createClientErrorReportId()) {

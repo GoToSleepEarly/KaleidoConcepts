@@ -23,6 +23,7 @@ import {
 describe("PDF export", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    vi.restoreAllMocks();
     vi.clearAllMocks();
   });
 
@@ -102,6 +103,90 @@ describe("PDF export", () => {
     expect(onProgress).toHaveBeenCalledWith({ phase: "preparing", completedPages: 0, totalPages: 1 });
     expect(onProgress).toHaveBeenCalledWith({ phase: "rendering", currentPage: 1, completedPages: 1, totalPages: 1 });
     expect(onProgress).toHaveBeenLastCalledWith({ phase: "complete", completedPages: 1, totalPages: 1 });
+  });
+
+  test("starts the first page without waiting for an image used only by a later page", async () => {
+    const deck = document.createElement("div");
+    deck.className = "deck";
+    const first = document.createElement("div");
+    first.className = "preview-slide-wrapper";
+    first.innerHTML = '<div class="preview-slide">First</div>';
+    const second = document.createElement("div");
+    second.className = "preview-slide-wrapper";
+    second.innerHTML = '<div class="preview-slide"><img src="/later.webp" /></div>';
+    Object.defineProperty(first, "getBoundingClientRect", { value: () => ({ width: 800, height: 450 }) });
+    Object.defineProperty(second, "getBoundingClientRect", { value: () => ({ width: 800, height: 450 }) });
+    const laterImage = second.querySelector("img")!;
+    Object.defineProperty(laterImage, "complete", { configurable: true, value: false });
+    deck.append(first, second);
+    document.body.append(deck);
+    const canvas = document.createElement("canvas");
+    canvas.toBlob = vi.fn((callback: BlobCallback) => callback(new Blob(["jpeg"], { type: "image/jpeg" })));
+    html2canvas.mockResolvedValue(canvas);
+
+    const exporting = exportSlidesToPDF(".deck", "lesson.pdf");
+    await vi.waitFor(() => expect(html2canvas).toHaveBeenCalledTimes(1));
+    laterImage.dispatchEvent(new Event("error"));
+    await exporting;
+
+    expect(html2canvas).toHaveBeenCalledTimes(2);
+  });
+
+  test("writes pure image pages directly and skips html2canvas", async () => {
+    const deck = document.createElement("div");
+    deck.className = "deck";
+    const slide = document.createElement("div");
+    slide.className = "preview-slide-wrapper";
+    slide.dataset.pageType = "shot_image";
+    slide.innerHTML = '<div class="preview-slide"><img src="/shot.webp" /></div>';
+    Object.defineProperty(slide, "getBoundingClientRect", { value: () => ({ width: 800, height: 450 }) });
+    const image = slide.querySelector("img")!;
+    Object.defineProperties(image, {
+      complete: { configurable: true, value: true },
+      naturalWidth: { configurable: true, value: 1536 },
+      naturalHeight: { configurable: true, value: 864 },
+      decode: { configurable: true, value: vi.fn().mockResolvedValue(undefined) },
+    });
+    deck.append(slide);
+    document.body.append(deck);
+    const drawImage = vi.fn();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ fillStyle: "", fillRect: vi.fn(), drawImage } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => callback(new Blob(["jpeg"], { type: "image/jpeg" })));
+
+    await exportSlidesToPDF(".deck", "lesson.pdf");
+
+    expect(drawImage).toHaveBeenCalledOnce();
+    expect(html2canvas).not.toHaveBeenCalled();
+    expect(addImage).toHaveBeenCalledOnce();
+  });
+
+  test("falls back to html2canvas when a pure image cannot be written through the direct canvas path", async () => {
+    const deck = document.createElement("div");
+    deck.className = "deck";
+    const slide = document.createElement("div");
+    slide.className = "preview-slide-wrapper";
+    slide.dataset.pageType = "cover_pure";
+    slide.innerHTML = '<div class="preview-slide"><img src="https://images.example.test/cover.webp" /></div>';
+    Object.defineProperty(slide, "getBoundingClientRect", { value: () => ({ width: 800, height: 450 }) });
+    const image = slide.querySelector("img")!;
+    Object.defineProperties(image, {
+      complete: { configurable: true, value: true },
+      naturalWidth: { configurable: true, value: 1536 },
+      naturalHeight: { configurable: true, value: 864 },
+      decode: { configurable: true, value: vi.fn().mockResolvedValue(undefined) },
+    });
+    deck.append(slide);
+    document.body.append(deck);
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ fillStyle: "", fillRect: vi.fn(), drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementationOnce(() => { throw new DOMException("Tainted canvas"); });
+    const fallbackCanvas = document.createElement("canvas");
+    fallbackCanvas.toBlob = vi.fn((callback: BlobCallback) => callback(new Blob(["jpeg"], { type: "image/jpeg" })));
+    html2canvas.mockResolvedValue(fallbackCanvas);
+
+    await exportSlidesToPDF(".deck", "lesson.pdf");
+
+    expect(html2canvas).toHaveBeenCalledOnce();
+    expect(addImage).toHaveBeenCalledOnce();
   });
 
   test("cancels before rendering and never downloads a partial PDF", async () => {

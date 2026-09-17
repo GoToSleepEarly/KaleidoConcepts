@@ -12,6 +12,7 @@ import { CourseCreateSteps, courseStageStep } from "@/features/courses/component
 import { GrammarKnowledgePointPickerDialog } from "@/features/courses/components/grammar-knowledge-point-picker-dialog";
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
 import { PersonEditorDialog } from "@/features/people/components/person-form-drawer";
+import { authenticatedFetch } from "@/lib/auth-client";
 import type { CourseAudienceDetail, EnglishLevel, GrammarCatalogPoint, GrammarCatalogResponse, PeopleListResponse, PersonProfile, PersonRole } from "@/lib/contracts/api";
 import { recommendedEnglishLevelForStudentAges } from "@/lib/domain/course-audience-policy";
 import { defaultGrammarBookId, grammarLearningSummary, unitRangeLabel } from "@/lib/domain/grammar-catalog";
@@ -69,13 +70,13 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
   const recommendedEnglishLevel = recommendedEnglishLevelForStudentAges(students.map((student) => student.age));
 
   async function fetchPerson(id: string, role: PersonRole) {
-    const response = await fetch(`/api/people?role=${role}&status=active&pageSize=100`);
+    const response = await authenticatedFetch(`/api/people?role=${role}&status=active&pageSize=100`);
     const data = (await response.json()) as PeopleListResponse;
     return data.people.find((person) => person.id === id) ?? null;
   }
 
   useEffect(() => {
-    void fetch("/api/grammar/catalog")
+    void authenticatedFetch("/api/grammar/catalog")
       .then((response) => response.json())
       .then((data: Partial<GrammarCatalogResponse>) => { if (Array.isArray(data.books)) setGrammarCatalog({ books: data.books }); })
       .catch(() => undefined);
@@ -87,7 +88,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
     async function checkPeople() {
       try {
         const roles = await Promise.all((["teacher", "student"] as const).map(async (role) => {
-          const response = await fetch(`/api/people?role=${role}&status=active&pageSize=1`);
+          const response = await authenticatedFetch(`/api/people?role=${role}&status=active&pageSize=1`);
           const data = (await response.json()) as Partial<PeopleListResponse>;
           if (!response.ok) return null;
           const count = typeof data.total === "number" ? data.total : data.people?.length;
@@ -107,7 +108,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
     let active = true;
     async function load() {
       try {
-        const response = await fetch(`/api/courses/${courseId}/audience`);
+        const response = await authenticatedFetch(`/api/courses/${courseId}/audience`);
         const data = (await response.json()) as { audience?: CourseAudienceDetail; message?: string };
         if (!response.ok || !data.audience) throw new Error(data.message || "授课对象加载失败");
         const audience = data.audience;
@@ -180,7 +181,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
       knowledgePointIds: selectedKnowledgePointIds,
       ...(resetDownstream ? { resetDownstream: true } : {}),
     };
-    return fetch(courseId ? `/api/courses/${courseId}/audience` : "/api/courses", {
+    return authenticatedFetch(courseId ? `/api/courses/${courseId}/audience` : "/api/courses", {
       method: courseId ? "PUT" : "POST",
       headers: { "Content-Type": "application/json", ...(courseId ? {} : { "Idempotency-Key": createKey.current }) },
       body: JSON.stringify(payload),
@@ -345,7 +346,7 @@ export function CourseAudienceForm({ courseId }: { courseId?: string }) {
           onCompleteVisual={(person) => { setReturnToPickerRole(pickerRole); setPickerRole(null); setEditing(person); }}
         />
       ) : null}
-      {knowledgePickerOpen && grammarCatalog.books.length ? <GrammarKnowledgePointPickerDialog books={grammarCatalog.books} compactExpandableDetails initialBookId={grammarBookEditionId || defaultGrammarBookId(englishLevel)} initialSelectedIds={selectedKnowledgePointIds} onClose={() => setKnowledgePickerOpen(false)} onConfirm={({ bookId, selectedIds }) => { setGrammarBookEditionId(bookId); setSelectedKnowledgePointIds(selectedIds); setKnowledgePickerOpen(false); }} /> : null}
+      {knowledgePickerOpen && grammarCatalog.books.length ? <GrammarKnowledgePointPickerDialog books={grammarCatalog.books} compactExpandableDetails defaultExpandFirstDetails initialBookId={grammarBookEditionId || defaultGrammarBookId(englishLevel)} initialSelectedIds={selectedKnowledgePointIds} onClose={() => setKnowledgePickerOpen(false)} onConfirm={({ bookId, selectedIds }) => { setGrammarBookEditionId(bookId); setSelectedKnowledgePointIds(selectedIds); setKnowledgePickerOpen(false); }} /> : null}
       {downstreamChoice ? <Dialog description="本次修改尚未保存" onClose={() => setDownstreamChoice(null)} open size="compact" title="修改将重置后续流程">
         <div className="space-y-5 p-5 sm:p-6">
           <div className="space-y-2 text-pretty text-sm leading-6">
@@ -415,7 +416,7 @@ function PeoplePicker({ role, selectedPeople, onClose, onConfirm, onCompleteVisu
       setLoading(true);
       const params = new URLSearchParams({ role, status: "active", sort: "recent", pageSize: "100" });
       if (query.trim()) params.set("query", query.trim());
-      try { const response = await fetch(`/api/people?${params}`, { signal: controller.signal }); const data = (await response.json()) as PeopleListResponse; if (response.ok) setPeople(data.people); } finally { if (!controller.signal.aborted) setLoading(false); }
+      try { const response = await authenticatedFetch(`/api/people?${params}`, { signal: controller.signal }); const data = (await response.json()) as PeopleListResponse; if (response.ok) setPeople(data.people); } finally { if (!controller.signal.aborted) setLoading(false); }
     }, 180);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [query, role]);

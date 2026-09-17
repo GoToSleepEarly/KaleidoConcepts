@@ -46,8 +46,8 @@ describe("AI gateway preset catalog", () => {
   test("defines valid account defaults and rejects a stream hard limit below an activity timeout", () => {
     const defaults = defaultTextTimeoutSettings();
     expect(defaults).toEqual({
-      textStreamFirstEventTimeoutSeconds: 120,
-      textStreamIdleTimeoutSeconds: 180,
+      textStreamFirstEventTimeoutSeconds: 360,
+      textStreamIdleTimeoutSeconds: 360,
       textStreamMaxDurationSeconds: 1_200,
       textNonStreamTimeoutSeconds: 600,
     });

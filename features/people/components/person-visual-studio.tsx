@@ -22,6 +22,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import { authenticatedFetch } from "@/lib/auth-client";
 
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
@@ -313,7 +314,7 @@ export function PersonVisualStudio({
 
   const load = useCallback(async (signal?: AbortSignal) => {
     if (!person) return;
-    const response = await fetch(`/api/people/${person.id}/visuals`, { cache: "no-store", signal });
+    const response = await authenticatedFetch(`/api/people/${person.id}/visuals`, { cache: "no-store", signal });
     const data = (await response.json()) as {
       visuals?: PersonVisualAsset[];
       message?: string;
@@ -336,7 +337,7 @@ export function PersonVisualStudio({
   useEffect(() => {
     if (!open || !person) return;
     const controller = new AbortController();
-    fetch(`/api/people/${person.id}/visuals`, { cache: "no-store", signal: controller.signal })
+    authenticatedFetch(`/api/people/${person.id}/visuals`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         const data = (await response.json()) as {
           visuals?: PersonVisualAsset[];
@@ -473,7 +474,7 @@ export function PersonVisualStudio({
       body.set("customPrompt", photoStylePrompt);
       const visual = await run(
         () =>
-          fetch(`/api/people/${person.id}/visuals/from-photo`, {
+          authenticatedFetch(`/api/people/${person.id}/visuals/from-photo`, {
             method: "POST",
             headers: { "Idempotency-Key": key },
             body,
@@ -488,7 +489,7 @@ export function PersonVisualStudio({
     }
     const visual = await run(
       () =>
-        fetch(`/api/people/${person.id}/visuals/from-description`, {
+        authenticatedFetch(`/api/people/${person.id}/visuals/from-description`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -511,7 +512,7 @@ export function PersonVisualStudio({
     if (!person || !selected || !instruction.trim()) return;
     const visual = await run(
       () =>
-        fetch(`/api/people/${person.id}/visuals/${selected.id}/refine`, {
+        authenticatedFetch(`/api/people/${person.id}/visuals/${selected.id}/refine`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -530,7 +531,7 @@ export function PersonVisualStudio({
   async function selectCurrent(target = selected) {
     if (!person || !target) return;
     const visual = await run(() =>
-      fetch(`/api/people/${person.id}/visuals/${target.id}/select`, {
+      authenticatedFetch(`/api/people/${person.id}/visuals/${target.id}/select`, {
         method: "POST",
       }),
     );
@@ -547,7 +548,7 @@ export function PersonVisualStudio({
     setDeletingVisualId(visual.id);
     setError("");
     try {
-      const response = await fetch(`/api/people/${person.id}/visuals/${visual.id}`, { method: "DELETE" });
+      const response = await authenticatedFetch(`/api/people/${person.id}/visuals/${visual.id}`, { method: "DELETE" });
       const data = (await response.json().catch(() => null)) as { message?: string } | null;
       if (!response.ok) throw new Error(data?.message || "人物形象删除失败");
       const remaining = visuals.filter((item) => item.id !== visual.id);

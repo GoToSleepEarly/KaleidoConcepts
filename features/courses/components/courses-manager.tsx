@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Dialog } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { authenticatedFetch } from "@/lib/auth-client";
 import type { CourseListItem, CoursesListResponse } from "@/lib/contracts/api";
 import { readJsonResponse } from "@/lib/utils/response-json";
 
@@ -53,7 +54,7 @@ export function CoursesManager() {
     const controller = new AbortController();
     const params = new URLSearchParams({ page: String(page) });
     if (query) params.set("query", query);
-    fetch(`/api/courses?${params.toString()}`, { signal: controller.signal })
+    authenticatedFetch(`/api/courses?${params.toString()}`, { signal: controller.signal })
       .then(async (response) => {
         const data = await readJsonResponse<CoursesListResponse & { message?: string }>(response);
         if (!response.ok) throw new Error(data.message || "课程列表加载失败");
@@ -92,7 +93,7 @@ export function CoursesManager() {
     setDeleting(true);
     setError("");
     try {
-      const response = await fetch(`/api/courses/${courseToDelete.id}`, { method: "DELETE" });
+      const response = await authenticatedFetch(`/api/courses/${courseToDelete.id}`, { method: "DELETE" });
       if (!response.ok) {
         const data = await readJsonResponse<{ message?: string }>(response);
         throw new Error(data.message || "课程删除失败，请重试");

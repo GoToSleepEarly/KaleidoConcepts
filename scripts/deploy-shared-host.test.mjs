@@ -55,6 +55,16 @@ describe("共享主机安全发布", () => {
     expect(script).not.toMatch(/\bDEEPSEEK_API_KEY\b/);
   });
 
+  test("发布前阻止 HTTP 与 Secure Cookie 配置冲突", async () => {
+    const script = await fs.readFile(scriptPath, "utf8");
+
+    expect(script).toContain("AUTH_SESSION_SECRET");
+    expect(script).toContain("AUTH_PUBLIC_SCHEME");
+    expect(script).toContain("AUTH_COOKIE_SECURE");
+    expect(script).toContain('AUTH_PUBLIC_SCHEME=http requires AUTH_COOKIE_SECURE=false');
+    expect(script).toContain('AUTH_PUBLIC_SCHEME=https requires AUTH_COOKIE_SECURE=true');
+  });
+
   test("systemd 对部署任务设置资源硬边界且不会开机自动发布", async () => {
     const service = await fs.readFile(servicePath, "utf8");
 

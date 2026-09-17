@@ -1,5 +1,6 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { createSignedAuthSession } from "@/lib/server/auth-session-cookie";
 import { AiGatewayAuthenticationError, aiGatewayFromRequest } from "./request-gateway";
 
 const timeoutSettings = {
@@ -9,7 +10,14 @@ const timeoutSettings = {
   textNonStreamTimeoutSeconds: 600,
 };
 
+function authCookie(userId: string) {
+  return `kaleido.user-id=${createSignedAuthSession(userId)}`;
+}
+
 describe("aiGatewayFromRequest", () => {
+  beforeEach(() => vi.stubEnv("AUTH_SESSION_SECRET", "test-session-secret-with-at-least-32-characters"));
+  afterEach(() => vi.unstubAllEnvs());
+
   test("uses the authenticated account preference and ignores unrelated cookies", async () => {
     const findUnique = vi.fn().mockResolvedValue({
       id: "teacher-1",
@@ -29,7 +37,7 @@ describe("aiGatewayFromRequest", () => {
       imageQuality: "low",
     });
     const request = new Request("http://localhost/api/test", {
-      headers: { cookie: "kaleido.user-id=teacher-1; theme=dark" },
+      headers: { cookie: `${authCookie("teacher-1")}; theme=dark` },
     });
 
     await expect(aiGatewayFromRequest(request, { user: { findUnique } })).resolves.toEqual({
@@ -69,7 +77,7 @@ describe("aiGatewayFromRequest", () => {
     }));
     const db = { user: { findUnique } };
     const request = new Request("http://localhost/api/test", {
-      headers: { cookie: "kaleido.user-id=teacher-1" },
+      headers: { cookie: authCookie("teacher-1") },
     });
 
     await expect(aiGatewayFromRequest(request, db)).resolves.toEqual({
@@ -115,7 +123,7 @@ describe("aiGatewayFromRequest", () => {
   test("rejects a removed account instead of using a default gateway", async () => {
     const db = { user: { findUnique: vi.fn().mockResolvedValue(null) } };
     const request = new Request("http://localhost/api/test", {
-      headers: { cookie: "kaleido.user-id=removed-user" },
+      headers: { cookie: authCookie("removed-user") },
     });
 
     await expect(aiGatewayFromRequest(request, db)).rejects.toBeInstanceOf(AiGatewayAuthenticationError);
@@ -136,7 +144,7 @@ describe("aiGatewayFromRequest", () => {
       imageQuality: "medium",
     });
     const request = new Request("http://localhost/api/test", {
-      headers: { cookie: "kaleido.user-id=teacher-1" },
+      headers: { cookie: authCookie("teacher-1") },
     });
 
     await expect(aiGatewayFromRequest(request, { user: { findUnique } })).rejects.toThrow("账户 AI 设置无效");

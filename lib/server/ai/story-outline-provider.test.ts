@@ -8,7 +8,7 @@ vi.mock("undici", async (importOriginal) => {
   };
 });
 
-import { AiProviderResultUnknownError, StoryOutlineIncompleteResponseError, StoryOutlineProviderConfigError, createStoryOutlineProvider, textTransportTimeoutMs } from "./story-outline-provider";
+import { AiProviderResultUnknownError, StoryOutlineProviderConfigError, createStoryOutlineProvider, textTransportTimeoutMs } from "./story-outline-provider";
 
 const originalEnv = { ...process.env };
 
@@ -276,7 +276,7 @@ describe("createStoryOutlineProvider", () => {
     await expect(resultPromise).resolves.toMatchObject({ text: '{"ok":true}' });
   });
 
-  test("marks a stream result unknown when no new content arrives within the idle timeout", async () => {
+  test("marks a stream result unknown when no new upstream activity arrives within the idle timeout", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn(async () => timedStreamResponse([
       { at: 1, text: 'data: {"type":"response.output_text.delta","delta":"partial"}\n\n' },
@@ -292,19 +292,21 @@ describe("createStoryOutlineProvider", () => {
       streamIdleTimeoutMs: 30,
       streamMaxDurationMs: 100,
     }).generateOutline({ writingProvider: "gpt-5.5", prompt: "生成正文" });
-    const assertion = expect(resultPromise).rejects.toThrow("长时间没有新内容");
+    const assertion = expect(resultPromise).rejects.toThrow("长时间没有新的上游活动");
     await vi.advanceTimersByTimeAsync(40);
 
     await assertion;
   });
 
-  test("does not let heartbeats extend the content idle timeout", async () => {
+  test("lets upstream lifecycle events and heartbeats extend the stream idle timeout", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn(async () => timedStreamResponse([
-      { at: 1, text: 'data: {"type":"response.output_text.delta","delta":"partial"}\n\n' },
+      { at: 1, text: 'data: {"type":"response.created"}\n\n' },
       { at: 15, text: ": heartbeat\n\n" },
-      { at: 25, text: 'data: {"type":"response.in_progress"}\n\n' },
-    ], 100)));
+      { at: 35, text: 'data: {"type":"response.in_progress"}\n\n' },
+      { at: 55, text: 'data: {"type":"response.output_text.delta","delta":"{\\"ok\\":true}"}\n\n' },
+      { at: 75, text: 'data: {"type":"response.completed","response":{"status":"completed"}}\n\n' },
+    ], 80)));
 
     const resultPromise = createStoryOutlineProvider({
       apiKey: "key",
@@ -312,17 +314,16 @@ describe("createStoryOutlineProvider", () => {
       gptModel: "gpt-5.5",
       researchModel: "gpt-5.5",
       stream: true,
-      streamFirstEventTimeoutMs: 20,
-      streamIdleTimeoutMs: 30,
+      streamFirstEventTimeoutMs: 10,
+      streamIdleTimeoutMs: 25,
       streamMaxDurationMs: 100,
     }).generateOutline({ writingProvider: "gpt-5.5", prompt: "生成正文" });
-    const assertion = expect(resultPromise).rejects.toThrow("长时间没有新内容");
-    await vi.advanceTimersByTimeAsync(35);
+    await vi.advanceTimersByTimeAsync(85);
 
-    await assertion;
+    await expect(resultPromise).resolves.toMatchObject({ text: '{"ok":true}' });
   });
 
-  test("does not treat lifecycle events or heartbeats as the first content output", async () => {
+  test("switches from first-event timeout to idle timeout on lifecycle activity", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn(async () => timedStreamResponse([
       { at: 1, text: 'data: {"type":"response.created"}\n\n' },
@@ -340,8 +341,8 @@ describe("createStoryOutlineProvider", () => {
       streamIdleTimeoutMs: 30,
       streamMaxDurationMs: 100,
     }).generateOutline({ writingProvider: "gpt-5.5", prompt: "生成正文" });
-    const assertion = expect(resultPromise).rejects.toThrow("等待首段内容超时");
-    await vi.advanceTimersByTimeAsync(25);
+    const assertion = expect(resultPromise).rejects.toThrow("长时间没有新的上游活动");
+    await vi.advanceTimersByTimeAsync(50);
 
     await assertion;
   });
@@ -445,7 +446,7 @@ describe("createStoryOutlineProvider", () => {
       writingProvider: "gpt-5.6-sol",
       prompt: "生成视觉方案",
     });
-    await expect(result).rejects.toBeInstanceOf(StoryOutlineIncompleteResponseError);
+    await expect(result).rejects.toThrow("max_output_tokens=8000");
     await expect(result).rejects.toMatchObject({
       usage: {
         inputTokens: 100,

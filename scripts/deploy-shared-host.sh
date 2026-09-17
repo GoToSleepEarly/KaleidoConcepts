@@ -43,6 +43,15 @@ done
 [[ -n "${DATABASE_URL:-}" ]] || fail "DATABASE_URL is required"
 [[ -n "${DATABASE_URL_FOR_PG_DUMP:-}" ]] || fail "DATABASE_URL_FOR_PG_DUMP is required"
 [[ -n "${SEED_ADMIN_PASSWORD:-}" ]] || fail "SEED_ADMIN_PASSWORD is required"
+[[ -n "${AUTH_SESSION_SECRET:-}" && ${#AUTH_SESSION_SECRET} -ge 32 && "$AUTH_SESSION_SECRET" != replace-with-* ]] || fail "AUTH_SESSION_SECRET must contain at least 32 non-placeholder characters"
+[[ "${AUTH_PUBLIC_SCHEME:-}" == "http" || "${AUTH_PUBLIC_SCHEME:-}" == "https" ]] || fail "AUTH_PUBLIC_SCHEME must be http or https"
+[[ "${AUTH_COOKIE_SECURE:-}" == "true" || "${AUTH_COOKIE_SECURE:-}" == "false" ]] || fail "AUTH_COOKIE_SECURE must be true or false"
+if [[ "$AUTH_PUBLIC_SCHEME" == "http" && "$AUTH_COOKIE_SECURE" != "false" ]]; then
+  fail "AUTH_PUBLIC_SCHEME=http requires AUTH_COOKIE_SECURE=false"
+fi
+if [[ "$AUTH_PUBLIC_SCHEME" == "https" && "$AUTH_COOKIE_SECURE" != "true" ]]; then
+  fail "AUTH_PUBLIC_SCHEME=https requires AUTH_COOKIE_SECURE=true"
+fi
 
 for required_key in QUICKROUTER_TEXT_API_KEY QUICKROUTER_IMAGE_API_KEY DEEPSEEK_TEXT_API_KEY CRAZYROUTER_TEXT_API_KEY CRAZYROUTER_IMAGE_API_KEY EASY88AI_TEXT_API_KEY EASY88AI_IMAGE_API_KEY; do
   [[ -n "${!required_key:-}" ]] || fail "$required_key is required"

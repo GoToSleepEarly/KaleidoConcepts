@@ -189,9 +189,22 @@ Default account:
 - `/` redirects to `/login`
 - successful login redirects to `/courses`
 - protected pages redirect to `/login` when unauthenticated
-- session is saved to `sessionStorage` or `localStorage` depending on remember-me
-- “记住我”同时控制浏览器本地登录状态和 HTTP-only 身份 Cookie：勾选后两者统一保留 30 天，未勾选时两者都只保留到当前浏览器会话结束
-- logout 调用 `POST /api/auth/logout` 清除服务端身份 Cookie，再清除两个浏览器存储并跳转 `/login`
+- 服务端签名的 HTTP-only Cookie 是唯一登录凭据；浏览器 `sessionStorage` / `localStorage` 不再作为登录事实来源
+- “记住我”只控制签名 Cookie 的生命周期：勾选后保留 30 天，未勾选时在当前浏览器会话结束时失效
+- `POST /api/auth/login` 返回成功后，前端必须立即调用 `GET /api/auth/session` 验证浏览器确实保存并回传了 Cookie；验证通过后才进入 `/courses`，从而避免 HTTP 环境错误配置 `Secure` 时出现“页面已登录、后台接口未登录”的分裂状态
+- `GET /api/auth/session` 同时校验 Cookie 签名、有效期与数据库用户；签名错误、过期或用户不存在统一返回 401
+- 本次从明文用户 ID Cookie 硬切换到签名 Cookie，旧会话不兼容。旧会话首次刷新或进入受保护页面时跳转 `/login?reason=session-upgrade`，登录页提示“登录安全已升级，请重新登录一次，课程数据不会受到影响。”
+- 受保护页面初次渲染必须先通过服务端会话接口；任一受保护请求返回 401 时统一跳转登录页并提示“登录状态已失效，请重新登录后继续”，不得把会话失效显示为普通生成失败，也不得自动重放可能已经计费的 AI 请求
+- logout 调用 `POST /api/auth/logout` 清除服务端签名 Cookie并跳转 `/login`
+
+### HTTP 部署边界
+
+- Cookie 签名与 HTTP / HTTPS 无关；`AUTH_SESSION_SECRET` 只用于防止客户端篡改身份，至少 32 个字符，并在后续发版中保持不变
+- 当前公网入口使用 HTTP，生产环境必须显式配置 `AUTH_COOKIE_SECURE=false`。若配置为 `true`，浏览器会拒绝保存 Cookie；发布脚本必须在启动前阻止该错误组合
+- 当前部署通过 `AUTH_PUBLIC_SCHEME=http` 声明公网协议。启用 HTTPS 时同步改为 `AUTH_PUBLIC_SCHEME=https` 与 `AUTH_COOKIE_SECURE=true`
+- HTTP 无法防止链路窃听 Cookie；签名只能防篡改。该安全边界不改变现有功能，但正式启用 HTTPS 后必须恢复 `Secure`
+
+2026-09-17：登录事实已从浏览器存储和明文用户 ID Cookie 收敛为服务端签名的 HTTP-only Cookie；登录成功后增加会话回读，所有受保护请求统一处理 401，旧 Cookie 只触发一次明确的安全升级登录提示。当前 HTTP 生产入口由 `AUTH_PUBLIC_SCHEME=http` 与 `AUTH_COOKIE_SECURE=false` 显式配对，发布脚本在构建前阻止协议与 Cookie 属性不一致；`AUTH_SESSION_SECRET` 只负责签名且必须跨发版保持稳定。生产构建浏览器实测旧 Cookie 会跳转并显示升级提示，重新登录后 Cookie 为 `HttpOnly=true / Secure=false / SameSite=Lax`，会话确认、课程列表与课程接口均返回 200。验证通过全量 97 个测试文件 / 839 项测试、`pnpm build`、Prisma 校验、乱码与敏感信息扫描和 `git diff --check`。实现提交：待本次提交后补记。
 
 ## 客户端异常恢复与诊断
 
@@ -234,7 +247,7 @@ pm2 logs pbl-studio-v2 --lines 300
 错误页只展示可执行信息，不展示内部异常：
 
 1. `重新加载页面`：给当前 URL 添加一次性 `__retry` 参数并重新请求页面。
-2. `清除登录状态并重试`：仅删除 `kaleido.mock.session`，然后返回登录页；Storage 本身不可访问时忽略清理异常并继续跳转。
+2. `清除登录状态并重试`：调用 `POST /api/auth/logout` 清除 HTTP-only 签名 Cookie，然后返回登录页；退出请求失败也继续进入登录页，避免错误恢复页卡死。
 3. `复制错误编号`：优先使用 Clipboard API，在 HTTP 等不可用环境下回退到选择复制。
 
 清除操作不修改课程、人物、图片或数据库业务状态，只会要求用户重新登录。
@@ -292,9 +305,9 @@ There is no second account area in the sidebar.
 
 UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter 主站和 QuickRouter 直连作为两个并列选项呈现，不再增加“地址”层级。账户文本配置保存为 `writingProvider`、`aiGateway`、`quickRouterEndpoint`、`textReasoningEffort`、`textStreamingEnabled`、`textStreamFirstEventTimeoutSeconds`、`textStreamIdleTimeoutSeconds`、`textStreamMaxDurationSeconds`、`textNonStreamTimeoutSeconds`，图片配置保存为 `imageModel`、`imageGateway`、`imageQuickRouterEndpoint`、`imageBillingMode`、`imageQuality`；不保存 Base URL。服务端能力目录把稳定 ID 映射为白名单地址、密钥、协议 Adapter、计费线路和模型能力。环境变量只配置各提供方密钥和图片请求超时；文本模型、提供方、思考强度、流式返回、四个文本超时、图片计费方式和图片质量全部由账户设置决定。
 
-每次打开高级设置时，`GET /api/account/ai-gateway` 按 HTTP-only 身份 Cookie 从数据库读取全部账户 AI 设置。文本分类依次设置模型、提供方、思考强度、流式返回和超时保护；流式开启时展示首段内容等待、内容空闲和最长运行三个值，关闭时只展示非流式请求总时限，并提供一次恢复四项默认值的入口。图片分类依次设置模型、提供方、计费方式和图片质量。模型或提供方变化后立即收窄兼容的计费选项。`PATCH` 只接受目录中存在且兼容的组合，保存使用一次原子更新；任一显式字段无效、流式最长运行时间不大于首段内容或内容空闲时间，或数据库写入失败时全部保持原值。加载完成前不得展示组件默认值，加载失败时保留未知状态并提供重新加载入口。
+每次打开高级设置时，`GET /api/account/ai-gateway` 按 HTTP-only 身份 Cookie 从数据库读取全部账户 AI 设置。文本分类依次设置模型、提供方、思考强度、流式返回和超时保护；流式开启时展示首个上游响应、上游活动空闲和最长运行三个值，关闭时只展示非流式请求总时限，并提供一次恢复四项默认值的入口。图片分类依次设置模型、提供方、计费方式和图片质量。模型或提供方变化后立即收窄兼容的计费选项。`PATCH` 只接受目录中存在且兼容的组合，保存使用一次原子更新；任一显式字段无效、流式最长运行时间不大于首个上游响应或上游活动空闲时间，或数据库写入失败时全部保持原值。加载完成前不得展示组件默认值，加载失败时保留未知状态并提供重新加载入口。
 
-文本超时默认值为：首段内容 120 秒、连续无新内容 180 秒、流式最长运行 1200 秒（20 分钟）、非流式总时限 600 秒（10 分钟）。可配置范围分别为 10–600 秒、10–600 秒、5–60 分钟和 1–30 分钟。首段内容从请求发出开始计时；SSE 心跳、`response.created` 和 `response.in_progress` 只证明连接存活，不结束首段内容等待，也不重置内容空闲计时。首个非空 `response.output_text.delta`、`response.output_text.done` 或完成、未完成、失败等终态事件结束首段内容等待；内容开始后，只有新的文本输出或终态事件重置内容空闲计时。任意活动都不重置 20 分钟硬上限，只有 `response.completed` 才能成功。上述超时均按 `result_unknown` 保存，不自动重试可能已经计费的请求。数据库字段 `textStreamFirstEventTimeoutSeconds` 为兼容既有数据继续保留，业务语义按首段内容执行。
+文本超时默认值为：首个上游响应 360 秒、连续无上游活动 360 秒、流式最长运行 1200 秒（20 分钟）、非流式总时限 600 秒（10 分钟）。可配置范围分别为 10–600 秒、10–600 秒、5–60 分钟和 1–30 分钟。首个上游响应从请求发出开始计时；合法 SSE 数据事件、生命周期事件、推理事件和 heartbeat 都证明上游仍在工作，因此结束首个响应等待并重置活动空闲计时。任何活动都不重置 20 分钟硬上限，且只有 `response.completed` 才能成功。上述超时均按 `result_unknown` 保存，不自动重试可能已经计费的请求。
 
 ### 高级设置弹窗视觉与布局修复（2026-09-11，已实现，待用户验收）
 
@@ -348,6 +361,8 @@ UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter
 2026-09-11：文本超时改为账户级唯一配置源。删除 `TEXT_GENERATION_TIMEOUT_MS` 与 `COURSE_CONTENT_GENERATION_TIMEOUT_MS` 的读取，Step 2–5 所有文本调用统一使用请求开始时的账户快照。流式响应由固定总时限改为首事件、事件空闲和 20 分钟硬上限三段保护；非流式保留 10 分钟总时限。高级设置按流式开关展示对应字段，并在前后端同时校验范围与跨字段关系。验证通过全量 92 个测试文件 / 788 项测试、ESLint、TypeScript、Prisma 校验、本地 migration deploy、生产构建、乱码扫描和 `git diff --check`。滚动修复后浏览器实测 1280 × 800：内容区可独立滚动，滚到底后保存按钮可见、可用并能正常完成保存；窄屏由同一视口高度约束和结构回归测试覆盖，本轮浏览器复测因本地登录态失效未完成。实现提交：`bb65789`。
 
 2026-09-15：账户高级设置继续作为文本模型、提供方、思考强度、流式模式和超时的唯一配置源；业务模块不再传入独立思考强度或输出上限。共享文本输出上限固定为 `8000`。流式首事件语义收紧为首段实际内容，心跳和生命周期事件不再掩盖模型长期没有输出的问题；界面标签同步改为“首段内容等待”和“内容空闲”。验证通过全量 95 个测试文件 / 824 项测试、ESLint、TypeScript、Prisma 校验、生产构建、乱码扫描和 `git diff --check`。
+
+2026-09-15：修复 Easy88AI 长推理请求被误判为首段内容超时。流式活动恢复为提供方无关的上游存活语义：合法 SSE 生命周期、推理、正文和 heartbeat 均续期活动空闲时限，最长运行硬上限保持不变；界面标签同步为“首个上游响应”和“上游活动空闲”。`max_output_tokens=8000` 保持不变，达到上限时错误明确说明推理与正文共用该预算。实现状态：已实现。验证命令：`pnpm test`、`pnpm exec eslint . --max-warnings=0`、`pnpm build`、`git diff --check`；95 个测试文件 / 824 项测试、ESLint 和生产构建通过。提交号：未提交。
 
 所有线路均为显式手动切换，不在网络错误、429 或超时后自动向另一线路或模型重放请求。QuickRouter 的 `-c` 与 Crazyrouter 的 `-t` 仅作为服务端计费线路别名：界面始终选择标准模型和计费方式，再由白名单映射上游 model。QuickRouter `gpt-image-2` 按次线路固定使用 `high` 质量。上游返回模型不存在或接口不兼容时按配置错误失败，不静默替换模型。
 

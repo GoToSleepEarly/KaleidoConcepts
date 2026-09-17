@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Edit3, Plus, Search, Tags, Trash2, X } from 
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { authenticatedFetch } from "@/lib/auth-client";
 import type { PresetKind, PresetOption } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
@@ -121,7 +122,7 @@ export function PresetLibrary({ kind }: PresetLibraryProps) {
     setIsLoading(true);
     setLoadError("");
     try {
-      const response = await fetch(`/api/presets?kind=${kind}`);
+      const response = await authenticatedFetch(`/api/presets?kind=${kind}`);
       if (!response.ok) throw new Error("预设加载失败");
       const data = (await response.json()) as { presets: PresetOption[] };
       setPresets(data.presets);
@@ -136,7 +137,7 @@ export function PresetLibrary({ kind }: PresetLibraryProps) {
     let active = true;
     async function loadInitialPresets() {
       try {
-        const response = await fetch(`/api/presets?kind=${kind}`);
+        const response = await authenticatedFetch(`/api/presets?kind=${kind}`);
         if (!response.ok) throw new Error("预设加载失败");
         const data = (await response.json()) as { presets: PresetOption[] };
         if (active) setPresets(data.presets);
@@ -200,7 +201,7 @@ export function PresetLibrary({ kind }: PresetLibraryProps) {
     setIsSaving(true);
     try {
       const targetPreset = editingPreset;
-      const response = await fetch(targetPreset ? `/api/presets/${targetPreset.id}` : "/api/presets", {
+      const response = await authenticatedFetch(targetPreset ? `/api/presets/${targetPreset.id}` : "/api/presets", {
         method: targetPreset ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -236,7 +237,7 @@ export function PresetLibrary({ kind }: PresetLibraryProps) {
     setIsDeleting(true);
     setDeleteError("");
     try {
-      const response = await fetch(`/api/presets/${presetToDelete.id}`, { method: "DELETE" });
+      const response = await authenticatedFetch(`/api/presets/${presetToDelete.id}`, { method: "DELETE" });
       if (!response.ok) throw new Error("预设删除失败");
       setPresets((current) => current.filter((item) => item.id !== presetToDelete.id));
       setPresetToDelete(null);

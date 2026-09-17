@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense } from "react";
 import { Sparkles } from "lucide-react";
 
 import { LoginForm } from "@/features/auth/components/login-form";
@@ -47,7 +47,9 @@ export default function LoginPage() {
             </p>
 
             <div className="mt-5 w-full rounded-xl bg-white p-5 text-slate-950 shadow-[0_8px_24px_rgba(34,77,111,0.16)] sm:p-6 min-[1200px]:p-7 min-[1440px]:mt-7 min-[1440px]:p-8">
-              <LoginForm />
+              <Suspense fallback={null}>
+                <LoginForm />
+              </Suspense>
             </div>
           </div>
         </section>

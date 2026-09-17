@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/server/db";
 import { verifyTeacherLogin } from "@/lib/server/repositories/auth";
 import { AUTH_USER_COOKIE, REMEMBERED_AUTH_MAX_AGE_SECONDS, authCookieSecure } from "@/lib/auth-cookie";
+import { createSignedAuthSession } from "@/lib/server/auth-session-cookie";
 
 const loginSchema = z.object({
   username: z.string(),
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
       user,
       createdAt: new Date().toISOString(),
     });
-    response.cookies.set(AUTH_USER_COOKIE, user.id, {
+    response.cookies.set(AUTH_USER_COOKIE, createSignedAuthSession(user.id), {
       httpOnly: true,
       sameSite: "lax",
       path: "/",

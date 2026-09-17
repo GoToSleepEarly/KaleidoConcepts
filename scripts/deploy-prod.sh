@@ -42,6 +42,26 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
+if [[ -z "${AUTH_SESSION_SECRET:-}" || ${#AUTH_SESSION_SECRET} -lt 32 || "$AUTH_SESSION_SECRET" == replace-with-* ]]; then
+  echo "AUTH_SESSION_SECRET must contain at least 32 non-placeholder characters."
+  exit 1
+fi
+
+if [[ "${AUTH_PUBLIC_SCHEME:-}" != "http" && "${AUTH_PUBLIC_SCHEME:-}" != "https" ]]; then
+  echo "AUTH_PUBLIC_SCHEME must be http or https."
+  exit 1
+fi
+
+if [[ "$AUTH_PUBLIC_SCHEME" == "http" && "${AUTH_COOKIE_SECURE:-}" != "false" ]]; then
+  echo "AUTH_PUBLIC_SCHEME=http requires AUTH_COOKIE_SECURE=false."
+  exit 1
+fi
+
+if [[ "$AUTH_PUBLIC_SCHEME" == "https" && "${AUTH_COOKIE_SECURE:-}" != "true" ]]; then
+  echo "AUTH_PUBLIC_SCHEME=https requires AUTH_COOKIE_SECURE=true."
+  exit 1
+fi
+
 for required_var in SEED_ADMIN_PASSWORD QUICKROUTER_TEXT_API_KEY QUICKROUTER_IMAGE_API_KEY DEEPSEEK_TEXT_API_KEY CRAZYROUTER_TEXT_API_KEY CRAZYROUTER_IMAGE_API_KEY EASY88AI_TEXT_API_KEY EASY88AI_IMAGE_API_KEY; do
   value="${!required_var:-}"
   if [[ -z "$value" || "$value" == replace-with-* ]]; then

@@ -100,19 +100,66 @@ function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) throw new DOMException("PDF 导出已取消", "AbortError");
 }
 
-async function waitForSlideAssets(slides: HTMLElement[], signal?: AbortSignal) {
+async function waitForFonts(signal?: AbortSignal) {
   await document.fonts?.ready;
   throwIfAborted(signal);
-  const images = slides.flatMap((slide) => [...slide.querySelectorAll("img")]);
+}
+
+function imageSource(image: HTMLImageElement) {
+  return image.currentSrc || image.src;
+}
+
+function imageLoadPromise(image: HTMLImageElement) {
+  image.loading = "eager";
+  if (image.complete) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    let timeout = 0;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      image.removeEventListener("load", finish);
+      image.removeEventListener("error", finish);
+      resolve();
+    };
+    image.addEventListener("load", finish, { once: true });
+    image.addEventListener("error", finish, { once: true });
+    timeout = window.setTimeout(finish, 8_000);
+  });
+}
+
+function primeSlideImages(slides: HTMLElement[]) {
+  const assets = new Map<string, { image: HTMLImageElement; promise: Promise<void> }>();
+  for (const image of slides.flatMap((slide) => [...slide.querySelectorAll<HTMLImageElement>("img")])) {
+    const source = imageSource(image);
+    if (source && !assets.has(source)) assets.set(source, { image, promise: imageLoadPromise(image) });
+    else image.loading = "eager";
+  }
+  return assets;
+}
+
+async function waitWithSignal(promise: Promise<void>, signal?: AbortSignal) {
+  if (!signal) return promise;
+  if (signal.aborted) throw signal.reason;
+  await new Promise<void>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(
+      () => { signal.removeEventListener("abort", abort); resolve(); },
+      (error) => { signal.removeEventListener("abort", abort); reject(error); },
+    );
+  });
+}
+
+async function waitForSlideImages(slide: HTMLElement, assets: Map<string, { image: HTMLImageElement; promise: Promise<void> }>, signal?: AbortSignal) {
+  const images = [...slide.querySelectorAll<HTMLImageElement>("img")];
   await Promise.all(images.map(async (image) => {
-    if (image.complete) return;
-    await Promise.race([
-      new Promise<void>((resolve) => {
-        image.addEventListener("load", () => resolve(), { once: true });
-        image.addEventListener("error", () => resolve(), { once: true });
-      }),
-      new Promise<void>((resolve) => window.setTimeout(resolve, 8_000)),
-    ]);
+    const source = imageSource(image);
+    const asset = assets.get(source);
+    await waitWithSignal(asset?.promise ?? imageLoadPromise(image), signal);
+    if (asset?.image !== image && !image.complete) await waitWithSignal(imageLoadPromise(image), signal);
+    if (image.complete && image.naturalWidth > 0 && typeof image.decode === "function") await image.decode().catch(() => undefined);
   }));
   throwIfAborted(signal);
 }
@@ -137,45 +184,91 @@ async function canvasToJpeg(canvas: HTMLCanvasElement) {
   return new Uint8Array(buffer);
 }
 
+const directImagePageTypes = new Set(["cover_pure", "shot_image"]);
+
+async function directImagePage(slide: HTMLElement, signal?: AbortSignal) {
+  if (!directImagePageTypes.has(slide.dataset.pageType ?? "")) return null;
+  const image = slide.querySelector<HTMLImageElement>(".preview-slide img");
+  if (!image || image.naturalWidth <= 0 || image.naturalHeight <= 0) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = PDF_EXPORT_SLIDE_WIDTH;
+  canvas.height = PDF_EXPORT_SLIDE_HEIGHT;
+  try {
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    const sourceRatio = image.naturalWidth / image.naturalHeight;
+    const targetRatio = canvas.width / canvas.height;
+    let sourceX = 0;
+    let sourceY = 0;
+    let sourceWidth = image.naturalWidth;
+    let sourceHeight = image.naturalHeight;
+    if (sourceRatio > targetRatio) {
+      sourceWidth = image.naturalHeight * targetRatio;
+      sourceX = (image.naturalWidth - sourceWidth) / 2;
+    } else if (sourceRatio < targetRatio) {
+      sourceHeight = image.naturalWidth / targetRatio;
+      sourceY = (image.naturalHeight - sourceHeight) / 2;
+    }
+    context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
+    throwIfAborted(signal);
+    return await canvasToJpeg(canvas);
+  } catch (error) {
+    throwIfAborted(signal);
+    void error;
+    return null;
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+}
+
 export async function exportSlidesToPDF(selector: string, filename: string, options: PdfExportOptions = {}) {
   const slides = [...(document.querySelector(selector)?.querySelectorAll<HTMLElement>(".preview-slide-wrapper") ?? [])];
   if (!slides.length) throw new Error("没有可导出的课件页面");
   const totalPages = slides.length;
   options.onProgress?.({ phase: "preparing", completedPages: 0, totalPages });
   throwIfAborted(options.signal);
+  const imageAssets = primeSlideImages(slides);
   await yieldToBrowser();
-  await waitForSlideAssets(slides, options.signal);
+  await waitForFonts(options.signal);
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [297, 167.0625] });
   for (let index = 0; index < slides.length; index += 1) {
     throwIfAborted(options.signal);
     options.onProgress?.({ phase: "rendering", currentPage: index + 1, completedPages: index, totalPages });
     await yieldToBrowser();
-    const sourceRect = slides[index].getBoundingClientRect();
-    const exportSlide = createPdfExportWrapper(slides[index]);
-    document.body.append(exportSlide);
-    try {
-      const canvas = await html2canvas(exportSlide, {
-        scale: pdfCaptureScale(sourceRect),
-        useCORS: true,
-        allowTaint: false,
-        imageTimeout: 15_000,
-        backgroundColor: "#ffffff",
-        logging: false,
-        onclone: applyPdfColorCompatibility,
-      });
+    const slide = slides[index];
+    await waitForSlideImages(slide, imageAssets, options.signal);
+    let imageData = await directImagePage(slide, options.signal);
+    if (!imageData) {
+      const sourceRect = slide.getBoundingClientRect();
+      const exportSlide = createPdfExportWrapper(slide);
+      document.body.append(exportSlide);
       try {
-        throwIfAborted(options.signal);
-        const imageData = await canvasToJpeg(canvas);
-        throwIfAborted(options.signal);
-        if (index > 0) pdf.addPage([297, 167.0625], "landscape");
-        pdf.addImage(imageData, "JPEG", 0, 0, 297, 167.0625, undefined, "FAST");
+        const canvas = await html2canvas(exportSlide, {
+          scale: pdfCaptureScale(sourceRect),
+          useCORS: true,
+          allowTaint: false,
+          imageTimeout: 15_000,
+          backgroundColor: "#ffffff",
+          logging: false,
+          onclone: applyPdfColorCompatibility,
+        });
+        try {
+          throwIfAborted(options.signal);
+          imageData = await canvasToJpeg(canvas);
+        } finally {
+          canvas.width = 0;
+          canvas.height = 0;
+        }
       } finally {
-        canvas.width = 0;
-        canvas.height = 0;
+        exportSlide.remove();
       }
-    } finally {
-      exportSlide.remove();
     }
+    throwIfAborted(options.signal);
+    if (index > 0) pdf.addPage([297, 167.0625], "landscape");
+    pdf.addImage(imageData, "JPEG", 0, 0, 297, 167.0625, undefined, "FAST");
     options.onProgress?.({ phase: "rendering", currentPage: index + 1, completedPages: index + 1, totalPages });
   }
   throwIfAborted(options.signal);

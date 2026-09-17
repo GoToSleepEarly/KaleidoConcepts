@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { createSignedAuthSession } from "@/lib/server/auth-session-cookie";
 import { GET, PATCH } from "./route";
 
 const findUnique = vi.hoisted(() => vi.fn());
@@ -11,15 +12,22 @@ const timeoutSettings = {
   textNonStreamTimeoutSeconds: 600,
 };
 
+function authCookie(userId = "user-1") {
+  return `kaleido.user-id=${createSignedAuthSession(userId)}`;
+}
+
 vi.mock("@/lib/server/db", () => ({
   getDb: vi.fn(() => ({ user: { findUnique, update } })),
 }));
 
 describe("account AI gateway route", () => {
   beforeEach(() => {
+    vi.stubEnv("AUTH_SESSION_SECRET", "test-session-secret-with-at-least-32-characters");
     findUnique.mockReset();
     update.mockReset();
   });
+
+  afterEach(() => vi.unstubAllEnvs());
 
   test("GET reads the current gateway from the authenticated user's database row", async () => {
     findUnique.mockResolvedValue({
@@ -38,7 +46,7 @@ describe("account AI gateway route", () => {
     });
     const response = await GET(
       new Request("http://localhost/api/account/ai-gateway", {
-        headers: { cookie: "kaleido.user-id=user-1" },
+        headers: { cookie: authCookie() },
       }),
     );
 
@@ -92,7 +100,7 @@ describe("account AI gateway route", () => {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          cookie: "kaleido.user-id=user-1",
+          cookie: authCookie(),
         },
         body: JSON.stringify({
           writingProvider: "deepseek-v4-pro",
@@ -171,7 +179,7 @@ describe("account AI gateway route", () => {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          cookie: "kaleido.user-id=user-1",
+          cookie: authCookie(),
         },
         body: JSON.stringify({ aiGateway: "crazyrouter" }),
       }),
@@ -211,7 +219,7 @@ describe("account AI gateway route", () => {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          cookie: "kaleido.user-id=user-1",
+          cookie: authCookie(),
         },
         body: JSON.stringify({
           aiGateway: "quickrouter",
@@ -233,7 +241,7 @@ describe("account AI gateway route", () => {
     const response = await PATCH(
       new Request("http://localhost/api/account/ai-gateway", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", cookie: "kaleido.user-id=user-1" },
+        headers: { "Content-Type": "application/json", cookie: authCookie() },
         body: JSON.stringify({ aiGateway: "easy88ai", imageModel: "gpt-image-2", imageGateway: "easy88ai", imageBillingMode: "per_image" }),
       }),
     );
@@ -247,7 +255,7 @@ describe("account AI gateway route", () => {
 
     const response = await PATCH(new Request("http://localhost/api/account/ai-gateway", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", cookie: "kaleido.user-id=user-1" },
+      headers: { "Content-Type": "application/json", cookie: authCookie() },
       body: JSON.stringify({ aiGateway: "easy88ai", textStreamIdleTimeoutSeconds: 600, textStreamMaxDurationSeconds: 300 }),
     }));
 

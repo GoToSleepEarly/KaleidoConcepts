@@ -67,7 +67,7 @@ describe("course image provider", () => {
     expect(body.get("model")).toBe("gpt-image-2");
     expect(body.get("prompt")).toBe("scene");
     expect(body.get("n")).toBe("1");
-    expect(body.get("size")).toBe("1536x1024");
+    expect(body.get("size")).toBe("1536x864");
     expect(body.get("quality")).toBe("medium");
     expect(body.getAll("image[]")).toHaveLength(2);
     expect(body.getAll("image[]").every((image) => image instanceof Blob)).toBe(true);
@@ -146,7 +146,7 @@ describe("course image provider", () => {
     const body = init?.body as FormData;
     expect((request.mock.calls[0] as unknown[] | undefined)?.[0]).toBe("https://api.crazyrouter.com/v1/images/edits");
     expect(body.get("model")).toBe("gpt-image-2");
-    expect(body.get("size")).toBe("1536x1024");
+    expect(body.get("size")).toBe("1536x864");
     expect(body.get("quality")).toBe("low");
     expect(body.get("output_format")).toBe("webp");
     expect(body.getAll("image[]")).toHaveLength(2);

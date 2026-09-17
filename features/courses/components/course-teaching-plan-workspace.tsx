@@ -11,6 +11,7 @@ import { CourseStaleNotice } from "@/features/courses/components/course-stale-no
 import { GrammarKnowledgePointPickerDialog } from "@/features/courses/components/grammar-knowledge-point-picker-dialog";
 import { KnowledgePointPickerDialog } from "@/features/courses/components/knowledge-point-picker-dialog";
 import { OverflowingKnowledgePointTitle } from "@/features/grammar/components/overflowing-knowledge-point-title";
+import { authenticatedFetch } from "@/lib/auth-client";
 import type { EnglishLevel, GrammarBookCatalog, GrammarExerciseType, GrammarPracticeConfig, ReadingExerciseMode, TeachingPlan, TeachingPlanChapter, TeachingPlanState } from "@/lib/contracts/api";
 import {
   ALL_GRAMMAR_EXERCISE_TYPES,
@@ -314,7 +315,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
     setConfirming(true);
     setError("");
     try {
-      const response = await fetch(`/api/courses/${initialState.course.id}/teaching-plan/confirm`, {
+      const response = await authenticatedFetch(`/api/courses/${initialState.course.id}/teaching-plan/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ downstreamAction, plan }),
@@ -357,7 +358,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
     setResetting(true);
     setError("");
     try {
-      const response = await fetch(`/api/courses/${initialState.course.id}/teaching-plan/reset`, { method: "POST" });
+      const response = await authenticatedFetch(`/api/courses/${initialState.course.id}/teaching-plan/reset`, { method: "POST" });
       const data = await readJsonResponse<{
         plan?: TeachingPlan;
         course?: { staleFromStage?: TeachingPlanState["course"]["staleFromStage"] };

@@ -9,6 +9,7 @@ import { PersonAvatar } from "@/components/person-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { authenticatedFetch } from "@/lib/auth-client";
 import type { CourseCharacterVisual, CourseImageQuality, CourseVisualAsset, CourseVisualImageSlot, CourseVisualResourcesState } from "@/lib/contracts/api";
 import { hasInFlightVisualVersion, needsInitialVisualGeneration } from "@/lib/domain/visual-resource-status";
 import { cn } from "@/lib/utils";
@@ -184,7 +185,7 @@ class AmbiguousMutationError extends Error {}
 async function mutationRequest(url: string, init: RequestInit, fallbackMessage: string) {
   let response: Response;
   try {
-    response = await fetch(url, init);
+    response = await authenticatedFetch(url, init);
   } catch {
     throw new AmbiguousMutationError("网络连接中断，无法确认操作结果");
   }
@@ -631,7 +632,7 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
   const tabListRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
-    const response = await fetch(`/api/courses/${state.course.id}/visual-resources`, { cache: "no-store" });
+    const response = await authenticatedFetch(`/api/courses/${state.course.id}/visual-resources`, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || "视觉资源加载失败");
     const nextState = data as CourseVisualResourcesState;
@@ -810,7 +811,7 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
     setDialogError("");
     setPending(`appearance:${editingCharacter.characterId}`);
     try {
-      const response = await fetch(`/api/courses/${state.course.id}/visual-resources/characters/${editingCharacter.characterId}/appearance`, {
+      const response = await authenticatedFetch(`/api/courses/${state.course.id}/visual-resources/characters/${editingCharacter.characterId}/appearance`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -848,7 +849,7 @@ export function CourseVisualResourcesWorkspace({ initialState }: { initialState:
 
   function updateVisualSettings(key: string, body: { imageGenerationConcurrency: number }) {
     void run(key, async () => {
-      const response = await fetch(`/api/courses/${state.course.id}/visual-resources/settings`, {
+      const response = await authenticatedFetch(`/api/courses/${state.course.id}/visual-resources/settings`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

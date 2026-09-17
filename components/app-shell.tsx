@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BookOpen, ChevronDown, FileText, ImageIcon, ListChecks, LoaderCircle, LogOut, Menu, Settings2, Sparkles, Tags, UsersRound, X } from "lucide-react";
@@ -9,7 +9,7 @@ import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { IMAGE_GENERATION_MODELS, IMAGE_QUALITIES, TEXT_GENERATION_MODELS, TEXT_TIMEOUT_DEFAULTS, billingModesForImageSelection, imageBillingModeLabels, imageModelLabels, imageQualityForSelection, imageQualityLabels, isTextTimeoutSettingsValid, reasoningEffortsForModel, textModelLabels, textReasoningEffortLabels, type AccountAiSettings, type AiGateway, type ImageBillingMode, type ImageGenerationModel, type ImageQuality, type QuickRouterEndpoint, type TextGenerationModel, type TextReasoningEffort } from "@/lib/ai-gateway";
-import { clearAuthSession, getStoredSession } from "@/lib/auth-session";
+import { authenticatedFetch, type AuthSession } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -115,10 +115,9 @@ function getRouteMeta(pathname: string) {
   return routeInfo.courses;
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, session }: { children: React.ReactNode; session?: AuthSession }) {
   const pathname = usePathname();
   const router = useRouter();
-  const session = useMemo(() => getStoredSession(), []);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
@@ -184,7 +183,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
-      clearAuthSession();
       router.replace("/login");
     }
   }
@@ -196,7 +194,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setIsLoadingGateway(true);
     setHasLoadedGateway(false);
     try {
-      const response = await fetch("/api/account/ai-gateway", {
+      const response = await authenticatedFetch("/api/account/ai-gateway", {
         method: "GET",
         cache: "no-store",
       });
@@ -232,12 +230,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setGatewayError("");
     const timeoutSettings = { textStreamFirstEventTimeoutSeconds, textStreamIdleTimeoutSeconds, textStreamMaxDurationSeconds, textNonStreamTimeoutSeconds };
     if (!isTextTimeoutSettingsValid(timeoutSettings)) {
-      setGatewayError("请检查文本超时设置：最长运行时间必须大于首段内容等待和内容空闲时间，且所有数值需在提示范围内。");
+      setGatewayError("请检查文本超时设置：最长运行时间必须大于首个上游响应和上游活动空闲时间，且所有数值需在提示范围内。");
       return;
     }
     setIsSavingGateway(true);
     try {
-      const response = await fetch("/api/account/ai-gateway", {
+      const response = await authenticatedFetch("/api/account/ai-gateway", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -486,7 +484,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         <div className="flex items-start justify-between gap-4">
                           <div>
                             <h4 className="text-sm font-semibold text-foreground">超时保护</h4>
-                            <p className="mt-1 text-xs leading-5 text-muted-foreground">只影响下次新请求；持续输出实际内容的流式响应不会按非流式时限中断。</p>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">只影响下次新请求；持续收到上游活动的流式响应不会按非流式时限中断。</p>
                           </div>
                           <button className="shrink-0 text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} onClick={() => {
                             setTextStreamFirstEventTimeoutSeconds(TEXT_TIMEOUT_DEFAULTS.streamFirstEventSeconds);
@@ -498,14 +496,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         {textStreamingEnabled ? (
                           <div className="mt-4 grid gap-4 sm:grid-cols-3" data-testid="stream-timeout-settings">
                             <label className="block text-[13px] font-medium text-foreground" htmlFor="stream-first-event-timeout">
-                              首段内容等待
+                              首个上游响应
                               <span className="relative mt-2 block">
                                 <input className="h-11 w-full rounded-lg border border-input bg-background px-3 pr-10 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="stream-first-event-timeout" max={600} min={10} onChange={(event) => setTextStreamFirstEventTimeoutSeconds(Number(event.target.value))} type="number" value={textStreamFirstEventTimeoutSeconds} />
                                 <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">秒</span>
                               </span>
                             </label>
                             <label className="block text-[13px] font-medium text-foreground" htmlFor="stream-idle-timeout">
-                              内容空闲
+                              上游活动空闲
                               <span className="relative mt-2 block">
                                 <input className="h-11 w-full rounded-lg border border-input bg-background px-3 pr-10 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="stream-idle-timeout" max={600} min={10} onChange={(event) => setTextStreamIdleTimeoutSeconds(Number(event.target.value))} type="number" value={textStreamIdleTimeoutSeconds} />
                                 <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">秒</span>

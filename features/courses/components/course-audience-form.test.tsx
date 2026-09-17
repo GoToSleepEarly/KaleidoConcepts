@@ -51,6 +51,8 @@ describe("CourseAudienceForm basic information UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "B1" }));
     fireEvent.click(screen.getByRole("button", { name: "选择知识点" }));
     expect(await screen.findByRole("tab", { name: /English Grammar in Use/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("使用一般过去时描述完成动作")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "收起列表中 Unit 5 · Past simple 的语法要点" })).toHaveAttribute("aria-expanded", "true");
     fireEvent.click(screen.getByRole("button", { name: "选择 Unit 13 Present perfect and past 1" }));
     fireEvent.click(screen.getByRole("button", { name: "确认选择" }));
     expect(screen.getByText("Present perfect and past 1")).toBeInTheDocument();

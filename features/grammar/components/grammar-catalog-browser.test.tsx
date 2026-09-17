@@ -73,12 +73,10 @@ describe("GrammarCatalogBrowser", () => {
     expect(onSelectedIdsChange).toHaveBeenCalledWith([]);
   });
 
-  it("keeps the original compact Step 1 rows and reveals rules from a separate icon button", () => {
+  it("opens the first Step 1 Unit to reveal that compact rows contain selectable details", () => {
     const onSelectedIdsChange = vi.fn();
-    render(<GrammarCatalogBrowser activeBookId="book" books={books} compactExpandableDetails onActiveBookChange={vi.fn()} onSelectedIdsChange={onSelectedIdsChange} selectedIds={["point"]} />);
+    render(<GrammarCatalogBrowser activeBookId="book" books={books} compactExpandableDetails defaultExpandFirstDetails onActiveBookChange={vi.fn()} onSelectedIdsChange={onSelectedIdsChange} selectedIds={["point"]} />);
 
-    expect(screen.queryByText("Use the present perfect for a current result.")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "展开列表中 Unit 13 · Present perfect and past 1 的语法要点", expanded: false }));
     expect(screen.getAllByText("Use the present perfect for a current result.")).toHaveLength(1);
     expect(onSelectedIdsChange).not.toHaveBeenCalled();
 
@@ -91,6 +89,13 @@ describe("GrammarCatalogBrowser", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "取消选择 Unit 13 Present perfect and past 1" }));
     expect(onSelectedIdsChange).toHaveBeenCalledWith([]);
+  });
+
+  it("keeps compact Unit details collapsed outside the Step 1 selection affordance", () => {
+    render(<GrammarCatalogBrowser activeBookId="book" books={books} compactExpandableDetails onActiveBookChange={vi.fn()} onSelectedIdsChange={vi.fn()} selectedIds={[]} />);
+
+    expect(screen.queryByText("Use the present perfect for a current result.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "展开列表中 Unit 13 · Present perfect and past 1 的语法要点" })).toHaveAttribute("aria-expanded", "false");
   });
 
   it("keeps compact selected summaries at one stable row height when a Unit title is long", () => {

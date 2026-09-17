@@ -182,7 +182,7 @@ export function createCourseImageProvider(config?: ProviderConfig, selectedSetti
     },
     edit(input: { prompt: string; quality: CourseImageQuality; imageDataUrls: string[]; portrait?: boolean }) {
       if (input.imageDataUrls.length === 0) throw new Error("缺少可用的视觉参考图");
-      const size = input.portrait ? "1024x1536" : "1536x1024";
+      const size = input.portrait ? "1024x1536" : "1536x864";
       return request(
         "course_image_edit",
         "/v1/images/edits",

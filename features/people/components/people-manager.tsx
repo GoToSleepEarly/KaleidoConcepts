@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PersonEditorDialog } from "@/features/people/components/person-form-drawer";
+import { authenticatedFetch } from "@/lib/auth-client";
 import type { PeopleListResponse, PersonProfile, PersonRole } from "@/lib/contracts/api";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +36,7 @@ export function PeopleManager() {
     try {
       const params = new URLSearchParams({ role, status: "active", sort: "recent", page: String(page), pageSize: "6" });
       if (query.trim()) params.set("query", query.trim());
-      const response = await fetch(`/api/people?${params}`, { signal });
+      const response = await authenticatedFetch(`/api/people?${params}`, { signal });
       const data = (await response.json()) as PeopleListResponse & { message?: string };
       if (!response.ok) throw new Error(data.message || "人物档案加载失败");
       setPeople(data.people);
@@ -73,7 +74,7 @@ export function PeopleManager() {
     setDeleting(true);
     setDeleteError("");
     try {
-      const response = await fetch(`/api/people/${personToDelete.id}/archive`, { method: "POST" });
+      const response = await authenticatedFetch(`/api/people/${personToDelete.id}/archive`, { method: "POST" });
       if (!response.ok) {
         const data = (await response.json().catch(() => null)) as { message?: string } | null;
         throw new Error(data?.message || "删除失败，请重试");

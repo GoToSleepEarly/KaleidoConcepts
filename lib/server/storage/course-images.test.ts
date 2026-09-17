@@ -85,19 +85,33 @@ describe("课程图片存储", () => {
     expect(references.every((reference) => reference.startsWith("data:image/webp;base64,"))).toBe(true);
   });
 
-  test("场景图片以裁切方式落为 PPT 16:9，不给 3:2 图片补边", async () => {
+  test("尺寸异常的场景图片完整缩放为 PPT 16:9，不裁掉上下边缘", async () => {
     const { root } = await temporaryImage(10, 10, "#ffffff");
     process.env.STORAGE_DIR = root;
-    const source = await sharp({ create: { width: 1536, height: 1024, channels: 3, background: "#ef4444" } }).png().toBuffer();
+    const source = await sharp({ create: { width: 1536, height: 1024, channels: 3, background: "#22c55e" } })
+      .composite([
+        { input: await sharp({ create: { width: 1536, height: 96, channels: 3, background: "#ef4444" } }).png().toBuffer(), top: 0, left: 0 },
+        { input: await sharp({ create: { width: 1536, height: 96, channels: 3, background: "#2563eb" } }).png().toBuffer(), top: 928, left: 0 },
+      ])
+      .png()
+      .toBuffer();
     const stored = await persistCourseImage({ sourceUrl: `data:image/png;base64,${source.toString("base64")}`, courseId: "course-1", assetId: "asset-1" });
     expect(stored.storagePath).toBe("course-images/course-1/asset-1.webp");
     const absolutePath = path.join(root, stored.storagePath);
     const metadata = await sharp(absolutePath).metadata();
     expect(metadata.width).toBe(1536);
     expect(metadata.height).toBe(864);
-    const leftPixel = await sharp(absolutePath).extract({ left: 0, top: 432, width: 1, height: 1 }).raw().toBuffer();
-    expect(leftPixel[0]).toBeGreaterThan(220);
-    expect(leftPixel[1]).toBeLessThan(100);
+    const pixels = await sharp(absolutePath).raw().toBuffer();
+    const pixelAt = (left: number, top: number) => pixels.subarray((top * 1536 + left) * 3, (top * 1536 + left) * 3 + 3);
+    const leftBackground = pixelAt(20, 432);
+    const topEdge = pixelAt(768, 20);
+    const bottomEdge = pixelAt(768, 843);
+    expect(leftBackground[0]).toBeGreaterThan(235);
+    expect(leftBackground[1]).toBeGreaterThan(235);
+    expect(topEdge[0]).toBeGreaterThan(180);
+    expect(topEdge[1]).toBeLessThan(120);
+    expect(bottomEdge[2]).toBeGreaterThan(140);
+    expect(bottomEdge[0]).toBeLessThan(120);
   });
 
   test("删除课程图片时同时清理正式目录和临时参考目录", async () => {

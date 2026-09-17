@@ -11,53 +11,49 @@ describe("POST /api/auth/login", () => {
   beforeEach(() => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("AUTH_COOKIE_SECURE", "");
+    vi.stubEnv("AUTH_SESSION_SECRET", "test-session-secret-with-at-least-32-characters");
     verifyTeacherLogin.mockReset();
     verifyTeacherLogin.mockResolvedValue({ id: "user-1", displayName: "教师账号" });
   });
 
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
+  afterEach(() => vi.unstubAllEnvs());
 
-  test("persists only the authenticated user cookie when remember me is enabled", async () => {
+  test("persists a signed authenticated user cookie when remember me is enabled", async () => {
     const response = await POST(new Request("http://localhost/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: "teacher", password: "123456", remember: true }),
     }));
     const cookie = response.headers.get("set-cookie") ?? "";
-
     expect(response.status).toBe(200);
-    expect(cookie).toContain("kaleido.user-id=user-1");
+    expect(cookie).toContain("kaleido.user-id=v1.");
+    expect(cookie).not.toContain("kaleido.user-id=user-1");
     expect(cookie).toContain("Max-Age=2592000");
     expect(cookie).toContain("Secure");
     expect(cookie).not.toContain("kaleido.ai-gateway");
   });
 
-  test("uses a browser-session user cookie when remember me is disabled", async () => {
+  test("uses a browser-session cookie when remember me is disabled", async () => {
     const response = await POST(new Request("http://localhost/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: "teacher", password: "123456", remember: false }),
     }));
     const cookie = response.headers.get("set-cookie") ?? "";
-
-    expect(cookie).toContain("kaleido.user-id=user-1");
+    expect(cookie).toContain("kaleido.user-id=v1.");
     expect(cookie).not.toContain("Max-Age");
     expect(cookie).not.toContain("kaleido.ai-gateway");
   });
 
-  test("allows HTTP deployments to disable the Secure cookie attribute explicitly", async () => {
+  test("allows HTTP deployments to disable the Secure attribute explicitly", async () => {
     vi.stubEnv("AUTH_COOKIE_SECURE", "false");
-
     const response = await POST(new Request("http://203.0.113.10:3100/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: "teacher", password: "123456", remember: true }),
     }));
     const cookie = response.headers.get("set-cookie") ?? "";
-
-    expect(cookie).toContain("kaleido.user-id=user-1");
+    expect(cookie).toContain("kaleido.user-id=v1.");
     expect(cookie).not.toContain("Secure");
   });
 });
