@@ -204,7 +204,7 @@ Default account:
 - 当前部署通过 `AUTH_PUBLIC_SCHEME=http` 声明公网协议。启用 HTTPS 时同步改为 `AUTH_PUBLIC_SCHEME=https` 与 `AUTH_COOKIE_SECURE=true`
 - HTTP 无法防止链路窃听 Cookie；签名只能防篡改。该安全边界不改变现有功能，但正式启用 HTTPS 后必须恢复 `Secure`
 
-2026-09-17：登录事实已从浏览器存储和明文用户 ID Cookie 收敛为服务端签名的 HTTP-only Cookie；登录成功后增加会话回读，所有受保护请求统一处理 401，旧 Cookie 只触发一次明确的安全升级登录提示。当前 HTTP 生产入口由 `AUTH_PUBLIC_SCHEME=http` 与 `AUTH_COOKIE_SECURE=false` 显式配对，发布脚本在构建前阻止协议与 Cookie 属性不一致；`AUTH_SESSION_SECRET` 只负责签名且必须跨发版保持稳定。生产构建浏览器实测旧 Cookie 会跳转并显示升级提示，重新登录后 Cookie 为 `HttpOnly=true / Secure=false / SameSite=Lax`，会话确认、课程列表与课程接口均返回 200。验证通过全量 97 个测试文件 / 839 项测试、`pnpm build`、Prisma 校验、乱码与敏感信息扫描和 `git diff --check`。实现提交：待本次提交后补记。
+2026-09-17：登录事实已从浏览器存储和明文用户 ID Cookie 收敛为服务端签名的 HTTP-only Cookie；登录成功后增加会话回读，所有受保护请求统一处理 401，旧 Cookie 只触发一次明确的安全升级登录提示。当前 HTTP 生产入口由 `AUTH_PUBLIC_SCHEME=http` 与 `AUTH_COOKIE_SECURE=false` 显式配对，发布脚本在构建前阻止协议与 Cookie 属性不一致；`AUTH_SESSION_SECRET` 只负责签名且必须跨发版保持稳定。生产构建浏览器实测旧 Cookie 会跳转并显示升级提示，重新登录后 Cookie 为 `HttpOnly=true / Secure=false / SameSite=Lax`，会话确认、课程列表与课程接口均返回 200。验证通过全量 97 个测试文件 / 839 项测试、`pnpm build`、Prisma 校验、乱码与敏感信息扫描和 `git diff --check`。实现提交：`3659e45`。
 
 ## 客户端异常恢复与诊断
 
@@ -362,7 +362,7 @@ UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter
 
 2026-09-15：账户高级设置继续作为文本模型、提供方、思考强度、流式模式和超时的唯一配置源；业务模块不再传入独立思考强度或输出上限。共享文本输出上限固定为 `8000`。流式首事件语义收紧为首段实际内容，心跳和生命周期事件不再掩盖模型长期没有输出的问题；界面标签同步改为“首段内容等待”和“内容空闲”。验证通过全量 95 个测试文件 / 824 项测试、ESLint、TypeScript、Prisma 校验、生产构建、乱码扫描和 `git diff --check`。
 
-2026-09-15：修复 Easy88AI 长推理请求被误判为首段内容超时。流式活动恢复为提供方无关的上游存活语义：合法 SSE 生命周期、推理、正文和 heartbeat 均续期活动空闲时限，最长运行硬上限保持不变；界面标签同步为“首个上游响应”和“上游活动空闲”。`max_output_tokens=8000` 保持不变，达到上限时错误明确说明推理与正文共用该预算。实现状态：已实现。验证命令：`pnpm test`、`pnpm exec eslint . --max-warnings=0`、`pnpm build`、`git diff --check`；95 个测试文件 / 824 项测试、ESLint 和生产构建通过。提交号：未提交。
+2026-09-15：修复 Easy88AI 长推理请求被误判为首段内容超时。流式活动恢复为提供方无关的上游存活语义：合法 SSE 生命周期、推理、正文和 heartbeat 均续期活动空闲时限，最长运行硬上限保持不变；界面标签同步为“首个上游响应”和“上游活动空闲”。`max_output_tokens=8000` 保持不变，达到上限时错误明确说明推理与正文共用该预算。实现状态：已实现。验证命令：`pnpm test`、`pnpm exec eslint . --max-warnings=0`、`pnpm build`、`git diff --check`；95 个测试文件 / 824 项测试、ESLint 和生产构建通过。提交号：`3659e45`。
 
 所有线路均为显式手动切换，不在网络错误、429 或超时后自动向另一线路或模型重放请求。QuickRouter 的 `-c` 与 Crazyrouter 的 `-t` 仅作为服务端计费线路别名：界面始终选择标准模型和计费方式，再由白名单映射上游 model。QuickRouter `gpt-image-2` 按次线路固定使用 `high` 质量。上游返回模型不存在或接口不兼容时按配置错误失败，不静默替换模型。
 
