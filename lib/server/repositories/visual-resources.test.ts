@@ -18,12 +18,31 @@ describe("视觉资源仓储", () => {
       shots: [{ paragraphId: "p1", focus: "Adventure", characterIds: ["character-1"], sceneDescription: "The explorer crosses the garden." }],
     },
   };
-  test("图片修改 Prompt 只强调本次目标并保护未要求修改的内容", () => {
-    const prompt = buildCourseImageEditPrompt("消除画面右侧重复的角色");
+  test("图片修改 Prompt 用当前图片、场景和完整角色参考库理解自然语言要求", () => {
+    const prompt = buildCourseImageEditPrompt({
+      instruction: "让大家跑起来，并让王老师加入画面",
+      sourceText: "Leo and Mia walk through the garden.",
+      sceneDescription: "A garden path at sunrise.",
+      focus: "Friends explore together.",
+      visualStyle: "Bright picture-book art.",
+      storyWorld: "A coherent garden world.",
+      characters: [{
+        characterKey: "C01",
+        chineseName: "王老师",
+        englishName: "Mr. Wang",
+        referenceIndex: 2,
+        identityDescription: null,
+        appearanceDescription: "短黑发，戴圆框眼镜。",
+        courseAppearance: "浅蓝色针织衫和深色长裤。",
+      }],
+    });
 
-    expect(prompt).toContain("本次修改要求：\n消除画面右侧重复的角色");
-    expect(prompt).toContain("将修改要求视为最终目标，而不是建议");
-    expect(prompt).toContain("不要新增、复制、删除或替换未被要求修改的人物或物体");
+    expect(prompt).toContain("[本次修改要求]\n让大家跑起来，并让王老师加入画面");
+    expect(prompt).toContain("图片 1 是唯一需要编辑的当前图片");
+    expect(prompt).toContain("“他们、大家、所有人、集体”等群体称呼，默认指图片 1 中当前可见的人物");
+    expect(prompt).toContain("C01 — 王老师 / Mr. Wang\n身份参考：图片 2");
+    expect(prompt).toContain("段落正文：Leo and Mia walk through the garden.");
+    expect(prompt).toContain("本次修改要求优先于原始场景上下文");
   });
   test("只有角色外貌或本课造型变化才提示图片未同步", () => {
     const designs = currentPlan.coverBrief.characterDesigns;
@@ -740,20 +759,22 @@ describe("视觉资源仓储", () => {
     expect(edit.mock.calls[0]?.[0].quality).toBe("high");
   });
 
-  test("编辑图片只提交原图和本次修改要求，不混入完整旧 Prompt 或角色参考图", async () => {
+  test("编辑图片提交当前原图、全课角色参考库和紧凑场景上下文", async () => {
     const parent = { id: "old-cover", courseId: "course-1", slotId: "slot-1", characterVisualId: null, prompt: "旧中文提示词", quality: "medium", planRevision: 1, status: "succeeded", storagePath: "old.webp", providerImageUrl: null, temporarySourcePath: null };
     const revision = { ...parent, id: "revision-1", parentAssetId: parent.id, prompt: "new prompt", status: "pending" };
     const edit = vi.fn(async (input: { prompt: string; quality: "low" | "medium" | "high"; imageDataUrls: string[]; portrait?: boolean }) => {
       void input;
       return { imageUrl: "data:image/png;base64,aGVsbG8=" };
     });
-    const loadReferences = vi.fn(async () => ["data:image/webp;base64,aGVsbG8="]);
+    const loadReferences = vi.fn(async (paths: string[]) => paths.map(() => "data:image/webp;base64,aGVsbG8="));
     const imageUpsert = vi.fn(async ({ create }) => ({ ...revision, ...create }));
     const db = {
       course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
       courseImage: { findFirst: vi.fn(async () => parent), findUnique: vi.fn(async () => revision), upsert: imageUpsert, updateMany: vi.fn(async () => ({ count: 1 })), update: vi.fn(async ({ data }) => ({ ...revision, ...data })) },
-      courseVisualImageSlot: { findUnique: vi.fn(async () => ({ id: "slot-1", slotType: "visual_cover", paragraphId: null, prompt: "legacy prompt", characterIds: [] })), update: vi.fn(async () => ({ slotType: "visual_cover" })) },
-      courseCharacterVisual: { update: vi.fn(async () => ({})) },
+      courseVisualImageSlot: { findUnique: vi.fn(async () => ({ id: "slot-1", slotType: "visual_cover", paragraphId: null, sourceText: "封面故事摘要", sceneDescription: "A wide garden cover.", focus: "Garden", prompt: "legacy prompt", characterIds: [] })), update: vi.fn(async () => ({ slotType: "visual_cover" })) },
+      courseCharacter: { findFirst: vi.fn(async () => ({ id: "character-1", sourceType: "original", displayName: "探险家", englishName: "Explorer", visualDescription: "原创花园探险家" })) },
+      coursePerson: { findMany: vi.fn(async () => []) },
+      courseCharacterVisual: { findUnique: vi.fn(async () => ({ intent: "preserve_identity", activeImage: { id: "character-ref", storagePath: "character.webp" } })), update: vi.fn(async () => ({})) },
       courseVisualResourcePlan: { findUnique: vi.fn(async () => currentPlan), update: vi.fn(async () => ({})) },
     };
 
@@ -767,10 +788,12 @@ describe("视觉资源仓储", () => {
     const submittedPrompt = edit.mock.calls[0]![0].prompt;
     expect(submittedPrompt).toContain("make the scene brighter");
     expect(submittedPrompt).toContain("除本次要求必然影响的内容外");
-    expect(submittedPrompt).not.toContain("Bright picture-book art");
+    expect(submittedPrompt).toContain("Bright picture-book art");
+    expect(submittedPrompt).toContain("C01 — 探险家 / Explorer");
+    expect(submittedPrompt).toContain("身份参考：图片 2");
     expect(submittedPrompt).not.toContain("旧中文提示词");
-    expect(loadReferences).toHaveBeenCalledWith(["old.webp"]);
-    expect(imageUpsert.mock.calls[0]?.[0].create.referenceAssetIds).toEqual(["old-cover"]);
+    expect(loadReferences).toHaveBeenCalledWith(["old.webp", "character.webp"]);
+    expect(imageUpsert.mock.calls[0]?.[0].create.referenceAssetIds).toEqual(["old-cover", "character-ref"]);
   });
 
   test("修改图片已经成功但采用状态丢失时，同一请求会修复当前图片而不再次生图", async () => {
@@ -781,7 +804,9 @@ describe("视觉资源仓储", () => {
     const db = {
       course: { findUnique: vi.fn(async () => ({ visualQuality: "medium" })) },
       courseImage: { findFirst: vi.fn(async () => parent), upsert: vi.fn(async () => succeeded) },
-      courseVisualImageSlot: { findUnique: vi.fn(async () => ({ id: "slot-1", slotType: "visual_cover", paragraphId: null, characterIds: [] })), update: slotUpdate },
+      courseVisualImageSlot: { findUnique: vi.fn(async () => ({ id: "slot-1", slotType: "visual_cover", paragraphId: null, sourceText: "", sceneDescription: "", focus: "", characterIds: [] })), update: slotUpdate },
+      courseCharacter: { findFirst: vi.fn(async () => null) },
+      coursePerson: { findMany: vi.fn(async () => []) },
       courseVisualResourcePlan: { findUnique: vi.fn(async () => currentPlan), update: planUpdate },
       courseCharacterVisual: { update: vi.fn() },
     };
@@ -794,5 +819,22 @@ describe("视觉资源仓储", () => {
     expect(edit).not.toHaveBeenCalled();
     expect(slotUpdate).toHaveBeenCalledWith({ where: { id: "slot-1" }, data: { activeImageId: "cover-new" } });
     expect(planUpdate).toHaveBeenCalledWith({ where: { courseId: "course-1" }, data: { confirmedCoverAssetId: null } });
+  });
+
+  test("旧视觉方案的历史图片不能通过编辑伪装成当前方案版本", async () => {
+    const parent = { id: "old-plan-cover", courseId: "course-1", slotId: "slot-1", characterVisualId: null, prompt: "old prompt", quality: "medium", planRevision: 1, status: "succeeded", storagePath: "old.webp", providerImageUrl: null, temporarySourcePath: null };
+    const db = {
+      course: { findUnique: vi.fn(async () => ({ id: "course-1" })) },
+      courseImage: { findFirst: vi.fn(async () => parent) },
+      courseVisualImageSlot: { findUnique: vi.fn(async () => ({ id: "slot-1" })) },
+      courseVisualResourcePlan: { findUnique: vi.fn(async () => ({ ...currentPlan, revision: 2 })) },
+    };
+    const edit = vi.fn();
+
+    await expect(refineCourseVisualAsset(db as never, "course-1", parent.id, "make it brighter", "old-plan-edit", {
+      generate: vi.fn(), edit, persist: vi.fn(), loadReferences: vi.fn(), removeTemporarySource: vi.fn(),
+    })).rejects.toThrow("该图片来自旧视觉方案，请按当前方案重新生成");
+
+    expect(edit).not.toHaveBeenCalled();
   });
 });

@@ -52,8 +52,10 @@ const plannedState: CourseVisualResourcesState = {
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function showModal() { this.setAttribute("open", ""); };
   HTMLDialogElement.prototype.close = function close() { this.removeAttribute("open"); };
+  window.localStorage.clear();
+  window.localStorage.setItem("pblstudio:image-regenerate-notice:v1", "dismissed");
 });
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); window.localStorage.clear(); });
 
 describe("Step 5 视觉资源工作区", () => {
   test("顶部保留紧凑流程介绍和独立视觉方案组件，不展示空图片 Tab", () => {
@@ -435,6 +437,30 @@ describe("Step 5 视觉资源工作区", () => {
     expect(screen.getByRole("status")).toHaveTextContent("已等待 01:05");
   });
 
+  test("首次重新生成说明何时应改用编辑图片，并可记住不再提示", () => {
+    window.localStorage.removeItem("pblstudio:image-regenerate-notice:v1");
+    const current = asset({ id: "current-cover" });
+    const request = vi.fn(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal("fetch", request);
+    render(<CourseVisualResourcesWorkspace initialState={{
+      ...plannedState,
+      slots: plannedState.slots.map((item) => item.slotType === "visual_cover" ? { ...item, activeAssetId: current.id, activeAsset: current, versions: [current] } : item),
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "重新生成封面" }));
+
+    expect(screen.getByRole("heading", { name: "重新生成这张图片？" })).toBeInTheDocument();
+    expect(screen.getByText(/人物、场景、构图或画风整体不理想/)).toBeInTheDocument();
+    expect(screen.getByText(/当前画面基本满意.*编辑图片/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "以后不再提示" })).toBeChecked();
+    expect(request).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认重新生成" }));
+
+    expect(window.localStorage.getItem("pblstudio:image-regenerate-notice:v1")).toBe("dismissed");
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   test("失败后重新生成成功会立即切换到新图片，不需要刷新页面", async () => {
     const failed = asset({ id: "failed-cover", status: "failed", publicUrl: null, failureReason: "上次生成失败" });
     const succeeded = asset({ id: "new-cover", publicUrl: "/new-cover.webp" });
@@ -629,7 +655,7 @@ describe("Step 5 视觉资源工作区", () => {
     expect(screen.getByRole("button", { name: "确认重新调整" })).toBeEnabled();
   });
 
-  test("修改图片时提示老师描述对象、位置和目标结果", () => {
+  test("修改图片时说明可以自由修改并自动使用课程上下文", () => {
     const current = asset();
     render(<CourseVisualResourcesWorkspace initialState={{
       ...plannedState,
@@ -638,8 +664,8 @@ describe("Step 5 视觉资源工作区", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "编辑图片" }));
 
-    expect(screen.getByText("请具体描述要修改的对象、位置和目标结果，信息越明确，修改越准确。")).toBeInTheDocument();
-    expect(screen.getByLabelText("修改当前版本")).toHaveAttribute("placeholder", "例如：消除画面右侧重复的角色，其他人物和构图保持不变");
+    expect(screen.getByText("将以当前图片为基础修改。可调整人物、动作、背景或增删本课角色；新增角色时请写明角色名称。")).toBeInTheDocument();
+    expect(screen.getByLabelText("修改当前版本")).toHaveAttribute("placeholder", "例如：把背景改成黄昏，让 Leo 和 Mia 跑向右侧，并让王老师加入画面");
   });
 
   test("只有真正提交图片生成时显示长耗时提示", () => {

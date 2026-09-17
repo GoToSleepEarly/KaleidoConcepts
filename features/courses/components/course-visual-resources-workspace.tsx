@@ -18,6 +18,7 @@ import { CourseCreateSteps, courseStageStep } from "./course-create-steps";
 import { CourseStaleNotice } from "./course-stale-notice";
 
 const CHARACTER_PAGE_SIZE = 6;
+const IMAGE_REGENERATE_NOTICE_KEY = "pblstudio:image-regenerate-notice:v1";
 
 function formatElapsedTime(seconds: number) {
   const minutes = Math.floor(seconds / 60)
@@ -386,6 +387,8 @@ function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, 
   } | null>(null);
   const [instruction, setInstruction] = useState("");
   const [editing, setEditing] = useState(false);
+  const [regenerateConfirmation, setRegenerateConfirmation] = useState<"normal" | "force" | null>(null);
+  const [rememberRegenerateNotice, setRememberRegenerateNotice] = useState(true);
   const [recoveryMenuOpen, setRecoveryMenuOpen] = useState(false);
   const recoveryMenuRef = useRef<HTMLDivElement>(null);
   const recoveryMenuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -449,6 +452,42 @@ function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, 
       setEditing(false);
       await onChanged();
     });
+  }
+
+  function requestRegenerate(kind: "normal" | "force") {
+    if (current.status !== "succeeded" || !current.publicUrl) {
+      if (kind === "force") onForceRegenerate();
+      else onRegenerate();
+      return;
+    }
+    let dismissed = false;
+    try {
+      dismissed = window.localStorage.getItem(IMAGE_REGENERATE_NOTICE_KEY) === "dismissed";
+    } catch {
+      // Local storage is an optional browser preference; regeneration must remain usable without it.
+    }
+    if (dismissed) {
+      if (kind === "force") onForceRegenerate();
+      else onRegenerate();
+      return;
+    }
+    setRememberRegenerateNotice(true);
+    setRegenerateConfirmation(kind);
+  }
+
+  function confirmRegenerate() {
+    const kind = regenerateConfirmation;
+    if (!kind) return;
+    if (rememberRegenerateNotice) {
+      try {
+        window.localStorage.setItem(IMAGE_REGENERATE_NOTICE_KEY, "dismissed");
+      } catch {
+        // The preference may fail in private or restricted browser contexts; the action should still proceed.
+      }
+    }
+    setRegenerateConfirmation(null);
+    if (kind === "force") onForceRegenerate();
+    else onRegenerate();
   }
 
   const inFlight = findLastCompat(versions, (asset) => asset.planRevision === planRevision && ["pending", "submitting", "generating"].includes(asset.status));
@@ -517,7 +556,7 @@ function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, 
                     onClick={() => {
                       setRecoveryMenuOpen(false);
                       recoveryMenuTriggerRef.current?.focus();
-                      onForceRegenerate();
+                      requestRegenerate("force");
                     }}
                     ref={recoveryMenuItemRef}
                     role="menuitem"
@@ -530,7 +569,7 @@ function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, 
               ) : null}
             </div>
           ) : (
-            <Button disabled={disabled || generating} onClick={onRegenerate} size="sm" variant="outline">
+            <Button disabled={disabled || generating} onClick={() => requestRegenerate("normal")} size="sm" variant="outline">
               <RefreshCw className={cn(generating && "animate-spin")} />
               {generating ? "生成中" : regenerateLabel}
             </Button>
@@ -560,8 +599,8 @@ function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, 
           <label className="text-sm font-medium" htmlFor={`image-edit-${current.id}`}>
             修改当前版本
           </label>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">请具体描述要修改的对象、位置和目标结果，信息越明确，修改越准确。</p>
-          <textarea className="mt-2 min-h-20 w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-base font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" disabled={disabled} id={`image-edit-${current.id}`} maxLength={500} onChange={(event) => setInstruction(event.target.value)} placeholder="例如：消除画面右侧重复的角色，其他人物和构图保持不变" value={instruction} />
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">将以当前图片为基础修改。可调整人物、动作、背景或增删本课角色；新增角色时请写明角色名称。</p>
+          <textarea className="mt-2 min-h-20 w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-base font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" disabled={disabled} id={`image-edit-${current.id}`} maxLength={500} onChange={(event) => setInstruction(event.target.value)} placeholder="例如：把背景改成黄昏，让 Leo 和 Mia 跑向右侧，并让王老师加入画面" value={instruction} />
           <div className="mt-2 flex justify-end">
             <Button disabled={disabled || !instruction.trim()} onClick={refine} size="sm">
               <Send />
@@ -588,6 +627,22 @@ function AssetWorkspace({ activeAssetId, courseId, disabled, generationPending, 
           </div>
         </details>
       ) : null}
+      <Dialog icon={<RefreshCw className="size-5" />} onClose={() => setRegenerateConfirmation(null)} open={Boolean(regenerateConfirmation)} size="compact" title="重新生成这张图片？">
+        <div className="space-y-4 p-5">
+          <div className="space-y-2 text-pretty text-sm leading-6 text-muted-foreground">
+            <p>重新生成将不沿用当前画面，按最新场景、角色设定和参考图重新绘制。适合人物、场景、构图或画风整体不理想的情况；当前版本仍会保留。</p>
+            <p>如果当前画面基本满意，只需调整动作、表情、背景或增删元素，请使用“编辑图片”。</p>
+          </div>
+          <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2 text-sm font-medium">
+            <input checked={rememberRegenerateNotice} className="size-4 accent-primary" onChange={(event) => setRememberRegenerateNotice(event.target.checked)} type="checkbox" />
+            以后不再提示
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setRegenerateConfirmation(null)} variant="outline">取消</Button>
+            <Button onClick={confirmRegenerate}>确认重新生成</Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

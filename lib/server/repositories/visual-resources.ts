@@ -73,16 +73,60 @@ export function hasUnsyncedCharacterAppearance(
   });
 }
 
-export function buildCourseImageEditPrompt(instruction: string) {
-  return `请直接编辑所提供的原图。
+type CourseImageEditPromptCharacter = {
+  characterKey: string;
+  chineseName: string;
+  englishName: string;
+  referenceIndex?: number;
+  identityDescription: string | null;
+  appearanceDescription: string | null;
+  courseAppearance: string;
+};
 
-本次修改要求：
-${instruction.trim()}
-
-将修改要求视为最终目标，而不是建议。
-除本次要求必然影响的内容外，保持原图中的其他人物、数量、身份、外貌、动作、位置、构图、背景、画风和光线不变。
-不要新增、复制、删除或替换未被要求修改的人物或物体。
-输出修改后的完整图片，不添加文字、边框、标志或水印。`;
+export function buildCourseImageEditPrompt(input: {
+  instruction: string;
+  sourceText?: string | null;
+  sceneDescription?: string | null;
+  focus?: string | null;
+  visualStyle?: string | null;
+  storyWorld?: string | null;
+  characters: CourseImageEditPromptCharacter[];
+}) {
+  const sceneContext = [
+    input.sourceText?.trim() ? `段落正文：${input.sourceText.trim()}` : null,
+    input.sceneDescription?.trim() ? `原始场景：${input.sceneDescription.trim()}` : null,
+    input.focus?.trim() ? `画面重点：${input.focus.trim()}` : null,
+    input.visualStyle?.trim() ? `画风：${input.visualStyle.trim()}` : null,
+    input.storyWorld?.trim() ? `故事世界：${input.storyWorld.trim()}` : null,
+  ].filter((line): line is string => Boolean(line));
+  const characterCatalog = input.characters.map((character) => [
+    `${character.characterKey} — ${character.chineseName} / ${character.englishName}`,
+    character.referenceIndex ? `身份参考：图片 ${character.referenceIndex}` : "身份参考：无图片，使用以下文字设定",
+    character.identityDescription ? `角色本体：${character.identityDescription}` : null,
+    character.appearanceDescription ? `角色外貌：${character.appearanceDescription}` : null,
+    `本课造型：${character.courseAppearance}`,
+  ].filter((line): line is string => Boolean(line)).join("\n")).join("\n\n");
+  return [
+    "请直接编辑输入图片并输出修改后的完整图片。",
+    "[编辑基准]",
+    "图片 1 是唯一需要编辑的当前图片。当前可见的人物、物体和位置关系是本次编辑的事实基准。",
+    input.characters.some((character) => character.referenceIndex)
+      ? "图片 2 及之后的图片只是本课角色身份参考库，不代表这些角色必须出现在结果中。"
+      : null,
+    "[本次修改要求]",
+    input.instruction.trim(),
+    sceneContext.length ? "[原始场景上下文]" : null,
+    ...sceneContext,
+    characterCatalog ? "[本课角色参考库]" : null,
+    characterCatalog || null,
+    "[执行规则]",
+    "本次修改要求优先于原始场景上下文。",
+    "“他们、大家、所有人、集体”等群体称呼，默认指图片 1 中当前可见的人物。",
+    "只有本次修改要求明确提出时，才加入图片 1 中不存在的本课角色；按角色参考库保持其身份外貌和本课造型。",
+    "除本次要求必然影响的内容外，尽量保持图片 1 中其他人物、身份、外貌、动作、位置、构图、背景、画风和光线不变。",
+    "不要擅自新增、复制、删除或替换未被要求修改的人物或物体。",
+    "保持原图尺寸与画幅，不添加文字、边框、标志或水印。",
+  ].filter((line): line is string => Boolean(line)).join("\n");
 }
 
 export class VisualPlanOperationConflictError extends Error {
@@ -893,27 +937,44 @@ export async function saveUploadedCharacterReference(
   }
 }
 
-async function slotReferenceAssets(db: VisualResourcesDb, courseId: string, characterIds: string[], plan: CourseVisualPlan) {
+async function slotReferenceAssets(
+  db: VisualResourcesDb,
+  courseId: string,
+  characterIds: string[],
+  plan: CourseVisualPlan,
+  options: { referenceIndexOffset?: number; requirePersonReference?: boolean } = {},
+) {
+  type CoursePersonReference = {
+    personId: string;
+    chineseNameSnapshot: string;
+    englishNameSnapshot: string;
+    role: "student" | "teacher";
+    ageSnapshot: number;
+    genderSnapshot: "male" | "female";
+    visualAssetSnapshot: { id: string; storagePath: string | null } | null;
+  };
   const paths: string[] = [];
   const ids: string[] = [];
   const characters: CourseImagePromptCharacter[] = [];
   const characterKeys = new Map(plan.characterDesigns.map((design, index) => [design.characterId, `C${String(index + 1).padStart(2, "0")}`]));
   const designByCharacterId = new Map(plan.characterDesigns.map((design) => [design.characterId, design]));
+  let coursePeopleCache: CoursePersonReference[] | null = null;
   for (const characterId of characterIds) {
     const character = await db.courseCharacter.findFirst({ where: { id: characterId, courseId } });
     if (!character) continue;
     let referenceIndex: number | undefined;
     let personSnapshot: { role: "student" | "teacher"; ageSnapshot: number; genderSnapshot: "male" | "female" } | null = null;
     if (character.sourceType === "person") {
-      const coursePeople = await db.coursePerson.findMany({ where: { courseId }, include: { visualAssetSnapshot: true } });
+      const coursePeople: CoursePersonReference[] = coursePeopleCache ?? await db.coursePerson.findMany({ where: { courseId }, include: { visualAssetSnapshot: true } });
+      coursePeopleCache = coursePeople;
       const matched = matchCoursePersonForCharacter(character, coursePeople.map((person) => ({ personId: person.personId, chineseName: person.chineseNameSnapshot, englishName: person.englishNameSnapshot })));
       const snapshot = matched ? coursePeople.find((person) => person.personId === matched.personId) : null;
       personSnapshot = snapshot ?? null;
       if (snapshot?.visualAssetSnapshot?.storagePath) {
         paths.push(snapshot.visualAssetSnapshot.storagePath);
         ids.push(snapshot.visualAssetSnapshot.id);
-        referenceIndex = paths.length;
-      } else {
+        referenceIndex = paths.length + (options.referenceIndexOffset ?? 0);
+      } else if (options.requirePersonReference !== false) {
         throw new VisualResourcesInvalidStateError(`人物“${character.displayName}”还没有可用的外形参考`);
       }
     }
@@ -924,7 +985,7 @@ async function slotReferenceAssets(db: VisualResourcesDb, courseId: string, char
       if (canUseReference && visual?.activeImage?.storagePath) {
         paths.push(visual.activeImage.storagePath);
         ids.push(visual.activeImage.id);
-        referenceIndex = paths.length;
+        referenceIndex = paths.length + (options.referenceIndexOffset ?? 0);
       }
     }
     characters.push({
@@ -1004,14 +1065,50 @@ export async function refineCourseVisualAsset(db: VisualResourcesDb, courseId: s
   ]);
   if (!course || !parent) throw new VisualResourcesNotFoundError("图片版本不存在");
   if (parent.status !== "succeeded" || !parent.storagePath) throw new VisualResourcesInvalidStateError("只能修改生成成功的图片版本");
-  const referencePaths = [parent.storagePath];
-  const referenceAssetIds = [parent.id];
-  const prompt = buildCourseImageEditPrompt(instruction);
+  const plan = storedVisualPlan(planRecord?.coverBrief);
+  const slot = parent.slotId ? await db.courseVisualImageSlot.findUnique({ where: { id: parent.slotId } }) : null;
+  if (parent.slotId && (!slot || !plan || !planRecord)) throw new VisualResourcesInvalidStateError("图片缺少当前视觉方案，请重新生成");
+  if (parent.slotId && planRecord && parent.planRevision !== planRecord.revision) {
+    throw new VisualResourcesInvalidStateError("该图片来自旧视觉方案，请按当前方案重新生成");
+  }
+  const courseReferences = plan
+    ? await slotReferenceAssets(
+      db,
+      courseId,
+      plan.characterDesigns.map((design) => design.characterId),
+      plan,
+      { referenceIndexOffset: 1, requirePersonReference: false },
+    )
+    : { paths: [], ids: [], characters: [] };
+  const designByCharacterId = new Map(plan?.characterDesigns.map((design) => [design.characterId, design]) ?? []);
+  const editCharacters: CourseImageEditPromptCharacter[] = courseReferences.characters.map((character) => {
+    const design = designByCharacterId.get(character.characterId);
+    return {
+      characterKey: character.characterKey,
+      chineseName: character.chineseName,
+      englishName: character.englishName,
+      referenceIndex: character.referenceIndex,
+      identityDescription: character.identityDescription ?? null,
+      appearanceDescription: design?.appearanceDescription ?? null,
+      courseAppearance: design?.courseAppearance ?? "沿用当前图片中的造型",
+    };
+  });
+  const referencePaths = [parent.storagePath, ...courseReferences.paths];
+  const referenceAssetIds = [parent.id, ...courseReferences.ids];
+  const prompt = buildCourseImageEditPrompt({
+    instruction,
+    sourceText: slot?.sourceText,
+    sceneDescription: slot?.sceneDescription,
+    focus: slot?.focus,
+    visualStyle: plan?.visualStyle,
+    storyWorld: plan?.storyWorld,
+    characters: editCharacters,
+  });
   const requestedQuality = deps.quality ?? "medium";
   const quality = deps.normalizeQuality?.(requestedQuality) ?? requestedQuality;
   const sourceHash = visualGenerationFingerprint({ prompt, quality, referenceAssetIds });
   const now = new Date();
-  const asset = await db.courseImage.upsert({ where: { courseId_idempotencyKey: { courseId, idempotencyKey } }, create: { courseId, slotId: parent.slotId, characterVisualId: parent.characterVisualId, parentAssetId: parent.id, operation: "revision", userInstruction: instruction.trim(), prompt, quality, provider: deps.provider ?? "quickrouter_gpt_image_2", referenceAssetIds, sourceHash, planRevision: planRecord?.revision ?? parent.planRevision, idempotencyKey, startedAt: now, leaseExpiresAt: new Date(now.getTime() + COURSE_IMAGE_LEASE_MS) }, update: {} });
+  const asset = await db.courseImage.upsert({ where: { courseId_idempotencyKey: { courseId, idempotencyKey } }, create: { courseId, slotId: parent.slotId, characterVisualId: parent.characterVisualId, parentAssetId: parent.id, operation: "revision", userInstruction: instruction.trim(), prompt, quality, provider: deps.provider ?? "quickrouter_gpt_image_2", referenceAssetIds, sourceHash, planRevision: parent.planRevision, idempotencyKey, startedAt: now, leaseExpiresAt: new Date(now.getTime() + COURSE_IMAGE_LEASE_MS) }, update: {} });
   if (asset.status === "succeeded") {
     await adoptSucceededCourseImage(db, asset);
     return asset;
