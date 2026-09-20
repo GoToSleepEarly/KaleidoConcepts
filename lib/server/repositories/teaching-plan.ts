@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import type {
   CourseStage,
   EnglishLevel,
@@ -74,6 +76,7 @@ type DbLessonContent = {
   chapters?: unknown;
   mainIdea?: unknown;
   homework?: unknown;
+  exercisesStale?: boolean;
 };
 
 type Delegate<T> = {
@@ -90,7 +93,7 @@ export type TeachingPlanDb = {
   courseTeachingPlan: Required<Pick<Delegate<DbTeachingPlan>, "findUnique" | "upsert" | "update">>;
   knowledgePoint?: GrammarContextDb["knowledgePoint"];
   presetOption?: GrammarContextDb["presetOption"];
-  courseLessonContent?: Pick<Delegate<DbLessonContent>, "findUnique" | "deleteMany">;
+  courseLessonContent?: Pick<Delegate<DbLessonContent>, "findUnique" | "update" | "deleteMany">;
   courseContentGeneration?: Pick<Delegate<{ courseId: string }>, "deleteMany">;
   courseContentChatMessage?: Pick<Delegate<{ courseId: string }>, "deleteMany">;
   $transaction?: <T>(callback: (tx: TeachingPlanDb) => Promise<T>) => Promise<T>;
@@ -467,6 +470,70 @@ export async function saveTeachingPlan(db: TeachingPlanDb, courseId: string, pla
 
 export type TeachingPlanDownstreamAction = "check" | "reset";
 
+type TeachingPlanChangeImpact = {
+  readingChanged: boolean;
+  exercisesChanged: boolean;
+  renderingChanged: boolean;
+};
+
+function readingInput(plan: TeachingPlan) {
+  return {
+    mainIdeaTargetWordCount: plan.mainIdeaTargetWordCount,
+    chapters: plan.chapters.map((chapter) => ({
+      outlineChapterId: chapter.outlineChapterId,
+      targetWordCount: chapter.targetWordCount,
+      paragraphCount: chapter.paragraphCount,
+      knowledgePointIds: chapter.knowledgePointIds,
+      readingExercises: chapter.readingExercises,
+    })),
+  };
+}
+
+function exerciseInput(plan: TeachingPlan) {
+  return {
+    chapters: plan.chapters.map((chapter) => ({
+      outlineChapterId: chapter.outlineChapterId,
+      chapterPractice: chapter.chapterPractice,
+    })),
+    afterClassPractice: {
+      enabled: plan.afterClassPractice.enabled,
+      vocabularyReviewEnabled: plan.afterClassPractice.vocabularyReviewEnabled,
+      knowledgePointIds: plan.afterClassPractice.knowledgePointIds,
+      practice: plan.afterClassPractice.practice,
+    },
+  };
+}
+
+function renderingInput(plan: TeachingPlan) {
+  return plan.chapters.map((chapter) => ({
+    outlineChapterId: chapter.outlineChapterId,
+    readingExerciseMode: chapter.readingExerciseMode,
+  }));
+}
+
+export function teachingPlanChangeImpact(current: TeachingPlan, next: TeachingPlan): TeachingPlanChangeImpact {
+  return {
+    readingChanged: !isDeepStrictEqual(readingInput(current), readingInput(next)),
+    exercisesChanged: !isDeepStrictEqual(exerciseInput(current), exerciseInput(next)),
+    renderingChanged: !isDeepStrictEqual(renderingInput(current), renderingInput(next)),
+  };
+}
+
+function hasCompletedExerciseStage(content: DbLessonContent | null) {
+  return Boolean(content && ["ready", "confirmed"].includes(content.status ?? ""));
+}
+
+function applyReadingModes(chapters: unknown, plan: TeachingPlan) {
+  if (!Array.isArray(chapters)) return chapters;
+  const modes = new Map(plan.chapters.map((chapter) => [chapter.outlineChapterId, chapter.readingExerciseMode]));
+  return chapters.map((chapter) => {
+    if (!chapter || typeof chapter !== "object") return chapter;
+    const outlineChapterId = Reflect.get(chapter, "outlineChapterId");
+    const readingExerciseMode = typeof outlineChapterId === "string" ? modes.get(outlineChapterId) : undefined;
+    return readingExerciseMode ? { ...chapter, readingExerciseMode } : chapter;
+  });
+}
+
 function hasGeneratedCourseContent(content: DbLessonContent | null) {
   if (!content) return false;
   return content.status !== undefined && content.status !== "empty"
@@ -484,12 +551,15 @@ export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, 
     if (!existing) throw new TeachingPlanValidationError("教学规划信息不完整");
     let plan = toTeachingPlan(existing);
     if (!inputPlan && plan.status === "confirmed") return { storagePaths: [], state: { plan, course: { id: course.id, currentStage: course.currentStage, staleFromStage: course.staleFromStage ?? null } } };
+    const impact = inputPlan
+      ? teachingPlanChangeImpact(plan, inputPlan)
+      : { readingChanged: true, exercisesChanged: false, renderingChanged: false };
     const outlineChapterIds = toOutlineState(outline).chapters.map((chapter) => chapter.id);
 
     const content = tx.courseLessonContent?.findUnique ? await tx.courseLessonContent.findUnique({ where: { courseId } }) : null;
     const hasDownstream = hasGeneratedCourseContent(content)
       || await hasCourseDownstream(tx as unknown as CourseDownstreamDb, courseId, "content");
-    if (hasDownstream && downstreamAction === "check") throw new CourseTeachingPlanConflictError();
+    if (hasDownstream && impact.readingChanged && downstreamAction === "check") throw new CourseTeachingPlanConflictError();
 
     if (inputPlan) {
       plan = await saveTeachingPlan(tx, courseId, inputPlan, { preserveProgress: true });
@@ -499,8 +569,20 @@ export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, 
     }
     validateTeachingPlanForConfirm(plan, outlineChapterIds);
 
+    const exerciseUpdateRequired = impact.exercisesChanged && hasCompletedExerciseStage(content);
+    if (content && !impact.readingChanged && tx.courseLessonContent?.update && (exerciseUpdateRequired || impact.renderingChanged)) {
+      await tx.courseLessonContent.update({
+        where: { courseId },
+        data: {
+          ...(exerciseUpdateRequired ? { exercisesStale: true } : {}),
+          ...(impact.renderingChanged ? { chapters: applyReadingModes(content.chapters, plan) } : {}),
+        },
+      });
+    }
+
     const confirmedAt = new Date();
-    const storagePaths = hasDownstream
+    const resetsDownstream = hasDownstream && impact.readingChanged;
+    const storagePaths = resetsDownstream
       ? await clearCourseDataAfterStage(tx as unknown as CourseDownstreamDb, courseId, "teaching_plan", "content")
       : [];
     const [saved, updatedCourse] = await Promise.all([
@@ -511,9 +593,13 @@ export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, 
       tx.course.update({
         where: { id: courseId },
         data: {
-          currentStage: hasDownstream ? "content" : furthestCourseStage(course.currentStage, "content"),
-          staleFromStage: null,
-          ...(hasDownstream ? { lifecycleStatus: "draft" } : {}),
+          currentStage: resetsDownstream
+            ? "content"
+            : hasDownstream
+              ? course.currentStage
+              : furthestCourseStage(course.currentStage, "content"),
+          ...(resetsDownstream ? { staleFromStage: null } : {}),
+          ...(hasDownstream && (impact.readingChanged || impact.exercisesChanged || impact.renderingChanged) ? { lifecycleStatus: "draft" } : {}),
         },
       }),
     ]);
@@ -524,6 +610,7 @@ export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, 
         currentStage: updatedCourse.currentStage,
         staleFromStage: updatedCourse.staleFromStage ?? null,
       },
+      exerciseUpdateRequired,
     } };
   };
   const result = db.$transaction ? await db.$transaction(confirm) : await confirm(db);

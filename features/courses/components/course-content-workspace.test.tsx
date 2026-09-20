@@ -860,4 +860,34 @@ describe("CourseContentWorkspace", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "开始生成" })).toBeInTheDocument());
     expect(screen.queryByText("当前内容仍是旧版本。")).not.toBeInTheDocument();
   });
+
+  test("prompts to regenerate stale exercises after returning from Step 3", async () => {
+    const refreshed = { ...initialState, exercisesStale: true };
+    const fetchMock = vi.fn(async () => Response.json({ ...refreshed, exercisesStale: false }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CourseContentWorkspace initialState={refreshed} promptExerciseRefresh />);
+
+    expect(screen.getByRole("heading", { name: "习题配置已修改" })).toBeInTheDocument();
+    expect(screen.getByText("正文和图片不会变化。你可以现在按最新配置重新生成，也可以保留现有习题继续。"))
+      .toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "习题配置已修改" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "按最新配置重新生成习题" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/courses/course-1/content/exercises/generate",
+      expect.objectContaining({ method: "POST" }),
+    ));
+  });
+
+  test("allows continuing to Step 5 while stale exercises are retained", () => {
+    render(<CourseContentWorkspace initialState={{ ...initialState, status: "confirmed", exercisesStale: true }} />);
+
+    expect(screen.getByText("习题尚未按最新教学规划更新；正文和图片不受影响。"))
+      .toBeInTheDocument();
+    const nextButton = screen.getByRole("button", { name: "下一步：视觉资源" });
+    expect(nextButton).toBeEnabled();
+    fireEvent.click(nextButton);
+    expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/visual-resources");
+  });
 });

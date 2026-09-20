@@ -326,6 +326,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
         message?: string;
         requiresReset?: boolean;
         affectedResources?: string[];
+        exerciseUpdateRequired?: boolean;
       }>(response);
       if (response.status === 409 && data.requiresReset) {
         setAffectedResources(data.affectedResources ?? ["文案与练习", "视觉资源和图片", "预览发布设置"]);
@@ -334,7 +335,7 @@ export function CourseTeachingPlanWorkspace({ initialState }: { initialState: Te
       }
       if (!response.ok || !data.course) throw new Error(data.message || "教学规划确认失败");
       setHasChanges(false);
-      router.push(`/courses/${initialState.course.id}/create/content`);
+      router.push(`/courses/${initialState.course.id}/create/content${data.exerciseUpdateRequired ? "?refreshExercises=1" : ""}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "教学规划确认失败");
     } finally {

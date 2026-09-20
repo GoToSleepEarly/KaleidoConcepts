@@ -729,6 +729,22 @@ describe("CourseTeachingPlanWorkspace", () => {
     expect(screen.queryByRole("heading", { name: "当前配置已变更" })).not.toBeInTheDocument();
   });
 
+  test("routes exercise-only updates to Step 4 with the regeneration prompt", async () => {
+    const fetchMock = vi.fn(async () => Response.json({
+      plan: { ...state().plan, status: "confirmed", confirmedAt: "2026-08-07T00:10:00.000Z" },
+      course: { id: "course-1", currentStage: "preview" },
+      exerciseUpdateRequired: true,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseTeachingPlanWorkspace initialState={state()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: /课后/ }));
+    fireEvent.click(screen.getByRole("button", { name: "生成课后练习" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认并进入文案与练习" }));
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/courses/course-1/create/content?refreshExercises=1"));
+  });
+
   test("reconfirms an expired confirmed plan instead of bypassing the stale boundary", async () => {
     const viewed = state();
     viewed.plan.status = "confirmed";

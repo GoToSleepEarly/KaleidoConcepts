@@ -186,7 +186,7 @@ function modificationTargets(state: CourseContentState, pages: TextPreviewPage[]
   });
 }
 
-export function CourseContentWorkspace({ initialState }: { initialState: CourseContentState }) {
+export function CourseContentWorkspace({ initialState, promptExerciseRefresh = false }: { initialState: CourseContentState; promptExerciseRefresh?: boolean }) {
   const router = useRouter();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -216,6 +216,7 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
   const [previewExpanded, setPreviewExpanded] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [guideOpenedManually, setGuideOpenedManually] = useState(false);
+  const [exerciseRefreshPromptOpen, setExerciseRefreshPromptOpen] = useState(promptExerciseRefresh);
 
   const isGenerating = state.operation?.type === "reading" || state.operation?.type === "exercises" || state.status === "generating_reading" || state.status === "generating_exercises";
   const hasPersistedOperation = Boolean(state.operation) || isGenerating;
@@ -718,14 +719,14 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
         footer={(
           <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-md sm:flex-row sm:items-center sm:justify-between sm:px-4" data-testid="content-bottom-actions">
             <p aria-live="polite" className="truncate text-sm text-muted-foreground">
-              {navigating ? "正在加载目标步骤..." : hasUnsentInput ? "修改要求尚未发送" : state.status === "confirmed" ? "本步骤已完成" : state.status === "ready" && !state.exercisesStale ? "内容已就绪，可以进入视觉资源" : state.exercisesStale ? "还需：重新生成已过期练习" : "还需：完成正文与练习"}
+              {navigating ? "正在加载目标步骤..." : hasUnsentInput ? "修改要求尚未发送" : state.exercisesStale ? "习题尚未按最新教学规划更新；正文和图片不受影响。" : state.status === "confirmed" ? "本步骤已完成" : state.status === "ready" ? "内容已就绪，可以进入视觉资源" : "还需：完成正文与练习"}
             </p>
             <div className="grid grid-cols-2 gap-2 sm:flex">
               <Button disabled={isWorking} loading={navigating} onClick={() => navigate(`/courses/${state.course.id}/create/teaching-plan`)} type="button" variant="outline">
                 <ChevronLeft className="size-4" />
                 上一步
               </Button>
-              <Button aria-label="下一步：视觉资源" disabled={navigating || isWorking || !["ready", "confirmed"].includes(state.status) || state.exercisesStale} onClick={() => (state.status === "confirmed" ? navigate(`/courses/${state.course.id}/create/visual-resources`) : void confirm())} type="button">
+              <Button aria-label="下一步：视觉资源" disabled={navigating || isWorking || !["ready", "confirmed"].includes(state.status)} onClick={() => (state.status === "confirmed" ? navigate(`/courses/${state.course.id}/create/visual-resources`) : void confirm())} type="button">
                 <span className="sm:hidden">下一步</span>
                 <span className="hidden sm:inline">下一步：视觉资源</span>
                 <ChevronRight className="size-4" />
@@ -827,9 +828,9 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
               ) : null}
               {!isWorking && state.exercisesStale ? (
                 <TimelineNoticeCard title="练习需要更新">
-                  <p className="text-pretty text-sm leading-6 text-muted-foreground">正文已修改，现有练习仍保留但已过期。</p>
+                  <p className="text-pretty text-sm leading-6 text-muted-foreground">教学规划中的习题配置已经修改。现有习题仍会保留；重新生成只更新章节练习和课后练习，不影响正文或图片。</p>
                   <Button className="mt-2 w-full" onClick={() => generate("exercises")} size="sm" variant="outline">
-                    重新生成练习
+                    按最新配置重新生成习题
                   </Button>
                 </TimelineNoticeCard>
               ) : null}
@@ -977,6 +978,17 @@ export function CourseContentWorkspace({ initialState }: { initialState: CourseC
         ) : null}
       </div>
       </CourseAiWorkspaceFrame>
+      {exerciseRefreshPromptOpen ? (
+        <Dialog description="正文和图片不受影响" onClose={() => setExerciseRefreshPromptOpen(false)} open size="compact" title="习题配置已修改">
+          <div className="space-y-5 p-5 sm:p-6">
+            <p className="text-pretty text-sm leading-6 text-muted-foreground">正文和图片不会变化。你可以现在按最新配置重新生成，也可以保留现有习题继续。</p>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button onClick={() => setExerciseRefreshPromptOpen(false)} type="button" variant="outline">暂不更新</Button>
+              <Button onClick={() => { setExerciseRefreshPromptOpen(false); void generate("exercises"); }} type="button">按最新配置重新生成习题</Button>
+            </div>
+          </div>
+        </Dialog>
+      ) : null}
       {resetOpen ? (
         <Dialog description="将删除本阶段及全部后续成果" onClose={() => setResetOpen(false)} open title="重置文案与练习？">
           <div className="space-y-5 p-5 sm:p-6">

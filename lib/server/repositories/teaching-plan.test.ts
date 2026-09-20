@@ -48,6 +48,7 @@ function createDb() {
     plan: Record<string, unknown> | null;
     knowledgePoints: Record<string, unknown>[];
     contentExists: boolean;
+    lessonContent: Record<string, unknown> | null;
   } = {
     course: record({
       id: "course-1",
@@ -76,6 +77,7 @@ function createDb() {
       record({ id: "grammar-other", title: "Other Book Point", source: "grammar_in_use", bookEditionId: "book-2", sortOrder: 0, section: { officialTitle: "Other" }, bookEdition: { title: "Other Book", edition: "1st Edition", officialLevel: "B1" }, units: [{ unitNumber: 1, officialTitle: "Other" }] }),
     ],
     contentExists: false,
+    lessonContent: null,
   };
 
   const db: TeachingPlanDb & { state: typeof state } = {
@@ -112,15 +114,30 @@ function createDb() {
       })),
     },
     courseLessonContent: {
-      findUnique: vi.fn(async () => state.contentExists ? {
+      findUnique: vi.fn(async () => state.lessonContent ?? (state.contentExists ? {
         courseId: "course-1",
         status: "ready",
         contentVersion: 1,
-        chapters: [{ id: "chapter-1" }],
+        chapters: [{ id: "chapter-1", outlineChapterId: "outline-chapter-1", readingExerciseMode: "interactive" }],
         mainIdea: { id: "main-idea" },
         homework: null,
-      } : null),
-      deleteMany: vi.fn(async () => { state.contentExists = false; return { count: 1 }; }),
+        exercisesStale: false,
+      } : null)),
+      update: vi.fn(async ({ data }) => {
+        const current = state.lessonContent ?? {
+          courseId: "course-1",
+          status: "ready",
+          contentVersion: 1,
+          chapters: [{ id: "chapter-1", outlineChapterId: "outline-chapter-1", readingExerciseMode: "interactive" }],
+          mainIdea: { id: "main-idea" },
+          homework: null,
+          exercisesStale: false,
+        };
+        state.lessonContent = { ...current, ...data };
+        state.contentExists = true;
+        return state.lessonContent;
+      }),
+      deleteMany: vi.fn(async () => { state.contentExists = false; state.lessonContent = null; return { count: 1 }; }),
     },
     courseContentGeneration: { deleteMany: vi.fn(async () => ({ count: 1 })) },
     courseContentChatMessage: { deleteMany: vi.fn(async () => ({ count: 1 })) },
@@ -332,6 +349,83 @@ describe("teaching plan repository", () => {
     expect(result.course.staleFromStage).toBeNull();
     expect(db.courseContentChatMessage?.deleteMany).toHaveBeenCalled();
     expect(db.courseContentGeneration?.deleteMany).toHaveBeenCalled();
+  });
+
+  test("keeps downstream content and marks completed exercises stale for exercise-only changes", async () => {
+    const db = createDb();
+    const initial = await getTeachingPlanState(db, "course-1");
+    const confirmed = await confirmTeachingPlan(db, "course-1", "check", completePlan(initial.plan));
+    db.state.course = { ...db.state.course, currentStage: "preview", lifecycleStatus: "published" };
+    db.state.contentExists = true;
+    const changed = structuredClone(confirmed.plan);
+    changed.afterClassPractice.practice.questionsPerKnowledgePoint = 6;
+
+    const result = await confirmTeachingPlan(db, "course-1", "check", changed);
+
+    expect(result.course.currentStage).toBe("preview");
+    expect(result.exerciseUpdateRequired).toBe(true);
+    expect(db.state.contentExists).toBe(true);
+    expect(db.state.lessonContent).toMatchObject({ exercisesStale: true });
+    expect(db.state.course.lifecycleStatus).toBe("draft");
+    expect(db.courseLessonContent?.deleteMany).not.toHaveBeenCalled();
+  });
+
+  test("uses a new exercise plan later without prompting before Step 4 reaches exercise generation", async () => {
+    const db = createDb();
+    const initial = await getTeachingPlanState(db, "course-1");
+    const confirmed = await confirmTeachingPlan(db, "course-1", "check", completePlan(initial.plan));
+    db.state.course = { ...db.state.course, currentStage: "content" };
+    db.state.contentExists = true;
+    db.state.lessonContent = {
+      courseId: "course-1",
+      status: "reading_ready",
+      contentVersion: 1,
+      chapters: [{ id: "chapter-1", outlineChapterId: "outline-chapter-1", readingExerciseMode: "interactive" }],
+      mainIdea: { id: "main-idea" },
+      homework: null,
+      exercisesStale: false,
+    };
+    const changed = structuredClone(confirmed.plan);
+    changed.afterClassPractice.enabled = false;
+    changed.afterClassPractice.practice.enabled = false;
+
+    const result = await confirmTeachingPlan(db, "course-1", "check", changed);
+
+    expect(result.exerciseUpdateRequired).toBe(false);
+    expect(db.state.lessonContent).toMatchObject({ exercisesStale: false });
+    expect(db.state.contentExists).toBe(true);
+  });
+
+  test("applies render-only changes to existing content without making exercises stale", async () => {
+    const db = createDb();
+    const initial = await getTeachingPlanState(db, "course-1");
+    const confirmed = await confirmTeachingPlan(db, "course-1", "check", completePlan(initial.plan));
+    db.state.course = { ...db.state.course, currentStage: "preview" };
+    db.state.contentExists = true;
+    const changed = structuredClone(confirmed.plan);
+    changed.chapters[0].readingExerciseMode = "complete";
+    changed.chapters[0].touched.readingExerciseMode = true;
+
+    const result = await confirmTeachingPlan(db, "course-1", "check", changed);
+
+    expect(result.exerciseUpdateRequired).toBe(false);
+    expect(db.state.lessonContent).toMatchObject({
+      exercisesStale: false,
+      chapters: [expect.objectContaining({ readingExerciseMode: "complete" })],
+    });
+    expect(db.state.contentExists).toBe(true);
+  });
+
+  test("still requires the existing downstream reset when a reading field changes", async () => {
+    const db = createDb();
+    const initial = await getTeachingPlanState(db, "course-1");
+    const confirmed = await confirmTeachingPlan(db, "course-1", "check", completePlan(initial.plan));
+    db.state.course = { ...db.state.course, currentStage: "preview" };
+    db.state.contentExists = true;
+    const changed = structuredClone(confirmed.plan);
+    changed.chapters[0].targetWordCount = 140;
+
+    await expect(confirmTeachingPlan(db, "course-1", "check", changed)).rejects.toBeInstanceOf(CourseTeachingPlanConflictError);
   });
 
   test("does not mark an untouched empty Step 4 shell stale after the plan changes", async () => {
