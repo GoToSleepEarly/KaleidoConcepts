@@ -396,6 +396,76 @@ describe("teaching plan repository", () => {
     expect(db.state.contentExists).toBe(true);
   });
 
+  test("disables generated chapter and homework exercises without requesting regeneration or deleting their cache", async () => {
+    const db = createDb();
+    const initial = await getTeachingPlanState(db, "course-1");
+    const confirmed = await confirmTeachingPlan(db, "course-1", "check", completePlan(initial.plan));
+    db.state.course = { ...db.state.course, currentStage: "preview" };
+    db.state.contentExists = true;
+    db.state.lessonContent = {
+      courseId: "course-1",
+      status: "ready",
+      contentVersion: 1,
+      chapters: confirmed.plan.chapters.map((chapter, index) => ({
+        id: `chapter-${index + 1}`,
+        outlineChapterId: chapter.outlineChapterId,
+        chapterPractice: Array.from({ length: 4 }, (_, questionIndex) => ({ id: `chapter-${index + 1}-${questionIndex + 1}`, type: "optionCloze", knowledgePointId: chapter.knowledgePointIds[0], before: "Before", after: "after", answer: "went", options: ["went", "go", "going"] })),
+      })),
+      mainIdea: { id: "main-idea" },
+      homework: {
+        grammar: confirmed.plan.afterClassPractice.knowledgePointIds.flatMap((knowledgePointId) => Array.from({ length: 5 }, (_, index) => ({ id: `homework-${knowledgePointId}-${index + 1}`, type: "optionCloze", knowledgePointId, before: "Before", after: "after", answer: "went", options: ["went", "go", "going"] }))),
+        vocabularyMatching: [],
+      },
+      exercisesStale: true,
+    };
+    const changed = structuredClone(confirmed.plan);
+    changed.chapters.forEach((chapter) => { chapter.chapterPractice.enabled = false; });
+    changed.afterClassPractice.enabled = false;
+
+    const cachedChapters = structuredClone(db.state.lessonContent.chapters);
+    const cachedHomework = structuredClone(db.state.lessonContent.homework);
+    const result = await confirmTeachingPlan(db, "course-1", "check", changed);
+
+    expect(result.exerciseUpdateRequired).toBe(false);
+    expect(db.state.lessonContent).toMatchObject({ exercisesStale: false, chapters: cachedChapters, homework: cachedHomework });
+  });
+
+  test("reuses matching cached chapter and homework exercises after they are enabled again", async () => {
+    const db = createDb();
+    const initial = await getTeachingPlanState(db, "course-1");
+    const confirmed = await confirmTeachingPlan(db, "course-1", "check", completePlan(initial.plan));
+    db.state.course = { ...db.state.course, currentStage: "preview" };
+    db.state.contentExists = true;
+    db.state.lessonContent = {
+      courseId: "course-1",
+      status: "ready",
+      contentVersion: 1,
+      chapters: confirmed.plan.chapters.map((chapter, index) => ({
+        id: `chapter-${index + 1}`,
+        outlineChapterId: chapter.outlineChapterId,
+        chapterPractice: Array.from({ length: 4 }, (_, questionIndex) => ({ id: `chapter-${index + 1}-${questionIndex + 1}`, type: "optionCloze", knowledgePointId: chapter.knowledgePointIds[0], before: "Before", after: "after", answer: "went", options: ["went", "go", "going"] })),
+      })),
+      mainIdea: { id: "main-idea" },
+      homework: {
+        grammar: confirmed.plan.afterClassPractice.knowledgePointIds.flatMap((knowledgePointId) => Array.from({ length: 5 }, (_, index) => ({ id: `homework-${knowledgePointId}-${index + 1}`, type: "optionCloze", knowledgePointId, before: "Before", after: "after", answer: "went", options: ["went", "go", "going"] }))),
+        vocabularyMatching: [],
+      },
+      exercisesStale: false,
+    };
+    const disabled = structuredClone(confirmed.plan);
+    disabled.chapters.forEach((chapter) => { chapter.chapterPractice.enabled = false; });
+    disabled.afterClassPractice.enabled = false;
+    const disabledResult = await confirmTeachingPlan(db, "course-1", "check", disabled);
+    const reopened = structuredClone(disabledResult.plan);
+    reopened.chapters.forEach((chapter) => { chapter.chapterPractice.enabled = true; });
+    reopened.afterClassPractice.enabled = true;
+
+    const result = await confirmTeachingPlan(db, "course-1", "check", reopened);
+
+    expect(result.exerciseUpdateRequired).toBe(false);
+    expect(db.state.lessonContent).toMatchObject({ exercisesStale: false });
+  });
+
   test("applies render-only changes to existing content without making exercises stale", async () => {
     const db = createDb();
     const initial = await getTeachingPlanState(db, "course-1");

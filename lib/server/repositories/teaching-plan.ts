@@ -23,6 +23,7 @@ import {
 } from "@/lib/domain/teaching-plan-policy";
 import { defaultStoryComplexity, storyLengthPolicy } from "@/lib/domain/story-length-policy";
 import { furthestCourseStage } from "@/lib/domain/course-stage";
+import { exerciseContentSatisfiesPlan } from "@/lib/domain/course-exercises";
 import { clearCourseDataAfterStage, hasCourseDownstream, removeCourseImageFiles, type CourseDownstreamDb } from "@/lib/server/repositories/course-downstream";
 import { resolveGrammarBookKnowledgePoints, resolveGrammarKnowledgePoints, type GrammarContextDb } from "@/lib/server/repositories/grammar-context";
 
@@ -569,12 +570,14 @@ export async function confirmTeachingPlan(db: TeachingPlanDb, courseId: string, 
     }
     validateTeachingPlanForConfirm(plan, outlineChapterIds);
 
-    const exerciseUpdateRequired = impact.exercisesChanged && hasCompletedExerciseStage(content);
-    if (content && !impact.readingChanged && tx.courseLessonContent?.update && (exerciseUpdateRequired || impact.renderingChanged)) {
+    const exerciseUpdateRequired = impact.exercisesChanged
+      && hasCompletedExerciseStage(content)
+      && !exerciseContentSatisfiesPlan(plan, content?.chapters, content?.homework);
+    if (content && !impact.readingChanged && tx.courseLessonContent?.update && (impact.exercisesChanged || impact.renderingChanged)) {
       await tx.courseLessonContent.update({
         where: { courseId },
         data: {
-          ...(exerciseUpdateRequired ? { exercisesStale: true } : {}),
+          ...(impact.exercisesChanged ? { exercisesStale: exerciseUpdateRequired } : {}),
           ...(impact.renderingChanged ? { chapters: applyReadingModes(content.chapters, plan) } : {}),
         },
       });

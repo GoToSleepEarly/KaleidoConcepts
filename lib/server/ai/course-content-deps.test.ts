@@ -261,6 +261,15 @@ describe("course content prompt contexts", () => {
     expect(JSON.stringify(context)).not.toContain("paragraphCount");
   });
 
+  test("does not request homework questions when the after-class section is disabled", () => {
+    const changedInput = structuredClone(input);
+    changedInput.plan.afterClassPractice.enabled = false;
+
+    const context = buildExercisePromptContext(changedInput, [{ outlineChapterId: "ch1", title: "Milo出发", cleanText: "Milo opened the door." }]);
+
+    expect(context.homework).toEqual({ enabled: false, knowledgePointKeys: [], enabledTypes: [], questionsPerKnowledgePoint: 5, total: 0 });
+  });
+
   test("accepts no chapter exercise payload when only after-class practice is enabled", () => {
     const homeworkOnly = structuredClone(input);
     homeworkOnly.plan.chapters[0].chapterPractice.enabled = false;

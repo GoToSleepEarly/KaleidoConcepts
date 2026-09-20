@@ -13,6 +13,7 @@ import type {
 } from "@/lib/contracts/api";
 import { compilePreviewPages, DEFAULT_COURSE_PRESENTATION } from "@/lib/domain/course-preview";
 import { furthestCourseStage, staleStageAfterConfirming } from "@/lib/domain/course-stage";
+import { visibleExerciseContent } from "@/lib/domain/course-exercises";
 
 export type CoursePreviewDb = Pick<PrismaClient, "$transaction" | "course" | "coursePresentation" | "presetOption" | "knowledgePoint">;
 
@@ -64,8 +65,8 @@ export async function getCoursePreview(db: CoursePreviewDb, courseId: string): P
   if (!course) throw new CoursePreviewNotFoundError("课程不存在");
   if (!course.lessonContent) throw new CoursePreviewPrerequisiteError("请先完成文案与练习");
   assertVisualResourcesReady(course.visualImageSlots);
-  const planChapters = Array.isArray(course.teachingPlan?.chapters) ? course.teachingPlan.chapters as Array<{ outlineChapterId?: string; knowledgePointIds?: string[] }> : [];
-  const afterClassPractice = course.teachingPlan?.afterClassPractice as { knowledgePointIds?: string[] } | null;
+  const planChapters = Array.isArray(course.teachingPlan?.chapters) ? course.teachingPlan.chapters as Array<{ outlineChapterId?: string; knowledgePointIds?: string[]; chapterPractice?: { enabled?: boolean } }> : [];
+  const afterClassPractice = course.teachingPlan?.afterClassPractice as { enabled?: boolean; vocabularyReviewEnabled?: boolean; knowledgePointIds?: string[]; practice?: { enabled?: boolean } } | null;
   const planKnowledgePointIds = [...new Set([
     ...planChapters.flatMap((chapter) => Array.isArray(chapter.knowledgePointIds) ? chapter.knowledgePointIds : []),
     ...(Array.isArray(afterClassPractice?.knowledgePointIds) ? afterClassPractice.knowledgePointIds : []),
@@ -94,12 +95,24 @@ export async function getCoursePreview(db: CoursePreviewDb, courseId: string): P
     publicUrl: slot.activeImage?.status === "succeeded" ? slot.activeImage.publicUrl : null,
   }));
   const mainIdea = course.lessonContent.mainIdea as { id: string; title: string; text: string } | null;
-  const homework = course.lessonContent.homework as { grammar: CourseGrammarQuestion[]; vocabularyMatching: CourseVocabularyMatchingItem[] } | null;
+  const rawHomework = course.lessonContent.homework as { grammar: CourseGrammarQuestion[]; vocabularyMatching: CourseVocabularyMatchingItem[] } | null;
   const outlineChapterTitles = new Map(course.storyOutline?.chapters.map((chapter) => [chapter.id, chapter.title]) ?? []);
-  const chapters = (course.lessonContent.chapters as unknown as CourseContentChapter[]).map((chapter) => ({
+  const rawChapters = (course.lessonContent.chapters as unknown as CourseContentChapter[]).map((chapter) => ({
     ...chapter,
     title: outlineChapterTitles.get(chapter.outlineChapterId) ?? chapter.title,
   }));
+  const visibilityPlan = {
+    chapters: planChapters.map((chapter) => ({
+      outlineChapterId: chapter.outlineChapterId ?? "",
+      chapterPractice: { enabled: chapter.chapterPractice?.enabled !== false },
+    })),
+    afterClassPractice: {
+      enabled: afterClassPractice?.enabled !== false,
+      vocabularyReviewEnabled: afterClassPractice?.vocabularyReviewEnabled !== false,
+      practice: { enabled: afterClassPractice?.practice?.enabled !== false },
+    },
+  } as Parameters<typeof visibleExerciseContent>[0];
+  const { chapters, homework } = visibleExerciseContent(visibilityPlan, rawChapters, rawHomework);
 
   return {
     course: {

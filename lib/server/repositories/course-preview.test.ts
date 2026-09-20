@@ -3,6 +3,31 @@ import { describe, expect, it, vi } from "vitest";
 import { confirmVisualResources, getCoursePreview, publishCourse, savePresentation } from "@/lib/server/repositories/course-preview";
 
 describe("course preview state transitions", () => {
+  it("hides disabled cached chapter and homework exercises from preview", async () => {
+    const question = { id: "q1", type: "optionCloze", knowledgePointId: "grammar-1", before: "Before", after: "after", answer: "went", options: ["went", "go", "going"] };
+    const db = {
+      course: { findUnique: vi.fn().mockResolvedValue({
+        id: "course-1", title: "课程名称", lifecycleStatus: "draft", people: [], presentation: null,
+        teachingPlan: {
+          chapters: [{ outlineChapterId: "outline-chapter-1", knowledgePointIds: ["grammar-1"], chapterPractice: { enabled: false } }],
+          afterClassPractice: { enabled: false, practice: { enabled: false }, vocabularyReviewEnabled: false, knowledgePointIds: ["grammar-1"] },
+        },
+        storyOutline: { title: "Story", chapters: [{ id: "outline-chapter-1", order: 1, title: "Chapter" }] },
+        lessonContent: {
+          mainIdea: null,
+          homework: { grammar: [question], vocabularyMatching: [] },
+          chapters: [{ id: "chapter-1", outlineChapterId: "outline-chapter-1", order: 1, title: "Chapter", targetWordCount: 90, readingExerciseMode: "complete", paragraphs: [], chapterPractice: [question], validationIssues: [] }],
+        },
+        visualImageSlots: [],
+      }) },
+      presetOption: { findMany: vi.fn().mockResolvedValue([{ id: "grammar-1", label: "Past Simple" }]) },
+    } as never;
+
+    const preview = await getCoursePreview(db, "course-1");
+
+    expect(preview.pages.some((page) => page.type === "grammar_practice")).toBe(false);
+  });
+
   it("resolves final knowledge points from the teaching plan without requiring Step 3 additions in Step 1", async () => {
     const findMany = vi.fn().mockResolvedValue([
       { id: "grammar-1", title: "Past Simple" },

@@ -272,7 +272,8 @@ export function buildExercisePromptContext(input: CourseContentPromptInput, clea
       exercisePlan: { ...plan.chapterPractice.grammar },
     }];
   });
-  const homeworkKeys = input.plan.afterClassPractice.practice.enabled
+  const homeworkEnabled = input.plan.afterClassPractice.enabled && input.plan.afterClassPractice.practice.enabled;
+  const homeworkKeys = homeworkEnabled
     ? selectedPoints(input.plan.afterClassPractice.knowledgePointIds, points).map((point) => point.key)
     : [];
   const usedKeys = new Set([...chapterSpecs.flatMap((chapter) => chapter.knowledgePointKeys), ...homeworkKeys]);
@@ -283,11 +284,11 @@ export function buildExercisePromptContext(input: CourseContentPromptInput, clea
     knowledgePoints: [...points.values()].filter((point) => usedKeys.has(point.key)).map(({ sourceUnits, ...point }) => ({ ...point, units: sourceUnits })),
     chapters: chapterSpecs,
     homework: {
-      enabled: input.plan.afterClassPractice.practice.enabled,
+      enabled: homeworkEnabled,
       knowledgePointKeys: homeworkKeys,
-      enabledTypes: input.plan.afterClassPractice.practice.enabled ? [...input.plan.afterClassPractice.practice.enabledTypes] : [],
+      enabledTypes: homeworkEnabled ? [...input.plan.afterClassPractice.practice.enabledTypes] : [],
       questionsPerKnowledgePoint: input.plan.afterClassPractice.practice.questionsPerKnowledgePoint,
-      total: input.plan.afterClassPractice.practice.enabled
+      total: homeworkEnabled
         ? homeworkKeys.length * input.plan.afterClassPractice.practice.questionsPerKnowledgePoint
         : 0,
     },
