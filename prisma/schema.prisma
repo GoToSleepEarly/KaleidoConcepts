@@ -25,6 +25,7 @@ model User {
   textStreamMaxDurationSeconds       Int                @default(1200)
   textNonStreamTimeoutSeconds        Int                @default(600)
   imageQuality                       CourseImageQuality @default(high)
+  imageGenerationTimeoutSeconds      Int                @default(600)
   createdAt                          DateTime           @default(now())
   updatedAt                          DateTime           @updatedAt
 }

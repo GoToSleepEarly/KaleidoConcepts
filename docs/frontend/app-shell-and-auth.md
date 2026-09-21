@@ -303,9 +303,11 @@ There is no second account area in the sidebar.
 
 账户新增 `imageBillingMode = "metered" | "per_image"`，`imageModel` 只保存标准模型名。旧 `gpt-image-2-c` 迁移为标准 `gpt-image-2 + per_image`；旧标准 `gpt-image-2` 在 QuickRouter 保持按量，在 Crazyrouter 和 Easy88AI 保持各自原有按次行为。图片请求按服务端映射提交真实上游 model；现有图片版本继续记录提供方与实际质量。
 
-UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter 主站和 QuickRouter 直连作为两个并列选项呈现，不再增加“地址”层级。账户文本配置保存为 `writingProvider`、`aiGateway`、`quickRouterEndpoint`、`textReasoningEffort`、`textStreamingEnabled`、`textStreamFirstEventTimeoutSeconds`、`textStreamIdleTimeoutSeconds`、`textStreamMaxDurationSeconds`、`textNonStreamTimeoutSeconds`，图片配置保存为 `imageModel`、`imageGateway`、`imageQuickRouterEndpoint`、`imageBillingMode`、`imageQuality`；不保存 Base URL。服务端能力目录把稳定 ID 映射为白名单地址、密钥、协议 Adapter、计费线路和模型能力。环境变量只配置各提供方密钥和图片请求超时；文本模型、提供方、思考强度、流式返回、四个文本超时、图片计费方式和图片质量全部由账户设置决定。
+UI 中的每个提供方选项对应一条可执行的预置配置；QuickRouter 主站和 QuickRouter 直连作为两个并列选项呈现，不再增加“地址”层级。账户文本配置保存为 `writingProvider`、`aiGateway`、`quickRouterEndpoint`、`textReasoningEffort`、`textStreamingEnabled`、`textStreamFirstEventTimeoutSeconds`、`textStreamIdleTimeoutSeconds`、`textStreamMaxDurationSeconds`、`textNonStreamTimeoutSeconds`，图片配置保存为 `imageModel`、`imageGateway`、`imageQuickRouterEndpoint`、`imageBillingMode`、`imageQuality`、`imageGenerationTimeoutSeconds`；不保存 Base URL。服务端能力目录把稳定 ID 映射为白名单地址、密钥、协议 Adapter、计费线路和模型能力。环境变量只配置各提供方密钥；文本模型、提供方、思考强度、流式返回、四个文本超时、图片计费方式、图片质量和图片生成超时全部由账户设置决定。
 
-每次打开高级设置时，`GET /api/account/ai-gateway` 按 HTTP-only 身份 Cookie 从数据库读取全部账户 AI 设置。文本分类依次设置模型、提供方、思考强度、流式返回和超时保护；流式开启时展示首个上游响应、上游活动空闲和最长运行三个值，关闭时只展示非流式请求总时限，并提供一次恢复四项默认值的入口。图片分类依次设置模型、提供方、计费方式和图片质量。模型或提供方变化后立即收窄兼容的计费选项。`PATCH` 只接受目录中存在且兼容的组合，保存使用一次原子更新；任一显式字段无效、流式最长运行时间不大于首个上游响应或上游活动空闲时间，或数据库写入失败时全部保持原值。加载完成前不得展示组件默认值，加载失败时保留未知状态并提供重新加载入口。
+每次打开高级设置时，`GET /api/account/ai-gateway` 按 HTTP-only 身份 Cookie 从数据库读取全部账户 AI 设置。文本分类依次设置模型、提供方、思考强度、流式返回和文本超时保护；流式开启时展示首个上游响应、上游活动空闲和最长运行三个值，关闭时只展示非流式请求总时限，并提供一次恢复四项默认值的入口。图片分类依次设置模型、提供方、计费方式、图片质量和图片生成最长等待时间。图片生成最长等待时间默认 10 分钟，允许设置 1–30 分钟，只影响保存后新发起的图片生成或修改请求。模型或提供方变化后立即收窄兼容的计费选项。`PATCH` 只接受目录中存在且兼容的组合，保存使用一次原子更新；任一显式字段无效、流式最长运行时间不大于首个上游响应或上游活动空闲时间，或数据库写入失败时全部保持原值。加载完成前不得展示组件默认值，加载失败时保留未知状态并提供重新加载入口。
+
+2026-09-21：图片生成最长等待时间收敛到账户高级设置的“图片生成”分类，默认 600 秒，可配置 60–1800 秒；删除 `IMAGE_GENERATION_TIMEOUT_MS` 环境变量。课程图片和人物图片统一使用账户快照，并通过自定义 Undici dispatcher 将响应头、响应体传输时限设置为业务时限加 30 秒，避免默认 300 秒响应头限制提前中断。新增 User 字段及 migration，验证通过相关 API、设置 UI、图片 Provider 集成测试和 TypeScript 校验。
 
 文本超时默认值为：首个上游响应 360 秒、连续无上游活动 360 秒、流式最长运行 1200 秒（20 分钟）、非流式总时限 600 秒（10 分钟）。可配置范围分别为 10–600 秒、10–600 秒、5–60 分钟和 1–30 分钟。首个上游响应从请求发出开始计时；合法 SSE 数据事件、生命周期事件、推理事件和 heartbeat 都证明上游仍在工作，因此结束首个响应等待并重置活动空闲计时。任何活动都不重置 20 分钟硬上限，且只有 `response.completed` 才能成功。上述超时均按 `result_unknown` 保存，不自动重试可能已经计费的请求。
 

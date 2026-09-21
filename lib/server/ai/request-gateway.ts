@@ -1,5 +1,5 @@
 import { authenticatedUserId } from "@/lib/server/auth-session-cookie";
-import { AI_GATEWAYS, IMAGE_BILLING_MODES, IMAGE_GENERATION_MODELS, IMAGE_QUALITIES, QUICKROUTER_ENDPOINTS, TEXT_GENERATION_MODELS, TEXT_REASONING_EFFORTS, imageQualityForSelection, isImageSelectionSupported, isTextTimeoutSettingsValid, type AccountAiSettings } from "@/lib/ai-gateway";
+import { AI_GATEWAYS, IMAGE_BILLING_MODES, IMAGE_GENERATION_MODELS, IMAGE_QUALITIES, IMAGE_TIMEOUT_DEFAULT_SECONDS, QUICKROUTER_ENDPOINTS, TEXT_GENERATION_MODELS, TEXT_REASONING_EFFORTS, imageQualityForSelection, isImageSelectionSupported, isImageTimeoutValid, isTextTimeoutSettingsValid, type AccountAiSettings } from "@/lib/ai-gateway";
 import { getDb } from "@/lib/server/db";
 import type { AuthDb } from "@/lib/server/repositories/auth";
 
@@ -21,8 +21,10 @@ export async function aiGatewayFromRequest(request: Request, db: { user: Pick<Au
     textStreamIdleTimeoutSeconds: user.textStreamIdleTimeoutSeconds as number,
     textStreamMaxDurationSeconds: user.textStreamMaxDurationSeconds as number,
     textNonStreamTimeoutSeconds: user.textNonStreamTimeoutSeconds as number,
+    imageGenerationTimeoutSeconds: (user.imageGenerationTimeoutSeconds ?? IMAGE_TIMEOUT_DEFAULT_SECONDS) as number,
   };
-  if (!TEXT_GENERATION_MODELS.includes(user.writingProvider as AccountAiSettings["writingProvider"]) || !TEXT_REASONING_EFFORTS.includes(user.textReasoningEffort as AccountAiSettings["textReasoningEffort"]) || typeof user.textStreamingEnabled !== "boolean" || !isTextTimeoutSettingsValid(timeoutSettings) || !AI_GATEWAYS.includes(user.aiGateway as AccountAiSettings["aiGateway"]) || !QUICKROUTER_ENDPOINTS.includes(user.quickRouterEndpoint as AccountAiSettings["quickRouterEndpoint"]) || !IMAGE_GENERATION_MODELS.includes(user.imageModel as AccountAiSettings["imageModel"]) || !IMAGE_BILLING_MODES.includes(user.imageBillingMode as AccountAiSettings["imageBillingMode"]) || !IMAGE_QUALITIES.includes(user.imageQuality as AccountAiSettings["imageQuality"]) || !AI_GATEWAYS.includes(user.imageGateway as AccountAiSettings["imageGateway"]) || !QUICKROUTER_ENDPOINTS.includes(user.imageQuickRouterEndpoint as AccountAiSettings["imageQuickRouterEndpoint"]) || !isImageSelectionSupported(user.imageModel as AccountAiSettings["imageModel"], user.imageGateway as AccountAiSettings["imageGateway"], user.imageBillingMode as AccountAiSettings["imageBillingMode"])) {
+  const imageTimeout = user.imageGenerationTimeoutSeconds ?? IMAGE_TIMEOUT_DEFAULT_SECONDS;
+  if (!TEXT_GENERATION_MODELS.includes(user.writingProvider as AccountAiSettings["writingProvider"]) || !TEXT_REASONING_EFFORTS.includes(user.textReasoningEffort as AccountAiSettings["textReasoningEffort"]) || typeof user.textStreamingEnabled !== "boolean" || !isTextTimeoutSettingsValid(timeoutSettings) || !AI_GATEWAYS.includes(user.aiGateway as AccountAiSettings["aiGateway"]) || !QUICKROUTER_ENDPOINTS.includes(user.quickRouterEndpoint as AccountAiSettings["quickRouterEndpoint"]) || !IMAGE_GENERATION_MODELS.includes(user.imageModel as AccountAiSettings["imageModel"]) || !IMAGE_BILLING_MODES.includes(user.imageBillingMode as AccountAiSettings["imageBillingMode"]) || !IMAGE_QUALITIES.includes(user.imageQuality as AccountAiSettings["imageQuality"]) || !AI_GATEWAYS.includes(user.imageGateway as AccountAiSettings["imageGateway"]) || !QUICKROUTER_ENDPOINTS.includes(user.imageQuickRouterEndpoint as AccountAiSettings["imageQuickRouterEndpoint"]) || !isImageSelectionSupported(user.imageModel as AccountAiSettings["imageModel"], user.imageGateway as AccountAiSettings["imageGateway"], user.imageBillingMode as AccountAiSettings["imageBillingMode"]) || !isImageTimeoutValid(imageTimeout)) {
     throw new Error("账户 AI 设置无效，请在高级设置中重新保存");
   }
   return {
@@ -37,5 +39,6 @@ export async function aiGatewayFromRequest(request: Request, db: { user: Pick<Au
     textStreamingEnabled: user.textStreamingEnabled,
     ...timeoutSettings,
     imageQuality: imageQualityForSelection(user.imageModel as AccountAiSettings["imageModel"], user.imageGateway as AccountAiSettings["imageGateway"], user.imageBillingMode as AccountAiSettings["imageBillingMode"], user.imageQuality as AccountAiSettings["imageQuality"]),
+    imageGenerationTimeoutSeconds: imageTimeout,
   };
 }

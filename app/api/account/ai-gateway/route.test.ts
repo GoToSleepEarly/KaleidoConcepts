@@ -10,6 +10,7 @@ const timeoutSettings = {
   textStreamIdleTimeoutSeconds: 180,
   textStreamMaxDurationSeconds: 1_200,
   textNonStreamTimeoutSeconds: 600,
+  imageGenerationTimeoutSeconds: 600,
 };
 
 function authCookie(userId = "user-1") {
@@ -160,6 +161,9 @@ describe("account AI gateway route", () => {
       imageGateway: "crazyrouter",
       imageQuickRouterEndpoint: "main",
       imageBillingMode: "per_image",
+      imageQuality: "high",
+      textReasoningEffort: "medium",
+      textStreamingEnabled: true,
       ...timeoutSettings,
     });
     update.mockResolvedValue({
@@ -171,6 +175,9 @@ describe("account AI gateway route", () => {
       imageGateway: "crazyrouter",
       imageQuickRouterEndpoint: "main",
       imageBillingMode: "per_image",
+      imageQuality: "high",
+      textReasoningEffort: "medium",
+      textStreamingEnabled: true,
       ...timeoutSettings,
     });
 
@@ -196,6 +203,9 @@ describe("account AI gateway route", () => {
         imageGateway: "crazyrouter",
         imageQuickRouterEndpoint: "main",
         imageBillingMode: "per_image",
+        imageQuality: "high",
+        textReasoningEffort: "medium",
+        textStreamingEnabled: true,
         ...timeoutSettings,
       },
     });

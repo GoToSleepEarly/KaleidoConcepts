@@ -1,7 +1,8 @@
 import type { CourseImageQuality } from "@/lib/contracts/api";
-import { aiProviderBaseUrl, normalizeAiProviderSettings, upstreamImageModel, type AiGateway, type AiProviderSettingsInput, type ImageProviderSettings } from "@/lib/ai-gateway";
+import { IMAGE_TIMEOUT_DEFAULT_SECONDS, aiProviderBaseUrl, isImageTimeoutValid, normalizeAiProviderSettings, upstreamImageModel, type AiGateway, type AiProviderSettingsInput, type ImageProviderSettings } from "@/lib/ai-gateway";
 import { devAiLog } from "./dev-ai-log";
 import { imageQualityForModel } from "./image-model-capabilities";
+import { imageFetch, isImageTransportTimeout } from "./image-transport";
 
 type ProviderConfig = {
   apiKey: string;
@@ -30,7 +31,8 @@ function configFromEnvironment(input: AiProviderSettingsInput | ImageProviderSet
   const isCrazyrouter = gateway === "crazyrouter";
   const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_IMAGE_API_KEY : gateway === "easy88ai" ? process.env.EASY88AI_IMAGE_API_KEY : process.env.QUICKROUTER_IMAGE_API_KEY;
   if (!apiKey) throw new PersonVisualProviderConfigError();
-  const timeout = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS);
+  const selectedTimeoutSeconds = typeof input === "object" && "imageGenerationTimeoutSeconds" in input ? input.imageGenerationTimeoutSeconds : undefined;
+  const timeoutSeconds = selectedTimeoutSeconds !== undefined && isImageTimeoutValid(selectedTimeoutSeconds) ? selectedTimeoutSeconds : IMAGE_TIMEOUT_DEFAULT_SECONDS;
   return {
     apiKey,
     gateway,
@@ -43,7 +45,7 @@ function configFromEnvironment(input: AiProviderSettingsInput | ImageProviderSet
         : gateway === "quickrouter" ? "metered" : "per_image",
     ),
     quality: typeof input === "object" && "imageQuality" in input ? input.imageQuality : "medium",
-    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 600_000,
+    timeoutMs: timeoutSeconds * 1_000,
   };
 }
 
@@ -104,7 +106,7 @@ export function createPersonVisualProvider(config?: ProviderConfig, selectedSett
     const startedAt = Date.now();
     let response: Response;
     try {
-      response = await fetch(`${resolved.baseUrl}${path}`, {
+      response = await imageFetch(`${resolved.baseUrl}${path}`, {
         method: "POST",
         headers: {
           Accept: "application/json",
@@ -113,7 +115,7 @@ export function createPersonVisualProvider(config?: ProviderConfig, selectedSett
         },
         body: buildBody(requestModel, quality),
         signal: AbortSignal.timeout(resolved.timeoutMs),
-      });
+      }, resolved.timeoutMs);
     } catch (error) {
       devAiLog({
         operation,
@@ -122,7 +124,7 @@ export function createPersonVisualProvider(config?: ProviderConfig, selectedSett
         latencyMs: Date.now() - startedAt,
         error,
       });
-      if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      if (isImageTransportTimeout(error)) {
         throw new Error("人物形象生成超时，请确认后再重试", { cause: error });
       }
       throw new Error("人物形象服务连接失败，请稍后重试", { cause: error });

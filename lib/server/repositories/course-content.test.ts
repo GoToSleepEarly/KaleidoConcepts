@@ -245,6 +245,10 @@ describe("course content repository", () => {
       course: { findUnique: vi.fn(async () => course), update: vi.fn(async () => course) },
       courseStoryOutline: { findUnique: vi.fn(async () => outline) },
       courseTeachingPlan: { findUnique: vi.fn(async () => plan) },
+      coursePerson: { findMany: vi.fn(async () => [
+        { role: "teacher", chineseNameSnapshot: "王老师", englishNameSnapshot: "Ms. Wang", genderSnapshot: "female" },
+        { role: "student", chineseNameSnapshot: "小明", englishNameSnapshot: "Alex", genderSnapshot: "male" },
+      ]) },
       presetOption: { findMany: vi.fn(async () => [{ id: "kp-1", kind: "grammar", label: "Past Simple", category: "时态", archivedAt: null }]) },
       courseLessonContent: {
         findUnique: vi.fn(async () => content), upsert: vi.fn(async () => content),
@@ -268,7 +272,13 @@ describe("course content repository", () => {
 
     const pending = modifyCourseContent(db, "course-1", { targetType: "paragraph", targetId: "p1", instruction: "写得更紧张" }, "request-1", { modifyContent } as unknown as CourseContentGenerationDeps);
     await vi.waitFor(() => expect(modifyContent).toHaveBeenCalled());
-    expect((modifyContent.mock.calls as unknown[][])[0]?.[5]).toMatchObject({ englishLevel: "A2" });
+    expect((modifyContent.mock.calls as unknown[][])[0]?.[5]).toMatchObject({
+      englishLevel: "A2",
+      classroomPeople: [
+        { role: "teacher", englishName: "Ms. Wang", gender: "female" },
+        { role: "student", englishName: "Alex", gender: "male" },
+      ],
+    });
     content = { ...content, status: "empty", contentVersion: 0, chapters: [], mainIdea: null, activeGenerationId: null };
     generation = null;
     resolveModification({ kind: "paragraph", paragraph: { parts: [{ type: "text", text: "A tense new paragraph." }] } });

@@ -8,7 +8,7 @@ import { BookOpen, ChevronDown, FileText, ImageIcon, ListChecks, LoaderCircle, L
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { IMAGE_GENERATION_MODELS, IMAGE_QUALITIES, TEXT_GENERATION_MODELS, TEXT_TIMEOUT_DEFAULTS, billingModesForImageSelection, imageBillingModeLabels, imageModelLabels, imageQualityForSelection, imageQualityLabels, isTextTimeoutSettingsValid, reasoningEffortsForModel, textModelLabels, textReasoningEffortLabels, type AccountAiSettings, type AiGateway, type ImageBillingMode, type ImageGenerationModel, type ImageQuality, type QuickRouterEndpoint, type TextGenerationModel, type TextReasoningEffort } from "@/lib/ai-gateway";
+import { IMAGE_GENERATION_MODELS, IMAGE_QUALITIES, IMAGE_TIMEOUT_DEFAULT_SECONDS, IMAGE_TIMEOUT_LIMITS, TEXT_GENERATION_MODELS, TEXT_TIMEOUT_DEFAULTS, billingModesForImageSelection, imageBillingModeLabels, imageModelLabels, imageQualityForSelection, imageQualityLabels, isImageTimeoutValid, isTextTimeoutSettingsValid, reasoningEffortsForModel, textModelLabels, textReasoningEffortLabels, type AccountAiSettings, type AiGateway, type ImageBillingMode, type ImageGenerationModel, type ImageQuality, type QuickRouterEndpoint, type TextGenerationModel, type TextReasoningEffort } from "@/lib/ai-gateway";
 import { authenticatedFetch, type AuthSession } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
@@ -135,6 +135,7 @@ export function AppShell({ children, session }: { children: React.ReactNode; ses
   const [textStreamMaxDurationSeconds, setTextStreamMaxDurationSeconds] = useState<number>(TEXT_TIMEOUT_DEFAULTS.streamMaxDurationSeconds);
   const [textNonStreamTimeoutSeconds, setTextNonStreamTimeoutSeconds] = useState<number>(TEXT_TIMEOUT_DEFAULTS.nonStreamSeconds);
   const [imageQuality, setImageQuality] = useState<ImageQuality>("high");
+  const [imageGenerationTimeoutSeconds, setImageGenerationTimeoutSeconds] = useState(IMAGE_TIMEOUT_DEFAULT_SECONDS);
   const [advancedSection, setAdvancedSection] = useState<"text" | "image">("text");
   const [isLoadingGateway, setIsLoadingGateway] = useState(false);
   const [hasLoadedGateway, setHasLoadedGateway] = useState(false);
@@ -218,6 +219,7 @@ export function AppShell({ children, session }: { children: React.ReactNode; ses
       setTextStreamMaxDurationSeconds(result.textStreamMaxDurationSeconds ?? TEXT_TIMEOUT_DEFAULTS.streamMaxDurationSeconds);
       setTextNonStreamTimeoutSeconds(result.textNonStreamTimeoutSeconds ?? TEXT_TIMEOUT_DEFAULTS.nonStreamSeconds);
       setImageQuality(imageQualityForSelection(result.imageModel, result.imageGateway, result.imageBillingMode, result.imageQuality ?? "medium"));
+      setImageGenerationTimeoutSeconds(result.imageGenerationTimeoutSeconds ?? IMAGE_TIMEOUT_DEFAULT_SECONDS);
       setHasLoadedGateway(true);
     } catch (error) {
       setGatewayError(error instanceof Error ? error.message : "高级设置加载失败");
@@ -231,6 +233,10 @@ export function AppShell({ children, session }: { children: React.ReactNode; ses
     const timeoutSettings = { textStreamFirstEventTimeoutSeconds, textStreamIdleTimeoutSeconds, textStreamMaxDurationSeconds, textNonStreamTimeoutSeconds };
     if (!isTextTimeoutSettingsValid(timeoutSettings)) {
       setGatewayError("请检查文本超时设置：最长运行时间必须大于首个上游响应和上游活动空闲时间，且所有数值需在提示范围内。");
+      return;
+    }
+    if (!isImageTimeoutValid(imageGenerationTimeoutSeconds)) {
+      setGatewayError("请检查图片生成超时设置：请输入 1 到 30 分钟。");
       return;
     }
     setIsSavingGateway(true);
@@ -250,6 +256,7 @@ export function AppShell({ children, session }: { children: React.ReactNode; ses
           textStreamingEnabled,
           ...timeoutSettings,
           imageQuality: effectiveImageQuality,
+          imageGenerationTimeoutSeconds,
         }),
       });
       const result = (await response.json()) as Partial<AccountAiSettings> & {
@@ -270,6 +277,7 @@ export function AppShell({ children, session }: { children: React.ReactNode; ses
       setTextStreamMaxDurationSeconds(result.textStreamMaxDurationSeconds ?? textStreamMaxDurationSeconds);
       setTextNonStreamTimeoutSeconds(result.textNonStreamTimeoutSeconds ?? textNonStreamTimeoutSeconds);
       setImageQuality(result.imageQuality ?? imageQuality);
+      setImageGenerationTimeoutSeconds(result.imageGenerationTimeoutSeconds ?? imageGenerationTimeoutSeconds);
       setIsAdvancedOpen(false);
     } catch (error) {
       setGatewayError(error instanceof Error ? error.message : "高级设置保存失败");
@@ -599,6 +607,19 @@ export function AppShell({ children, session }: { children: React.ReactNode; ses
                         <p className="mt-2 text-xs leading-5 text-muted-foreground">{isImageQualityFixed ? "GPT Image 2 的 QuickRouter 按次线路固定使用极高质量。" : "新的质量设置会同时应用于人物档案和 Step 5 后续生成。"}</p>
                       </fieldset>
                         </div>
+                      </div>
+                      <div className="border-t border-border pt-6">
+                        <div>
+                          <h4 className="text-sm font-semibold text-foreground">运行保护</h4>
+                          <p className="mt-1 text-xs leading-5 text-muted-foreground">单次图片生成或修改最多等待多久；只影响之后发起的新请求。</p>
+                        </div>
+                        <label className="mt-4 block max-w-[220px] text-[13px] font-medium text-foreground" htmlFor="image-generation-timeout">
+                          图片生成最长等待
+                          <span className="relative mt-2 block">
+                            <input className="h-11 w-full rounded-lg border border-input bg-background px-3 pr-12 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={isSavingGateway} id="image-generation-timeout" max={IMAGE_TIMEOUT_LIMITS.max / 60} min={IMAGE_TIMEOUT_LIMITS.min / 60} onChange={(event) => setImageGenerationTimeoutSeconds(Number(event.target.value) * 60)} type="number" value={imageGenerationTimeoutSeconds / 60} />
+                            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">分钟</span>
+                          </span>
+                        </label>
                       </div>
                     </div>
                   </section>

@@ -27,7 +27,7 @@ import {
   parseAiJson,
 } from "@/lib/server/validation/course-content";
 
-export type CourseContentPromptPerson = { role: "teacher" | "student"; chineseName: string; englishName: string };
+export type CourseContentPromptPerson = { role: "teacher" | "student"; chineseName: string; englishName: string; gender?: "male" | "female" };
 export type CourseContentPromptCharacter = { displayName: string; englishName: string; roleInStory: string; shortDescription: string; visualDescription?: string | null };
 export type CourseContentPromptInput = Pick<TeachingPlanState, "course" | "outline" | "knowledgePoints" | "plan"> & {
   lengthPolicy?: TeachingPlanState["lengthPolicy"];
@@ -161,7 +161,7 @@ export function buildReadingPromptContext(input: CourseContentPromptInput) {
     cefrWritingProfile: cefrWritingProfile(input.course.englishLevel),
     storyComplexity: lengthPolicy.storyComplexity,
     storyComplexityProfile: storyComplexityWritingProfile(lengthPolicy.storyComplexity),
-    people: people.map(({ role, englishName }) => ({ role, englishName })),
+    people: people.map(({ role, englishName, gender }) => ({ role, englishName, ...(gender ? { gender } : {}) })),
     storyCharacters: characters.map((character) => {
       const role = character.shortDescription && character.shortDescription !== character.roleInStory
         ? `${character.roleInStory}；${character.shortDescription}`
@@ -616,6 +616,7 @@ export function createCourseContentGenerationDeps(settings: AiProviderSettingsIn
       "只修改明确指定的目标，不联动改写任何其他区域。",
       "返回 {kind,chapter?,paragraph?,questions?,mainIdea?}；kind 等于 targetType，且只填写对应目标字段。",
       "严格执行 instruction，并满足 constraints。",
+      "如果 context.classroomPeople 存在，其中的 role、englishName 和 gender 是程序提供的固定事实；涉及课堂人物时必须保持老师/学生的性别与代词对应，不得从姓名、称谓或上下文重新猜测或改写。",
       ...(targetType === "chapter" || targetType === "paragraph" ? [] : cefrWritingQualityRules),
       "如目标含题目，必须保持原题型、题量和知识点映射，并使用严格题型契约。",
       ...modificationOutputRules(targetType),

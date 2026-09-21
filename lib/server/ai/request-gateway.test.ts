@@ -8,6 +8,7 @@ const timeoutSettings = {
   textStreamIdleTimeoutSeconds: 180,
   textStreamMaxDurationSeconds: 1_200,
   textNonStreamTimeoutSeconds: 600,
+  imageGenerationTimeoutSeconds: 600,
 };
 
 function authCookie(userId: string) {

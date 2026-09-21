@@ -1,0 +1,2 @@
+ALTER TABLE "User"
+ADD COLUMN "imageGenerationTimeoutSeconds" INTEGER NOT NULL DEFAULT 600;

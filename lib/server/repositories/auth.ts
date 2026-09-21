@@ -24,6 +24,7 @@ type DbUser = {
   textStreamMaxDurationSeconds?: AccountAiSettings["textStreamMaxDurationSeconds"];
   textNonStreamTimeoutSeconds?: AccountAiSettings["textNonStreamTimeoutSeconds"];
   imageQuality?: AccountAiSettings["imageQuality"];
+  imageGenerationTimeoutSeconds?: AccountAiSettings["imageGenerationTimeoutSeconds"];
 };
 
 export type AuthDb = {

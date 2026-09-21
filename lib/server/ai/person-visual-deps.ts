@@ -1,5 +1,6 @@
 import { createPersonVisualProvider } from "@/lib/server/ai/person-visual-provider";
 import {
+  IMAGE_TIMEOUT_DEFAULT_SECONDS,
   imageProviderSettings,
   normalizeAiProviderSettings,
   type AccountAiSettings,
@@ -15,7 +16,7 @@ import {
 function resolvedImageSettings(input: AiProviderSettingsInput | AccountAiSettings | ImageProviderSettings): ImageProviderSettings {
   if (typeof input === "object" && "imageGateway" in input) return imageProviderSettings(input);
   if (typeof input === "object" && "imageModel" in input) return input;
-  return { ...normalizeAiProviderSettings(input), imageModel: "gpt-image-2", imageBillingMode: "metered", imageQuality: "medium" };
+  return { ...normalizeAiProviderSettings(input), imageModel: "gpt-image-2", imageBillingMode: "metered", imageQuality: "medium", imageGenerationTimeoutSeconds: IMAGE_TIMEOUT_DEFAULT_SECONDS };
 }
 
 export function createPersonVisualGenerationDeps(input: AiProviderSettingsInput | AccountAiSettings | ImageProviderSettings = "quickrouter") {

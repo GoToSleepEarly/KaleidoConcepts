@@ -145,6 +145,7 @@ describe("AppShell account menu", () => {
       textStreamMaxDurationSeconds: 1_200,
       textNonStreamTimeoutSeconds: 600,
       imageQuality: "high" as const,
+      imageGenerationTimeoutSeconds: 600,
     };
     const request = vi.fn(async () => Response.json(saved));
     vi.stubGlobal("fetch", request);
@@ -184,7 +185,6 @@ describe("AppShell account menu", () => {
     expect(within(textSettings).getByRole("combobox", { name: "文本提供方" })).toHaveValue("deepseek");
     fireEvent.click(within(textSettings).getByRole("radio", { name: "高" }));
     expect(within(textSettings).getByRole("radio", { name: "高" })).toHaveClass("border-primary-200", "bg-white", "text-primary");
-    const streamingSwitch = within(textSettings).getByRole("switch", { name: "流式返回" });
     expect(screen.getByTestId("streaming-control")).toHaveClass("h-11", "border", "bg-white");
     expect(screen.getByTestId("streaming-state")).toHaveTextContent("已开启");
     expect(screen.getByTestId("streaming-track")).toHaveClass("h-6", "w-10", "bg-primary-50");
@@ -192,14 +192,21 @@ describe("AppShell account menu", () => {
     expect(within(textSettings).getByRole("spinbutton", { name: "首个上游响应 秒" })).toHaveValue(120);
     expect(within(textSettings).getByRole("spinbutton", { name: "上游活动空闲 秒" })).toHaveValue(180);
     expect(within(textSettings).getByRole("spinbutton", { name: "最长运行 分钟" })).toHaveValue(20);
-    fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "首个上游响应 秒" }), { target: { value: "150" } });
-    fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "上游活动空闲 秒" }), { target: { value: "240" } });
-    fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "最长运行 分钟" }), { target: { value: "25" } });
-    fireEvent.click(streamingSwitch);
+    expect(within(textSettings).queryByRole("spinbutton", { name: "图片生成最长等待 分钟" })).not.toBeInTheDocument();
+    fireEvent.click(within(settingsNavigation).getByRole("button", { name: /^图片生成/ }));
+    const imageSettings = screen.getByRole("region", { name: "图片生成" });
+    expect(within(imageSettings).getByRole("spinbutton", { name: "图片生成最长等待 分钟" })).toHaveValue(10);
+    fireEvent.click(textCategory);
+    const textSettingsAfterTab = screen.getByRole("region", { name: "文本生成" });
+    const streamingSwitchAfterTab = within(textSettingsAfterTab).getByRole("switch", { name: "流式返回" });
+    fireEvent.change(within(textSettingsAfterTab).getByRole("spinbutton", { name: "首个上游响应 秒" }), { target: { value: "150" } });
+    fireEvent.change(within(textSettingsAfterTab).getByRole("spinbutton", { name: "上游活动空闲 秒" }), { target: { value: "240" } });
+    fireEvent.change(within(textSettingsAfterTab).getByRole("spinbutton", { name: "最长运行 分钟" }), { target: { value: "25" } });
+    fireEvent.click(streamingSwitchAfterTab);
     expect(screen.getByTestId("streaming-state")).toHaveTextContent("已关闭");
     expect(screen.getByTestId("streaming-track")).toHaveClass("bg-slate-200");
     expect(screen.getByTestId("streaming-thumb")).toHaveClass("translate-x-0", "bg-white");
-    fireEvent.change(within(textSettings).getByRole("spinbutton", { name: "非流式请求总时限 分钟" }), { target: { value: "12" } });
+    fireEvent.change(within(textSettingsAfterTab).getByRole("spinbutton", { name: "非流式请求总时限 分钟" }), { target: { value: "12" } });
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
 
     await waitFor(() =>
@@ -222,6 +229,7 @@ describe("AppShell account menu", () => {
             textStreamMaxDurationSeconds: 1500,
             textNonStreamTimeoutSeconds: 720,
             imageQuality: "high",
+            imageGenerationTimeoutSeconds: 600,
           }),
         }),
       ),
@@ -247,6 +255,7 @@ describe("AppShell account menu", () => {
           textStreamMaxDurationSeconds: 1_200,
           textNonStreamTimeoutSeconds: 480,
           imageQuality: "medium",
+          imageGenerationTimeoutSeconds: 600,
         }),
       ),
     );
@@ -376,6 +385,7 @@ describe("AppShell account menu", () => {
             textStreamMaxDurationSeconds: 1200,
             textNonStreamTimeoutSeconds: 600,
             imageQuality: "medium",
+            imageGenerationTimeoutSeconds: 600,
           }),
         }),
       ),
@@ -442,6 +452,7 @@ describe("AppShell account menu", () => {
             textStreamMaxDurationSeconds: 1200,
             textNonStreamTimeoutSeconds: 600,
             imageQuality: "high",
+            imageGenerationTimeoutSeconds: 600,
           }),
         }),
       ),

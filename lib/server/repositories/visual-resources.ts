@@ -81,6 +81,10 @@ type CourseImageEditPromptCharacter = {
   identityDescription: string | null;
   appearanceDescription: string | null;
   courseAppearance: string;
+  personRole?: "teacher" | "student";
+  age?: number;
+  gender?: "male" | "female";
+  lifeStage?: "adult" | "child";
 };
 
 export function buildCourseImageEditPrompt(input: {
@@ -104,6 +108,9 @@ export function buildCourseImageEditPrompt(input: {
     character.referenceIndex ? `身份参考：图片 ${character.referenceIndex}` : "身份参考：无图片，使用以下文字设定",
     character.identityDescription ? `角色本体：${character.identityDescription}` : null,
     character.appearanceDescription ? `角色外貌：${character.appearanceDescription}` : null,
+    character.personRole && character.age !== undefined && character.gender && character.lifeStage
+      ? `程序身份事实：role=${character.personRole}; age=${character.age}; gender=${character.gender}; life stage=${character.lifeStage}。不得从姓名、服装或其他参考图重新判断。`
+      : null,
     `本课造型：${character.courseAppearance}`,
   ].filter((line): line is string => Boolean(line)).join("\n")).join("\n\n");
   return [
@@ -1091,6 +1098,7 @@ export async function refineCourseVisualAsset(db: VisualResourcesDb, courseId: s
       identityDescription: character.identityDescription ?? null,
       appearanceDescription: design?.appearanceDescription ?? null,
       courseAppearance: design?.courseAppearance ?? "沿用当前图片中的造型",
+      ...(character.personRole ? { personRole: character.personRole, age: character.age, gender: character.gender, lifeStage: character.lifeStage } : {}),
     };
   });
   const referencePaths = [parent.storagePath, ...courseReferences.paths];

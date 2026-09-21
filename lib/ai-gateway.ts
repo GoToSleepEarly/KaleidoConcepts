@@ -34,6 +34,9 @@ export type TextTimeoutSettings = {
 export const IMAGE_QUALITIES = ["low", "medium", "high"] as const;
 export type ImageQuality = (typeof IMAGE_QUALITIES)[number];
 
+export const IMAGE_TIMEOUT_DEFAULT_SECONDS = 600;
+export const IMAGE_TIMEOUT_LIMITS = { min: 60, max: 1_800 } as const;
+
 export const IMAGE_GENERATION_MODELS = ["gpt-image-2", "gpt-image-2.5-sunburst"] as const;
 export type ImageGenerationModel = (typeof IMAGE_GENERATION_MODELS)[number];
 
@@ -49,6 +52,7 @@ export type ImageProviderSettings = AiProviderSettings & {
   imageModel: ImageGenerationModel;
   imageBillingMode: ImageBillingMode;
   imageQuality: ImageQuality;
+  imageGenerationTimeoutSeconds?: number;
 };
 
 export type TextProviderSettings = AiProviderSettings & {
@@ -71,6 +75,7 @@ export type AccountAiSettings = {
   textStreamMaxDurationSeconds: number;
   textNonStreamTimeoutSeconds: number;
   imageQuality: ImageQuality;
+  imageGenerationTimeoutSeconds: number;
 };
 
 export type AiProviderSettingsInput = AiGateway | AiProviderSettings;
@@ -234,5 +239,10 @@ export function imageProviderSettings(settings: AccountAiSettings): ImageProvide
     imageModel: settings.imageModel,
     imageBillingMode: settings.imageBillingMode,
     imageQuality: imageQualityForSelection(settings.imageModel, settings.imageGateway, settings.imageBillingMode, settings.imageQuality),
+    imageGenerationTimeoutSeconds: settings.imageGenerationTimeoutSeconds,
   };
+}
+
+export function isImageTimeoutValid(value: number) {
+  return Number.isInteger(value) && value >= IMAGE_TIMEOUT_LIMITS.min && value <= IMAGE_TIMEOUT_LIMITS.max;
 }

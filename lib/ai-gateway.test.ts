@@ -1,8 +1,15 @@
 import { describe, expect, test } from "vitest";
 
-import { aiProviderBaseUrl, billingModesForImageSelection, defaultTextTimeoutSettings, imageQualityForSelection, isImageSelectionSupported, isTextTimeoutSettingsValid, reasoningEffortsForModel, upstreamImageModel, upstreamTextModel } from "./ai-gateway";
+import { IMAGE_TIMEOUT_DEFAULT_SECONDS, aiProviderBaseUrl, billingModesForImageSelection, defaultTextTimeoutSettings, imageQualityForSelection, isImageSelectionSupported, isImageTimeoutValid, isTextTimeoutSettingsValid, reasoningEffortsForModel, upstreamImageModel, upstreamTextModel } from "./ai-gateway";
 
 describe("AI gateway preset catalog", () => {
+  test("图片超时默认十分钟并限制为一到三十分钟", () => {
+    expect(IMAGE_TIMEOUT_DEFAULT_SECONDS).toBe(600);
+    expect(isImageTimeoutValid(60)).toBe(true);
+    expect(isImageTimeoutValid(1_800)).toBe(true);
+    expect(isImageTimeoutValid(59)).toBe(false);
+    expect(isImageTimeoutValid(1_801)).toBe(false);
+  });
   test("keeps Easy88AI as a fixed preset endpoint", () => {
     expect(aiProviderBaseUrl("easy88ai")).toBe("https://api.easy88ai.com");
   });

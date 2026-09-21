@@ -39,7 +39,7 @@ type MessageRecord = {
   kind?: "message" | "operation" | "repair" | "notice" | null; status?: "running" | "succeeded" | "failed" | "stale" | null;
   operation?: ContentOperation | null; requestId?: string | null; title?: string | null; details?: unknown; eventKey?: string | null; createdAt: Date;
 };
-type PromptPersonRecord = { role: "teacher" | "student"; chineseNameSnapshot: string; englishNameSnapshot: string };
+type PromptPersonRecord = { role: "teacher" | "student"; chineseNameSnapshot: string; englishNameSnapshot: string; genderSnapshot?: "male" | "female" };
 type PromptCharacterRecord = { displayName: string; englishName: string; roleInStory: string; shortDescription: string; visualDescription?: string | null };
 type Delegate<T> = {
   findUnique: (query: Record<string, unknown>) => Promise<T | null>;
@@ -255,7 +255,7 @@ async function prerequisite(db: CourseContentDb, courseId: string) {
   return {
     ...state,
     contentIntent: storyContentIntentFromAlignmentDetails(course?.storySetting?.alignmentDetails),
-    promptPeople: people.map((person) => ({ role: person.role, chineseName: person.chineseNameSnapshot, englishName: person.englishNameSnapshot })),
+    promptPeople: people.map((person) => ({ role: person.role, chineseName: person.chineseNameSnapshot, englishName: person.englishNameSnapshot, ...(person.genderSnapshot ? { gender: person.genderSnapshot } : {}) })),
     promptCharacters: characters.map((character) => ({ displayName: character.displayName, englishName: character.englishName, roleInStory: character.roleInStory, shortDescription: character.shortDescription, visualDescription: character.visualDescription ?? null })),
   };
 }
@@ -972,7 +972,15 @@ export async function modifyCourseContent(db: CourseContentDb, courseId: string,
   if (input.targetType === "main_idea") relatedContext = { cleanChapters: chapters.map((item) => ({ id: item.outlineChapterId, title: item.title, cleanText: item.paragraphs.map(buildCleanParagraphText).join(" ") })) };
   if (!target) throw new CourseContentPrerequisiteError("未找到要修改的内容区域");
 
-  relatedContext = { englishLevel: state.course.englishLevel, ...relatedContext };
+  relatedContext = {
+    englishLevel: state.course.englishLevel,
+    classroomPeople: state.promptPeople.map(({ role, englishName, gender }) => ({
+      role,
+      englishName,
+      ...(gender ? { gender } : {}),
+    })),
+    ...relatedContext,
+  };
   const result = await deps.modifyContent(writingProvider, input.targetType, target, input.instruction, constraints, relatedContext);
   if (result.kind !== input.targetType) throw new Error("修改结果与指定范围不一致，原内容已保留");
 

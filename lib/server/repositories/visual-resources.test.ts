@@ -34,6 +34,10 @@ describe("视觉资源仓储", () => {
         identityDescription: null,
         appearanceDescription: "短黑发，戴圆框眼镜。",
         courseAppearance: "浅蓝色针织衫和深色长裤。",
+        personRole: "teacher",
+        age: 35,
+        gender: "male",
+        lifeStage: "adult",
       }],
     });
 
@@ -41,6 +45,7 @@ describe("视觉资源仓储", () => {
     expect(prompt).toContain("图片 1 是唯一需要编辑的当前图片");
     expect(prompt).toContain("“他们、大家、所有人、集体”等群体称呼，默认指图片 1 中当前可见的人物");
     expect(prompt).toContain("C01 — 王老师 / Mr. Wang\n身份参考：图片 2");
+    expect(prompt).toContain("程序身份事实：role=teacher; age=35; gender=male; life stage=adult");
     expect(prompt).toContain("段落正文：Leo and Mia walk through the garden.");
     expect(prompt).toContain("本次修改要求优先于原始场景上下文");
   });

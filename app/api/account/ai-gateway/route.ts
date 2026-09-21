@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { authenticatedUserId } from "@/lib/server/auth-session-cookie";
-import { AI_GATEWAYS, IMAGE_BILLING_MODES, IMAGE_GENERATION_MODELS, IMAGE_QUALITIES, QUICKROUTER_ENDPOINTS, TEXT_GENERATION_MODELS, TEXT_REASONING_EFFORTS, TEXT_TIMEOUT_LIMITS, defaultTextTimeoutSettings, imageQualityForSelection, isImageSelectionSupported, isTextTimeoutSettingsValid } from "@/lib/ai-gateway";
+import { AI_GATEWAYS, IMAGE_BILLING_MODES, IMAGE_GENERATION_MODELS, IMAGE_QUALITIES, IMAGE_TIMEOUT_DEFAULT_SECONDS, IMAGE_TIMEOUT_LIMITS, QUICKROUTER_ENDPOINTS, TEXT_GENERATION_MODELS, TEXT_REASONING_EFFORTS, TEXT_TIMEOUT_LIMITS, defaultTextTimeoutSettings, imageQualityForSelection, isImageSelectionSupported, isImageTimeoutValid, isTextTimeoutSettingsValid } from "@/lib/ai-gateway";
 import { getDb } from "@/lib/server/db";
 
 const inputSchema = z
@@ -21,6 +21,7 @@ const inputSchema = z
     textStreamMaxDurationSeconds: z.number().int().min(TEXT_TIMEOUT_LIMITS.streamMaxDurationSeconds.min).max(TEXT_TIMEOUT_LIMITS.streamMaxDurationSeconds.max).optional(),
     textNonStreamTimeoutSeconds: z.number().int().min(TEXT_TIMEOUT_LIMITS.nonStreamSeconds.min).max(TEXT_TIMEOUT_LIMITS.nonStreamSeconds.max).optional(),
     imageQuality: z.enum(IMAGE_QUALITIES).optional(),
+    imageGenerationTimeoutSeconds: z.number().int().min(IMAGE_TIMEOUT_LIMITS.min).max(IMAGE_TIMEOUT_LIMITS.max).optional(),
   })
   .strict();
 
@@ -44,6 +45,7 @@ export async function GET(request: Request) {
     textStreamMaxDurationSeconds: user.textStreamMaxDurationSeconds,
     textNonStreamTimeoutSeconds: user.textNonStreamTimeoutSeconds,
     imageQuality: user.imageQuality,
+    imageGenerationTimeoutSeconds: user.imageGenerationTimeoutSeconds ?? IMAGE_TIMEOUT_DEFAULT_SECONDS,
   });
 }
 
@@ -58,6 +60,7 @@ export async function PATCH(request: Request) {
   const imageModel = input.data.imageModel ?? current.imageModel;
   const imageGateway = input.data.imageGateway ?? current.imageGateway;
   const imageBillingMode = input.data.imageBillingMode ?? current.imageBillingMode;
+  const imageGenerationTimeoutSeconds = input.data.imageGenerationTimeoutSeconds ?? current.imageGenerationTimeoutSeconds ?? IMAGE_TIMEOUT_DEFAULT_SECONDS;
   const timeoutDefaults = defaultTextTimeoutSettings();
   const timeoutSettings = {
     textStreamFirstEventTimeoutSeconds: input.data.textStreamFirstEventTimeoutSeconds ?? current.textStreamFirstEventTimeoutSeconds ?? timeoutDefaults.textStreamFirstEventTimeoutSeconds,
@@ -72,6 +75,7 @@ export async function PATCH(request: Request) {
   if (!isTextTimeoutSettingsValid(timeoutSettings)) {
     return NextResponse.json({ message: "文本超时设置无效：最长运行时间必须大于首段内容等待和内容空闲时间" }, { status: 400 });
   }
+  if (!isImageTimeoutValid(imageGenerationTimeoutSeconds)) return NextResponse.json({ message: "图片生成超时设置无效，请填写 1 到 30 分钟" }, { status: 400 });
   const user = await db.user.update({
     where: { id },
     data: {
@@ -86,6 +90,7 @@ export async function PATCH(request: Request) {
       textStreamingEnabled: input.data.textStreamingEnabled ?? current.textStreamingEnabled,
       ...timeoutSettings,
       imageQuality,
+      imageGenerationTimeoutSeconds,
     },
   });
   return NextResponse.json({
@@ -103,5 +108,6 @@ export async function PATCH(request: Request) {
     textStreamMaxDurationSeconds: user.textStreamMaxDurationSeconds,
     textNonStreamTimeoutSeconds: user.textNonStreamTimeoutSeconds,
     imageQuality: user.imageQuality,
+    imageGenerationTimeoutSeconds: user.imageGenerationTimeoutSeconds ?? IMAGE_TIMEOUT_DEFAULT_SECONDS,
   });
 }

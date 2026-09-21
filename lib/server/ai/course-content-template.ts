@@ -210,7 +210,7 @@ export type ReadingTemplatePromptContext = {
   cefrWritingProfile: string;
   storyComplexity: string;
   storyComplexityProfile: string;
-  people: Array<{ englishName: string; role: "teacher" | "student" }>;
+  people: Array<{ englishName: string; role: "teacher" | "student"; gender?: "male" | "female" }>;
   storyCharacters: Array<{ displayName: string; storyRole: string }>;
   grammarSource?: { bookTitle: string; edition: string; officialLevel: string };
   chapters: Array<{
@@ -496,7 +496,7 @@ export function buildReadingTemplatePrompt(context: ReadingTemplatePromptContext
     "成功标准同时满足：回填答案后每个完整句的语法、时态与体、主谓一致、单复数、代词、助动词、介词、语序和时间逻辑正确；输出契约正确；忠实保持章节事实、人物行动、关键因果、物品去向和结局。英语正确性最高，不得为题量、知识点、字数或故事表达让步。",
     "contentIntent 是已确认的最终内容目标：storyMode='faithful' 时不得改写原作关键人物、事件因果或结局；classroomPresence='observer' 时课堂人物只能见证，不能推动或改变原作事件。概念故事必须让正文自然呈现每个 learningTarget.expectedUnderstanding；事实故事不得超出 factualFocus 和 sourceRequirements；required 必须保留，excluded 不得出现。contentIntent 不存在时只依据已确认大纲，不自行推测教学理论。",
     "grammarSource 给出本课程统一使用的 Grammar in Use 书名、版本和官方难度；根级 grammarPoints 只定义一次知识点、准确官方 Unit 和学习内容，各章 grammarPoints 用 definitionKey 引用定义并用 key 绑定题目。Unit 只是来源，不增加覆盖数量，也不要复述教材内容或自行补案例。knowledgePointUsagePlan 只建议知识点在故事中的自然使用位置，不得改变或扩大学习范围。",
-    "englishLevel 与 cefrWritingProfile 控制表达难度，storyComplexityProfile 控制叙事结构。每段用具体行动、必要对话或概念结果推进故事并保持连续；禁止用大纲复述、规则说明、检查过程或重复空话凑词数，不得为篇幅新增冲突、反转、支线或万能机制。",
+    "englishLevel 与 cefrWritingProfile 控制表达难度，storyComplexityProfile 控制叙事结构。context.people 中每位老师和学生的 role、英文名与 gender 是程序提供的固定事实；正文、对话和代词必须始终保持对应性别，不得根据姓名、称谓或上下文重新猜测、互换或改写性别。每段用具体行动、必要对话或概念结果推进故事并保持连续；禁止用大纲复述、规则说明、检查过程或重复空话凑词数，不得为篇幅新增冲突、反转、支线或万能机制。",
     "返回 {contractVersion,chapters:[chapter],mainIdea:{text}}；chapter={outlineChapterId,paragraphs:[{template}],slots:[slot]}。paragraphs 必须恰好包含本章 paragraphCount 个对象，每个段落对象只返回 template；全部题槽统一放在 chapter.slots，不要在 paragraph 内返回 slots。chapter.slots 必须恰好包含 totalSlotCount 项。contractVersion 必须原样返回 context 中的值；outlineChapterId 只能原样返回 context 中的 C1/C2 等章节短键，不得返回或猜测数据库 ID；template 使用 {{GR1}}/{{GR2}}/{{VOC1}}。",
     `slot 统一放入同一数组：option={id,kind:'optionCloze',knowledgePointKey,answer,distractors:[两个]}；wordForm={id,kind:'wordForm',knowledgePointKey,answer,cue}；vocabulary={id,kind:'vocabulary',answer,canonicalForm,meaningZh}。字段名必须严格使用 JSON 键 "distractors"、"cue"、"canonicalForm" 和 "meaningZh"；不要返回 options 或 baseForm。${wordFormCueRule}两个 distractors 必须标准、完整、拼写正确；逐项回填后只有 answer 能同时满足当前语法、时间线和语义。`,
     "先写出正确、连贯的完整 clean text，再从自然存在的结构设置槽位；禁止先定答案再倒推句子。narrativeTense 是旁白基准，其他时态须有句意、时间提示、事件先后或对话支持；知识点不自然时改写局部语境。",

@@ -41,18 +41,26 @@ const input = {
     updatedAt: "", confirmedAt: "",
   },
   promptPeople: [
-    { role: "teacher", chineseName: "李老师", englishName: "Linda" },
-    { role: "student", chineseName: "小明", englishName: "Milo" },
+    { role: "teacher", chineseName: "李老师", englishName: "Linda", gender: "female" },
+    { role: "student", chineseName: "小明", englishName: "Milo", gender: "male" },
   ],
   promptCharacters: [{ displayName: "地图守护者", englishName: "Map Guardian", roleInStory: "阻止小明找到地图", shortDescription: "守护错误路线的角色", visualDescription: "一只四足机械犬，金属躯干，不拟人化。" }],
   contentIntent: { kind: "concept", storyMode: "new_story", classroomPresence: "participant", objective: "理解地图如何帮助人定位", learningTargets: [{ concept: "地图方向", expectedUnderstanding: "能够用地图判断基本方向" }], assumedPriorKnowledge: [], sourceRequirements: [], required: [], excluded: ["不要把地图写成万能魔法"] },
 } as TeachingPlanState & {
-  promptPeople: Array<{ role: "teacher" | "student"; chineseName: string; englishName: string }>;
+  promptPeople: Array<{ role: "teacher" | "student"; chineseName: string; englishName: string; gender: "male" | "female" }>;
   promptCharacters: Array<{ displayName: string; englishName: string; roleInStory: string; shortDescription: string; visualDescription?: string | null }>;
   contentIntent: StoryContentIntent;
 };
 
 describe("course content prompt contexts", () => {
+  test("把老师和学生的性别作为固定事实传入 Step 4 Prompt", () => {
+    const context = buildReadingPromptContext(input);
+    expect(context.people).toEqual([
+      { role: "teacher", englishName: "Linda", gender: "female" },
+      { role: "student", englishName: "Milo", gender: "male" },
+    ]);
+    expect(buildReadingTemplatePrompt(buildReadingTemplatePromptContext(input))).toContain("gender 是程序提供的固定事实");
+  });
   test("allows multiple paragraph repairs for one chapter while rejecting ambiguous duplicates", () => {
     expect(() => assertReadingRepairCoverage([
       { kind: "paragraph", outlineChapterId: "C1", paragraphIndex: 0 },
@@ -168,7 +176,7 @@ describe("course content prompt contexts", () => {
       cefrWritingProfile: cefrWritingProfile("A2"),
       storyComplexity: "clear_linear",
       storyComplexityProfile: storyComplexityWritingProfile("clear_linear"),
-      people: [{ role: "teacher", englishName: "Linda" }, { role: "student", englishName: "Milo" }],
+      people: [{ role: "teacher", englishName: "Linda", gender: "female" }, { role: "student", englishName: "Milo", gender: "male" }],
       storyCharacters: [{ displayName: "Map Guardian", storyRole: "阻止Milo找到地图；守护错误路线的角色", identityDescription: "一只四足机械犬，金属躯干，不拟人化。" }],
       chapters: [{
         id: "ch1", order: 1, title: "Milo出发", summary: "Linda帮助Milo。", targetWordCount: 90, acceptedWordCountRange: [75, 110], generationAimRange: [80, 90], paragraphCount: 2,

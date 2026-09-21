@@ -1,7 +1,8 @@
 import type { CourseImageQuality } from "@/lib/contracts/api";
-import { aiProviderBaseUrl, normalizeAiProviderSettings, upstreamImageModel, type AiGateway, type AiProviderSettingsInput, type ImageProviderSettings } from "@/lib/ai-gateway";
+import { IMAGE_TIMEOUT_DEFAULT_SECONDS, aiProviderBaseUrl, isImageTimeoutValid, normalizeAiProviderSettings, upstreamImageModel, type AiGateway, type AiProviderSettingsInput, type ImageProviderSettings } from "@/lib/ai-gateway";
 import { devAiLog } from "./dev-ai-log";
 import { imageQualityForModel } from "./image-model-capabilities";
+import { imageFetch, isImageTransportTimeout } from "./image-transport";
 
 type ProviderResponse = {
   data?: Array<{ url?: string; b64_json?: string }>;
@@ -24,17 +25,18 @@ function configFromEnvironment(input: AiProviderSettingsInput | ImageProviderSet
   const isCrazyrouter = gateway === "crazyrouter";
   const apiKey = isCrazyrouter ? process.env.CRAZYROUTER_IMAGE_API_KEY : gateway === "easy88ai" ? process.env.EASY88AI_IMAGE_API_KEY : process.env.QUICKROUTER_IMAGE_API_KEY;
   if (!apiKey) throw new Error("图片生成服务尚未配置");
-  const timeoutValue = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS);
   const selectedModel = typeof input === "object" && "imageModel" in input ? input.imageModel : "gpt-image-2";
   const selectedBillingMode = typeof input === "object" && "imageBillingMode" in input
     ? input.imageBillingMode
     : gateway === "quickrouter" ? "metered" : "per_image";
+  const selectedTimeoutSeconds = typeof input === "object" && "imageGenerationTimeoutSeconds" in input ? input.imageGenerationTimeoutSeconds : undefined;
+  const timeoutSeconds = selectedTimeoutSeconds !== undefined && isImageTimeoutValid(selectedTimeoutSeconds) ? selectedTimeoutSeconds : IMAGE_TIMEOUT_DEFAULT_SECONDS;
   return {
     apiKey,
     gateway,
     baseUrl: aiProviderBaseUrl(settings),
     model: upstreamImageModel(selectedModel, gateway, selectedBillingMode),
-    timeoutMs: Number.isFinite(timeoutValue) && timeoutValue > 0 ? timeoutValue : 600_000,
+    timeoutMs: timeoutSeconds * 1_000,
   };
 }
 
@@ -87,7 +89,7 @@ export function createCourseImageProvider(config?: ProviderConfig, selectedSetti
     const startedAt = Date.now();
     let response: Response;
     try {
-      response = await fetch(`${baseUrl}${path}`, {
+      response = await imageFetch(`${baseUrl}${path}`, {
         method: "POST",
         headers: {
           Accept: "application/json",
@@ -96,7 +98,7 @@ export function createCourseImageProvider(config?: ProviderConfig, selectedSetti
         },
         body: buildBody(requestModel, quality),
         signal: AbortSignal.timeout(timeoutMs),
-      });
+      }, timeoutMs);
     } catch (error) {
       devAiLog({
         operation,
@@ -105,7 +107,7 @@ export function createCourseImageProvider(config?: ProviderConfig, selectedSetti
         latencyMs: Date.now() - startedAt,
         error,
       });
-      if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) throw new Error("图片生成超时，请确认状态后重试", { cause: error });
+      if (isImageTransportTimeout(error)) throw new Error("图片生成超时，请确认状态后重试", { cause: error });
       throw new Error("图片生成服务连接失败，请稍后重试", { cause: error });
     }
     const raw = await response.text();
