@@ -657,11 +657,138 @@ describe("story outline repository", () => {
     expect(state.referenceMaterials[0]).toMatchObject({ name: "特朗普", researchProvider: "gpt-5.6-sol" });
     expect(state.outline).toBeNull();
     expect(state.directions).toEqual([]);
-    expect(state.chatMessages.at(-1)?.content).toBe("资料已整理，请确认后继续。");
-    expect(state.chatMessages.at(-1)?.actions[0]).toMatchObject({
-      action: "confirm_reference_materials",
-      label: "确认参考资料并继续",
+    expect(state.chatMessages.at(-1)?.content).toBe("背景资料已整理，请确认。");
+    expect(state.chatMessages.at(-1)?.actions).toEqual([
+      expect.objectContaining({ action: "confirm_reference_materials", label: "确认资料" }),
+      expect.objectContaining({ action: "regenerate_reference_materials", label: "重新整理" }),
+    ]);
+  });
+
+  test("reorganizes the whole pending background set and replaces it only after generation succeeds", async () => {
+    const db = createDb();
+    await handleStoryOutlineMessage(db, "course-1", { message: "参考一个节日创作故事", mode: "idea" }, deps);
+    const ready = await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "confirm_requirements",
+    }, {
+      ...deps,
+      prepareBackgroundKnowledge: vi.fn(async () => ({
+        status: "ready" as const,
+        references: [{
+          name: "错误资料",
+          type: "fictional_character" as const,
+          sourceStatus: "confirmed" as const,
+          summary: "把课堂学生误认成了外部角色。",
+          usableFacts: ["错误身份"],
+          avoidTopics: [],
+          adaptationBoundary: "不应继续使用。",
+        }],
+      })),
     });
+    const regenerateAction = ready.chatMessages.at(-1)?.actions.find((action) => action.action === "regenerate_reference_materials");
+    const prepareBackgroundKnowledge = vi.fn(async () => ({
+      status: "ready" as const,
+      references: [{
+        name: "宋代中秋节",
+        type: "other" as const,
+        sourceStatus: "confirmed" as const,
+        summary: "宋代中秋节庆背景。",
+        usableFacts: ["赏月", "夜市"],
+        avoidTopics: [],
+        adaptationBoundary: "课堂人物保持人物档案身份。",
+      }],
+    }));
+
+    const regenerated = await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "regenerate_reference_materials",
+      targetId: regenerateAction?.targetId,
+      expectedStateRevision: ready.stateRevision,
+    }, { ...deps, prepareBackgroundKnowledge });
+
+    expect(prepareBackgroundKnowledge).toHaveBeenCalledWith(expect.objectContaining({
+      coursePeople: expect.arrayContaining([expect.objectContaining({ personId: "student-1", englishName: "Summer" })]),
+      task: expect.stringContaining("重新整理整组背景资料"),
+    }));
+    expect(db.state.references).toHaveLength(1);
+    expect(db.state.references[0]).toMatchObject({ name: "宋代中秋节", summary: "宋代中秋节庆背景。", confirmedAt: null });
+    expect(regenerated.chatMessages.at(-1)).toMatchObject({ content: "背景资料已重新整理，请确认。" });
+    expect(regenerated.chatMessages.at(-1)?.actions.map((action) => action.label)).toEqual(["确认资料", "重新整理"]);
+  });
+
+  test("keeps the previous background set when reorganization fails", async () => {
+    const db = createDb();
+    await handleStoryOutlineMessage(db, "course-1", { message: "参考一个节日创作故事", mode: "idea" }, deps);
+    const ready = await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "confirm_requirements",
+    }, {
+      ...deps,
+      prepareBackgroundKnowledge: vi.fn(async () => ({
+        status: "ready" as const,
+        references: [{
+          name: "现有资料",
+          type: "other" as const,
+          sourceStatus: "confirmed" as const,
+          summary: "失败时必须保留。",
+          usableFacts: ["可恢复"],
+          avoidTopics: [],
+          adaptationBoundary: "保留旧版本。",
+        }],
+      })),
+    });
+    const oldReference = { ...db.state.references[0] };
+    const regenerateAction = ready.chatMessages.at(-1)?.actions.find((action) => action.action === "regenerate_reference_materials");
+
+    await expect(handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "regenerate_reference_materials",
+      targetId: regenerateAction?.targetId,
+      expectedStateRevision: ready.stateRevision,
+    }, { ...deps, prepareBackgroundKnowledge: vi.fn(async () => { throw new Error("背景资料生成超时"); }) })).rejects.toThrow("背景资料生成超时");
+
+    expect(db.state.references).toEqual([oldReference]);
+  });
+
+  test("rejects a reference review action after a newer background version exists", async () => {
+    const db = createDb();
+    await handleStoryOutlineMessage(db, "course-1", { message: "参考一个节日创作故事", mode: "idea" }, deps);
+    const background = {
+      status: "ready" as const,
+      references: [{
+        name: "节日资料",
+        type: "other" as const,
+        sourceStatus: "confirmed" as const,
+        summary: "节日背景。",
+        usableFacts: ["庆典"],
+        avoidTopics: [],
+        adaptationBoundary: "适龄改编。",
+      }],
+    };
+    const ready = await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "confirm_requirements",
+    }, { ...deps, prepareBackgroundKnowledge: vi.fn(async () => background) });
+    const staleAction = ready.chatMessages.at(-1)?.actions.find((action) => action.action === "regenerate_reference_materials");
+    await handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "regenerate_reference_materials",
+      targetId: staleAction?.targetId,
+      expectedStateRevision: ready.stateRevision,
+    }, { ...deps, prepareBackgroundKnowledge: vi.fn(async () => background) });
+
+    await expect(handleStoryOutlineMessage(db, "course-1", {
+      message: "",
+      mode: "idea",
+      action: "confirm_reference_materials",
+      targetId: staleAction?.targetId,
+    }, deps)).rejects.toBeInstanceOf(CourseStoryOutlineOperationConflictError);
   });
 
 

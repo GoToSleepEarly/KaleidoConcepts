@@ -733,7 +733,7 @@ describe("createStoryOutlineGenerationDeps", () => {
     const result = await createStoryOutlineGenerationDeps().prepareBackgroundKnowledge({
       task: "使用确认后的需求准备背景知识。",
       chapterCount: 4,
-      coursePeople: [],
+      coursePeople: [{ personId: "student-peggy", role: "student", chineseName: "佩奇", englishName: "Peggy", age: 8, gender: "female" }],
       conversationHistory: [],
       references: [],
       selectedDirection: null,
@@ -753,6 +753,12 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("reason 会直接展示给老师");
     expect(prompt).toContain("最多整理 4 个原作候选角色");
     expect(prompt).toContain("候选角色不代表都会进入最终故事");
+    expect(prompt).toContain("<classroom_people>");
+    expect(prompt).toContain('"personId":"student-peggy"');
+    expect(prompt).toContain('"chineseName":"佩奇"');
+    expect(prompt).toContain('"englishName":"Peggy"');
+    expect(prompt).toContain("不是外部资料对象");
+    expect(prompt).toContain("不得因为同名、近似名称或知名度");
     expect(prompt).not.toContain("Past Simple");
     expect(prompt).not.toContain("grammar-1");
   });
@@ -1189,6 +1195,37 @@ describe("createStoryOutlineGenerationDeps", () => {
       sourcePersonId: "student-1",
     });
     expect(outline.chapters[0].whatHappens).toContain("李世翊");
+  });
+
+  test("keeps a classroom person and an explicitly referenced same-name character as two identities", async () => {
+    generateOutlineMock.mockResolvedValueOnce({ text: JSON.stringify({
+      title: { zh: "两个佩奇", en: "Two Peggys" },
+      summary: "学生佩奇遇见同名的动画角色。",
+      characters: [
+        { key: "C1", displayName: "佩奇", englishName: "Peggy", sourceType: "person", sourcePersonId: "student-peggy", roleInStory: "课堂学生，负责记录线索。" },
+        { key: "C2", displayName: "佩奇", englishName: "Peppa Pig", sourceType: "referenced", sourceReferenceKey: "R01", roleInStory: "动画角色，负责介绍自己的世界。" },
+      ],
+      chapters: [{ order: 1, title: { zh: "同名相遇", en: "Same Name" }, whatHappens: "Peggy 与 Peppa Pig 发现彼此同名。", characterKeys: ["C1", "C2"], recommendedKnowledgePointKeys: [], knowledgePointRecommendationSummary: "" }],
+    }) });
+
+    const outline = await createStoryOutlineGenerationDeps().generateOutline({
+      task: "学生佩奇与动画角色小猪佩奇共同参与故事。",
+      references: [{ id: "reference-peppa", name: "小猪佩奇 Peppa Pig", type: "fictional_character", summary: "动画中的小猪女孩佩奇。" }],
+      chapterCount: 1,
+      writingProvider: "gpt-5.6-sol",
+      coursePeople: [{ personId: "student-peggy", role: "student", chineseName: "佩奇", englishName: "Peggy", age: 8, gender: "female" }],
+      conversationHistory: [],
+      selectedDirection: null,
+      currentOutline: null,
+    });
+
+    expect(outline.characters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ englishName: "Peggy", sourceType: "person", sourcePersonId: "student-peggy", sourceReferenceId: null }),
+      expect.objectContaining({ englishName: "Peppa Pig", sourceType: "referenced", sourcePersonId: null, sourceReferenceId: "reference-peppa" }),
+    ]));
+    const prompt = generateOutlineMock.mock.calls.at(-1)?.[0].prompt ?? "";
+    expect(prompt).toContain("课堂人物与外部角色同名时必须分别返回两个 character");
+    expect(prompt).toContain("不得仅因姓名相同而共用 key、合并角色或交换身份");
   });
 
   test("never rewrites a single-character classroom name inside ordinary Chinese prose", async () => {

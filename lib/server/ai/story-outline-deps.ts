@@ -392,7 +392,16 @@ function alignmentContextPrompt(input: StoryPromptContext) {
 
 function backgroundContextPrompt(input: StoryPromptContext) {
   const latestTeacherMessage = [...input.conversationHistory].reverse().find((message) => message.role === "teacher");
+  const peopleSnapshots = input.coursePeople.map(({ personId, role, chineseName, englishName }) => ({
+    personId,
+    role,
+    chineseName,
+    englishName,
+  }));
   return [
+    "<classroom_people>",
+    JSON.stringify(peopleSnapshots),
+    "</classroom_people>",
     "<confirmed_requirement>",
     input.requirementBrief ? JSON.stringify(briefForPrompt(input)) : input.confirmedRequirement ?? "",
     "</confirmed_requirement>",
@@ -1092,6 +1101,8 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
         prompt: [
           "你是一名儿童故事背景资料编辑，负责为后续故事创作准备准确、必要且简洁的背景知识。",
           "老师已确认创作方向；不要重新判断、追问或改变需求。完全原创且不依赖外部对象时返回 not_needed；需要资料时优先使用你已有且有把握的知识，只有当已有知识不足以准确创作时才返回 external_required。",
+          "classroom_people 中的老师和学生是本课已经确定的课堂人物，不是外部资料对象。创作需求中出现其中文名或英文名时，必须按人物快照理解；不得因为同名、近似名称或知名度，把课堂人物重新解释为 IP、公众人物、作品角色或真实历史人物，也不得为课堂人物生成参考资料。",
+          "外部资料对象只能来自已确认需求中的 sourceRequirements、requiredNamedCharacters，或 factual brief 的 subjects。只有老师明确指定作品、官方角色名或外部身份时，才可为与课堂人物同名的外部对象整理资料。",
           "只整理当前方向会使用的对象、版本、人物、关系和规则，不做百科式扩展。",
           "老师明确点名的原作角色全部保留。老师未点名原作角色时，最多整理 4 个原作候选角色，只选择足以支持后续方向设计的核心人物；候选角色不代表都会进入最终故事。",
           ...confirmedReferenceRules(input),
@@ -1155,6 +1166,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
             ? "你是一名严谨的儿童叙事策划，只把已经确认的原作或史实整理成 3 个可供老师选择的讲述视角，不改写事实，不展开章节大纲。"
             : "你是一名富有想象力的儿童故事创意总监，擅长把已经确认的创作需求发展成新奇、有吸引力且适合学生的故事构想。只生成 3 个可供老师选择的故事方向，不展开章节大纲。",
           "只返回包含 3 项的 JSON 数组；每项字段为 title, hook, storyHighlight, growthCore, mainCharacters, whyFits。自然语言说明使用中文；Step 1 课堂人物逐字使用快照中的 englishName，外部角色使用老师输入或参考资料确认的名称并在三个方向中保持一致。",
+          "课堂人物与外部角色同名时必须保留为两个独立身份：课堂人物继续使用人物快照 englishName，外部角色使用资料能够确认的自然限定称呼（例如 Queen Elsa），并在 mainCharacters、hook 和后续说明中保持一致；不得合并、删掉其中一方或交换身份。",
           ...directionCardWritingRules(input),
           "完整保留老师明确指定的故事类型、人物、课堂参与方式和已确认资料边界。老师点名的角色优先于 AI 自选角色。",
           "把“必须出场的点名角色”完整保留在每个方向的 mainCharacters；hook 只点出理解该方向所必需的角色，点名角色较多时允许使用老师已确认的团队称呼，不能为逐人点名破坏方向卡的可读性。旧数据没有该数组时，从已确认创作理解中提取逐个写明的角色。",
@@ -1361,6 +1373,7 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           "先在不考虑知识点的情况下完成故事概括和全部章节剧情，再从全课视角根据已经形成的自然语境匹配知识点。不得为使用某个知识点新增道具、规则、人物行为或支线；summary 和 whatHappens 不得出现语法、知识点或教学安排说明。",
           "只返回 JSON 对象，字段为 title, summary, characters, chapters。故事 title 和章节 title 返回中英文双语对象 {zh,en}；英文标题应简洁、自然并忠实对应中文标题。面向老师展示的说明使用中文，但课堂人物名称按下述规则使用人物快照英文名。",
           "characters 每项字段为 key, displayName, englishName, sourceType, sourcePersonId?, sourceReferenceKey?, roleInStory, visualDescription?；displayName 保存自然中文名，englishName 保存后续英文正文、界面展示和生图都能稳定复用的自然英文名；key 使用 C1、C2 等响应内稳定短键，sourceType 只能是 person, referenced, original。不要生成是否出图标记。summary、roleInStory 和 chapters 中提到课堂人物时统一使用人物快照的 englishName，不混用中文名。",
+          "课堂人物与外部角色同名时必须分别返回两个 character：课堂人物使用 sourceType=person 和对应 sourcePersonId；外部角色使用 sourceType=referenced、对应 sourceReferenceKey 和资料能够确认的自然限定称呼。不得仅因姓名相同而共用 key、合并角色或交换身份。",
           "visualDescription 只为 sourceType=original 的原创角色返回，person 和 referenced 必须省略。它不是完整外观设计，而是故事层不可改变的中文本体设定：用一条自包含描述明确具体物种或角色形态、四足/双足等基础身体结构、是否拟人化、主要材质和身份所必需的结构特征。动物尽量明确到剧情能够确定的具体种类或品种；科幻、魔法和虚构角色必须说明能够稳定重画的形态与结构。不要写画风、服装、精确配色、动作、表情或场景。",
           "characters 是后续视觉资产名单，不是所有被故事提到的实体清单。只保留具体、持续参与剧情、需要保持视觉一致性的角色；机构、公司、团队、部门、监管方和其他背景群体不得进入 characters，只能在 summary 或章节 whatHappens 中按需提及。参考资料中出现某个实体，不代表它是角色。",
           "外部真实人物或已有作品角色实际出场时，sourceType 必须为 referenced，并且 sourceReferenceKey 必须逐字复制已保存参考资料中的 Rxx key；同一份组合资料可以由多个角色共同引用。原创人物才使用 original，且不得返回 sourceReferenceKey。",
@@ -1434,21 +1447,24 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
         if (!key || !modelDisplayName || !roleInStory || !requestedSourceType) {
           throw new StoryOutlineResponseError("故事大纲返回的角色结构不完整，请重试本步");
         }
-        const person = resolveCoursePerson(
-          input.coursePeople,
-          stringValue(character.sourcePersonId),
-          [modelDisplayName, modelEnglishName],
-        );
-        const sourceType: "person" | "referenced" | "original" = person ? "person" : requestedSourceType;
+        const explicitReference = stringValue(character.sourceReferenceKey)
+          ? referenceByKey.get(stringValue(character.sourceReferenceKey))
+          : null;
+        const explicitPersonId = stringValue(character.sourcePersonId);
+        const explicitPerson = explicitPersonId ? input.coursePeople.find((candidate) => candidate.personId === explicitPersonId) ?? null : null;
+        if (explicitPerson && explicitReference) {
+          throw new StoryOutlineResponseError(`角色 ${modelEnglishName || modelDisplayName} 同时关联课堂人物和参考资料，请重试本步`);
+        }
+        const person = explicitPerson ?? (!explicitReference && requestedSourceType === "person"
+          ? resolveCoursePerson(input.coursePeople, "", [modelDisplayName, modelEnglishName])
+          : null);
+        const sourceType: "person" | "referenced" | "original" = explicitReference ? "referenced" : person ? "person" : requestedSourceType;
         if (requestedSourceType === "person" && !person) {
           throw new StoryOutlineResponseError(`人物档案角色 ${modelEnglishName || modelDisplayName || key || index + 1} 无法与本课人物唯一对应，请重试本步`);
         }
         const displayName = person?.chineseName || modelDisplayName;
         const englishName = person?.englishName || modelEnglishName;
         if (!englishName) throw new StoryOutlineResponseError(`角色 ${displayName || key || index + 1} 缺少英文名，请重试本步`);
-        const explicitReference = stringValue(character.sourceReferenceKey)
-          ? referenceByKey.get(stringValue(character.sourceReferenceKey))
-          : null;
         const recordedReferences = referenceOptions.filter((candidate) => referenceMentionsCharacter(candidate, { displayName, englishName }));
         if (sourceType === "original" && recordedReferences.length > 1) {
           throw new StoryOutlineResponseError(`角色 ${displayName} 同时匹配多份参考资料，无法自动确定引用关系`);

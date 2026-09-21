@@ -45,6 +45,22 @@ const emptyState: CourseStoryOutlineState = {
   coursePeople: [],
 };
 
+const pendingReference: CourseStoryOutlineState["referenceMaterials"][number] = {
+  id: "pending-reference",
+  courseId: "course-1",
+  name: "宋代中秋节",
+  type: "other",
+  sourceStatus: "confirmed",
+  summary: "待老师确认的背景资料。",
+  usableFacts: ["赏月"],
+  avoidTopics: [],
+  adaptationBoundary: "适龄改编。",
+  researchProvider: "none",
+  confirmedAt: null,
+  createdAt: "2026-08-14T00:00:00.000Z",
+  updatedAt: "2026-08-14T00:00:00.000Z",
+};
+
 const outlineState: CourseStoryOutlineState = {
   ...emptyState,
   outline: {
@@ -665,19 +681,105 @@ describe("CourseStoryOutlineWorkspace", () => {
     vi.stubGlobal("fetch", vi.fn(() => responsePromise));
     render(<CourseStoryOutlineWorkspace initialState={{
       ...emptyState,
+      referenceMaterials: [pendingReference],
       chatMessages: [{
         id: "confirm-reference-copy",
         courseId: "course-1",
         role: "assistant",
-        content: "资料已整理，请确认后继续。",
-        actions: [{ id: "confirm-reference", label: "确认参考资料并继续", action: "confirm_reference_materials" }],
+        content: "背景资料已整理，请确认。",
+        actions: [
+          { id: "confirm-reference", label: "确认资料", action: "confirm_reference_materials" },
+          { id: "regenerate-reference", label: "重新整理", action: "regenerate_reference_materials" },
+        ],
         createdAt: "2026-08-14T00:00:00.000Z",
       }],
     }} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "确认参考资料并继续" }));
-    expect(screen.getByText("我确认这些参考资料，请继续。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认资料" }));
+    expect(screen.getByText("我确认这些参考资料。")).toBeInTheDocument();
     expect(screen.getByText("正在继续构思故事")).toBeInTheDocument();
+  });
+
+  test("reorganizes references without consuming the composer draft", () => {
+    const responsePromise = new Promise<Response>(() => undefined);
+    vi.stubGlobal("fetch", vi.fn(() => responsePromise));
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      stateRevision: 8,
+      referenceMaterials: [pendingReference],
+      chatMessages: [{
+        id: "reference-review",
+        courseId: "course-1",
+        role: "assistant",
+        content: "背景资料已整理，请确认。",
+        actions: [
+          { id: "confirm-reference", label: "确认资料", action: "confirm_reference_materials", targetId: "reference-review:8" },
+          { id: "regenerate-reference", label: "重新整理", action: "regenerate_reference_materials", targetId: "reference-review:8" },
+        ],
+        createdAt: "2026-08-14T00:00:00.000Z",
+      }],
+    }} />);
+
+    fireEvent.change(screen.getByLabelText("故事想法"), { target: { value: "不要把佩奇当成动画角色" } });
+    fireEvent.click(screen.getByRole("button", { name: "重新整理" }));
+
+    expect(fetchBody(vi.mocked(fetch))).toMatchObject({
+      action: "regenerate_reference_materials",
+      message: "",
+      targetId: "reference-review:8",
+      expectedStateRevision: 8,
+    });
+    expect(screen.getByLabelText("故事想法")).toHaveValue("不要把佩奇当成动画角色");
+    expect(screen.getByText("请重新整理背景资料。")).toBeInTheDocument();
+    expect(screen.getByText("正在重新整理背景资料")).toBeInTheDocument();
+  });
+
+  test("disables reference actions on older review messages", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      referenceMaterials: [pendingReference],
+      chatMessages: [
+        {
+          id: "older-review",
+          courseId: "course-1",
+          role: "assistant",
+          content: "第一版资料",
+          actions: [{ id: "older-regenerate", label: "重新整理旧版", action: "regenerate_reference_materials" }],
+          createdAt: "2026-08-14T00:00:00.000Z",
+        },
+        {
+          id: "latest-review",
+          courseId: "course-1",
+          role: "assistant",
+          content: "第二版资料",
+          actions: [{ id: "latest-regenerate", label: "重新整理新版", action: "regenerate_reference_materials" }],
+          createdAt: "2026-08-14T00:01:00.000Z",
+        },
+      ],
+    }} />);
+
+    expect(screen.getByRole("button", { name: "重新整理旧版" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "重新整理新版" })).toBeEnabled();
+  });
+
+  test("adds reorganization to a legacy pending reference card without a data migration", () => {
+    render(<CourseStoryOutlineWorkspace initialState={{
+      ...emptyState,
+      stateRevision: 5,
+      referenceMaterials: [pendingReference],
+      chatMessages: [{
+        id: "legacy-reference-review",
+        courseId: "course-1",
+        role: "assistant",
+        content: "背景资料已整理，请确认后继续。",
+        actions: [{ id: "legacy-confirm", label: "确认资料并继续", action: "confirm_reference_materials" }],
+        createdAt: "2026-08-14T00:00:00.000Z",
+      }],
+    }} />);
+
+    expect(screen.getByRole("button", { name: "确认资料" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "重新整理" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "确认资料并继续" })).not.toBeInTheDocument();
   });
 
   test("confirms only the current pending story change and preserves the composer draft", () => {

@@ -38,6 +38,7 @@ export const storyOutlineMessageSchema = z.object({
       z.literal("supply_reference_material"),
       z.literal("choose_reference_search"),
       z.literal("confirm_reference_materials"),
+      z.literal("regenerate_reference_materials"),
       z.literal("choose_story_usage"),
       z.literal("describe_story_usage"),
       z.literal("generate_directions"),

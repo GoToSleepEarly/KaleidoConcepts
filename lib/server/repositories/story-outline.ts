@@ -1218,6 +1218,18 @@ type InternalStoryMessageInput = CourseStoryMessageInput & {
   operationCurrentPhase?: StoryOperationPhase;
 };
 
+function referenceReviewTarget(stateRevision: number | undefined) {
+  return `reference-review:${stateRevision ?? 0}`;
+}
+
+function referenceReviewActions(input: InternalStoryMessageInput, researchPlan?: CourseResearchPlan): CourseStoryChatAction[] {
+  const targetId = referenceReviewTarget(input.operationRevision);
+  return [
+    { id: `confirm-reference-materials-${targetId}`, label: "确认资料", action: "confirm_reference_materials", targetId },
+    { id: `regenerate-reference-materials-${targetId}`, label: "重新整理", action: "regenerate_reference_materials", targetId, ...(researchPlan ? { researchPlan } : {}) },
+  ];
+}
+
 function operationAudit(
   input: InternalStoryMessageInput,
   source: NonNullable<CourseStoryChatMessage["source"]> = input.triggerSource ?? (input.action ? "ui_action" : "teacher_input"),
@@ -1258,6 +1270,7 @@ function operationDisplayName(input: Pick<InternalStoryMessageInput, "action" | 
   if (input.action === "revise_outline") return "整体大纲";
   if (input.action === "revise_direction") return "故事方向";
   if (input.action === "choose_reference_search" || input.action === "request_reference_search") return "参考资料";
+  if (input.action === "regenerate_reference_materials") return "背景资料";
   if (input.action === "confirm_requirements") return "故事创作准备";
   return "故事要求";
 }
@@ -1282,7 +1295,7 @@ async function assertCurrentOperation(db: StoryOutlineDb, courseId: string, inpu
 
 function operationPhase(input: CourseStoryMessageInput): StoryOperationPhase {
   if (input.action === "choose_reference_search" || input.action === "request_reference_search") return "searching_reference";
-  if (input.action === "confirm_requirements") return "preparing_reference";
+  if (input.action === "confirm_requirements" || input.action === "regenerate_reference_materials") return input.researchPlan ? "searching_reference" : "preparing_reference";
   if (input.action === "confirm_reference_materials" || input.action === "choose_story_usage") return "preparing_reference";
   if (input.action === "generate_directions") return "generating_directions";
   if (input.action === "confirm_direction" || input.action === "confirm_mainline" || input.action === "generate_from_reference" || input.action === "regenerate_outline") return "generating_outline";
@@ -1360,7 +1373,10 @@ async function executeStoryOutlineMessage(
     return getStoryOutlineState(db, courseId);
   };
   if (input.action === "confirm_reference_materials" && !input.message.trim()) {
-    await addMessage(db, courseId, "teacher", "我确认这些参考资料，请继续。", [], operation.messageAudit("ui_action"));
+    await addMessage(db, courseId, "teacher", "我确认这些参考资料。", [], operation.messageAudit("ui_action"));
+  }
+  if (input.action === "regenerate_reference_materials" && !input.message.trim() && !input.isRetry) {
+    await addMessage(db, courseId, "teacher", "请重新整理背景资料。", [], operation.messageAudit("ui_action"));
   }
   if (input.action === "choose_story_usage" && !input.message.trim()) {
     if (input.targetId !== "follow_original" && input.targetId !== "create_new" && input.targetId !== "faithful" && input.targetId !== "new_story") {
@@ -1492,14 +1508,55 @@ async function executeStoryOutlineMessage(
     if (background.status === "external_required") {
       await addMessage(db, courseId, "assistant", background.reason, [
         { id: "supply-reference-material", label: "我来补充资料", action: "supply_reference_material", researchPlan: background.researchPlan },
-        { id: "choose-reference-search", label: "联网整理资料", action: "choose_reference_search", researchPlan: background.researchPlan },
+        { id: "choose-reference-search", label: "联网整理资料", action: "choose_reference_search", targetId: referenceReviewTarget(input.operationRevision), researchPlan: background.researchPlan },
       ], operation.resultAudit("准备故事背景"));
       return getStoryOutlineState(db, courseId);
     }
     await persistPreparedReferences(db, courseId, background.references, (workflowV2.needsBackgroundRefresh ?? details.needsBackgroundRefresh) === true);
-    await addMessage(db, courseId, "assistant", "背景资料已整理，请确认后继续。", [
-      { id: "confirm-background-materials", label: "确认资料并继续", action: "confirm_reference_materials" },
-    ], operation.resultAudit("准备故事背景"));
+    await addMessage(db, courseId, "assistant", "背景资料已整理，请确认。", referenceReviewActions(input), operation.resultAudit("准备故事背景"));
+    return getStoryOutlineState(db, courseId);
+  }
+
+  if (input.action === "regenerate_reference_materials" && !input.researchPlan) {
+    const stored = await db.courseStorySetting.findUnique({ where: { courseId } });
+    if (!stored?.alignmentSummary || stored.alignmentStatus !== "confirmed") {
+      throw new CourseStoryOutlineValidationError("当前没有可以重新整理的背景资料");
+    }
+    const references = await db.courseSourceReference.findMany({ where: { courseId }, orderBy: { createdAt: "asc" } });
+    if (!input.isRetry && references.length && references.every((reference) => Boolean(reference.confirmedAt))) {
+      throw new CourseStoryOutlineValidationError("当前资料已经确认，请使用最新故事成果继续");
+    }
+    await addMessage(db, courseId, "system", "正在根据已确认需求重新整理背景资料。", [], operation.messageAudit("system"));
+    const detailsV2 = isAlignmentDetailsV2(stored.alignmentDetails) ? stored.alignmentDetails : null;
+    const resolvedV2 = detailsV2?.requirement.kind === "resolved" ? detailsV2.requirement : null;
+    const context = await storyAiContext(db, course, setting.chapterCount);
+    const background = await deps.prepareBackgroundKnowledge({
+      ...context,
+      task: "根据老师已确认的创作理解重新整理整组背景资料；不要沿用上一版资料中的对象判断。",
+      confirmedRequirement: resolvedV2 ? JSON.stringify(resolvedV2.brief) : stored.alignmentSummary,
+    });
+    await guard();
+    if (background.status === "not_needed") {
+      const clearReferences = async (tx: StoryOutlineDb) => {
+        await guard(tx);
+        await tx.courseSourceReference.deleteMany({ where: { courseId } });
+        await updateAlignmentDetails(tx, courseId, { needsBackgroundRefresh: false });
+      };
+      if (db.$transaction) await db.$transaction(clearReferences);
+      else await clearReferences(db);
+      await continueAfterBackground(db, course, deps, setting, guard, operation);
+      return getStoryOutlineState(db, courseId);
+    }
+    if (background.status === "external_required") {
+      await updateAlignmentDetails(db, courseId, { needsBackgroundRefresh: true });
+      await addMessage(db, courseId, "assistant", background.reason, [
+        { id: "supply-reference-material", label: "我来补充资料", action: "supply_reference_material", researchPlan: background.researchPlan },
+        { id: "choose-reference-search", label: "联网整理资料", action: "choose_reference_search", targetId: referenceReviewTarget(input.operationRevision), researchPlan: background.researchPlan },
+      ], operation.resultAudit("重新整理背景资料"));
+      return getStoryOutlineState(db, courseId);
+    }
+    await persistPreparedReferences(db, courseId, background.references, true);
+    await addMessage(db, courseId, "assistant", "背景资料已重新整理，请确认。", referenceReviewActions(input), operation.resultAudit("重新整理背景资料"));
     return getStoryOutlineState(db, courseId);
   }
 
@@ -1621,6 +1678,10 @@ async function executeStoryOutlineMessage(
 
   if (input.action === "confirm_reference_materials") {
     const references = await db.courseSourceReference.findMany({ where: { courseId }, orderBy: { createdAt: "asc" } });
+    if (!references.length) throw new CourseStoryOutlineValidationError("当前没有等待确认的背景资料");
+    if (!input.isRetry && references.every((reference) => Boolean(reference.confirmedAt))) {
+      throw new CourseStoryOutlineValidationError("当前资料已经确认，请使用最新故事成果继续");
+    }
     for (const reference of references) {
       if (!reference.confirmedAt) await db.courseSourceReference.update({ where: { id: reference.id }, data: { confirmedAt: new Date() } });
     }
@@ -1628,9 +1689,11 @@ async function executeStoryOutlineMessage(
     return getStoryOutlineState(db, courseId);
   }
 
-  if (input.action === "request_reference_search" || input.action === "choose_reference_search") {
+  if (input.action === "request_reference_search" || input.action === "choose_reference_search" || (input.action === "regenerate_reference_materials" && input.researchPlan)) {
     if (!input.message.trim()) {
-      await addMessage(db, courseId, "teacher", `请联网整理参考资料：${input.targetId || "当前引用对象"}`, [], operation.messageAudit("ui_action"));
+      if (input.action !== "regenerate_reference_materials") {
+        await addMessage(db, courseId, "teacher", `请联网整理参考资料：${input.targetId || "当前引用对象"}`, [], operation.messageAudit("ui_action"));
+      }
     }
     await addMessage(db, courseId, "system", "正在联网整理参考资料...", [], operation.messageAudit("system"));
     const objectName = input.targetId || input.message || "当前引用对象";
@@ -1670,12 +1733,10 @@ async function executeStoryOutlineMessage(
       db,
       courseId,
       referencesToPersist,
-      details.needsBackgroundRefresh === true,
+      input.action === "regenerate_reference_materials" || details.needsBackgroundRefresh === true,
       setting.writingProvider === "deepseek-v4-pro" ? "deepseek-v4-pro" : "gpt-5.6-sol",
     );
-    await addMessage(db, courseId, "assistant", "资料已整理，请确认后继续。", [
-      { id: "confirm-reference-materials", label: "确认参考资料并继续", action: "confirm_reference_materials" },
-    ], operation.resultAudit("联网整理参考资料"));
+    await addMessage(db, courseId, "assistant", "背景资料已整理，请确认。", referenceReviewActions(input, researchPlan), operation.resultAudit("联网整理参考资料"));
     return getStoryOutlineState(db, courseId);
   }
 
@@ -1758,6 +1819,13 @@ export async function handleStoryOutlineMessage(
   const course = await getCourse(db, courseId);
   await currentSetting(db, course, originalInput);
   const before = await db.courseStorySetting.findUnique({ where: { courseId } });
+  if (
+    (originalInput.action === "confirm_reference_materials" || originalInput.action === "regenerate_reference_materials" || originalInput.action === "choose_reference_search")
+    && originalInput.targetId?.startsWith("reference-review:")
+    && originalInput.targetId !== referenceReviewTarget(before?.stateRevision)
+  ) {
+    throw new CourseStoryOutlineOperationConflictError("背景资料已经更新，请使用最新操作");
+  }
   const requestId = originalInput.requestId ?? crypto.randomUUID();
   if (before?.operationRequestId === requestId) return getStoryOutlineState(db, courseId);
   if (originalInput.action !== "retry_operation" && originalInput.expectedStateRevision !== undefined && originalInput.expectedStateRevision !== (before?.stateRevision ?? 0)) {

@@ -298,6 +298,7 @@ export type CourseStoryChatAction = {
     | "supply_reference_material"
     | "choose_reference_search"
     | "confirm_reference_materials"
+    | "regenerate_reference_materials"
     | "choose_story_usage"
     | "describe_story_usage"
     | "generate_directions"

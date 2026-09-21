@@ -133,6 +133,8 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
   const hasResultContent = Boolean(state.directions.length || state.referenceMaterials.length || state.outline);
   const latestAlignmentQuestionMessageId = [...state.chatMessages].reverse().find((chat) => chat.actions.some((action) => action.action === "submit_alignment_answers" && action.questions?.length))?.id;
   const latestMainlineActionMessageId = [...state.chatMessages].reverse().find((chat) => chat.actions.some((action) => action.action === "confirm_mainline" || action.action === "revise_mainline"))?.id;
+  const latestReferenceActionMessageId = [...state.chatMessages].reverse().find((chat) => chat.actions.some((action) => action.action === "confirm_reference_materials" || action.action === "regenerate_reference_materials" || action.action === "choose_reference_search"))?.id;
+  const hasPendingReferenceMaterials = state.referenceMaterials.some((reference) => !reference.confirmedAt);
   const conversationStarted = hasStepContent || pending || Boolean(state.operation) || Boolean(optimisticTeacherMessage);
   const hasUnsentInput = Boolean(message.trim() || (mode === "random" && (randomSupplement.trim() || selectedTheme || storyType || tone)));
   const resolvedStoryType = storyType === "__custom__" ? customStoryType.trim() : storyType;
@@ -475,8 +477,10 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
     const isMainlineConfirmation = action.action === "confirm_mainline";
     const isStoryChangeAction = action.action === "confirm_story_change" || action.action === "cancel_story_change";
     const isReferenceConfirmation = action.action === "confirm_reference_materials" || action.action === "choose_story_usage";
-    const label = isReferenceSearch ? "正在整理参考资料..." : isRequirementConfirmation ? "正在准备故事创作..." : action.action === "confirm_story_change" ? "正在应用已确认的故事修改..." : action.action === "cancel_story_change" ? "正在保留当前内容..." : isReferenceConfirmation ? "正在继续构思故事..." : action.action === "generate_directions" ? "正在生成故事方向..." : "正在生成故事大纲...";
-    const draft = isRequirementConfirmation || isMainlineConfirmation || isStoryChangeAction ? "" : message.trim();
+    const isReferenceRegeneration = action.action === "regenerate_reference_materials";
+    const isReferenceReviewAction = isReferenceConfirmation || isReferenceRegeneration;
+    const label = isReferenceSearch ? "正在整理参考资料..." : isRequirementConfirmation ? "正在准备故事创作..." : isReferenceRegeneration ? "正在重新整理背景资料..." : action.action === "confirm_story_change" ? "正在应用已确认的故事修改..." : action.action === "cancel_story_change" ? "正在保留当前内容..." : isReferenceConfirmation ? "正在继续构思故事..." : action.action === "generate_directions" ? "正在生成故事方向..." : "正在生成故事大纲...";
+    const draft = isRequirementConfirmation || isMainlineConfirmation || isStoryChangeAction || isReferenceReviewAction ? "" : message.trim();
     const optimisticMessage = draft || actionHistoryMessage(action);
     await postMessage(
       {
@@ -486,7 +490,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
         triggerSource: "ui_action",
         triggerLabel: action.label,
         targetId: action.targetId,
-        ...(action.action === "confirm_requirements" || action.action === "confirm_mainline" ? { expectedStateRevision: stateRef.current.stateRevision } : {}),
+        ...(action.action === "confirm_requirements" || action.action === "confirm_mainline" || isReferenceReviewAction || isReferenceSearch ? { expectedStateRevision: stateRef.current.stateRevision } : {}),
         researchPlan: action.researchPlan,
         resetDownstream,
       },
@@ -494,7 +498,7 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
       {
         optimisticMessage,
         restoreMessage: draft,
-        preserveComposer: isRequirementConfirmation || isMainlineConfirmation || isStoryChangeAction,
+        preserveComposer: isRequirementConfirmation || isMainlineConfirmation || isStoryChangeAction || isReferenceReviewAction,
       },
     );
   }
@@ -699,10 +703,10 @@ export function CourseStoryOutlineWorkspace({ initialState, themePresets = [], s
                   ) : null}
                   {chat.actions.some((action) => action.action !== "submit_alignment_answers") ? (
                      <div className="mt-2 flex flex-wrap gap-2">
-                       {chat.actions
+                       {referenceActionsForDisplay(chat.actions, chat.id === latestReferenceActionMessageId && hasPendingReferenceMaterials, state.stateRevision)
                          .filter((action) => action.action !== "submit_alignment_answers")
                          .map((action) => (
-                           <Button disabled={interactionPending || !isCurrentChatAction(action, state.operation, state.alignment, chat.id === latestMainlineActionMessageId)} key={action.id} onClick={() => void handleAction(action)} size="sm" type="button" variant="outline">
+                           <Button disabled={interactionPending || !isCurrentChatAction(action, state.operation, state.alignment, chat.id === latestMainlineActionMessageId, chat.id === latestReferenceActionMessageId, hasPendingReferenceMaterials)} key={action.id} onClick={() => void handleAction(action)} size="sm" type="button" variant="outline">
                             {action.action === "request_reference_search" || action.action === "choose_reference_search" ? <Search className="size-4" /> : <Sparkles className="size-4" />}
                             {action.label}
                           </Button>
@@ -1127,7 +1131,8 @@ function actionHistoryMessage(action: CourseStoryChatAction) {
     return `请联网整理参考资料：${action.targetId || "当前引用对象"}`;
   }
   if (action.action === "generate_from_reference") return "请用已确认的参考资料生成故事大纲。";
-  if (action.action === "confirm_reference_materials") return "我确认这些参考资料，请继续。";
+  if (action.action === "confirm_reference_materials") return "我确认这些参考资料。";
+  if (action.action === "regenerate_reference_materials") return "请重新整理背景资料。";
   if (action.action === "confirm_story_change") return "我确认这项影响，并继续调整。";
   if (action.action === "cancel_story_change") return "保留当前内容，不应用这次修改。";
   if (action.action === "choose_story_usage") return action.targetId === "follow_original" || action.targetId === "faithful" ? "我选择忠实讲述，课堂人物进入场景旁观，但不改变原作或史实。" : "我选择创作新故事，课堂人物通过具体行动推动新事件。";
@@ -1265,7 +1270,7 @@ function storyOperationPresentation(action: string, phase?: NonNullable<CourseSt
   }
   if (phase === "preparing_reference") {
     return {
-      title: "正在准备故事背景",
+      title: action === "regenerate_reference_materials" ? "正在重新整理背景资料" : "正在准备故事背景",
       currentStep: 1,
       steps: ["读取已确认的创作要求", "整理必要背景资料", "决定生成主线、方向或大纲", "保存本轮结果"],
     };
@@ -1306,6 +1311,14 @@ function storyOperationPresentation(action: string, phase?: NonNullable<CourseSt
       currentStep: 1,
       steps: ["确认修改目标与边界", "生成最小范围修改", "检查未选范围保持不变", "保存新版本"],
       preserveMessage: "修改通过检查前，当前版本不会被覆盖。",
+    };
+  }
+  if (action === "regenerate_reference_materials") {
+    return {
+      title: "正在重新整理背景资料",
+      currentStep: 1,
+      steps: ["读取已确认的创作要求", "重新判断必要背景对象", "整理完整资料集", "成功后替换旧资料"],
+      preserveMessage: "新资料整理成功前，当前版本不会被覆盖。",
     };
   }
   if (action === "confirm_requirements") {
@@ -1395,10 +1408,27 @@ function operationLoadingLabel(phase?: NonNullable<CourseStoryOutlineState["oper
   }
 }
 
-function isCurrentChatAction(action: CourseStoryChatAction, operation: CourseStoryOutlineState["operation"], alignment: CourseStoryOutlineState["alignment"], isLatestMainlineMessage = false) {
+function referenceActionsForDisplay(actions: CourseStoryChatAction[], addLegacyRegenerate: boolean, stateRevision = 0) {
+  if (!addLegacyRegenerate) return actions;
+  const targetId = `reference-review:${stateRevision}`;
+  const normalizedActions = actions.map((action) => action.action === "confirm_reference_materials"
+    ? { ...action, label: "确认资料", targetId: action.targetId ?? targetId }
+    : action);
+  if (!normalizedActions.some((action) => action.action === "confirm_reference_materials") || normalizedActions.some((action) => action.action === "regenerate_reference_materials")) return normalizedActions;
+  return [...normalizedActions, {
+    id: `regenerate-reference-materials-reference-review:${stateRevision}`,
+    label: "重新整理",
+    action: "regenerate_reference_materials" as const,
+    targetId,
+  }];
+}
+
+function isCurrentChatAction(action: CourseStoryChatAction, operation: CourseStoryOutlineState["operation"], alignment: CourseStoryOutlineState["alignment"], isLatestMainlineMessage = false, isLatestReferenceMessage = false, hasPendingReferenceMaterials = false) {
   if (action.action === "submit_alignment_answers") return false;
   if (action.action === "confirm_requirements") return !alignment || alignment.status === "ready_for_confirmation";
   if (action.action === "confirm_mainline" || action.action === "revise_mainline") return isLatestMainlineMessage && (!alignment || alignment.mainlineCard?.status === "pending_confirmation");
+  if (action.action === "confirm_reference_materials" || action.action === "regenerate_reference_materials") return isLatestReferenceMessage && hasPendingReferenceMaterials;
+  if (action.action === "choose_reference_search" && action.targetId?.startsWith("reference-review:")) return isLatestReferenceMessage;
   if (action.action === "confirm_story_change" || action.action === "cancel_story_change") {
     return Boolean(alignment?.pendingChange && action.targetId === alignment.pendingChange.id);
   }
