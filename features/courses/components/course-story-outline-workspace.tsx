@@ -1572,6 +1572,7 @@ function OutlineQualityNotice({ outline, state }: { outline: CourseStoryOutline;
 }
 
 function DirectionsPanel({ directions, outdated, onConfirmDirection, onDescribeDirection, onReviseDirection, pending, state }: { directions: CourseStoryDirection[]; outdated: boolean; onConfirmDirection: (direction: CourseStoryDirection) => void; onDescribeDirection: () => void; onReviseDirection: (direction: CourseStoryDirection) => void; pending: boolean; state: CourseStoryOutlineState }) {
+  const visibleDirections = directionsForDisplay(directions);
   return (
     <section className="space-y-4 rounded-lg bg-card p-4 shadow-sm">
       <ArtifactVersionNotice outdated={outdated} />
@@ -1579,7 +1580,7 @@ function DirectionsPanel({ directions, outdated, onConfirmDirection, onDescribeD
         <h3 className="text-lg font-semibold text-foreground">故事方向</h3>
         <p className="mt-1 text-sm text-muted-foreground">选择前可以调整任意方向；选择后将直接生成章节大纲。</p>
       </div>
-      {directions.map((direction) => (
+      {visibleDirections.map((direction) => (
         <article className={cn("rounded-md border p-4", direction.selectedAt ? "border-primary bg-primary-50/30" : "border-border")} key={direction.id}>
           <div className="flex items-start justify-between gap-3">
             <h4 className="text-base font-semibold text-foreground">{splitBilingual(direction.title).zh}</h4>
@@ -1634,12 +1635,13 @@ function DirectionsPanel({ directions, outdated, onConfirmDirection, onDescribeD
 }
 
 function DirectionsHistory({ directions }: { directions: CourseStoryDirection[] }) {
+  const visibleDirections = directionsForDisplay(directions);
   return (
     <div className="space-y-3">
       <div className="rounded-md border border-primary-100 bg-primary-50/50 px-3 py-2 text-sm text-primary-800" role="status">
         故事方向已确定，仅供查看
       </div>
-      {directions.map((direction) => (
+      {visibleDirections.map((direction) => (
         <article className={cn("rounded-md border p-4", direction.selectedAt ? "border-primary bg-primary-50/30" : "border-border")} key={direction.id}>
           <div className="flex items-start justify-between gap-3">
             <h4 className="text-base font-semibold text-foreground">{splitBilingual(direction.title).zh}</h4>
@@ -1668,6 +1670,12 @@ function DirectionsHistory({ directions }: { directions: CourseStoryDirection[] 
       ))}
     </div>
   );
+}
+
+function directionsForDisplay(directions: CourseStoryDirection[]) {
+  const selected = directions.filter((direction) => direction.selectedAt);
+  if (!selected.length) return directions;
+  return [...selected, ...directions.filter((direction) => !direction.selectedAt)];
 }
 
 function CardGroup({ title, children }: { title: string; children: React.ReactNode }) {

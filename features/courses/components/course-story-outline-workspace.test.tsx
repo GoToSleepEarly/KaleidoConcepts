@@ -1355,15 +1355,14 @@ describe("CourseStoryOutlineWorkspace", () => {
     render(<CourseStoryOutlineWorkspace initialState={{
       ...outlineState,
       directions: [
-        { id: "direction-1", courseId: "course-1", title: "海底图书馆", hook: "寻找失落书页。", whyFits: "适合合作。", mainCharacters: ["夏天"], seedPrompt: "library", selectedAt: "2026-08-06T07:00:00.000Z", createdAt: "2026-08-06T07:00:00.000Z" },
-        { id: "direction-2", courseId: "course-1", title: "珊瑚邮局", hook: "送回迷路的信。", whyFits: "适合表达。", mainCharacters: ["夏天"], seedPrompt: "post", selectedAt: null, createdAt: "2026-08-06T07:00:00.000Z" },
+        { id: "direction-1", courseId: "course-1", title: "海底图书馆", hook: "寻找失落书页。", whyFits: "适合合作。", mainCharacters: ["夏天"], seedPrompt: "library", selectedAt: null, createdAt: "2026-08-06T07:00:00.000Z" },
+        { id: "direction-2", courseId: "course-1", title: "珊瑚邮局", hook: "送回迷路的信。", whyFits: "适合表达。", mainCharacters: ["夏天"], seedPrompt: "post", selectedAt: "2026-08-06T07:00:00.000Z", createdAt: "2026-08-06T07:00:00.000Z" },
       ],
     }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "故事方向" }));
     expect(screen.getByText("故事方向已确定，仅供查看")).toBeInTheDocument();
-    expect(screen.getByText("海底图书馆")).toBeInTheDocument();
-    expect(screen.getByText("珊瑚邮局")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 4 }).map((heading) => heading.textContent)).toEqual(["珊瑚邮局", "海底图书馆"]);
     expect(screen.getByText("已选择")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "选择并生成大纲" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "调整这张卡" })).not.toBeInTheDocument();
