@@ -1,4 +1,4 @@
-import { Agent, fetch as undiciFetch, type Dispatcher, type RequestInit as UndiciRequestInit } from "undici";
+import { Agent, type Dispatcher } from "undici";
 
 const transportMarginMs = 30_000;
 const dispatchers = new Map<string, Dispatcher>();
@@ -18,7 +18,11 @@ function imageDispatcher(timeoutMs: number) {
 }
 
 export function imageFetch(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  return undiciFetch(url, { ...(init as unknown as UndiciRequestInit), dispatcher: imageDispatcher(timeoutMs) }) as unknown as Promise<Response>;
+  const requestInit: RequestInit & { dispatcher: Dispatcher } = {
+    ...init,
+    dispatcher: imageDispatcher(timeoutMs),
+  };
+  return globalThis.fetch(url, requestInit);
 }
 
 export function isImageTransportTimeout(error: unknown) {

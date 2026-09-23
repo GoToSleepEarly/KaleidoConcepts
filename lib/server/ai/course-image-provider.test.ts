@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-vi.mock("undici", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("undici")>();
-  return { ...actual, fetch: ((...args: Parameters<typeof globalThis.fetch>) => globalThis.fetch(...args)) as unknown as typeof actual.fetch };
-});
-
 import { createCourseImageProvider } from "./course-image-provider";
 
 const originalEnv = { ...process.env };
