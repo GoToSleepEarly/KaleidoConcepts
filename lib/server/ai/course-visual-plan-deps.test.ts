@@ -37,9 +37,9 @@ const aiResponse = {
   storyWorld: rawPlan.storyWorld,
   characterDesigns: [
     { characterKey: "C01", visualLabel: null, characterAppearance: null, courseAppearance: "深蓝色户外夹克、舒适长裤和防滑鞋。" },
-    { characterKey: "C02", visualLabel: null, characterAppearance: "白色短发高高束起，身形轻盈敏捷。", courseAppearance: "保留蓝灰色标志性战斗服。" },
-    { characterKey: "C03", visualLabel: null, characterAppearance: "黑色长发扎成马尾，面容沉静。", courseAppearance: "保留白色与青绿色长袍式战斗服。" },
-    { characterKey: "C04", visualLabel: null, characterAppearance: "薄荷绿色的小风精灵，长着叶片形耳朵。", courseAppearance: "佩戴银色指南针挂饰。" },
+    { characterKey: "C02", visualLabel: null, characterAppearance: "年轻成人，身形纤细敏捷；白色短发高高束起，冷白肤色，额前两缕短发。", courseAppearance: "保留蓝灰色标志性战斗服。" },
+    { characterKey: "C03", visualLabel: null, characterAppearance: "年轻成人，高挑匀称；黑色长发扎成马尾，暖棕肤色，眉形平直。", courseAppearance: "保留白色与青绿色长袍式战斗服。" },
+    { characterKey: "C04", visualLabel: null, characterAppearance: "体型小巧、轮廓轻盈；薄荷绿色半透明表面，叶片形耳朵带浅黄色纹路。", courseAppearance: "佩戴银色指南针挂饰。" },
   ],
   cover: { focus: "The team enters the garden.", characterKeys: ["C01", "C02", "C03"], sceneDescription: "A wide group scene at the garden gate." },
   shots: [{ paragraphKey: "P01", focus: "Opening the wind path.", characterKeys: ["C01", "C02", "C03"], sceneDescription: "Jett opens a wind path while Sage protects the teacher." }],
@@ -304,7 +304,11 @@ describe("Step 5 视觉资源方案", () => {
     expect(prompt).toContain("Do not use vague placeholders such as 'classic outfit'");
     expect(prompt).toContain("restate every applicable visible clothing, equipment, and accessory component");
     expect(prompt).toContain("characterAppearance is required for every non-person character");
-    expect(prompt).toContain("It must be concise Simplified Chinese");
+    expect(prompt).toContain("For a human or humanoid, prioritize apparent age, overall build or silhouette, and a few highly distinctive stable traits");
+    expect(prompt).toContain("do not mechanically enumerate facial or body details");
+    expect(prompt).toContain("For a non-human character, describe only applicable scale, silhouette, material, coloring, or defining structure");
+    expect(prompt).toContain("do not invent human age, face, hair, limbs, or clothing merely to fill the description");
+    expect(prompt).toContain("such as human, flesh-and-blood, bipedal, two hands, or two feet");
     expect(prompt).not.toContain("courseClothingAndProps");
     expect(prompt).not.toContain("stableAppearance");
     expect(prompt).toContain("Never put identity, age, face, body, personality, expression, action, pose, gaze, ability, environment");
@@ -320,6 +324,7 @@ describe("Step 5 视觉资源方案", () => {
   test("视觉方案要求简短字段，避免大模型返回无意义的超长 JSON", () => {
     const prompt = buildCourseVisualPlanPrompt(input);
     expect(prompt).toContain("visualStyle <= 80 words");
+    expect(prompt).toContain("each characterAppearance <= 80 Chinese characters");
     expect(prompt).toContain("each courseAppearance <= 90 Chinese characters");
     expect(prompt).toContain("each sceneDescription <= 90 words");
   });
@@ -331,6 +336,8 @@ describe("Step 5 视觉资源方案", () => {
     ]);
 
     expect(prompt).toContain("Character continuity lock");
+    expect(prompt).toContain("Preserve every identity-defining trait explicitly stated in 角色本体 and 角色形象");
+    expect(prompt).toContain("do not reinterpret or contradict those traits from scene text");
     expect(prompt).toContain("Keep garment types, exact colors, materials, patterns, footwear, and portable props identical across the cover and every lesson illustration");
     expect(prompt).toContain("本课造型：深蓝色户外夹克、舒适长裤和防滑鞋。");
     expect(prompt).toContain("Scene text must not override this specification unless it explicitly describes a costume change");

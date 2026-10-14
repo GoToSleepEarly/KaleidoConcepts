@@ -390,6 +390,32 @@ function alignmentContextPrompt(input: StoryPromptContext) {
   ];
 }
 
+function mainlinePersonOptions(coursePeople: CoursePersonPrompt) {
+  return coursePeople.map((person, index) => ({
+    personKey: `P${String(index + 1).padStart(2, "0")}`,
+    role: person.role,
+    chineseName: person.chineseName,
+    englishName: person.englishName,
+    age: person.age,
+    gender: person.gender,
+  }));
+}
+
+function mainlineContextPrompt(input: StoryPromptContext) {
+  return [
+    "<course_context>",
+    `课堂人物：${JSON.stringify(mainlinePersonOptions(input.coursePeople))}`,
+    `指定章节数：${input.chapterCount}`,
+    ...(input.englishLevel ? [`英语难度：${input.englishLevel}`] : []),
+    ...(input.storyMode ? [`故事模式：${input.storyMode}`] : []),
+    ...(input.classroomPresence ? [`课堂人物参与方式：${input.classroomPresence}`] : []),
+    "</course_context>",
+    "<conversation_history>",
+    JSON.stringify(input.conversationHistory),
+    "</conversation_history>",
+  ];
+}
+
 function backgroundContextPrompt(input: StoryPromptContext) {
   const latestTeacherMessage = [...input.conversationHistory].reverse().find((message) => message.role === "teacher");
   const peopleSnapshots = input.coursePeople.map(({ personId, role, chineseName, englishName }) => ({
@@ -882,7 +908,11 @@ function parseMainlineCard(text: string): Omit<StoryMainlineCard, "status" | "co
   const classroomRoles = Array.isArray(parsed.classroomRoles) ? parsed.classroomRoles.flatMap((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) return [];
     const role = item as Record<string, unknown>;
-    const personId = stringValue(role.personId);
+    const personId = stringValue(role.personKey)
+      || stringValue(role.personId)
+      || stringValue(role.englishName)
+      || stringValue(role.chineseName)
+      || stringValue(role.name);
     const roleInStory = stringValue(role.roleInStory);
     return personId && roleInStory ? [{ personId, roleInStory }] : [];
   }) : [];
@@ -901,6 +931,30 @@ function parseMainlineCard(text: string): Omit<StoryMainlineCard, "status" | "co
     throw new StoryOutlineResponseError("AI 返回的主线理解卡结构不完整");
   }
   return result;
+}
+
+function normalizeMainlineClassroomRoles(
+  classroomRoles: StoryMainlineCard["classroomRoles"],
+  coursePeople: CoursePersonPrompt,
+) {
+  const options = mainlinePersonOptions(coursePeople);
+  const peopleByKey = new Map(options.map((option, index) => [option.personKey, coursePeople[index]!]));
+  const normalized = classroomRoles.map((role) => {
+    const byKey = peopleByKey.get(role.personId);
+    const byId = coursePeople.find((person) => person.personId === role.personId);
+    const byName = uniquePersonByName(coursePeople, role.personId);
+    const person = byKey ?? byId ?? byName;
+    return person ? { personId: person.personId, roleInStory: role.roleInStory } : null;
+  });
+  if (normalized.some((role) => !role)) {
+    throw new StoryOutlineResponseError("AI 返回的主线理解卡包含无效或重复的课堂人物");
+  }
+  const roles = normalized as StoryMainlineCard["classroomRoles"];
+  const personIds = roles.map((role) => role.personId);
+  if (new Set(personIds).size !== personIds.length) {
+    throw new StoryOutlineResponseError("AI 返回的主线理解卡包含无效或重复的课堂人物");
+  }
+  return roles;
 }
 
 function parseAlignmentDecision(
@@ -1073,9 +1127,9 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           "忠实讲述只能整理既定事件，课堂人物只旁观、记录、见证或彼此交流，不能新增会改变原作或史实因果的行动。",
           "新故事根据课堂人物数量形成单人、双人或团队结构。老师明确要求每名学生有高光时，角色作用必须分别推进同一个共同目标，不能拆成互不相关的小任务。",
           "所有自然语言字段提到课堂人物时，逐字使用人物快照中的 englishName；程序不会改写自由文本姓名。",
-          "classroomRoles 只使用提供的 personId，不得重复；除非课堂人物明确不进入，否则必须逐个包含所有课堂人物。课堂人物不进入时返回空数组。mayExpand 只能列出后续可以创作补充、且不会改变已确认需求的部分。",
-          "只返回 JSON：{protagonistStructure,classroomRoles:[{personId,roleInStory}],incitingEvent,goal,mainObstacle,progression,endingDirection,mustKeep:string[],mayExpand:string[]}。",
-          ...alignmentContextPrompt(input),
+          "classroomRoles 只使用提供的 personKey，不得复制或猜测数据库 ID，不得重复；除非课堂人物明确不进入，否则必须逐个包含所有课堂人物。课堂人物不进入时返回空数组。mayExpand 只能列出后续可以创作补充、且不会改变已确认需求的部分。",
+          "只返回 JSON：{protagonistStructure,classroomRoles:[{personKey,roleInStory}],incitingEvent,goal,mainObstacle,progression,endingDirection,mustKeep:string[],mayExpand:string[]}。",
+          ...mainlineContextPrompt(input),
           `<requirement_brief>${JSON.stringify(briefForPrompt(input))}</requirement_brief>`,
           `<references>${JSON.stringify(input.references)}</references>`,
           "<current_task>",
@@ -1083,7 +1137,11 @@ export function createStoryOutlineGenerationDeps(settings: AiProviderSettingsInp
           "</current_task>",
         ].join("\n"),
       });
-      const card = parseMainlineCard(text);
+      const parsedCard = parseMainlineCard(text);
+      const card = {
+        ...parsedCard,
+        classroomRoles: normalizeMainlineClassroomRoles(parsedCard.classroomRoles, input.coursePeople),
+      };
       const allowedPersonIds = new Set(input.coursePeople.map((person) => person.personId));
       const returnedPersonIds = card.classroomRoles.map((role) => role.personId);
       if (new Set(returnedPersonIds).size !== returnedPersonIds.length || returnedPersonIds.some((id) => !allowedPersonIds.has(id))) {

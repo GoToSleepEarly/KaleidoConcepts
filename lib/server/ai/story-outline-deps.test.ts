@@ -394,7 +394,120 @@ describe("createStoryOutlineGenerationDeps", () => {
     expect(prompt).toContain("不生成章节大纲");
     expect(prompt).toContain("所有自然语言字段提到课堂人物时，逐字使用人物快照中的 englishName");
     expect(prompt).toContain("程序不会改写自由文本姓名");
+    expect(prompt).toContain('"personKey":"P01"');
+    expect(prompt).not.toContain('"personId":"student-1"');
     expect(prompt).not.toContain("不应进入主线卡");
+  });
+
+  test("maps short classroom person keys back to stored person ids", async () => {
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        protagonistStructure: "老师和学生共同推进任务",
+        classroomRoles: [
+          { personKey: "P01", roleInStory: "引导团队确认目标" },
+          { personKey: "P02", roleInStory: "发现关键线索" },
+        ],
+        incitingEvent: "一封求助信到达教室",
+        goal: "找到失踪的地图",
+        mainObstacle: "线索彼此矛盾",
+        progression: "师生逐步核对线索",
+        endingDirection: "团队找到地图并说明推理过程",
+        mustKeep: ["师生共同参与"],
+        mayExpand: ["地图的来历"],
+      }),
+    });
+
+    const result = await createStoryOutlineGenerationDeps().generateMainlineCard({
+      task: "整理主线理解卡",
+      requirementBrief: narrativeBrief("师生寻找地图", "师生根据求助信寻找失踪的地图"),
+      chapterCount: 3,
+      coursePeople: [
+        { personId: "cm1234567890teacher", role: "teacher", chineseName: "林老师", englishName: "Ms Lin", age: 31, gender: "female" },
+        { personId: "cm1234567890student", role: "student", chineseName: "夏天", englishName: "Summer", age: 10, gender: "female" },
+      ],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+      storyMode: "new_story",
+      classroomPresence: "participant",
+    });
+
+    expect(result.classroomRoles).toEqual([
+      { personId: "cm1234567890teacher", roleInStory: "引导团队确认目标" },
+      { personId: "cm1234567890student", roleInStory: "发现关键线索" },
+    ]);
+  });
+
+  test("accepts a unique classroom name from an older mainline response", async () => {
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        protagonistStructure: "单人主角",
+        classroomRoles: [{ personId: "Summer", roleInStory: "独立找到线索" }],
+        incitingEvent: "地图消失",
+        goal: "找回地图",
+        mainObstacle: "线索被打乱",
+        progression: "逐项整理线索",
+        endingDirection: "找回地图",
+        mustKeep: [],
+        mayExpand: [],
+      }),
+    });
+
+    const result = await createStoryOutlineGenerationDeps().generateMainlineCard({
+      task: "整理主线理解卡",
+      requirementBrief: narrativeBrief("寻找地图", "Summer 寻找地图"),
+      chapterCount: 3,
+      coursePeople: [
+        { personId: "student-real-id", role: "student", chineseName: "夏天", englishName: "Summer", age: 10, gender: "female" },
+      ],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+      storyMode: "new_story",
+      classroomPresence: "participant",
+    });
+
+    expect(result.classroomRoles).toEqual([{ personId: "student-real-id", roleInStory: "独立找到线索" }]);
+  });
+
+  test("keeps rejecting duplicate classroom people after key normalization", async () => {
+    generateOutlineMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        protagonistStructure: "双人团队",
+        classroomRoles: [
+          { personKey: "P01", roleInStory: "第一次作用" },
+          { personKey: "P01", roleInStory: "重复作用" },
+        ],
+        incitingEvent: "任务开始",
+        goal: "完成任务",
+        mainObstacle: "时间不足",
+        progression: "逐步推进",
+        endingDirection: "完成任务",
+        mustKeep: [],
+        mayExpand: [],
+      }),
+    });
+
+    await expect(createStoryOutlineGenerationDeps().generateMainlineCard({
+      task: "整理主线理解卡",
+      requirementBrief: narrativeBrief("双人任务", "两人共同完成任务"),
+      chapterCount: 3,
+      coursePeople: [
+        { personId: "teacher-real-id", role: "teacher", chineseName: "林老师", englishName: "Ms Lin", age: 31, gender: "female" },
+        { personId: "student-real-id", role: "student", chineseName: "夏天", englishName: "Summer", age: 10, gender: "female" },
+      ],
+      conversationHistory: [],
+      references: [],
+      selectedDirection: null,
+      currentDirections: [],
+      currentOutline: null,
+      storyMode: "new_story",
+      classroomPresence: "participant",
+    })).rejects.toThrow("无效或重复的课堂人物");
   });
 
   test("treats age-appropriate intimacy boundaries as presentation changes instead of a new plot", async () => {
